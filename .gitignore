@@ -1,0 +1,10 @@
+.env
+metrics_outputs/
+logs/
+tmp/
+*.log
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
+*.pyc

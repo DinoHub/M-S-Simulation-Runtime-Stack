@@ -1,0 +1,115 @@
+{
+  "SeeDocsAt": "https://cosys-lab.github.io/settings/",
+  "SettingsVersion": 2.0,
+
+  "ClockSpeed": 1,
+  "LocalHostIp": "0.0.0.0",
+  "ApiServerPort": 41451,
+
+  "RecordUIVisible": false,
+  "MoveWorldOrigin": false,
+  "InitialInstanceSegmentation": false,
+  "LogMessagesVisible": true,
+  "ShowLosDebugLines": false,
+  "ViewMode": "",
+  "RpcEnabled": true,
+  "EngineSound": false,
+
+  "SimMode": "Multirotor",
+
+  "Wind": {
+    "X": 0,
+    "Y": 0,
+    "Z": 0
+  },
+
+  "OriginGeopoint": {
+    "Latitude": 42.764938,
+    "Longitude": -115.579201,
+    "Altitude": 1183,
+    "NorthAngleDegrees": 270.0
+  },
+
+  "TimeOfDay": {
+    "Enabled": false,
+    "StartDateTime": "",
+    "CelestialClockSpeed": 1,
+    "StartDateTimeDst": false,
+    "UpdateIntervalSecs": 60
+  },
+
+  "Vehicles": {
+    "Copter1": {
+
+      "VehicleType": "PX4Multirotor",
+      "DefaultVehicleState": "Disarmed",
+      "AutoCreate": true,
+
+      "X": 10,
+      "Y": 0,
+      "Z": 1.3,
+
+      "UseSerial": false,
+      "LockStep": false,
+
+      "UseTcp": true,
+      "TcpPort": 4560,
+
+      "ControlIp": "127.0.0.1",
+      "ControlPortLocal": 14540,
+      "ControlPortRemote": 14580,
+
+      "LocalHostIp": "0.0.0.0",
+
+      "Sensors": {
+        "Barometer": {
+          "SensorType": 1,
+          "Enabled": true,
+          "PressureFactorSigma": 0.0001825
+        },
+
+        "Gps": {
+          "SensorType": 3,
+          "Enabled": true,
+          "EphTimeConstant": 0.3,
+          "EpvTimeConstant": 0.3,
+          "EphInitial": 2.0,
+          "EpvInitial": 3.0,
+          "EphFinal": 0.1,
+          "EpvFinal": 0.1,
+          "EphMin3d": 3.0,
+          "EphMin2d": 4.0,
+          "UpdateLatency": 0.1,
+          "UpdateFrequency": 50,
+          "StartupDelay": 0
+        },
+
+        "LidarSensor1": {
+          "SensorType": 6,
+          "Enabled": true,
+          "ExternalController": false,
+
+          "NumberOfChannels": 16,
+          "RotationsPerSecond": 30,
+          "PointsPerSecond": 200000,
+
+          "X": 0,
+          "Y": 0,
+          "Z": 0.5,
+
+          "Roll": 0,
+          "Pitch": 0,
+          "Yaw": 0,
+
+          "VerticalFOVUpper": 15,
+          "VerticalFOVLower": -25,
+          "HorizontalFOVStart": -180,
+          "HorizontalFOVEnd": 180,
+
+          "DrawDebugPoints": false
+        }
+      }
+
+    }
+  }
+}

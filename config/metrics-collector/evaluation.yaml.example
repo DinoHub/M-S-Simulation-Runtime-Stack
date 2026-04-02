@@ -1,0 +1,96 @@
+# Evaluation Configuration for Mission Supervisor
+#
+# This file defines the pass/fail criteria for simulation runs.
+# The supervisor will exit with code 0 (PASS) if all checks pass,
+# or code 1 (FAIL) if any check fails.
+#
+# IMPORTANT: This file is REQUIRED for every run.
+# If this file is missing, the supervisor will exit with code 2 (CONFIG_ERROR).
+# There are NO default thresholds - every experiment must explicitly define
+# its success criteria.
+#
+# Usage:
+#   1. Copy this file to your config directory:
+#      cp evaluation.yaml.example /path/to/config/evaluation.yaml
+#
+#   2. Modify the thresholds for your experiment
+#
+#   3. Mount the config when running the container:
+#      -v /path/to/config/evaluation.yaml:/supervisor/config/evaluation.yaml:ro
+
+evaluation:
+  # ==========================================================================
+  # GLOBAL THRESHOLDS
+  # These apply to the sum across all vehicles
+  # Set to 0 to disable a check
+  # ==========================================================================
+
+  # Maximum total path length in meters (sum across all vehicles)
+  # Fail if exceeded
+  # Example: For a 500m course with margin for navigation errors
+  max_path_length_m: 500.0
+
+  # Maximum total travel time in seconds
+  # Fail if exceeded
+  # Example: 5 minutes for a short navigation task
+  max_travel_time_sec: 300.0
+
+  # Require all vehicles with goals set to reach their goals
+  # If true, any vehicle with goal_set=true must have goal_reached=true
+  require_goal_reached: true
+
+  # Maximum collision count across all vehicles
+  # Set to -1 to disable collision checking
+  # Set to 0 to fail on ANY collision (strict safety requirement)
+  max_collisions: 0
+
+  # ==========================================================================
+  # PER-VEHICLE OVERRIDES
+  # Override global thresholds for specific vehicles
+  # Useful for:
+  #   - Leader/follower formations (leader has stricter requirements)
+  #   - Mixed vehicle types with different capabilities
+  #   - Testing specific vehicles under tighter constraints
+  # ==========================================================================
+
+  vehicle_overrides:
+    # Example: Primary drone has stricter path length requirement
+    Drone_1:
+      max_path_length_m: 250.0
+
+    # Example: Secondary drone has more relaxed requirement
+    # Drone_2:
+    #   max_path_length_m: 300.0
+
+# ==========================================================================
+# EXAMPLE SCENARIOS
+# ==========================================================================
+#
+# 1. Point-to-Point Navigation:
+#    max_path_length_m: 150.0   # Target distance + 50% margin
+#    max_travel_time_sec: 60.0   # 1 minute timeout
+#    require_goal_reached: true
+#    max_collisions: 0
+#
+# 2. Exploration/Search:
+#    max_path_length_m: 1000.0  # Allow extensive search
+#    max_travel_time_sec: 600.0  # 10 minute timeout
+#    require_goal_reached: false # No specific goal required
+#    max_collisions: 0
+#
+# 3. Multi-Vehicle Formation:
+#    max_path_length_m: 800.0   # Sum of all vehicle paths
+#    max_travel_time_sec: 180.0
+#    require_goal_reached: true
+#    max_collisions: 0
+#    vehicle_overrides:
+#      Leader:
+#        max_path_length_m: 200.0
+#      Follower_1:
+#        max_path_length_m: 300.0  # Followers may travel farther
+#
+# 4. Relaxed Testing (debug mode):
+#    max_path_length_m: 0       # Disabled
+#    max_travel_time_sec: 0     # Disabled
+#    require_goal_reached: false
+#    max_collisions: -1         # Disabled

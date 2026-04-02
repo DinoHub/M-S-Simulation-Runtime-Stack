@@ -1,0 +1,244 @@
+name: simstack-px4-condo
+
+services:
+  # ============================================================================
+  # AirSim Condo
+  # ============================================================================
+  airsim-condo:
+    image: ${AIRSIM_IMAGE:?set AIRSIM_IMAGE}
+    pull_policy: if_not_present
+    container_name: airsim-condo
+    hostname: airsim-condo
+    restart: unless-stopped
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+    group_add:
+      - video
+    init: true
+    gpus: all
+
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - DISPLAY=${DISPLAY:?set DISPLAY}
+      - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
+      - XAUTHORITY=/tmp/.Xauthority
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    ipc: host
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - ${CONFIG_ROOT:?set CONFIG_ROOT}/unreal-airsim/condo/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT:?set CONFIG_ROOT}/unreal-airsim/condo/settings.json:/app/Condo/settings.json:ro
+
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting 3s before starting Condo..."
+        sleep 3
+        exec /usr/local/bin/airsim-entrypoint.sh /app/Condo/Condo.sh -windowed -ResX=1920 -ResY=1080
+
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 41451 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+
+  # ============================================================================
+  # PX4 SITL - Single Drone
+  # NOTE: kept as root for now because current PX4 image/runtime tree still
+  # writes into /px4_workspace/PX4-Autopilot at startup.
+  # ============================================================================
+  px4-drone-1:
+    image: ${PX4_IMAGE:?set PX4_IMAGE}
+    pull_policy: if_not_present
+    container_name: px4-drone-1
+    hostname: px4-drone-1
+    restart: "no"
+
+    depends_on:
+      airsim-condo:
+        condition: service_started
+
+    init: true
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+
+    environment:
+      - PX4_SIM_MODEL=${PX4_SIM_MODEL:-none_iris}
+      - PX4_SIMULATOR=${PX4_SIMULATOR:-none}
+      - PX4_HOME_LAT=${PX4_HOME_LAT:-42.764938}
+      - PX4_HOME_LON=${PX4_HOME_LON:--115.579201}
+      - PX4_HOME_ALT=${PX4_HOME_ALT:-1183}
+      - PX4_SYS_AUTOSTART=${PX4_SYS_AUTOSTART:-10016}
+      - PX4_INSTANCE=0
+
+      - MAV_0_BROADCAST=1
+      - MAV_1_BROADCAST=1
+      - MAV_2_BROADCAST=1
+
+      - SWARM_ID=${SWARM_ID:-1}
+      - SWARM_SIZE=1
+
+      - PX4_SIM_HOSTNAME=${PX4_SIM_HOSTNAME:-127.0.0.1}
+      - MAVLINK_TARGET=${MAVLINK_TARGET:-127.0.0.1}
+      - MAVLINK_MODE=${MAVLINK_MODE:-router}
+      - ROUTER_LOG_LEVEL=${ROUTER_LOG_LEVEL:-info}
+      - ROUTER_DEDUPE_PERIOD=${ROUTER_DEDUPE_PERIOD:-500}
+      - HOST_NETWORK_MODE=true
+
+    command: >
+      bash -lc "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim Condo to fully initialize...' &&
+        sleep 20 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 1 (instance 0)...' &&
+        exec ./Scripts/run_airsim_sitl.sh 0
+      "
+
+  # ============================================================================
+  # ROS2 X11 Node
+  # ============================================================================
+  ros2-x11-node:
+    image: ${ROS2_IMAGE:?set ROS2_IMAGE}
+    pull_policy: if_not_present
+    container_name: ros2-x11-node
+    hostname: ros2-x11-node
+    restart: unless-stopped
+
+    depends_on:
+      airsim-condo:
+        condition: service_started
+      px4-drone-1:
+        condition: service_started
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    ipc: host
+    init: true
+    stdin_open: true
+    tty: true
+    gpus: all
+
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting 10s for AirSim/PX4 to fully initialize..."
+        sleep 10
+        echo "Starting ROS2 node..."
+        chmod 1777 /tmp/iceoryx2 || true
+        exec /entrypoint_x11.sh
+
+    environment:
+      - DISPLAY=${DISPLAY:?set DISPLAY}
+      - XAUTHORITY=/tmp/.Xauthority
+      - QT_X11_NO_MITSHM=1
+
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
+
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+
+      - LAUNCH_MODE=${LAUNCH_MODE:-multi}
+      - ENABLE_COORDINATION=${ENABLE_COORDINATION:-true}
+      - RPC_TIMEOUT=${RPC_TIMEOUT:-10.0}
+      - LAUNCH_RVIZ=${LAUNCH_RVIZ:-false}
+      - DEBUG=${DEBUG:-false}
+      - AUTO_BUILD=${AUTO_BUILD:-false}
+
+      # IMPORTANT: router sends MAVROS traffic to 127.0.0.1:14560
+      - MAVROS_FCU_URL=tcp://127.0.0.1:5760
+      - MAVROS_NUM_DRONES=${MAVROS_NUM_DRONES:-1}
+      - MAVROS_USE_HOST_NETWORK=${MAVROS_USE_HOST_NETWORK:-true}
+      - MAVROS_PX4_NETWORK_MODE=${MAVROS_PX4_NETWORK_MODE:-localhost}
+
+      - AUTO_LAUNCH_ROS2=${AUTO_LAUNCH_ROS2:-true}
+      - ENABLE_SUPERVISOR=${ENABLE_SUPERVISOR:-true}
+
+      - VEHICLES=${VEHICLES:-"['Copter1']"}
+      - ENABLE_MAVROS=${ENABLE_MAVROS:-true}
+      - MAVROS_CONFIG=mavros_px4.yaml
+      - ENABLE_LOCAL_OBS=${ENABLE_LOCAL_OBS:-true}
+      - TEST_LOCAL_PLANNER=${TEST_LOCAL_PLANNER:-true}
+      - AUTO_START_ON_TAKEOFF=${AUTO_START_ON_TAKEOFF:-true}
+      - AUTO_END_ON_LANDING=${AUTO_END_ON_LANDING:-true}
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+  # ============================================================================
+  # QGroundControl X11
+  # ============================================================================
+  qgroundcontrol-x11:
+    image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
+    pull_policy: if_not_present
+    container_name: qgroundcontrol-x11
+    hostname: qgc-x11
+    restart: unless-stopped
+
+    depends_on:
+      px4-drone-1:
+        condition: service_started
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+
+    environment:
+      - DISPLAY=${DISPLAY:?set DISPLAY}
+      - XAUTHORITY=/tmp/.Xauthority
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_SOFTWARE=0
+      - MESA_GL_VERSION_OVERRIDE=3.3
+      - QT_QPA_PLATFORM=xcb:depth=24
+      - QGC_APPIMAGE=/opt/qgroundcontrol/QGroundControl.AppImage
+      - APPIMAGE_EXTRACT_AND_RUN=1
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
+      - ${CONFIG_ROOT:?set CONFIG_ROOT}/qgroundcontrol/user_config:/home/qgc/.config/QGroundControl
+
+    devices:
+      - /dev/dri:/dev/dri
+
+    shm_size: "2gb"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, graphics, utility]
+
+    security_opt:
+      - seccomp:unconfined
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+    group_add:
+      - video
+    init: true
+
+    healthcheck:
+      test: ["CMD-SHELL", "xdpyinfo > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

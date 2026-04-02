@@ -1,0 +1,115 @@
+# Mission Supervisor Evaluation Configuration
+#
+# This file defines pass/fail thresholds for mission evaluation.
+# Metrics are collected by the mission supervisor node and evaluated
+# against these thresholds at the end of each run.
+#
+# All thresholds are optional - set to 0 or -1 to disable a check.
+#
+# Exit Codes:
+#   0 - PASS: All enabled checks passed
+#   1 - FAIL: One or more checks failed
+#   2 - CONFIG_ERROR: This file missing or invalid
+
+evaluation:
+  # =============================================================================
+  # Metric Selection (NEW)
+  # =============================================================================
+  # Enable/disable specific metrics. All default to true for backward compatibility.
+  # Set to false to skip computation and threshold checking for that metric.
+  metrics:
+    path_length: true      # Enable/disable path length metric
+    travel_time: true      # Enable/disable travel time metric
+    goal_reached: true     # Enable/disable goal reached check
+    collisions: true       # Enable/disable collision count
+
+  # =============================================================================
+  # Global Thresholds
+  # =============================================================================
+  # These apply to totals across all vehicles
+
+  # Maximum allowed path length in meters (0 = disabled)
+  # Path length is computed as the sum of Euclidean distances between
+  # consecutive ground truth positions: sum(|p_i - p_{i-1}|)
+  max_path_length_m: 500.0
+
+  # Maximum allowed travel time in seconds (0 = disabled)
+  # Travel time is measured using simulation time from /clock topic
+  max_travel_time_sec: 300.0
+
+  # =============================================================================
+  # Goal and Safety Checks
+  # =============================================================================
+
+  # Require all vehicles to reach their goal within tolerance
+  # If true, mission fails if any vehicle doesn't reach its goal
+  require_goal_reached: true
+
+  # Maximum allowed collisions (-1 = disabled, 0 = no collisions allowed)
+  # Requires enable_collision_detection:=true on supervisor node
+  max_collisions: 0
+
+  # =============================================================================
+  # Trajectory Error Metrics (NEW)
+  # =============================================================================
+  # ATE (Absolute Trajectory Error) and RPE (Relative Pose Error) metrics
+  # for evaluating trajectory tracking accuracy.
+  #
+  # - ATE: Compares actual trajectory against reference (interpolated waypoints)
+  # - RPE: Measures drift/consistency over time windows
+  #
+  # Requires trajectory recording to be enabled (trajectory data stored in CSV)
+  trajectory_metrics:
+    enabled: false          # Master enable for trajectory metrics
+
+    # Storage mode: how trajectory data is stored
+    # - "memory": Store in bounded deque, write CSV on mission end (recommended)
+    # - "stream": Write each pose to CSV file as it arrives (for long missions)
+    storage_mode: "memory"
+
+    # Maximum poses to keep in memory (~3 min at 50Hz = 9000 poses)
+    # Only applies to memory mode. Older poses are discarded when limit reached.
+    max_history_length: 10000
+
+    # ATE: Absolute Trajectory Error
+    # Computes RMSE of positions against reference trajectory (interpolated waypoints)
+    ate:
+      enabled: true
+
+      # Maximum allowed ATE RMSE in meters (0 = no limit, informational only)
+      # FAIL if ATE RMSE exceeds this value
+      max_rmse_m: 0.5
+
+    # RPE: Relative Pose Error
+    # Measures drift/consistency by comparing relative transformations over time windows
+    rpe:
+      enabled: true
+
+      # Time window for RPE computation in seconds
+      # Computes relative pose change over this duration
+      window_sec: 1.0
+
+      # Maximum allowed translation RMSE in meters over window (0 = no limit)
+      max_translation_rmse_m: 0.1
+
+      # Maximum allowed rotation RMSE in degrees over window (0 = no limit)
+      max_rotation_rmse_deg: 5.0
+
+  # =============================================================================
+  # Per-Vehicle Overrides (Optional)
+  # =============================================================================
+  # Override global thresholds for specific vehicles.
+  # Useful for heterogeneous fleets with different capabilities.
+  #
+  # Example:
+  #   vehicle_overrides:
+  #     Copter1:
+  #       max_path_length_m: 250.0
+  #     Copter2:
+  #       max_path_length_m: 300.0
+  #       max_travel_time_sec: 180.0
+
+  vehicle_overrides: {}
+    # Uncomment and modify as needed:
+    # Drone_1:
+    #   max_path_length_m: 250.0

@@ -1,0 +1,434 @@
+# Monitoring Stack for AirSim Ecosystem
+# Separated from docker-compose-master.yml for modular deployment
+#
+# All config files (Prometheus rules, Grafana dashboards, Postgres init scripts)
+# are baked into custom images at build time. pull_policy: build means
+# `docker compose up` automatically builds images — no separate build step needed.
+#
+# Usage (run from this directory, or use -f with full path):
+#
+#   # Run monitoring with mock data (for dashboard testing)
+#   docker compose -f docker-compose-monitoring.yml --profile mock-testing up
+#
+#   # Run monitoring with real simulation
+#   docker compose -f docker-compose-master.yml -f docker-compose-monitoring.yml \
+#     --profile linux-integrated --profile monitoring up
+#
+#   # Run only minimal monitoring (prometheus, grafana, airsim-exporter)
+#   docker compose -f docker-compose-monitoring.yml --profile monitoring-minimal up
+#
+#   # Run full monitoring stack
+#   docker compose -f docker-compose-monitoring.yml --profile monitoring up
+#
+# Rebuilding after config changes:
+#
+#   # Rebuild a single service (e.g. after editing a Grafana dashboard JSON)
+#   docker compose -f docker-compose-monitoring.yml build grafana
+#   docker compose -f docker-compose-monitoring.yml up -d grafana
+#
+#   # Rebuild all custom images
+#   docker compose -f docker-compose-monitoring.yml build
+
+name: tevv-monitoring
+
+# =================================
+# NETWORKS
+# =================================
+networks:
+  # Named networks: auto-created as bridge when standalone, reused when combined with master
+  airsim-ecosystem:
+    name: airsim-ecosystem
+    driver: bridge
+  px4_network:
+    name: px4_network
+    driver: bridge
+  ros2-multi-node-network:
+    name: ros2-multi-node-network
+    driver: bridge
+
+  # Internal monitoring network (for standalone operation)
+  monitoring-internal:
+    name: monitoring-internal
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/16
+
+# =================================
+# SERVICES
+# =================================
+services:
+
+  # =================================
+  # MOCK DATA GENERATOR (for testing dashboards)
+  # =================================
+  mock-data-generator:
+    # build:
+    #   context: ../monitoring/mock-data-generator
+    #   dockerfile: Dockerfile
+    image: dhdevspace/auto_mns:mock-data-generator-latest
+    pull_policy: if_not_present
+    container_name: mock-data-generator
+    hostname: mock-data-generator
+    environment:
+      - NUM_DRONES=${MOCK_NUM_DRONES:-2}
+      - METRICS_PORT=9250
+      - UPDATE_INTERVAL=${MOCK_UPDATE_INTERVAL:-1.0}
+    ports:
+      - '9250:9250'
+    networks:
+      - monitoring-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:9250/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    profiles:
+      - mock-testing
+      - mock-data
+      - local-planner-mock-testing
+
+  # =================================
+  # EXPLORATION MOCK DATA GENERATOR
+  # =================================
+  exploration-mock-generator:
+    # build:
+    #   context: ../monitoring/mock-data-generator
+    #   dockerfile: Dockerfile
+    image: dhdevspace/auto_mns:exploration-mock-generator-latest
+    pull_policy: if_not_present
+    container_name: exploration-mock-generator
+    hostname: exploration-mock-generator
+    environment:
+      - NUM_DRONES=${EXPLORATION_NUM_DRONES:-2}
+      - METRICS_PORT=9251
+      - UPDATE_INTERVAL=${EXPLORATION_UPDATE_INTERVAL:-1.0}
+      - SEARCH_AREA_M2=${EXPLORATION_AREA_M2:-10000}
+    command: ["python", "/app/exploration_mock_metrics.py"]
+    ports:
+      - '9251:9251'
+    networks:
+      - monitoring-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:9251/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    profiles:
+      - exploration-mock
+
+  # =================================
+  # CORE MONITORING SERVICES
+  # =================================
+
+  prometheus:
+    # build:
+    #   context: ../monitoring
+    #   dockerfile: Dockerfile.prometheus
+    image: dhdevspace/auto_mns:prometheus-monitoring-latest
+    pull_policy: if_not_present
+    container_name: prometheus
+    volumes:
+      - prometheus_data:/var/lib/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.route-prefix=/'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.min-block-duration=2h'
+      - '--storage.tsdb.max-block-duration=2h'
+    restart: unless-stopped
+    ports:
+      - '9090:9090'
+    networks:
+      - monitoring-internal
+      # - airsim-ecosystem
+      # - px4_network
+      # - ros2-multi-node-network
+    profiles:
+      - monitoring
+      - monitoring-minimal
+      - mock-testing
+      - exploration-mock
+      - local-planner-mock-testing
+
+  grafana:
+    # build:
+    #   context: ../monitoring
+    #   dockerfile: Dockerfile.grafana
+    image: dhdevspace/auto_mns:grafana-monitoring-latest
+    pull_policy: if_not_present
+    container_name: grafana
+    user: "472"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-P@ssw0rd}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - '3000:3000'
+    networks:
+      - monitoring-internal
+      # - airsim-ecosystem
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - elasticsearch
+    profiles:
+      - monitoring
+      - monitoring-minimal
+      - mock-testing
+      - exploration-mock
+      - local-planner-mock-testing
+
+  # =================================
+  # SYSTEM METRICS
+  # =================================
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    privileged: true
+    ports:
+      - '8080:8080'
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - monitoring-internal
+      - airsim-ecosystem
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - '9100:9100'
+    networks:
+      - monitoring-internal
+      - airsim-ecosystem
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.5-3.4.1-ubuntu22.04
+    container_name: dcgm-exporter
+    ports:
+      - '9400:9400'
+    networks:
+      - monitoring-internal
+      - airsim-ecosystem
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    cap_add:
+      - SYS_ADMIN
+    profiles:
+      - monitoring
+
+  # =================================
+  # APPLICATION METRICS EXPORTERS
+  # =================================
+
+  ros2-exporter:
+    # build:
+    #   context: ${PROJECT_ROOT:-../..}
+    #   dockerfile: runtime/docker/monitoring/exporters/Dockerfile.exporters
+    image: dhdevspace/auto_mns:airsim-metrics-exporters-latest
+    pull_policy: if_not_present
+    container_name: ros2-metrics-exporter
+    environment:
+      - EXPORTER_TYPE=ros2
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    ports:
+      - '9200:9200'
+    networks:
+      - monitoring-internal
+      - ros2-multi-node-network
+      - airsim-ecosystem
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  airsim-exporter:
+    # build:
+    #   context: ${PROJECT_ROOT:-../..}
+    #   dockerfile: runtime/docker/monitoring/exporters/Dockerfile.exporters
+    image: dhdevspace/auto_mns:airsim-metrics-exporters-latest
+    pull_policy: if_not_present
+    container_name: airsim-api-exporter
+    environment:
+      - EXPORTER_TYPE=airsim
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-host.docker.internal}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - METRICS_PORT=9201
+      - POLL_INTERVAL=1.0
+    ports:
+      - '9201:9201'
+    networks:
+      - monitoring-internal
+      - airsim-ecosystem
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    profiles:
+      - monitoring
+      - monitoring-minimal
+
+  px4-exporter:
+    # build:
+    #   context: ${PROJECT_ROOT:-../..}
+    #   dockerfile: runtime/docker/monitoring/exporters/Dockerfile.exporters
+    image: dhdevspace/auto_mns:airsim-metrics-exporters-latest
+    pull_policy: if_not_present
+    container_name: px4-mavlink-exporter
+    environment:
+      - EXPORTER_TYPE=px4
+      - PX4_NUM_DRONES=${PX4_NUM_DRONES:-4}
+      - PX4_BASE_PORT=14550
+      - METRICS_PORT=9202
+    ports:
+      - '9202:9202'
+    networks:
+      - monitoring-internal
+      - px4_network
+      - airsim-ecosystem
+    restart: unless-stopped
+    profiles:
+      - monitoring
+      - integrated
+      - linux-integrated
+
+  # =================================
+  # DATABASE FOR TELEMETRY
+  # =================================
+
+  postgres-telemetry:
+    # build:
+    #   context: ./postgres
+    #   dockerfile: Dockerfile.postgres-telemetry
+    image: dhdevspace/auto_mns:postgres-telemetry-latest
+    pull_policy: if_not_present
+    container_name: postgres-telemetry
+    hostname: postgres-telemetry
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-drone_telemetry}
+      POSTGRES_USER: ${POSTGRES_USER:-airsim_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TIMESCALEDB_TELEMETRY: off
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_telemetry_data:/var/lib/postgresql/data
+    networks:
+      - monitoring-internal
+      - airsim-ecosystem
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    profiles:
+      - monitoring
+      - analysis
+
+  # =================================
+  # EXPERIMENT STORE
+  # =================================
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: elasticsearch
+    hostname: elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.name=tevv-experiment-store
+    ports:
+      - "${ELASTICSEARCH_HOST_PORT:-9210}:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - monitoring-internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    profiles:
+      - monitoring
+      - mock-testing
+
+  # =================================
+  # VISUALIZATION TOOLS
+  # =================================
+
+  ros-bridge-server:
+    image: dhdevspace/auto_mns:my-ros-humble-rosbridge-server-latest
+    container_name: my-ros-humble-rosbridge-server
+    ports:
+      - '9091:9090'
+    networks:
+      - monitoring-internal
+      - airsim-ecosystem
+    restart: unless-stopped
+    command: >
+      bash -c "
+      ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+      "
+    profiles:
+      - monitoring
+
+  lichtblick:
+    image: sid220/lichtblick:latest
+    container_name: lichtblick
+    ports:
+      - '8082:8080'
+    networks:
+      - monitoring-internal
+      - airsim-ecosystem
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+# =================================
+# VOLUMES
+# =================================
+volumes:
+  # Prometheus time-series database
+  prometheus_data:
+    driver: local
+
+  # Grafana data (dashboards, settings, etc.)
+  grafana_data:
+    driver: local
+
+  # PostgreSQL telemetry database
+  postgres_telemetry_data:
+    driver: local
+
+  # Elasticsearch experiment store
+  elasticsearch_data:
+    driver: local

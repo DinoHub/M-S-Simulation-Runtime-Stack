@@ -1,0 +1,34 @@
+/**:
+  ros__parameters:
+    vehicle: "Copter1"
+
+    goal_topic: "/goal"
+    metrics_start_topic: "/metrics/start"
+    metrics_stop_topic: "/metrics/stop"
+    status_topic: "/scenario/status"
+
+    control_odom_topic_suffix: "mavros/local_position/odom"
+    ground_truth_odom_topic_suffix: "ground_truth/odom"
+    mavros_state_topic_suffix: "mavros/state"
+    mavros_statustext_topic_suffix: "mavros/statustext/recv"
+
+    connection_timeout: 120.0
+    telemetry_timeout: 20.0
+    telemetry_freshness_sec: 1.0
+    goal_publish_period_sec: 0.2
+    status_publish_period_sec: 1.0
+    watchdog_period_sec: 0.2
+    waypoint_timeout: 120.0
+
+    goal_tolerance: 0.5
+    use_2d_goal_distance: true
+
+    autoload_mission_on_start: true
+    require_armed_before_start: true
+    require_airborne_before_start: false
+    airborne_min_height: 0.5
+    use_ground_truth_for_readiness: true
+
+    auto_start_when_ready: true
+    shutdown_on_terminal_state: true
+    terminal_state_grace_sec: 2.0

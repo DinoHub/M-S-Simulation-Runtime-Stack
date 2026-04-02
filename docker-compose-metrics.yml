@@ -1,0 +1,127 @@
+# Metrics Collection Services for AirSim Ecosystem
+# Separated from docker-compose-master.yml for modular deployment
+#
+# Config files (evaluation.yaml, mission.json) are baked into images at build
+# time. pull_policy: build means `docker compose up` automatically builds
+# images — no separate build step needed.
+#
+# Rebuilding after config changes:
+#   docker compose -f docker-compose-metrics.yml build metrics-collector
+#   docker compose -f docker-compose-metrics.yml up metrics-collector
+#
+# This file contains:
+# - metrics-collector: Unified benchmarking container (scenario controller + metrics + evaluation)
+# - mission-supervisor: Legacy observer-only design (backward compatibility)
+#
+# Usage Examples:
+#   # Run metrics collector standalone (requires ros2-x11-node with MAVROS running)
+#   docker-compose -f docker-compose-metrics.yml up metrics-collector
+#
+#   # Run with specific local planner for comparison benchmarks
+#   LOCAL_PLANNER=dwa docker-compose -f docker-compose-metrics.yml up metrics-collector
+#   LOCAL_PLANNER=teb docker-compose -f docker-compose-metrics.yml up metrics-collector
+#
+#   # Combine with main stack
+#   docker-compose -f docker-compose-master.yml -f docker-compose-metrics.yml \
+#     --profile linux-integrated up
+#
+#   # Run legacy mission supervisor
+#   docker-compose -f docker-compose-metrics.yml up mission-supervisor
+
+name: tevv-metrics
+
+# =================================
+# EXTERNAL NETWORKS
+# =================================
+# These networks are created by docker-compose-master.yml
+networks:
+  airsim-ecosystem:
+    external: true
+  ros2-multi-node-network:
+    external: true
+
+# =================================
+# SERVICES
+# =================================
+services:
+
+  # =================================
+  # METRICS COLLECTOR (Unified Benchmarking Container)
+  # =================================
+  # Combines scenario_controller.py + metrics_collector_node + evaluate.py
+  # Workflow: Connect MAVROS → Arm → Takeoff → Waypoints → Metrics → Evaluate
+
+  metrics-collector:
+    image: dhdevspace/auto_mns:metrics-collectorV2-release
+    pull_policy: if_not_present
+    container_name: metrics-collector
+    hostname: metrics-collector
+    network_mode: host
+    ipc: host
+
+    volumes:
+      - ${METRICS_OUTPUT_DIR:-./metrics_outputs}:/metrics/outputs:rw
+      - ${CONFIG_ROOT:?set CONFIG_ROOT}/metrics-collector/evaluation.yaml:/metrics/config/evaluation.yaml:ro
+      - ${CONFIG_ROOT:?set CONFIG_ROOT}/metrics-collector/mission.json:/metrics/mission/mission.json:ro
+      - ${CONFIG_ROOT:?set CONFIG_ROOT}/metrics-collector/scenario_controller.yaml:/metrics/config/scenario_controller.yaml:ro
+
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      FASTDDS_BUILTIN_TRANSPORTS: ${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}
+
+      RUN_ID: ${RUN_ID:-}
+      SCENARIO_ID: ${SCENARIO_ID:-airsim-condo}
+      LOCAL_PLANNER: ${LOCAL_PLANNER:-mighty}
+
+      VEHICLE: ${VEHICLE:-Copter1}
+      SCENARIO_CONTROLLER_CONFIG: /metrics/config/scenario_controller.yaml
+
+      MISSION_FILE: /metrics/mission/mission.json
+      OUTPUT_DIR: /metrics/outputs
+      EVALUATION_CONFIG: /metrics/config/evaluation.yaml
+
+      GOAL_TOPIC: ${GOAL_TOPIC:-/goal}
+      GOAL_TOLERANCE: ${GOAL_TOLERANCE:-0.5}
+      USE_2D_GOAL_DISTANCE: ${USE_2D_GOAL_DISTANCE:-true}
+
+      CONTROL_ODOM_TOPIC_SUFFIX: ${CONTROL_ODOM_TOPIC_SUFFIX:-mavros/local_position/odom}
+      GROUND_TRUTH_ODOM_TOPIC_SUFFIX: ${GROUND_TRUTH_ODOM_TOPIC_SUFFIX:-ground_truth/odom}
+
+      ENABLE_COLLISION_DETECTION: ${ENABLE_COLLISION_DETECTION:-true}
+
+      CONNECTION_TIMEOUT: ${CONNECTION_TIMEOUT:-120.0}
+      TELEMETRY_TIMEOUT: ${TELEMETRY_TIMEOUT:-20.0}
+      TELEMETRY_FRESHNESS_SEC: ${TELEMETRY_FRESHNESS_SEC:-1.0}
+      WAYPOINT_TIMEOUT: ${WAYPOINT_TIMEOUT:-120.0}
+      MISSION_TIMEOUT_SEC: ${MISSION_TIMEOUT_SEC:-600.0}
+
+      SHUTDOWN_ON_TERMINAL_STATE: ${SHUTDOWN_ON_TERMINAL_STATE:-true}
+      AIRBORNE_MIN_HEIGHT: ${AIRBORNE_MIN_HEIGHT:-0.5}
+      USE_GROUND_TRUTH_FOR_READINESS: ${USE_GROUND_TRUTH_FOR_READINESS:-true}
+
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-localhost}
+      ELASTICSEARCH_PORT: ${ELASTICSEARCH_PORT:-9210}
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    restart: "no"
+    profiles:
+      - metrics
+      - benchmark
+
+# =================================
+# VOLUMES
+# =================================
+volumes:
+  # Metrics Collector volumes (unified container)
+  metrics_collector_outputs:
+    driver: local
+
+  # Mission Supervisor volumes (legacy)
+  supervisor_outputs:
+    driver: local
