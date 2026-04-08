@@ -6,6 +6,51 @@ All main runtime configs live under `config/`.
 
 ---
 
+## Coordinate Frame Note
+
+Two important config files use different coordinate conventions:
+
+- `config/unreal-airsim/condo/settings.json` uses **AirSim-side NED coordinates**
+- `config/metrics-collector/mission.json` uses **ROS 2 ENU / map-frame coordinates**
+
+### Quick reference
+
+**NED**
+
+- `+X` = North
+- `+Y` = East
+- `+Z` = Down
+
+**ENU**
+
+- `+X` = East
+- `+Y` = North
+- `+Z` = Up
+
+### Example
+
+A waypoint in `mission.json` such as:
+
+```json
+{ "x": -20.0, "y": 0.0, "z": 1.3 }
+```
+
+is in **ENU**, meaning:
+
+- `x = -20.0` → 20 m West
+- `y = 0.0` → no North/South offset
+- `z = 1.3` → 1.3 m Up
+
+The equivalent NED position would be:
+
+- `x = 0.0`
+- `y = -20.0`
+- `z = -1.3`
+
+When changing spawn locations or mission waypoints, make sure you are editing them in the correct frame.
+
+---
+
 ## Config Layout
 
 ```text
@@ -75,6 +120,16 @@ Typical contents include:
 - optional `yaw_deg`
 
 Use this file when you want to change the route flown during evaluation.
+
+### Coordinate convention
+
+`mission.json` waypoint coordinates are defined in the **ROS 2 ENU / map frame**.
+
+This means:
+
+- `+X` = East
+- `+Y` = North
+- `+Z` = Up
 
 Most commonly edited fields:
 
@@ -149,6 +204,18 @@ Typical contents include:
 - sim clock / wind / time of day
 
 Use this file when you want to change the simulated vehicle setup or AirSim-side runtime behavior.
+
+### Coordinate convention
+
+`settings.json` uses the **AirSim-side NED runtime frame** for positions such as vehicle spawn coordinates.
+
+This means:
+
+- `+X` = North
+- `+Y` = East
+- `+Z` = Down
+
+So values here do **not** use the same coordinate convention as `mission.json`.
 
 Most commonly edited fields:
 
