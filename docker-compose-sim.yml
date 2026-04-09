@@ -6,7 +6,7 @@ services:
   # ============================================================================
   airsim-condo:
     image: ${AIRSIM_IMAGE:?set AIRSIM_IMAGE}
-    pull_policy: if_not_present
+    pull_policy: always
     container_name: airsim-condo
     hostname: airsim-condo
     restart: unless-stopped
@@ -57,7 +57,7 @@ services:
   # ============================================================================
   px4-drone-1:
     image: ${PX4_IMAGE:?set PX4_IMAGE}
-    pull_policy: if_not_present
+    pull_policy: always
     container_name: px4-drone-1
     hostname: px4-drone-1
     restart: "no"
@@ -110,7 +110,7 @@ services:
   # ============================================================================
   ros2-x11-node:
     image: ${ROS2_IMAGE:?set ROS2_IMAGE}
-    pull_policy: if_not_present
+    pull_policy: always
     container_name: ros2-x11-node
     hostname: ros2-x11-node
     restart: unless-stopped
@@ -187,7 +187,7 @@ services:
   # ============================================================================
   qgroundcontrol-x11:
     image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
-    pull_policy: if_not_present
+    pull_policy: always
     container_name: qgroundcontrol-x11
     hostname: qgc-x11
     restart: unless-stopped
