@@ -242,3 +242,42 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  # ============================================================================
+  # Pixel Streaming Signalling Server
+  # Bridges the UE5 PixelStreaming plugin (listening on :8888 inside
+  # airsim-condo) and browser viewers. Open http://localhost:${PS_HTTP_PORT}
+  # to view the sim scene as a WebRTC stream.
+  # ============================================================================
+  pixel-streaming-signalling:
+    image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.5}
+    pull_policy: if_not_present
+    container_name: pixel-streaming-signalling
+    hostname: pixel-streaming-signalling
+    restart: unless-stopped
+
+    depends_on:
+      airsim-condo:
+        condition: service_started
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    init: true
+
+    environment:
+      - PIXELSTREAMING_STREAMER_PORT=${PS_STREAMER_PORT:-8888}
+      - PIXELSTREAMING_HTTP_PORT=${PS_HTTP_PORT:-80}
+      - PIXELSTREAMING_PUBLIC_IP=${PS_PUBLIC_IP:-127.0.0.1}
+
+    command:
+      - --StreamerPort=${PS_STREAMER_PORT:-8888}
+      - --HttpPort=${PS_HTTP_PORT:-80}
+      - --PublicIp=${PS_PUBLIC_IP:-127.0.0.1}
+
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 ${PS_HTTP_PORT:-80} || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
