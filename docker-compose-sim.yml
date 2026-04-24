@@ -11,6 +11,10 @@ services:
     hostname: airsim-condo
     restart: unless-stopped
 
+    depends_on:
+      pixel-streaming-signalling:
+        condition: service_healthy
+
     user: "${UID:?set UID}:${GID:?set GID}"
     group_add:
       - video
@@ -22,6 +26,9 @@ services:
       - DISPLAY=${DISPLAY:?set DISPLAY}
       - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
       - XAUTHORITY=/tmp/.Xauthority
+      # UE5 PixelStreaming dials this signalling-server URL at startup.
+      # Host networking → 127.0.0.1 reaches the pixel-streaming-signalling container.
+      - PIXELSTREAMING_URL=${PS_URL:-ws://127.0.0.1:${PS_STREAMER_PORT:-8888}}
 
     network_mode: host
     networks: !reset []
@@ -256,9 +263,7 @@ services:
     hostname: pixel-streaming-signalling
     restart: unless-stopped
 
-    depends_on:
-      airsim-condo:
-        condition: service_started
+    # No depends_on — this service boots first so airsim-condo can dial it.
 
     network_mode: host
     networks: !reset []
