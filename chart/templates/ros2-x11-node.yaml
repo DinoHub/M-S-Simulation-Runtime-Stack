@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ros2-x11-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "simstack.labels" . | nindent 4 }}
+    component: ros2-x11-node
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "simstack.selectorLabels" . | nindent 6 }}
+      component: ros2-x11-node
+  template:
+    metadata:
+      labels:
+        {{- include "simstack.labels" . | nindent 8 }}
+        component: ros2-x11-node
+      annotations:
+        kubectl.kubernetes.io/default-container: ros2-x11-node
+    spec:
+      hostNetwork: true
+      hostIPC: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+
+      initContainers:
+      - name: wait-for-airsim
+        image: busybox:1.36
+        command: ['sh', '-c',
+          'until nc -z 127.0.0.1 41451; do echo "waiting for airsim..."; sleep 5; done']
+      - name: wait-for-px4
+        image: busybox:1.36
+        command: ['sh', '-c',
+          'until nc -z 127.0.0.1 5760; do echo "waiting for px4 mavlink..."; sleep 5; done']
+
+      containers:
+      - name: ros2-x11-node
+        image: {{ .Values.ros2.image.repository }}:{{ .Values.ros2.image.tag }}
+        imagePullPolicy: {{ .Values.ros2.image.pullPolicy }}
+        stdin: true
+        tty: true
+
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            echo "Waiting 10s for AirSim/PX4 to fully initialize..."
+            sleep 10
+            echo "Starting ROS2 node..."
+            chmod 1777 /tmp/iceoryx2 || true
+            exec /entrypoint_x11.sh
+
+        env:
+          - name: QT_X11_NO_MITSHM
+            value: "1"
+          - name: ROS_DOMAIN_ID
+            value: {{ .Values.ros2.env.rosDomainId | quote }}
+          - name: ROS_LOCALHOST_ONLY
+            value: {{ .Values.ros2.env.rosLocalhostOnly | quote }}
+          - name: AIRSIM_HOST_IP
+            value: {{ .Values.ros2.env.airsimHostIp | quote }}
+          - name: AIRSIM_HOST_PORT
+            value: {{ .Values.ros2.env.airsimHostPort | quote }}
+          - name: LAUNCH_MODE
+            value: {{ .Values.ros2.env.launchMode | quote }}
+          - name: ENABLE_COORDINATION
+            value: {{ .Values.ros2.env.enableCoordination | quote }}
+          - name: RPC_TIMEOUT
+            value: {{ .Values.ros2.env.rpcTimeout | quote }}
+          - name: LAUNCH_RVIZ
+            value: {{ .Values.ros2.env.launchRviz | quote }}
+          - name: DEBUG
+            value: {{ .Values.ros2.env.debug | quote }}
+          - name: AUTO_BUILD
+            value: {{ .Values.ros2.env.autoBuild | quote }}
+          - name: MAVROS_FCU_URL
+            value: {{ .Values.ros2.env.mavrosFcuUrl | quote }}
+          - name: MAVROS_NUM_DRONES
+            value: {{ .Values.ros2.env.mavrosNumDrones | quote }}
+          - name: MAVROS_USE_HOST_NETWORK
+            value: {{ .Values.ros2.env.mavrosUseHostNetwork | quote }}
+          - name: MAVROS_PX4_NETWORK_MODE
+            value: {{ .Values.ros2.env.mavrosPx4NetworkMode | quote }}
+          - name: AUTO_LAUNCH_ROS2
+            value: {{ .Values.ros2.env.autoLaunchRos2 | quote }}
+          - name: ENABLE_SUPERVISOR
+            value: {{ .Values.ros2.env.enableSupervisor | quote }}
+          - name: VEHICLES
+            value: {{ .Values.ros2.env.vehicles | quote }}
+          - name: ENABLE_MAVROS
+            value: {{ .Values.ros2.env.enableMavros | quote }}
+          - name: MAVROS_CONFIG
+            value: {{ .Values.ros2.env.mavrosConfig | quote }}
+          - name: ENABLE_LOCAL_OBS
+            value: {{ .Values.ros2.env.enableLocalObs | quote }}
+          - name: TEST_LOCAL_PLANNER
+            value: {{ .Values.ros2.env.testLocalPlanner | quote }}
+          - name: AUTO_START_ON_TAKEOFF
+            value: {{ .Values.ros2.env.autoStartOnTakeoff | quote }}
+          - name: AUTO_END_ON_LANDING
+            value: {{ .Values.ros2.env.autoEndOnLanding | quote }}
+
+        volumeMounts:
+          - name: dev-shm
+            mountPath: /dev/shm
+          - name: iceoryx2
+            mountPath: /tmp/iceoryx2
+
+      volumes:
+        - name: dev-shm
+          hostPath:
+            path: /dev/shm
+        - name: iceoryx2
+          hostPath:
+            path: /tmp/iceoryx2
+            type: DirectoryOrCreate

@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: px4-drone-1
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "simstack.labels" . | nindent 4 }}
+    component: px4-drone-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "simstack.selectorLabels" . | nindent 6 }}
+      component: px4-drone-1
+  template:
+    metadata:
+      labels:
+        {{- include "simstack.labels" . | nindent 8 }}
+        component: px4-drone-1
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+
+      initContainers:
+      - name: wait-for-airsim
+        image: busybox:1.36
+        command: ['sh', '-c',
+          'until nc -z 127.0.0.1 41451; do echo "waiting for airsim..."; sleep 5; done']
+
+      containers:
+      - name: px4-drone-1
+        image: {{ .Values.px4.image.repository }}:{{ .Values.px4.image.tag }}
+        imagePullPolicy: {{ .Values.px4.image.pullPolicy }}
+
+        command: ["bash", "-lc"]
+        args:
+          - |
+            echo "Using PX4_SIM_HOSTNAME: $PX4_SIM_HOSTNAME (host network mode)"
+            echo "Waiting for AirSim Condo to fully initialize..."
+            sleep 20
+            cd /px4_workspace/PX4-Autopilot
+            echo "Starting PX4 SITL for drone 1 (instance 0)..."
+            exec ./Scripts/run_airsim_sitl.sh 0
+
+        env:
+          - name: PX4_SIM_MODEL
+            value: {{ .Values.px4.env.simModel | quote }}
+          - name: PX4_SIMULATOR
+            value: {{ .Values.px4.env.simulator | quote }}
+          - name: PX4_HOME_LAT
+            value: {{ .Values.px4.env.homeLat | quote }}
+          - name: PX4_HOME_LON
+            value: {{ .Values.px4.env.homeLon | quote }}
+          - name: PX4_HOME_ALT
+            value: {{ .Values.px4.env.homeAlt | quote }}
+          - name: PX4_SYS_AUTOSTART
+            value: {{ .Values.px4.env.sysAutostart | quote }}
+          - name: PX4_INSTANCE
+            value: "0"
+          - name: MAV_0_BROADCAST
+            value: "1"
+          - name: MAV_1_BROADCAST
+            value: "1"
+          - name: MAV_2_BROADCAST
+            value: "1"
+          - name: SWARM_ID
+            value: {{ .Values.px4.env.swarmId | quote }}
+          - name: SWARM_SIZE
+            value: "1"
+          - name: PX4_SIM_HOSTNAME
+            value: {{ .Values.px4.env.simHostname | quote }}
+          - name: MAVLINK_TARGET
+            value: {{ .Values.px4.env.mavlinkTarget | quote }}
+          - name: MAVLINK_MODE
+            value: {{ .Values.px4.env.mavlinkMode | quote }}
+          - name: ROUTER_LOG_LEVEL
+            value: {{ .Values.px4.env.routerLogLevel | quote }}
+          - name: ROUTER_DEDUPE_PERIOD
+            value: {{ .Values.px4.env.routerDedupePeriod | quote }}
+          - name: HOST_NETWORK_MODE
+            value: "true"

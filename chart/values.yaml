@@ -1,0 +1,81 @@
+# All pods use hostNetwork + shared host paths, so they must land on the same node.
+# Label your target node first:
+#   kubectl label node <your-node> simstack-node=true
+nodeSelector:
+  simstack-node: "true"
+
+# ---------------------------------------------------------------------------
+# AirSim settings.json
+# Pass at install/upgrade time:
+#   --set-file airsim.settingsJson=./config/unreal-airsim/condo/settings.json
+# ---------------------------------------------------------------------------
+airsim:
+  settingsJson: ""
+
+  image:
+    repository: dhdevspace/auto_mns
+    tag: tevv-airsim-condo-latest-ceilingless
+    pullPolicy: IfNotPresent
+
+  env:
+    sdlVideoDriver: x11
+
+  gpu:
+    count: 1
+
+# ---------------------------------------------------------------------------
+# PX4 SITL
+# ---------------------------------------------------------------------------
+px4:
+  image:
+    repository: dhdevspace/auto_mns
+    tag: px4-airsim-px4
+    pullPolicy: IfNotPresent
+
+  env:
+    simModel: none_iris
+    simulator: none
+    homeLat: "42.764938"
+    homeLon: "-115.579201"
+    homeAlt: "1183"
+    sysAutostart: "10016"
+    swarmId: "1"
+    simHostname: "127.0.0.1"
+    mavlinkTarget: "127.0.0.1"
+    mavlinkMode: router
+    routerLogLevel: info
+    routerDedupePeriod: "500"
+
+# ---------------------------------------------------------------------------
+# ROS2 X11 node
+# ---------------------------------------------------------------------------
+ros2:
+  image:
+    repository: dhdevspace/auto_mns
+    tag: tevv-airstack-ros2-x11-node-release
+    pullPolicy: IfNotPresent
+
+  env:
+    rosDomainId: "0"
+    rosLocalhostOnly: "1"
+    airsimHostIp: "127.0.0.1"
+    airsimHostPort: "41451"
+    launchMode: multi
+    enableCoordination: "true"
+    rpcTimeout: "10.0"
+    launchRviz: "false"
+    debug: "false"
+    autoBuild: "false"
+    mavrosFcuUrl: "tcp://127.0.0.1:5760"
+    mavrosNumDrones: "1"
+    mavrosUseHostNetwork: "true"
+    mavrosPx4NetworkMode: localhost
+    autoLaunchRos2: "true"
+    enableSupervisor: "true"
+    vehicles: "['Copter1']"
+    enableMavros: "true"
+    mavrosConfig: mavros_px4.yaml
+    enableLocalObs: "true"
+    testLocalPlanner: "true"
+    autoStartOnTakeoff: "true"
+    autoEndOnLanding: "true"

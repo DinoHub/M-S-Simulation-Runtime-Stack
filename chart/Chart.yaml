@@ -1,0 +1,11 @@
+apiVersion: v2
+name: simstack-px4-condo
+description: SimStack simulation stack — AirSim Condo + PX4 SITL + ROS2 X11 node
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - airsim
+  - px4
+  - ros2
+  - simulation

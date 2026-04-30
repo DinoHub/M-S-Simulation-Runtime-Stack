@@ -1,0 +1,19 @@
+SimStack PX4 Condo deployed to namespace: {{ .Release.Namespace }}
+
+Check pod status:
+  kubectl get pods -n {{ .Release.Namespace }}
+
+Stream logs:
+  kubectl logs -l component=airsim-condo  -n {{ .Release.Namespace }} -f
+  kubectl logs -l component=px4-drone-1   -n {{ .Release.Namespace }} -f
+  kubectl logs -l component=ros2-x11-node -n {{ .Release.Namespace }} -f
+
+Shell into ros2-x11-node:
+  kubectl exec -it \
+    $(kubectl get pod -l component=ros2-x11-node -n {{ .Release.Namespace }} -o name) \
+    -n {{ .Release.Namespace }} -- bash
+
+To upgrade with new settings:
+  helm upgrade {{ .Release.Name }} ./chart \
+    --set-file airsim.settingsJson=./config/unreal-airsim/condo/settings.json \
+    -n {{ .Release.Namespace }}

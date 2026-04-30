@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airsim-condo
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "simstack.labels" . | nindent 4 }}
+    component: airsim-condo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "simstack.selectorLabels" . | nindent 6 }}
+      component: airsim-condo
+  template:
+    metadata:
+      labels:
+        {{- include "simstack.labels" . | nindent 8 }}
+        component: airsim-condo
+    spec:
+      hostNetwork: true
+      hostIPC: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        supplementalGroups: [44]
+
+      containers:
+      - name: airsim-condo
+        image: {{ .Values.airsim.image.repository }}:{{ .Values.airsim.image.tag }}
+        imagePullPolicy: {{ .Values.airsim.image.pullPolicy }}
+
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            echo "Waiting 3s before starting Condo..."
+            sleep 3
+            exec /usr/local/bin/airsim-entrypoint.sh /app/Condo/Condo.sh \
+              -windowed -ResX=640 -ResY=480 -RenderOffscreen
+
+        env:
+          - name: NVIDIA_DRIVER_CAPABILITIES
+            value: "all"
+          - name: SDL_VIDEODRIVER
+            value: {{ .Values.airsim.env.sdlVideoDriver | quote }}
+
+        resources:
+          limits:
+            nvidia.com/gpu: {{ .Values.airsim.gpu.count | quote }}
+
+        livenessProbe:
+          tcpSocket:
+            port: 41451
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 18
+
+        readinessProbe:
+          tcpSocket:
+            port: 41451
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 18
+
+        volumeMounts:
+          - name: dev-shm
+            mountPath: /dev/shm
+          - name: iceoryx2
+            mountPath: /tmp/iceoryx2
+          - name: airsim-settings
+            mountPath: /home/airsim_user/Documents/AirSim/settings.json
+            subPath: settings.json
+            readOnly: true
+          - name: airsim-settings
+            mountPath: /app/Condo/settings.json
+            subPath: settings.json
+            readOnly: true
+
+      volumes:
+        - name: dev-shm
+          hostPath:
+            path: /dev/shm
+        - name: iceoryx2
+          hostPath:
+            path: /tmp/iceoryx2
+            type: DirectoryOrCreate
+        - name: airsim-settings
+          configMap:
+            name: airsim-condo-settings
