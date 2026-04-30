@@ -1,0 +1,2 @@
+helm upgrade --install simstack ./chart --set-file airsim.settingsJson=./config/unreal-airsim/condo/settings.json --set ros2.env.vehicles="['Copter1']" --set ros2.env.launchRviz=true -n simstack --create-namespace   
+    # --set ros2.env.vehicles="['Copter1','Copter2']" \          
