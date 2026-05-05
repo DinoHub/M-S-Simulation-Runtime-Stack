@@ -10,8 +10,34 @@ if [ -f ".env" ]; then
   set +a
 fi
 
+SCENARIO="${1:-${SCENARIO:-}}"
+
+# If no scenario was explicitly passed, auto-detect the running one by
+# probing each compose/*/docker-compose.yml. Falls back to px4-condo.
+if [ -z "$SCENARIO" ]; then
+  for candidate in compose/*/docker-compose.yml; do
+    if docker compose --project-directory "$SCRIPT_DIR" -f "$candidate" ps -q 2>/dev/null | grep -q .; then
+      SCENARIO="$(basename "$(dirname "$candidate")")"
+      break
+    fi
+  done
+  SCENARIO="${SCENARIO:-px4-condo}"
+fi
+
+SCENARIO_FILE="compose/${SCENARIO}/docker-compose.yml"
+
+if [ ! -f "$SCENARIO_FILE" ]; then
+  echo "ERROR: Unknown scenario: $SCENARIO"
+  echo "Available scenarios:"
+  ls compose/ | sed 's/^/  /'
+  exit 1
+fi
+
 export UID
 export GID="$(id -g)"
+
+CONFIG_ROOT="${CONFIG_ROOT:-./config}"
+export CONFIG_ROOT="$(cd "$CONFIG_ROOT" && pwd)"
 
 stop_local_planner() {
   local mode="${LOCAL_PLANNER_MODE:-disabled}"
@@ -64,8 +90,8 @@ docker compose -f docker-compose-metrics.yml --profile metrics down --remove-orp
 
 stop_local_planner
 
-echo "Stopping simulation stack..."
-docker compose -f docker-compose-sim.yml down --remove-orphans || true
+echo "Stopping simulation stack ($SCENARIO)..."
+docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" down --remove-orphans || true
 
 echo "Stopping monitoring stack..."
 docker compose -f docker-compose-monitoring.yml --profile monitoring down --remove-orphans || true

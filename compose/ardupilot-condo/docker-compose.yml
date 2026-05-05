@@ -1,0 +1,306 @@
+# =============================================================================
+# ArduPilot + AirSim Condo + ROS2 — Standalone Simulation Stack
+# =============================================================================
+#
+# Self-contained: no extends, no build contexts, no bridge networks.
+# All services run on host networking (network_mode: host, ipc: host).
+#
+# Required environment variables (set in a .env file or export before running):
+#   CONFIG_ROOT   — absolute path to the config root containing:
+#                     ardupilot/config/
+#                     unreal-airsim/condo/settings.json
+#   UID / GID     — numeric user/group id for GPU-capable services
+#   DISPLAY       — X11 display (e.g. :1)
+#   XAUTHORITY    — path to Xauthority file (e.g. /run/user/1000/gdm/Xauthority)
+#
+# Optional image overrides:
+#   ARDUPILOT_IMAGE   (default: dhdevspace/auto_mns:tevv-ardupilot-sitl-latest)
+#   AIRSIM_IMAGE      (default: dhdevspace/auto_mns:tevv-airsim-condo-latest)
+#   ROS2_IMAGE        (default: dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-development)
+#
+# Usage:
+#   xhost +local:docker
+#   export UID=$(id -u) GID=$(id -g) DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY
+#   export CONFIG_ROOT=/path/to/config
+#   docker compose up
+#
+# Startup order:
+#   1. ardupilot-drone-0  — ArduPilot SITL (waits internally for AirSim API, up to 120 s)
+#   2. airsim-condo       — Unreal/AirSim Condo scene (depends_on: ardupilot-drone-0)
+#   3. ros2-x11-node      — ROS2 + MAVROS (depends_on: airsim-condo)
+# =============================================================================
+
+name: ardupilot-condo
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # ArduPilot SITL
+  # ---------------------------------------------------------------------------
+  ardupilot-drone-0:
+    image: ${ARDUPILOT_IMAGE:-dhdevspace/auto_mns:ardupilot-latest}
+    pull_policy: if_not_present
+    container_name: ardupilot-drone-0
+    hostname: ardupilot-drone-0
+    restart: "no"
+
+    network_mode: host
+
+    user: "0:0"
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+
+    environment:
+      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
+      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764938}
+      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579201}
+      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1183}
+      - INSTANCE_NUM=0
+
+    volumes:
+      - ardupilot_instance_0:/ardupilot_workspace/instances/instance_0
+      - ardupilot_logs_0:/ardupilot_data/logs
+      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+
+    command: ["0"]
+
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /ardupilot_workspace/ardupilot/build/sitl/bin/arducopter && pgrep -f arducopter"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 120s
+
+  # ---------------------------------------------------------------------------
+  # AirSim Condo — Unreal Engine simulator
+  # ---------------------------------------------------------------------------
+  airsim-condo:
+    image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:tevv-airsim-condo-latest-ceilingless}
+    pull_policy: if_not_present
+    container_name: airsim-condo
+    hostname: airsim-condo
+    restart: unless-stopped
+
+    depends_on:
+      ardupilot-drone-0:
+        condition: service_started
+
+    user: "${UID:-1000}:${GID:-1000}"
+    group_add:
+      - video
+    init: true
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - DISPLAY=${DISPLAY:-:1}
+      - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
+      - XAUTHORITY=/tmp/.Xauthority
+
+    network_mode: host
+    ipc: host
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-/run/user/1000/gdm/Xauthority}:/tmp/.Xauthority:ro
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      # settings.json mounted to both locations: Documents/AirSim (primary) and
+      # the executable directory (fallback), consistent with upstream behaviour.
+      - ${CONFIG_ROOT}/unreal-airsim/condo/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT}/unreal-airsim/condo/settings.json:/app/Condo/settings.json:ro
+
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting 3s for ArduPilot to initialize..."
+        sleep 3
+        exec /usr/local/bin/airsim-entrypoint.sh /app/Condo/Condo.sh -windowed -ResX=1920 -ResY=1080
+
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 41451 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+
+      
+
+  # ---------------------------------------------------------------------------
+  # ROS2 X11 Node — MAVROS + AirSim ROS2 bridge
+  # ---------------------------------------------------------------------------
+  ros2-x11-node:
+    image: ${ROS2_IMAGE:-dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-development}
+    pull_policy: if_not_present
+    container_name: ros2-x11-node
+    hostname: ros2-x11-node
+    restart: "no"
+
+    network_mode: host
+    ipc: host
+    init: true
+    stdin_open: true
+    tty: true
+
+    depends_on:
+      airsim-condo:
+        condition: service_started
+
+    user: "${UID:-1000}:${GID:-1000}"
+    group_add:
+      - video
+    cap_add:
+      - SYS_PTRACE
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, compute, utility, graphics]
+
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting 10s for AirSim to fully initialize..."
+        sleep 10
+        echo "Starting ROS2 node..."
+        exec /entrypoint_x11.sh
+
+    environment:
+      # X11 display forwarding
+      - DISPLAY=${DISPLAY:-:1}
+      - XAUTHORITY=/tmp/.Xauthority
+      - QT_X11_NO_MITSHM=1
+
+      # ROS2 / AirSim connectivity
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-localhost}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+
+      # Launch configuration
+      - LAUNCH_MODE=${LAUNCH_MODE:-multi}
+      - ENABLE_COORDINATION=${ENABLE_COORDINATION:-true}
+      - RPC_TIMEOUT=${RPC_TIMEOUT:-10.0}
+      - LAUNCH_RVIZ=${LAUNCH_RVIZ:-false}
+      - DEBUG=${DEBUG:-false}
+      - AUTO_BUILD=${AUTO_BUILD:-false}
+
+      # MAVROS — ArduPilot SITL uses UDP port 14550 on host network
+      - MAVROS_USE_HOST_NETWORK=${MAVROS_USE_HOST_NETWORK:-true}
+      - MAVROS_PX4_NETWORK_MODE=${MAVROS_PX4_NETWORK_MODE:-host}
+      - MAVROS_NUM_DRONES=${MAVROS_NUM_DRONES:-1}
+      - MAVROS_FCU_URL=${MAVROS_FCU_URL:-udp://:14550@127.0.0.1:14550}
+
+      # Auto-launch and supervisor
+      - ENABLE_SUPERVISOR=${ENABLE_SUPERVISOR:-true}
+      - AUTO_LAUNCH_ROS2=${AUTO_LAUNCH_ROS2:-true}
+
+      # Vehicle configuration (single ArduPilot drone)
+      - VEHICLES=${VEHICLES:-"['Copter1']"}
+      - ENABLE_MAVROS=${ENABLE_MAVROS:-true}
+      - ENABLE_LOCAL_OBS=${ENABLE_LOCAL_OBS:-true}
+      - TEST_LOCAL_PLANNER=${TEST_LOCAL_PLANNER:-true}
+      - AUTO_START_ON_TAKEOFF=${AUTO_START_ON_TAKEOFF:-true}
+      - AUTO_END_ON_LANDING=${AUTO_END_ON_LANDING:-true}
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-/run/user/1000/gdm/Xauthority}:/tmp/.Xauthority:ro
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - ros2_x11_build:/airsim_ros2_ws/build
+      - ros2_x11_install:/airsim_ros2_ws/install
+      - ros2_x11_logs:/airsim_ros2_ws/log
+
+# ---------------------------------------------------------------------------
+  # QGroundControl X11 — Ground control station with GPU acceleration
+  # ---------------------------------------------------------------------------
+  qgroundcontrol-x11:
+    image: dhdevspace/auto_mns:airsim-qgc-x11-latest
+    pull_policy: if_not_present
+    container_name: ardupilot-xfs-qgc
+    hostname: ardupilot-xfs-qgc
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:-1000}:${GID:-1000}"
+
+    environment:
+      # X11 forwarding
+      DISPLAY: ${DISPLAY:-:0}
+      XAUTHORITY: /tmp/.Xauthority
+      QT_X11_NO_MITSHM: 1
+
+      # QGroundControl
+      QGC_APPIMAGE: /opt/qgroundcontrol/QGroundControl.AppImage
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+
+      # GPU / rendering
+      LIBGL_ALWAYS_SOFTWARE: 0
+      MESA_GL_VERSION_OVERRIDE: "3.3"
+      QT_QPA_PLATFORM: "xcb:depth=24"
+
+    volumes:
+      # X11 socket + auth
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # QGC config (comm links template + persistent user config)
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/qgroundcontrol/qgc_config:/config-template:ro
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/qgroundcontrol/user_config:/home/qgc/.config/QGroundControl
+
+    devices:
+      - /dev/dri:/dev/dri
+
+    shm_size: "2gb"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, graphics, utility]
+
+    security_opt:
+      - seccomp:unconfined
+
+    group_add:
+      - video
+
+    init: true
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "xdpyinfo > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+
+# =============================================================================
+# Named volumes
+# =============================================================================
+volumes:
+  ardupilot_instance_0:
+    name: ardupilot_condo_instance_0
+  ardupilot_logs_0:
+    name: ardupilot_condo_logs_0
+  ros2_x11_build:
+    name: ros2_condo_build
+  ros2_x11_install:
+    name: ros2_condo_install
+  ros2_x11_logs:
+    name: ros2_condo_logs

@@ -18,13 +18,27 @@ This repo **does not contain the planner implementation**.
 ```bash
 cp .env.example .env
 ./setup.sh
-./launch.sh
+./launch.sh                                 # sim only, default scenario (px4-condo)
+./launch.sh ardupilot-condo                 # sim only, alternative scenario
+./launch.sh ardupilot-xfs --with-monitoring # sim + monitoring stack
+./launch.sh px4-xfs --all                   # sim + monitoring + metrics
 ```
 
-Stop everything:
+By default `./launch.sh` starts only the simulation. Add cross-cutting stacks with:
+
+| Flag | Effect |
+|------|--------|
+| `--with-monitoring` | Also start `docker-compose-monitoring.yml` (Prometheus, Grafana, Elasticsearch, exporters, foxglove-bridge, Lichtblick) |
+| `--with-metrics` | Also start `docker-compose-metrics.yml` (metrics-collector, mission-supervisor) |
+| `--all` | Shortcut for both |
+
+You can also persist these in `.env` via `START_MONITORING=true` / `START_METRICS=true`.
+
+Stop everything (always tears down monitoring + metrics + scenario):
 
 ```bash
 ./stop.sh
+./stop.sh ardupilot-condo
 ```
 
 View logs:
@@ -35,6 +49,24 @@ View logs:
 
 ---
 
+## Scenarios
+
+The runtime ships with four simulation scenarios under `compose/<scenario>/docker-compose.yml`. Pick one with the `SCENARIO` env var or by passing it as the first arg to `launch.sh` / `stop.sh`.
+
+| Scenario | Autopilot | Drones | Scene | Notes |
+|----------|-----------|--------|-------|-------|
+| `px4-condo` (default) | PX4 SITL | 1 | AirSim Condo | Includes pixel-streaming-signalling for browser viewing |
+| `px4-xfs` | PX4 SITL | 4 | AirSim XFS | Multi-drone swarm, MAVLink router, host networking |
+| `ardupilot-condo` | ArduPilot SITL | 1 | AirSim Condo | MAVROS over UDP `:14550` |
+| `ardupilot-xfs` | ArduPilot SITL | 4 | AirSim XFS | Multi-drone swarm, AirSim opt-in via `--profile containerized-airsim` |
+
+Cross-cutting stacks (run alongside any scenario):
+
+- `docker-compose-monitoring.yml` — Prometheus, Grafana, Elasticsearch, exporters, foxglove-bridge, Lichtblick
+- `docker-compose-metrics.yml` — metrics-collector + mission-supervisor
+
+---
+
 ## Before You Start
 
 After copying `.env.example` to `.env`, update the fields relevant to your setup.
@@ -42,22 +74,64 @@ After copying `.env.example` to `.env`, update the fields relevant to your setup
 ### Minimum fields to check
 
 ```env
+SCENARIO=px4-condo
 CONFIG_ROOT=./config
 LOCAL_PLANNER_MODE=disabled
 ```
 
 ### Image tags to check
 
-This stack uses prebuilt Docker images. Verify these tags point to the correct versions for your environment:
+This stack uses prebuilt Docker images. Each scenario's `compose/<scenario>/docker-compose.yml` ships a sensible default image for every service — you only need to override an image if your team has pinned a different version.
+
+The relevant env-var overrides:
 
 ```env
-ARDUPILOT_IMAGE=dhdevspace/auto_mns:ardupilot-latest
+ARDUPILOT_IMAGE=dhdevspace/auto_mns:ardupilot-slim
 AIRSIM_IMAGE=dhdevspace/auto_mns:tevv-airsim-condo-latest-ceilingless
-ROS2_IMAGE=dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-release
+ROS2_IMAGE=...                # see scenario notes below — leave unset to use scenario default
 PX4_IMAGE=dhdevspace/auto_mns:px4-airsim-px4
 ```
 
-Update them if your team is using a different sim image, ROS2 image, PX4 image, or pinned version.
+**Important: `ROS2_IMAGE` is global, but each scenario's compose default is different.**
+
+| Scenario | Compose default `ROS2_IMAGE` |
+|----------|-------------------------------|
+| `px4-condo` | (no default — `${ROS2_IMAGE:?set ROS2_IMAGE}`, you must set it) |
+| `px4-xfs` | `tevv-airstack-ros2-x11-node-development` |
+| `ardupilot-condo` | `tevv-airstack-ros2-x11-node-development` |
+| `ardupilot-xfs` | `tevv-airstack-ros2-multi-vehicle-gt` (multi-vehicle GT-registration fix baked in) |
+
+Setting `ROS2_IMAGE=…` in `.env` overrides **all** scenarios. Recommended: leave it unset and let each scenario use its own default. If you need `px4-condo`, set it just for that run via `ROS2_IMAGE=… ./launch.sh px4-condo`.
+
+### Running `ardupilot-xfs` (multi-vehicle ArduPilot)
+
+Multi-vehicle ArduPilot needs two specific images that differ from the older defaults — please confirm both before launching:
+
+```env
+# Required for multi-drone SERIAL port offsetting (5760 + 10*N).
+# The older :ardupilot-latest tag is missing the run_ardupilot_airsim.sh
+# offset script; all four drones will fight over port 5762 and three exit.
+ARDUPILOT_IMAGE=dhdevspace/auto_mns:ardupilot-slim
+
+# Required for multi-vehicle TF point-cloud registration.
+# The older :tevv-airstack-ros2-fix-mavros-sysid tag has
+# use_ground_truth_registration=False, which silently drops vehicles 2..N
+# because their map->odom dynamic TFs miss canTransform's 20ms window.
+# The :multi-vehicle-gt tag flips this to True (GT mode bypasses TF).
+ROS2_IMAGE=dhdevspace/auto_mns:tevv-airstack-ros2-multi-vehicle-gt
+```
+
+Quick sanity check for a colleague picking this up fresh:
+
+```bash
+./launch.sh ardupilot-xfs
+docker ps --filter name=ardupilot-xfs --format 'table {{.Names}}\t{{.Status}}'
+# Expect six containers: ardupilot-xfs-{drone-0..3, ros2, qgc}, all healthy.
+# If you only see drone-2 + ros2 + qgc, ARDUPILOT_IMAGE is wrong (slim missing).
+# If all six are up but only Copter1 publishes odom topics, ROS2_IMAGE is wrong.
+```
+
+The bare-host Unreal Editor is the default visual front-end for `ardupilot-xfs`; the containerized AirSim service is opt-in via `docker compose --profile containerized-airsim up`. See `compose/ardupilot-xfs/docker-compose.yml` header for full service notes.
 
 ### If the planner is started separately
 
@@ -333,29 +407,29 @@ Filter logs by text:
 
 ```text
 sim-runtime-stack/
+├── compose/
+│   ├── px4-condo/docker-compose.yml         # default — PX4 + AirSim Condo
+│   ├── px4-xfs/docker-compose.yml           # PX4 x4 + AirSim XFS swarm
+│   ├── ardupilot-condo/docker-compose.yml   # ArduPilot + AirSim Condo
+│   └── ardupilot-xfs/                       # ArduPilot x4 + AirSim XFS swarm
+│       ├── docker-compose.yml
+│       ├── patches/                          # mounted into ros2-x11-node
+│       └── scripts/                          # MAVROS demo scripts
 ├── config/
+│   ├── ardupilot/config/
+│   ├── experiments/
 │   ├── metrics-collector/
-│   │   ├── evaluation.yaml
-│   │   ├── evaluation.yaml.example
-│   │   ├── mission.json
-│   │   └── scenario_controller.yaml
-│   ├── qgroundcontrol/
-│   │   ├── qgc_config/
-│   │   └── user_config/
-│   └── unreal-airsim/
-│       └── condo/
-│           ├── settings.json
-│           └── settings-template.json
-├── docker-compose-sim.yml
+│   ├── qgroundcontrol/{qgc_config,user_config}/
+│   └── unreal-airsim/{condo,xfs}/
 ├── docker-compose-monitoring.yml
 ├── docker-compose-metrics.yml
-├── launch.sh
-├── stop.sh
+├── launch.sh                                # ./launch.sh [scenario]
+├── stop.sh                                  # ./stop.sh   [scenario]
 ├── logs.sh
 ├── setup.sh
 ├── .env.example
 ├── README.md
-└── CONFIG_README.md
+└── config/CONFIG_README.md
 ```
 
 ---

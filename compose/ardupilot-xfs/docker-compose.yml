@@ -1,0 +1,344 @@
+# =============================================================================
+# ArduPilot x4 + AirSim XFS + ROS2 + QGroundControl - 4-drone simulation stack
+# =============================================================================
+#
+# Self-contained: no extends, no build contexts, no bridge networks.
+# All services run on host networking (network_mode: host, ipc: host).
+#
+# Services included:
+#   - ardupilot-drone-{0,1,2,3} : ArduPilot SITL instances (one per drone)
+#   - airsim-xfs                : AirSim simulator with XFS Unreal scene (GPU)
+#   - ros2-x11-node             : ROS2 + 4x MAVROS with X11 forwarding
+#   - qgroundcontrol-x11        : QGroundControl with X11 forwarding + GPU
+#
+# Required environment variables (set in .env or export before running):
+#   CONFIG_ROOT   - absolute path to the config root containing:
+#                     ardupilot/config/
+#                     unreal-airsim/xfs/settings-ardupilot.json
+#                     qgroundcontrol/
+#   UID / GID     - numeric user/group id for GPU-capable services
+#   DISPLAY       - X11 display
+#   XAUTHORITY    - path to Xauthority file
+#
+# Per-instance ports (host network):
+#   Instance 0 -> Copter1 : ArduPilot<->AirSim TCP 9002 / UDP 9003 ; MAVLink TCP 5760
+#   Instance 1 -> Copter2 :                      9012 /     9013 ;             5770
+#   Instance 2 -> Copter3 :                      9022 /     9023 ;             5780
+#   Instance 3 -> Copter4 :                      9032 /     9033 ;             5790
+#
+# Usage:
+#   xhost +local:docker
+#   export UID=$(id -u) GID=$(id -g) DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY
+#   export CONFIG_ROOT=/path/to/configs
+#   docker compose up
+#
+# After bringup, fire the 4 MAVROS instances inside ardupilot-xfs-ros2:
+#   for i in 0 1 2 3; do
+#     ros2 launch airsim_ros_pkgs mavros_bringup.launch.py \
+#       vehicle:=Copter$((i+1)) \
+#       fcu_url:=tcp://127.0.0.1:$((5760 + 10*i)) \
+#       mavros_config:=mavros_ardupilot.yaml \
+#       enable_dds_cleanup:=$([ $i = 0 ] && echo true || echo false) \
+#       > /tmp/mavros_Copter$((i+1)).log 2>&1 &
+#   done
+# =============================================================================
+
+name: ardupilot-xfs
+
+x-ardupilot-base: &ardupilot-base
+  image: ${ARDUPILOT_IMAGE:-dhdevspace/auto_mns:ardupilot-slim}
+  pull_policy: if_not_present
+  restart: "no"
+  network_mode: host
+  user: "0:0"
+  cap_add:
+    - SYS_PTRACE
+  security_opt:
+    - seccomp:unconfined
+  healthcheck:
+    test: ["CMD-SHELL", "test -f /ardupilot_workspace/ardupilot/build/sitl/bin/arducopter && pgrep -f arducopter"]
+    interval: 5s
+    timeout: 5s
+    retries: 24
+    start_period: 120s
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # ArduPilot SITL x4
+  # ---------------------------------------------------------------------------
+  ardupilot-drone-0:
+    <<: *ardupilot-base
+    container_name: ardupilot-xfs-drone-0
+    hostname: ardupilot-xfs-drone-0
+    environment:
+      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
+      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
+      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
+      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
+      - INSTANCE_NUM=0
+    volumes:
+      - ./data/ardupilot-xfs/instance_0:/ardupilot_workspace/instances/instance_0
+      - ./data/ardupilot-xfs/logs_0:/ardupilot_data/logs
+      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+    command: ["0"]
+
+  ardupilot-drone-1:
+    <<: *ardupilot-base
+    container_name: ardupilot-xfs-drone-1
+    hostname: ardupilot-xfs-drone-1
+    environment:
+      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
+      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
+      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
+      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
+      - INSTANCE_NUM=1
+    volumes:
+      - ./data/ardupilot-xfs/instance_1:/ardupilot_workspace/instances/instance_1
+      - ./data/ardupilot-xfs/logs_1:/ardupilot_data/logs
+      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+    command: ["1"]
+
+  ardupilot-drone-2:
+    <<: *ardupilot-base
+    container_name: ardupilot-xfs-drone-2
+    hostname: ardupilot-xfs-drone-2
+    environment:
+      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
+      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
+      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
+      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
+      - INSTANCE_NUM=2
+    volumes:
+      - ./data/ardupilot-xfs/instance_2:/ardupilot_workspace/instances/instance_2
+      - ./data/ardupilot-xfs/logs_2:/ardupilot_data/logs
+      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+    command: ["2"]
+
+  ardupilot-drone-3:
+    <<: *ardupilot-base
+    container_name: ardupilot-xfs-drone-3
+    hostname: ardupilot-xfs-drone-3
+    environment:
+      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
+      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
+      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
+      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
+      - INSTANCE_NUM=3
+    volumes:
+      - ./data/ardupilot-xfs/instance_3:/ardupilot_workspace/instances/instance_3
+      - ./data/ardupilot-xfs/logs_3:/ardupilot_data/logs
+      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+    command: ["3"]
+
+  # ---------------------------------------------------------------------------
+  # AirSim XFS - Unreal Engine simulator with XFS scene
+  #
+  # OPT-IN ONLY (profile=containerized-airsim). The default workflow runs the
+  # bare-host Unreal Editor for visual fidelity — containerized UE5.5 with 4
+  # vehicles + lidars + scene captures hits a render-thread perf wall and
+  # freezes the viewport. If you actually want this container, run
+  #     docker compose --profile containerized-airsim up
+  # ---------------------------------------------------------------------------
+  airsim-xfs:
+    profiles: ["containerized-airsim"]
+    image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:xfs-pixel-streaming}
+    pull_policy: if_not_present
+    container_name: ardupilot-xfs-airsim
+    hostname: ardupilot-xfs-airsim
+    restart: unless-stopped
+
+    user: "${UID:-1000}:${GID:-1000}"
+    group_add:
+      - video
+    init: true
+    shm_size: "4gb"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - DISPLAY=${DISPLAY:-:0}
+      - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
+      - XAUTHORITY=/tmp/.Xauthority
+
+    network_mode: host
+    ipc: host
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/unreal-airsim/xfs/settings-ardupilot.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/unreal-airsim/xfs/settings-ardupilot.json:/app/Xfs/settings.json:ro
+
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting 5s for ArduPilot SITL fleet to initialize..."
+        sleep 5
+        exec /app/Xfs/Xfs.sh -windowed -ResX=1920 -ResY=1080
+
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 41451 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 90s
+
+  # ---------------------------------------------------------------------------
+  # ROS2 X11 Node - bringup + per-vehicle nodes (MAVROS launched separately, see top)
+  # ---------------------------------------------------------------------------
+  ros2-x11-node:
+    image: ${ROS2_IMAGE:-dhdevspace/auto_mns:tevv-airstack-ros2-multi-vehicle-gt}
+    pull_policy: if_not_present
+    container_name: ardupilot-xfs-ros2
+    hostname: ardupilot-xfs-ros2
+    restart: "no"
+
+    network_mode: host
+    ipc: host
+    init: true
+    stdin_open: true
+    tty: true
+
+    user: "${UID:-1000}:${GID:-1000}"
+    group_add:
+      - video
+    cap_add:
+      - SYS_PTRACE
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, compute, utility, graphics]
+
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting 12s for AirSim + 4 SITLs to fully initialize..."
+        sleep 12
+        echo "Starting ROS2 multi-drone stack..."
+        exec /entrypoint_x11.sh
+
+    environment:
+      # X11 display forwarding
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - QT_X11_NO_MITSHM=1
+
+      # ROS2 / AirSim connectivity
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-localhost}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+
+      # Launch configuration
+      - LAUNCH_MODE=${LAUNCH_MODE:-multi}
+      - ENABLE_COORDINATION=${ENABLE_COORDINATION:-true}
+      - RPC_TIMEOUT=${RPC_TIMEOUT:-10.0}
+      - LAUNCH_RVIZ=${LAUNCH_RVIZ:-false}
+      - DEBUG=${DEBUG:-false}
+      - AUTO_BUILD=${AUTO_BUILD:-false}
+
+      # MAVROS - bringup launches one only; we'll start 4 manually after bringup
+      - MAVROS_USE_HOST_NETWORK=${MAVROS_USE_HOST_NETWORK:-true}
+      - MAVROS_PX4_NETWORK_MODE=${MAVROS_PX4_NETWORK_MODE:-host}
+      - MAVROS_NUM_DRONES=${MAVROS_NUM_DRONES:-4}
+      - MAVROS_FCU_URL=${MAVROS_FCU_URL:-udp://:14551@127.0.0.1:14551}
+
+      # Auto-launch and supervisor
+      - ENABLE_SUPERVISOR=${ENABLE_SUPERVISOR:-true}
+      - AUTO_LAUNCH_ROS2=${AUTO_LAUNCH_ROS2:-true}
+
+      # 4-drone vehicle configuration
+      - VEHICLES=${VEHICLES:-"['Copter1','Copter2','Copter3','Copter4']"}
+      - ENABLE_MAVROS=${ENABLE_MAVROS:-false}
+      - ENABLE_LOCAL_OBS=${ENABLE_LOCAL_OBS:-true}
+      - TEST_LOCAL_PLANNER=${TEST_LOCAL_PLANNER:-true}
+      - AUTO_START_ON_TAKEOFF=${AUTO_START_ON_TAKEOFF:-true}
+      - AUTO_END_ON_LANDING=${AUTO_END_ON_LANDING:-true}
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      # MAVROS demo scripts (mavros_velocity_demo.{sh,py})
+      - ./compose/ardupilot-xfs/scripts:/scripts:ro
+
+  # ---------------------------------------------------------------------------
+  # QGroundControl X11 - Ground control station with GPU acceleration
+  # ---------------------------------------------------------------------------
+  qgroundcontrol-x11:
+    image: dhdevspace/auto_mns:airsim-qgc-x11-latest
+    pull_policy: if_not_present
+    container_name: ardupilot-xfs-qgc
+    hostname: ardupilot-xfs-qgc
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:-1000}:${GID:-1000}"
+
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      XAUTHORITY: /tmp/.Xauthority
+      QT_X11_NO_MITSHM: 1
+      QGC_APPIMAGE: /opt/qgroundcontrol/QGroundControl.AppImage
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+      LIBGL_ALWAYS_SOFTWARE: 0
+      MESA_GL_VERSION_OVERRIDE: "3.3"
+      QT_QPA_PLATFORM: "xcb:depth=24"
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/qgroundcontrol/qgc_config:/config-template:ro
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/qgroundcontrol/user_config:/home/qgc/.config/QGroundControl
+
+    devices:
+      - /dev/dri:/dev/dri
+
+    shm_size: "2gb"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, graphics, utility]
+
+    security_opt:
+      - seccomp:unconfined
+
+    group_add:
+      - video
+
+    init: true
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "xdpyinfo > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+# =============================================================================
+# No top-level named volumes — per-instance state lives in
+# ./data/ardupilot-xfs/{instance_N,logs_N} at the repo root (host bind mounts,
+# resolved via --project-directory in launch.sh).
+# Inspect with: ls <repo-root>/data/ardupilot-xfs/
+# Reset state: rm -rf <that dir>/* && docker compose up
+# =============================================================================

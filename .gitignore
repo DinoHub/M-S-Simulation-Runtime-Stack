@@ -1,7 +1,10 @@
 .env
+.env.bridge
+**/.env.bridge
 metrics_outputs/
 logs/
 tmp/
+data/
 *.log
 .DS_Store
 .vscode/
