@@ -1,0 +1,140 @@
+{
+  "SeeDocsAt": "https://github.com/Microsoft/AirSim/blob/main/docs/settings.md",
+  "SettingsVersion": 2.0,
+  "SimMode": "Multirotor",
+  "ClockType": "SteppableClock",
+  "OriginGeopoint": {
+    "Latitude": -35.363261,
+    "Longitude": 149.165230,
+    "Altitude": 583
+  },
+  "Vehicles": {
+    "ArduCopter1": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "AutoCreate": true,
+      "X": 0,
+      "Y": 0,
+      "Z": 0,
+      "Yaw": 0,
+      "Sensors": {
+        "Imu": {
+          "SensorType": 2,
+          "Enabled": true
+        },
+        "Gps": {
+          "SensorType": 3,
+          "Enabled": true
+        },
+        "Magnetometer": {
+          "SensorType": 4,
+          "Enabled": true
+        },
+        "Barometer": {
+          "SensorType": 1,
+          "Enabled": true
+        }
+      },
+      "Parameters": {
+        "LockStep": true,
+        "UseTcp": false,
+        "UseSerial": false,
+        "UdpIp": "192.168.65.3",
+        "UdpPort": 9003,
+        "ControlPort": 9002,
+        "ControlPortLocal": 9002,
+        "LocalHostIp": "0.0.0.0"
+      }
+    },
+    "ArduCopter2": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "AutoCreate": true,
+      "X": 5,
+      "Y": 0,
+      "Z": 0,
+      "Yaw": 0,
+      "Sensors": {
+        "Imu": {
+          "SensorType": 2,
+          "Enabled": true
+        },
+        "Gps": {
+          "SensorType": 3,
+          "Enabled": true
+        },
+        "Magnetometer": {
+          "SensorType": 4,
+          "Enabled": true
+        },
+        "Barometer": {
+          "SensorType": 1,
+          "Enabled": true
+        }
+      },
+      "Parameters": {
+        "LockStep": true,
+        "UseTcp": false,
+        "UseSerial": false,
+        "UdpIp": "192.168.65.3",
+        "UdpPort": 9013,
+        "ControlPort": 9012,
+        "ControlPortLocal": 9012,
+        "LocalHostIp": "0.0.0.0"
+      }
+    },
+    "ArduCopter3": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "AutoCreate": true,
+      "X": -5,
+      "Y": 0,
+      "Z": 0,
+      "Yaw": 0,
+      "Sensors": {
+        "Imu": {
+          "SensorType": 2,
+          "Enabled": true
+        },
+        "Gps": {
+          "SensorType": 3,
+          "Enabled": true
+        },
+        "Magnetometer": {
+          "SensorType": 4,
+          "Enabled": true
+        },
+        "Barometer": {
+          "SensorType": 1,
+          "Enabled": true
+        }
+      },
+      "Parameters": {
+        "LockStep": true,
+        "UseTcp": false,
+        "UseSerial": false,
+        "UdpIp": "192.168.65.3",
+        "UdpPort": 9023,
+        "ControlPort": 9022,
+        "ControlPortLocal": 9022,
+        "LocalHostIp": "0.0.0.0"
+      }
+    }
+  },
+  "CameraDefaults": {
+    "CaptureSettings": [
+      {
+        "ImageType": 0,
+        "Width": 1280,
+        "Height": 720,
+        "FOV_Degrees": 90,
+        "AutoExposureSpeed": 100,
+        "MotionBlurAmount": 0
+      }
+    ]
+  },
+  "Recording": {
+    "RecordOnMove": false,
+    "RecordInterval": 0.05
+  }
+}

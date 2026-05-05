@@ -1,0 +1,131 @@
+{
+  "SeeDocsAt": "https://cosys-lab.github.io/settings/",
+  "SettingsVersion": 2.0,
+  "SimMode": "Multirotor",
+  "ClockSpeed": 1,
+  "LocalHostIp": "0.0.0.0",
+  "ApiServerPort": 41451,
+  "RecordUIVisible": false,
+  "MoveWorldOrigin": true,
+  "InitialInstanceSegmentation": false,
+  "LogMessagesVisible": true,
+  "ShowLosDebugLines": false,
+  "ViewMode": "FlyWithMe",
+  "RpcEnabled": true,
+  "EngineSound": false,
+  "Wind": { "X": 0, "Y": 0, "Z": 0 },
+  "OriginGeopoint": {
+    "Latitude": 42.764970,
+    "Longitude": -115.579139,
+    "Altitude": 1130
+  },
+  "TimeOfDay": {
+    "Enabled": false,
+    "StartDateTime": "",
+    "CelestialClockSpeed": 1,
+    "StartDateTimeDst": false,
+    "UpdateIntervalSecs": 60
+  },
+  "Vehicles": {
+    "Copter1": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "AutoCreate": true,
+      "EnableCollisions": true,
+      "AllowAPIAlways": true,
+      "X": 0, "Y": 0, "Z": -1, "Yaw": 0,
+      "UseSerial": false,
+      "LocalHostIp": "127.0.0.1",
+      "UdpIp": "127.0.0.1",
+      "UdpPort": 9003,
+      "ControlPort": 9002,
+      "LockStep": false,
+      "Sensors": {
+        "Barometer":   { "SensorType": 1, "Enabled": true, "PressureFactorSigma": 0.0001825 },
+        "Imu":         { "SensorType": 2, "Enabled": true },
+        "Gps":         { "SensorType": 3, "Enabled": true,
+                         "EphTimeConstant": 0.3, "EpvTimeConstant": 0.3,
+                         "EphInitial": 2.0, "EpvInitial": 3.0,
+                         "EphFinal": 0.1, "EpvFinal": 0.1,
+                         "EphMin3d": 3.0, "EphMin2d": 4.0,
+                         "UpdateLatency": 0.1, "UpdateFrequency": 50, "StartupDelay": 0 },
+        "Magnetometer":{ "SensorType": 4, "Enabled": true },
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "Roll": 0, "Pitch": 0, "Yaw": 0,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180,
+                         "DrawDebugPoints": false }
+      },
+      "Cameras": {
+        
+      }
+    },
+
+    "Copter2": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "AutoCreate": true, "EnableCollisions": true, "AllowAPIAlways": true,
+      "X": 8, "Y": 0, "Z": -1, "Yaw": 0,
+      "UseSerial": false, "LocalHostIp": "127.0.0.1", "UdpIp": "127.0.0.1",
+      "UdpPort": 9013, "ControlPort": 9012, "LockStep": false,
+      "Sensors": {
+        "Barometer":   { "SensorType": 1, "Enabled": true, "PressureFactorSigma": 0.0001825 },
+        "Imu":         { "SensorType": 2, "Enabled": true },
+        "Gps":         { "SensorType": 3, "Enabled": true, "UpdateFrequency": 50 },
+        "Magnetometer":{ "SensorType": 4, "Enabled": true },
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180 }
+      }
+    },
+
+    "Copter3": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "AutoCreate": true, "EnableCollisions": true, "AllowAPIAlways": true,
+      "X": 0, "Y": 8, "Z": -1, "Yaw": 0,
+      "UseSerial": false, "LocalHostIp": "127.0.0.1", "UdpIp": "127.0.0.1",
+      "UdpPort": 9023, "ControlPort": 9022, "LockStep": false,
+      "Sensors": {
+        "Barometer":   { "SensorType": 1, "Enabled": true, "PressureFactorSigma": 0.0001825 },
+        "Imu":         { "SensorType": 2, "Enabled": true },
+        "Gps":         { "SensorType": 3, "Enabled": true, "UpdateFrequency": 50 },
+        "Magnetometer":{ "SensorType": 4, "Enabled": true },
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180 }
+      }
+    },
+
+    "Copter4": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "AutoCreate": true, "EnableCollisions": true, "AllowAPIAlways": true,
+      "X": 8, "Y": 8, "Z": -1, "Yaw": 0,
+      "UseSerial": false, "LocalHostIp": "127.0.0.1", "UdpIp": "127.0.0.1",
+      "UdpPort": 9033, "ControlPort": 9032, "LockStep": false,
+      "Sensors": {
+        "Barometer":   { "SensorType": 1, "Enabled": true, "PressureFactorSigma": 0.0001825 },
+        "Imu":         { "SensorType": 2, "Enabled": true },
+        "Gps":         { "SensorType": 3, "Enabled": true, "UpdateFrequency": 50 },
+        "Magnetometer":{ "SensorType": 4, "Enabled": true },
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180 }
+      }
+    }
+  },
+  "Recording": { "RecordOnMove": false, "RecordInterval": 0.05 }
+}

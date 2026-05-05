@@ -10,7 +10,15 @@ All main runtime configs live under `config/`.
 
 ```text
 config/
+├── ardupilot/
+│   └── config/                          # ArduPilot params (used by ardupilot-* scenarios)
+│       ├── default_params.parm
+│       ├── settings-ardupilot-multi.json
+│       └── settings-ardupilot-single.json
+├── experiments/
+│   └── mission.json                     # Mission template
 ├── metrics-collector/
+│   ├── default_metrics.yaml
 │   ├── evaluation.yaml
 │   ├── evaluation.yaml.example
 │   ├── mission.json
@@ -19,10 +27,20 @@ config/
 │   ├── qgc_config/
 │   └── user_config/
 └── unreal-airsim/
-    └── condo/
+    ├── settings-template.json
+    ├── condo/
+    │   └── settings.json                # PX4 + AirSim Condo
+    └── xfs/
         ├── settings.json
-        └── settings-template.json
+        ├── settings-ardupilot.json      # ArduPilot + XFS
+        ├── settings-ardupilot-bridge.json
+        └── settings-ardupilot-bridge-fisheye.json
 ```
+
+The `ardupilot/`, `experiments/`, and `unreal-airsim/xfs/` directories were
+migrated from TEVV-Metrics so this repo can drive ArduPilot and XFS scenarios
+self-sufficiently. `metrics-collector/` and `unreal-airsim/condo/` were already
+present.
 
 ---
 
