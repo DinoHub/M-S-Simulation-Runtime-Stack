@@ -263,10 +263,59 @@ services:
       # 4-drone vehicle configuration
       - VEHICLES=${VEHICLES:-"['Copter1','Copter2','Copter3','Copter4']"}
       - ENABLE_MAVROS=${ENABLE_MAVROS:-false}
-      - ENABLE_LOCAL_OBS=${ENABLE_LOCAL_OBS:-true}
       - TEST_LOCAL_PLANNER=${TEST_LOCAL_PLANNER:-true}
       - AUTO_START_ON_TAKEOFF=${AUTO_START_ON_TAKEOFF:-true}
       - AUTO_END_ON_LANDING=${AUTO_END_ON_LANDING:-true}
+
+      # ----------------------------------------------------------------------
+      # Autonomy / point-cloud registration knobs
+      # ----------------------------------------------------------------------
+      # These map to ros2 launch args inside /entrypoint_x11.sh, which calls
+      # rpc_dynamic_vehicles.launch.py. Tune via .env (or `VAR=... ./launch.sh
+      # ardupilot-xfs`) before bringup; mid-run changes need a container restart.
+      #
+      # Set ENABLE_LOCAL_OBS=true to spin up one pointcloud_registration_node
+      # per vehicle that accumulates LidarSensor1/points into
+      # /<Copter>/registered_point_cloud (in the `target_frame`, default `map`).
+      # Disable to skip registration entirely (saves CPU when local planner is
+      # off or when an external mapper is consuming raw lidar).
+      - ENABLE_LOCAL_OBS=${ENABLE_LOCAL_OBS:-true}
+
+      # Rolling buffer length per vehicle, seconds. Longer = denser local map
+      # but more CPU/memory; shorter = leaner but more thrashing on fast moves.
+      # Tune higher (e.g. 60.0) for slow exploration, lower (e.g. 10.0) for
+      # aggressive flight where stale points hurt more than they help.
+      - LOCAL_OBS_BUFFER_SEC=${LOCAL_OBS_BUFFER_SEC:-30.0}
+
+      # Who publishes the map->odom TF chain. "sim" (default) lets our
+      # localization nodes do it; set to "external" if you have your own
+      # VIO/EKF publishing map->odom (then we won't fight you over the topic).
+      - LOCALIZATION_SOURCE=${LOCALIZATION_SOURCE:-sim}
+
+      # Toggle the REP-105 localization stack. Default true is what most
+      # autonomy stacks expect; set false only if you're testing without any
+      # localization (rare).
+      - ENABLE_LOCALIZATION=${ENABLE_LOCALIZATION:-true}
+
+      # Use simulation time from /clock — required for FlightBench-style
+      # benchmarking and any deterministic replay. Leave true unless you
+      # explicitly want wall-clock.
+      - USE_SIM_TIME=${USE_SIM_TIME:-true}
+
+      # Static (pre-built) point cloud publishing — disable if you only want
+      # the live registration output and not the static scene PCD.
+      - ENABLE_STATIC_PCD=${ENABLE_STATIC_PCD:-true}
+
+      # NOTE: the following launch args are set inside the launch file but
+      # the image's /entrypoint_x11.sh does NOT pass env vars through for
+      # them yet. To tune at runtime they need an upstream entrypoint change
+      # (mirroring the LOCAL_OBS_BUFFER_SEC pattern), or you can edit the
+      # launch file in the image:
+      #   - voxel_leaf_size       (downsampling, default 0.5m)
+      #   - local_obs_voxel_size  (per-vehicle voxel, default 0.5m)
+      #   - local_obs_publish_rate (default 10.0 Hz)
+      #   - target_frame          (default 'map')
+      #   - lidar_topic_suffix    (default 'LidarSensor1/points')
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
