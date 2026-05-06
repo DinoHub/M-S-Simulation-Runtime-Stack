@@ -2,12 +2,18 @@
 # ArduPilot x4 + AirSim XFS + ROS2 + QGroundControl - 4-drone simulation stack
 # =============================================================================
 #
-# Self-contained: no extends, no build contexts, no bridge networks.
-# All services run on host networking (network_mode: host, ipc: host).
+# Self-contained: no extends, no build contexts.
+# Most services run on host networking (network_mode: host, ipc: host),
+# except sim-netns and sim-router which carry the inter-drone Zenoh ^/shared
+# bridge on the externally-owned `agent_external` network. ros2-x11-node
+# shares sim-netns's netns (network_mode: service:sim-netns) so DDS can use
+# the same loopback as the Zenoh bridge (ros_localhost_only=1).
 #
 # Services included:
 #   - ardupilot-drone-{0,1,2,3} : ArduPilot SITL instances (one per drone)
 #   - airsim-xfs                : AirSim simulator with XFS Unreal scene (GPU)
+#   - sim-netns                 : netns + agent_external alias holder
+#   - sim-router                : zenoh-bridge-ros2dds, joins autonomy mesh
 #   - ros2-x11-node             : ROS2 + 4x MAVROS with X11 forwarding
 #   - qgroundcontrol-x11        : QGroundControl with X11 forwarding + GPU
 #
@@ -431,6 +437,16 @@ services:
       LIBGL_ALWAYS_SOFTWARE: 0
       MESA_GL_VERSION_OVERRIDE: "3.3"
       QT_QPA_PLATFORM: "xcb:depth=24"
+
+      # ---- Qt 6 RHI: pin to OpenGL ----
+      # GL plumbing inside the container is correct (NVIDIA renderer reports),
+      # but QGC's QML scene graph paints black because Qt 6's RHI defaults
+      # auto-pick (Vulkan first), and Vulkan isn't plumbed through here.
+      # Pinning to opengl + the basic (non-threaded) render loop fixes the
+      # "Object or context destroyed during incubation" QML errors and lets
+      # the map view paint properly.
+      QSG_RHI_BACKEND: opengl
+      QSG_RENDER_LOOP: basic
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
