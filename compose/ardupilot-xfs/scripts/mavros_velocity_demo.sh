@@ -8,9 +8,14 @@
 #   docker exec -it ardupilot-xfs-ros2 bash -lc 'bash /scripts/mavros_velocity_demo.sh'
 # (Or mount this dir into the ros2 container.)
 
-set -euo pipefail
+set -eo pipefail
+# ROS 2's setup scripts read several env vars that may be unset on first source
+# (AMENT_TRACE_SETUP_FILES, AMENT_PYTHON_EXECUTABLE, COLCON_*). Drop -u while
+# sourcing, then re-enable it for the actual script logic.
+set +u
 source /opt/ros/humble/setup.bash
 source /airsim_ros2_ws/install/setup.bash
+set -u
 
 VEHICLES=(Copter1 Copter2 Copter3 Copter4)
 
