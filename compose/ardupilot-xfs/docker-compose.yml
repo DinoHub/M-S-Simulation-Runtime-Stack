@@ -436,17 +436,21 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       LIBGL_ALWAYS_SOFTWARE: 0
       MESA_GL_VERSION_OVERRIDE: "3.3"
-      QT_QPA_PLATFORM: "xcb:depth=24"
+      # Plain xcb — `xcb:depth=24` was over-constraining the X11 visual on
+      # NVIDIA's 32-bit-default colour depth and contributed to the black
+      # window. Let Qt pick the depth that matches the host server.
+      QT_QPA_PLATFORM: xcb
 
-      # ---- Qt 6 RHI: pin to OpenGL ----
-      # GL plumbing inside the container is correct (NVIDIA renderer reports),
-      # but QGC's QML scene graph paints black because Qt 6's RHI defaults
-      # auto-pick (Vulkan first), and Vulkan isn't plumbed through here.
-      # Pinning to opengl + the basic (non-threaded) render loop fixes the
-      # "Object or context destroyed during incubation" QML errors and lets
-      # the map view paint properly.
-      QSG_RHI_BACKEND: opengl
+      # ---- QGC is Qt 5; force the Quick Controls software backend ----
+      # GL inside the container is correct (NVIDIA reports), but the AppImage
+      # ships its own libGL/Qt5 stack that fails to bind the GL context cleanly
+      # against host NVIDIA — window paints solid black even though glxinfo
+      # passes. Software QML proves the diagnosis (UI renders, slower frame
+      # rate). Switch to the GL backend later if/when we rebuild the AppImage
+      # against a matching host driver.
+      QT_QUICK_BACKEND: software
       QSG_RENDER_LOOP: basic
+      QSG_INFO: 1
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
