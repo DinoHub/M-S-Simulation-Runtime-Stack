@@ -194,6 +194,64 @@ services:
       start_period: 90s
 
   # ---------------------------------------------------------------------------
+  # sim-netns — tiny container whose only job is to own a stable network
+  # namespace shared by sim-router and ros2-x11-node. Both real services use
+  # `network_mode: service:sim-netns`. Restarting sim-router (or
+  # ros2-x11-node) does NOT destroy the netns or the docker network
+  # attachments — only restarting sim-netns would, and it doesn't need to.
+  #
+  # All cross-host wiring (network attachments, network aliases) lives here.
+  # `extra_hosts` is also redeclared on each consumer because
+  # `network_mode: service:X` shares the netns but NOT /etc/hosts.
+  # ---------------------------------------------------------------------------
+  sim-netns:
+    image: alpine:3.20
+    pull_policy: if_not_present
+    container_name: ardupilot-xfs-sim-netns
+    hostname: sim-netns
+    init: true
+    restart: unless-stopped
+    command: ["sleep", "infinity"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      agent_external:
+        aliases:
+          - sim-router       # how drones reach us via DNS on agent_external
+      sim_internal: {}
+
+  # ---------------------------------------------------------------------------
+  # sim-router — joins the autonomy team's inter-drone mesh on agent_external
+  # via sim-netns and bridges ^/shared(/.*)? ROS2 topics. Lives in
+  # sim-netns's netns; ros2-x11-node lives in the same netns so DDS is on
+  # shared loopback (ros_localhost_only=true on both sides).
+  #
+  # No healthcheck: the eclipse/zenoh-bridge-ros2dds image is minimal (no
+  # ss / nc / curl). `network_mode: service:sim-netns` requires sim-netns's
+  # netns to be live; docker handles ordering via `depends_on`.
+  # ---------------------------------------------------------------------------
+  sim-router:
+    image: ${ZENOH_BRIDGE_IMAGE:-eclipse/zenoh-bridge-ros2dds:1.4.0}
+    pull_policy: if_not_present
+    container_name: ardupilot-xfs-sim-router
+    init: true
+    restart: unless-stopped
+    network_mode: "service:sim-netns"
+    depends_on:
+      - sim-netns
+    environment:
+      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
+      - ROS_LOCALHOST_ONLY=1
+      - ROS_DOMAIN_ID=${SIM_ROS_DOMAIN_ID:-0}
+      # Match ros2-x11-node's distro so the ros2dds plugin parses
+      # ros_discovery_info correctly. Without this it warns and falls back
+      # to assuming 'iron' (see eclipse-zenoh/zenoh-plugin-ros2dds#21).
+      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
+    command: ["-c", "/etc/zenoh/sim_router.json5"]
+    volumes:
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/sim_router.json5:/etc/zenoh/sim_router.json5:ro
+
+  # ---------------------------------------------------------------------------
   # ROS2 X11 Node - bringup + per-vehicle nodes (MAVROS launched separately, see top)
   # ---------------------------------------------------------------------------
   ros2-x11-node:
@@ -345,6 +403,11 @@ services:
       QT_X11_NO_MITSHM: 1
       QGC_APPIMAGE: /opt/qgroundcontrol/QGroundControl.AppImage
       APPIMAGE_EXTRACT_AND_RUN: "1"
+      # Expose full NVIDIA capability set to the container — without this the
+      # libGL inside the AppImage falls back to Mesa/llvmpipe and the QGC
+      # window renders black on NVIDIA hosts (xdpyinfo passes, GL doesn't).
+      NVIDIA_DRIVER_CAPABILITIES: all
+      NVIDIA_VISIBLE_DEVICES: all
       LIBGL_ALWAYS_SOFTWARE: 0
       MESA_GL_VERSION_OVERRIDE: "3.3"
       QT_QPA_PLATFORM: "xcb:depth=24"
@@ -366,7 +429,10 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu, graphics, utility]
+              # 'display' is required for the AppImage's Qt+OpenGL surface to
+              # bind to the host X11 + NVIDIA driver pair. Missing it produces
+              # the black-window symptom even though xdpyinfo (X11) is healthy.
+              capabilities: [gpu, graphics, utility, display]
 
     security_opt:
       - seccomp:unconfined
