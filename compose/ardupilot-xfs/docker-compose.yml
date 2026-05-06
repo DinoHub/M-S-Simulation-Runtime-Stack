@@ -261,7 +261,18 @@ services:
     hostname: ardupilot-xfs-ros2
     restart: "no"
 
-    network_mode: host
+    network_mode: "service:sim-netns"
+    depends_on:
+      - sim-netns
+      - sim-router
+    # Belt-and-suspenders: `network_mode: service:sim-netns` does inherit
+    # /etc/hosts from sim-netns (verified — Docker copies the file at
+    # container start), so the host.docker.internal mapping below is
+    # redundant in practice. Re-declared here to document the dependency
+    # (AIRSIM_HOST_IP / MAVROS_FCU_URL below resolve this name) and to be
+    # robust against future Docker behavior changes.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ipc: host
     init: true
     stdin_open: true
@@ -290,14 +301,23 @@ services:
         exec /entrypoint_x11.sh
 
     environment:
+      # DDS locality: pair with ros_localhost_only=true in sim_router.json5
+      # so application DDS stays on the shared loopback in sim-netns's netns.
+      # Without this, ROS2 nodes here may try to discover across all the
+      # interfaces present in the shared netns (incl. agent_external).
+      - ROS_LOCALHOST_ONLY=1
+      - ROS_DOMAIN_ID=${SIM_ROS_DOMAIN_ID:-0}
+
       # X11 display forwarding
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
       - QT_X11_NO_MITSHM=1
 
       # ROS2 / AirSim connectivity
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-localhost}
+      # ros2-x11-node is no longer on host networking — it shares
+      # sim-netns's netns. Reach AirSim / SITL on the host via
+      # host.docker.internal (declared in extra_hosts above).
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-host.docker.internal}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
 
       # Launch configuration
@@ -312,7 +332,7 @@ services:
       - MAVROS_USE_HOST_NETWORK=${MAVROS_USE_HOST_NETWORK:-true}
       - MAVROS_PX4_NETWORK_MODE=${MAVROS_PX4_NETWORK_MODE:-host}
       - MAVROS_NUM_DRONES=${MAVROS_NUM_DRONES:-4}
-      - MAVROS_FCU_URL=${MAVROS_FCU_URL:-udp://:14551@127.0.0.1:14551}
+      - MAVROS_FCU_URL=${MAVROS_FCU_URL:-udp://:14551@host.docker.internal:14551}
 
       # Auto-launch and supervisor
       - ENABLE_SUPERVISOR=${ENABLE_SUPERVISOR:-true}
