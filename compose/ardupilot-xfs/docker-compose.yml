@@ -1,52 +1,61 @@
 # =============================================================================
-# ArduPilot x4 + AirSim XFS + ROS2 + QGroundControl - 4-drone simulation stack
+# ArduPilot x4 + AirSim XFS + per-drone ROS2 bridges + QGroundControl
 # =============================================================================
 #
-# Self-contained: no extends, no build contexts.
-# Most services run on host networking (network_mode: host, ipc: host),
-# except sim-netns and sim-router which carry the inter-drone Zenoh ^/shared
-# bridge on the externally-owned `agent_external` network. ros2-x11-node
-# shares sim-netns's netns (network_mode: service:sim-netns) so DDS can use
-# the same loopback as the Zenoh bridge (ros_localhost_only=1).
+# DEFAULT ARCHITECTURE (./launch.sh ardupilot-xfs):
+#   - 4x ArduPilot SITL                 (host net)
+#   - AirSim XFS                        (host net, GPU)
+#   - airsim_bridge_d{1..4}             (one per drone, on agent_internal-N)
+#   - QGroundControl + pixel-streaming-signalling (host net)
 #
-# Services included:
-#   - ardupilot-drone-{0,1,2,3} : ArduPilot SITL instances (one per drone)
-#   - airsim-xfs                : AirSim simulator with XFS Unreal scene (GPU)
-#   - sim-netns                 : netns + agent_external alias holder
-#   - sim-router                : zenoh-bridge-ros2dds, joins autonomy mesh
-#   - ros2-x11-node             : ROS2 + 4x MAVROS with X11 forwarding
-#   - qgroundcontrol-x11        : QGroundControl with X11 forwarding + GPU
+# OPT-IN: agent_external zenoh bridging (./launch.sh ardupilot-xfs --with-agent-external):
+#   - everything in DEFAULT, plus
+#   - zenoh-bridge-{1..4}               (one per drone, on agent_internal-N + agent_external)
+#
+# LEGACY ARCHITECTURE (./launch.sh ardupilot-xfs --legacy-bridge):
+#   - 4x ArduPilot SITL                 (host net)
+#   - AirSim XFS                        (host net, GPU)
+#   - sim-netns + sim-router            (single zenoh router on agent_external)
+#   - ros2-x11-node                     (single ROS2 container, all 4 drones)
+#   - QGroundControl + pixel-streaming-signalling (host net)
+#
+# Per-drone bridges replace the older ros2-x11-node monolith. Each per-drone
+# bridge runs airsim_ros_pkgs bringup for ONE vehicle, isolated on its own
+# `agent_internal-N` docker network. The autonomy team's `autonomy_stack-N`
+# attaches to the same agent_internal-N to consume /CopterN/* topics, and
+# uses zenoh-bridge-N (on agent_external) for /shared/* mesh traffic.
 #
 # Required environment variables (set in .env or export before running):
 #   CONFIG_ROOT   - absolute path to the config root containing:
 #                     ardupilot/config/
 #                     unreal-airsim/xfs/settings-ardupilot.json
 #                     qgroundcontrol/
+#                     zenoh/zenoh_bridge_drone_{1..4}.json5
 #   UID / GID     - numeric user/group id for GPU-capable services
 #   DISPLAY       - X11 display
 #   XAUTHORITY    - path to Xauthority file
 #
-# Per-instance ports (host network):
-#   Instance 0 -> Copter1 : ArduPilot<->AirSim TCP 9002 / UDP 9003 ; MAVLink TCP 5760
-#   Instance 1 -> Copter2 :                      9012 /     9013 ;             5770
-#   Instance 2 -> Copter3 :                      9022 /     9023 ;             5780
-#   Instance 3 -> Copter4 :                      9032 /     9033 ;             5790
+# Optional environment variables:
+#   DRONE_N_DOMAIN_ID  - per-drone ROS_DOMAIN_ID (default N). Set all four to 20
+#                        (or whatever) for autonomy-team flat-domain alignment.
+#   VEHICLE_N_NAME     - vehicle key in AirSim settings (default Copter{N})
+#
+# Per-instance ports (host network, ArduPilot<->AirSim FDM):
+#   Instance 0 -> Copter1 : TCP 9002 / UDP 9003 ; MAVLink TCP 5760
+#   Instance 1 -> Copter2 :     9012 /     9013 ;         5770
+#   Instance 2 -> Copter3 :     9022 /     9023 ;         5780
+#   Instance 3 -> Copter4 :     9032 /     9033 ;         5790
 #
 # Usage:
-#   xhost +local:docker
-#   export UID=$(id -u) GID=$(id -g) DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY
-#   export CONFIG_ROOT=/path/to/configs
-#   docker compose up
+#   ./launch.sh ardupilot-xfs                  # default per-drone-bridge flow
+#   ./launch.sh ardupilot-xfs --legacy-bridge  # ros2-x11-node + sim-router
+#   ./launch.sh ardupilot-xfs --headless       # no AirSim window
 #
-# After bringup, fire the 4 MAVROS instances inside ardupilot-xfs-ros2:
-#   for i in 0 1 2 3; do
-#     ros2 launch airsim_ros_pkgs mavros_bringup.launch.py \
-#       vehicle:=Copter$((i+1)) \
-#       fcu_url:=tcp://127.0.0.1:$((5760 + 10*i)) \
-#       mavros_config:=mavros_ardupilot.yaml \
-#       enable_dds_cleanup:=$([ $i = 0 ] && echo true || echo false) \
-#       > /tmp/mavros_Copter$((i+1)).log 2>&1 &
-#   done
+# Validation:
+#   See compose/ardupilot-xfs/README.md and ./test-per-drone-bridges.sh.
+#
+# Legacy MAVROS (only with --legacy-bridge): inside ardupilot-xfs-ros2, run
+#   compose/ardupilot-xfs/scripts/launch_4_mavros.sh
 # =============================================================================
 
 name: ardupilot-xfs
@@ -67,6 +76,41 @@ x-ardupilot-base: &ardupilot-base
     timeout: 5s
     retries: 24
     start_period: 120s
+
+# Per-drone airsim_bridge_dN defaults. See the "PER-DRONE AIRSIM ROS2 BRIDGES"
+# section under services: for full notes (X11 plumbing rationale, the
+# user-switch quirk this works around, etc.).
+x-airsim-bridge: &airsim-bridge-defaults
+  image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-multi-agent-bridge}
+  pull_policy: if_not_present
+  init: true
+  restart: unless-stopped
+  ipc: host
+  user: "${UID:-1000}:${GID:-1000}"
+  profiles: ["per-drone-bridge"]
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - /dev/shm:/dev/shm:rw
+    - /tmp/iceoryx2:/tmp/iceoryx2:rw
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
+  depends_on:
+    airsim-xfs:
+      condition: service_started
+
+# Per-drone zenoh-bridge-N defaults. Configs at config/zenoh/zenoh_bridge_drone_{1..4}.json5.
+# Profile `agent-external` (NOT `per-drone-bridge`) so zenoh bridges only start
+# when the user explicitly opts into agent_external connectivity. Pass
+# `./launch.sh ardupilot-xfs --with-agent-external` to activate.
+x-zenoh-bridge: &zenoh-bridge-defaults
+  image: ${ZENOH_BRIDGE_IMAGE:-eclipse/zenoh-bridge-ros2dds:1.4.0}
+  pull_policy: if_not_present
+  init: true
+  restart: unless-stopped
+  profiles: ["agent-external"]
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
 
 services:
 
@@ -140,19 +184,22 @@ services:
   # ---------------------------------------------------------------------------
   # AirSim XFS - Unreal Engine simulator with XFS scene
   #
-  # OPT-IN ONLY (profile=containerized-airsim). The default workflow runs the
-  # bare-host Unreal Editor for visual fidelity — containerized UE5.5 with 4
-  # vehicles + lidars + scene captures hits a render-thread perf wall and
-  # freezes the viewport. If you actually want this container, run
-  #     docker compose --profile containerized-airsim up
+  # Containerized AirSim with PixelStreaming. Requires the
+  # `pixel-streaming-signalling` sidecar (declared below). UE5 dials the
+  # signalling URL at startup; without it, the AirSim API socket never
+  # opens and ardupilot SITLs can't connect on the per-vehicle FDM ports.
+  # View the live scene at http://localhost:${PS_HTTP_PORT:-80}.
   # ---------------------------------------------------------------------------
   airsim-xfs:
-    profiles: ["containerized-airsim"]
-    image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:xfs-pixel-streaming}
+    image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:xfs-latest}
     pull_policy: if_not_present
     container_name: ardupilot-xfs-airsim
     hostname: ardupilot-xfs-airsim
     restart: unless-stopped
+
+    depends_on:
+      pixel-streaming-signalling:
+        condition: service_healthy
 
     user: "${UID:-1000}:${GID:-1000}"
     group_add:
@@ -173,6 +220,14 @@ services:
       - DISPLAY=${DISPLAY:-:0}
       - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
       - XAUTHORITY=/tmp/.Xauthority
+      # UE5 PixelStreaming dials this signalling-server URL at startup.
+      # Host networking → 127.0.0.1 reaches the pixel-streaming-signalling
+      # container.
+      - PIXELSTREAMING_URL=${PS_URL:-ws://127.0.0.1:${PS_STREAMER_PORT:-8888}}
+      # When true, UE5 runs without a window via -RenderOffScreen. Cameras
+      # and PixelStreaming still work; the GUI doesn't pop up. Toggle at
+      # launch with: ./launch.sh ardupilot-xfs --headless
+      - AIRSIM_HEADLESS=${AIRSIM_HEADLESS:-false}
 
     network_mode: host
     ipc: host
@@ -185,12 +240,28 @@ services:
       - ${CONFIG_ROOT?set CONFIG_ROOT}/unreal-airsim/xfs/settings-ardupilot.json:/home/airsim_user/Documents/AirSim/settings.json:ro
       - ${CONFIG_ROOT?set CONFIG_ROOT}/unreal-airsim/xfs/settings-ardupilot.json:/app/Xfs/settings.json:ro
 
+    # xfs-latest doesn't ship /usr/local/bin/airsim-entrypoint.sh (the wrapper
+    # exists in the condo image only). Pass -PixelStreamingURL directly to
+    # the UE5 binary instead — the plugin reads it from CLI when present,
+    # ignores it when not. `$$VAR` survives compose interpolation so bash
+    # inside the container reads vars from the env block above.
+    #
+    # AIRSIM_HEADLESS=true selects -RenderOffScreen (off-screen GPU render,
+    # cameras still work, no window). false (default) keeps -windowed for
+    # interactive use. -NullRHI would skip rendering entirely and break
+    # AirSim cameras — do NOT add it.
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         echo "Waiting 5s for ArduPilot SITL fleet to initialize..."
         sleep 5
-        exec /app/Xfs/Xfs.sh -windowed -ResX=1920 -ResY=1080
+        if [ "$$AIRSIM_HEADLESS" = "true" ]; then
+          DISPLAY_FLAGS="-RenderOffScreen -NoSound -Unattended -NoSplash"
+        else
+          DISPLAY_FLAGS="-windowed"
+        fi
+        echo "AirSim display mode: $$DISPLAY_FLAGS"
+        exec /app/Xfs/Xfs.sh $$DISPLAY_FLAGS -ResX=1920 -ResY=1080 -PixelStreamingURL=$$PIXELSTREAMING_URL
 
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 41451 || exit 1"]
@@ -198,6 +269,267 @@ services:
       timeout: 5s
       retries: 18
       start_period: 90s
+
+  # ---------------------------------------------------------------------------
+  # Pixel Streaming Signalling Server
+  # Bridges the UE5 PixelStreaming plugin (listening on :8888 inside
+  # airsim-xfs) and browser viewers. airsim-xfs depends on this being
+  # healthy before UE5 starts; without it, UE5 hangs on plugin init and
+  # the AirSim API socket never opens. Open http://localhost:${PS_HTTP_PORT}
+  # to view the live scene as a WebRTC stream.
+  # ---------------------------------------------------------------------------
+  pixel-streaming-signalling:
+    image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.5}
+    pull_policy: if_not_present
+    container_name: ardupilot-xfs-pixel-streaming-signalling
+    hostname: ardupilot-xfs-pixel-streaming-signalling
+    restart: unless-stopped
+    network_mode: host
+    init: true
+    environment:
+      - PIXELSTREAMING_STREAMER_PORT=${PS_STREAMER_PORT:-8888}
+      - PIXELSTREAMING_HTTP_PORT=${PS_HTTP_PORT:-80}
+      - PIXELSTREAMING_PUBLIC_IP=${PS_PUBLIC_IP:-127.0.0.1}
+    command:
+      - --StreamerPort=${PS_STREAMER_PORT:-8888}
+      - --HttpPort=${PS_HTTP_PORT:-80}
+      - --PublicIp=${PS_PUBLIC_IP:-127.0.0.1}
+    # Image (Node.js / wilbur signalling) ships curl/wget/bash/node but NOT nc,
+    # ss, or netstat — so the obvious `nc -z` healthcheck always reports
+    # "nc: not found" and the container is forever unhealthy. We also avoid
+    # `curl -f`: any HTTP response (incl. 404) means the listener is up.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -m 3 -o /dev/null http://127.0.0.1:${PS_HTTP_PORT:-80}/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # ===========================================================================
+  # PER-DRONE AIRSIM ROS2 BRIDGES (default flow)
+  # ===========================================================================
+  # Four airsim_bridge_dN containers, one per vehicle (Copter1..Copter4),
+  # each on its own agent_internal-N docker network. These REPLACE the legacy
+  # single-container `ros2-x11-node` (now profile-gated under `legacy-bridge`).
+  #
+  # Drone 1 is the CLOCK MASTER: it owns /clock, world_ned static TF,
+  # /origin_geo_point, and fleet services. Drones 2..4 publish only their own
+  # vehicle topics.
+  #
+  # Domain id strategy: the vendored default per-drone domains (1..4) keep
+  # SHM-discovery isolated between bridges. Override with `DRONE_N_DOMAIN_ID=20`
+  # if the autonomy team is on a flat domain.
+  #
+  # Bridge AirSim host: ALWAYS host.docker.internal — the bridges live on
+  # isolated `agent_internal-N` networks where 127.0.0.1 means the container
+  # itself. Hardcoded (not env-driven) so a stray AIRSIM_HOST_IP=127.0.0.1
+  # in .env can't break them.
+  #
+  # See top-of-file for `x-airsim-bridge` anchor (per-drone defaults).
+  # ===========================================================================
+  airsim_bridge_d1:
+    <<: *airsim-bridge-defaults
+    container_name: airsim_bridge_d1
+    hostname: airsim_bridge_d1
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_1_DOMAIN_ID:-1}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=host.docker.internal
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_1_NAME:-Copter1}
+    networks:
+      - agent_internal-1
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        source /airsim_ros2_ws/install/setup.bash &&
+        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
+        host_ip:=host.docker.internal
+        host_port:=${AIRSIM_HOST_PORT:-41451}
+        vehicles:="['${VEHICLE_1_NAME:-Copter1}']"
+        enable_localization:=true
+        enable_coordination:=true
+        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
+        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
+
+  airsim_bridge_d2:
+    <<: *airsim-bridge-defaults
+    container_name: airsim_bridge_d2
+    hostname: airsim_bridge_d2
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=host.docker.internal
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_2_NAME:-Copter2}
+    networks:
+      - agent_internal-2
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        source /airsim_ros2_ws/install/setup.bash &&
+        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
+        host_ip:=host.docker.internal
+        host_port:=${AIRSIM_HOST_PORT:-41451}
+        vehicles:="['${VEHICLE_2_NAME:-Copter2}']"
+        enable_localization:=true
+        enable_coordination:=false
+        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
+        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
+
+  airsim_bridge_d3:
+    <<: *airsim-bridge-defaults
+    container_name: airsim_bridge_d3
+    hostname: airsim_bridge_d3
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=host.docker.internal
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_3_NAME:-Copter3}
+    networks:
+      - agent_internal-3
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        source /airsim_ros2_ws/install/setup.bash &&
+        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
+        host_ip:=host.docker.internal
+        host_port:=${AIRSIM_HOST_PORT:-41451}
+        vehicles:="['${VEHICLE_3_NAME:-Copter3}']"
+        enable_localization:=true
+        enable_coordination:=false
+        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
+        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
+
+  airsim_bridge_d4:
+    <<: *airsim-bridge-defaults
+    container_name: airsim_bridge_d4
+    hostname: airsim_bridge_d4
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=host.docker.internal
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_4_NAME:-Copter4}
+    networks:
+      - agent_internal-4
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        source /airsim_ros2_ws/install/setup.bash &&
+        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
+        host_ip:=host.docker.internal
+        host_port:=${AIRSIM_HOST_PORT:-41451}
+        vehicles:="['${VEHICLE_4_NAME:-Copter4}']"
+        enable_localization:=true
+        enable_coordination:=false
+        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
+        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
+
+  # ===========================================================================
+  # PER-DRONE ZENOH BRIDGES (default flow)
+  # ===========================================================================
+  # One zenoh-bridge-ros2dds per drone, attached to BOTH its own
+  # agent_internal-N (DDS side, sees the airsim_bridge_dN topics) and
+  # agent_external (zenoh side, gossips with the autonomy team's
+  # autonomy_stack-N peers). Replaces the legacy single sim-router (now
+  # profile-gated under `legacy-bridge`).
+  #
+  # Topic ownership (asymmetric, per memory's namespace spec):
+  #   - drone N publishes /shared/drone_N/* outward to zenoh
+  #   - drone N subscribes to /shared/sim/* and /shared/swarm/*
+  # See config/zenoh/zenoh_bridge_drone_{1..4}.json5 for details.
+  #
+  # See top-of-file for `x-zenoh-bridge` anchor (per-drone defaults).
+  # ===========================================================================
+  zenoh-bridge-1:
+    <<: *zenoh-bridge-defaults
+    container_name: ardupilot-xfs-zenoh-bridge-1
+    hostname: zenoh-bridge-1
+    networks:
+      - agent_internal-1
+      - agent_external
+    environment:
+      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=${DRONE_1_DOMAIN_ID:-1}
+    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
+    volumes:
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_1.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
+    depends_on:
+      airsim_bridge_d1:
+        condition: service_started
+
+  zenoh-bridge-2:
+    <<: *zenoh-bridge-defaults
+    container_name: ardupilot-xfs-zenoh-bridge-2
+    hostname: zenoh-bridge-2
+    networks:
+      - agent_internal-2
+      - agent_external
+    environment:
+      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
+    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
+    volumes:
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_2.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
+    depends_on:
+      airsim_bridge_d2:
+        condition: service_started
+
+  zenoh-bridge-3:
+    <<: *zenoh-bridge-defaults
+    container_name: ardupilot-xfs-zenoh-bridge-3
+    hostname: zenoh-bridge-3
+    networks:
+      - agent_internal-3
+      - agent_external
+    environment:
+      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
+    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
+    volumes:
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_3.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
+    depends_on:
+      airsim_bridge_d3:
+        condition: service_started
+
+  zenoh-bridge-4:
+    <<: *zenoh-bridge-defaults
+    container_name: ardupilot-xfs-zenoh-bridge-4
+    hostname: zenoh-bridge-4
+    networks:
+      - agent_internal-4
+      - agent_external
+    environment:
+      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
+    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
+    volumes:
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_4.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
+    depends_on:
+      airsim_bridge_d4:
+        condition: service_started
 
   # ---------------------------------------------------------------------------
   # sim-netns — tiny container whose only job is to own a stable network
@@ -215,6 +547,10 @@ services:
     pull_policy: if_not_present
     container_name: ardupilot-xfs-sim-netns
     hostname: sim-netns
+    # Legacy: only needed by ros2-x11-node + sim-router (the single-bridge
+    # path). Default flow uses per-drone airsim_bridge_dN + zenoh-bridge-N
+    # which don't share a netns. Activate with `./launch.sh ardupilot-xfs --legacy-bridge`.
+    profiles: ["legacy-bridge"]
     init: true
     restart: unless-stopped
     command: ["sleep", "infinity"]
@@ -240,6 +576,9 @@ services:
     image: ${ZENOH_BRIDGE_IMAGE:-eclipse/zenoh-bridge-ros2dds:1.4.0}
     pull_policy: if_not_present
     container_name: ardupilot-xfs-sim-router
+    # Legacy single-bridge zenoh router. Replaced by per-drone zenoh-bridge-N
+    # in the default flow (see zenoh-bridge-1..4 below).
+    profiles: ["legacy-bridge"]
     init: true
     restart: unless-stopped
     network_mode: "service:sim-netns"
@@ -266,8 +605,12 @@ services:
     container_name: ardupilot-xfs-ros2
     hostname: ardupilot-xfs-ros2
     restart: "no"
+    # Legacy single-container ROS2 bridge. The default flow now uses per-drone
+    # airsim_bridge_dN containers — see services above. Activate this with
+    # `./launch.sh ardupilot-xfs --legacy-bridge`.
+    profiles: ["legacy-bridge"]
 
-    network_mode: "service:sim-netns"
+    network_mode: host
     depends_on:
       - sim-netns
       - sim-router
@@ -529,3 +872,27 @@ networks:
         - subnet: 172.29.0.0/24
           ip_range: 172.29.0.0/24
           gateway: 172.29.0.254
+
+  # Per-drone DDS islands for the airsim_bridge_dN + zenoh-bridge-N pairs.
+  # The corresponding autonomy_stack-N container (autonomy team's compose)
+  # also attaches to its own agent_internal-N to consume /CopterN/* topics
+  # via DDS and exchange /shared/drone_N/* via the zenoh bridge.
+  #
+  # Declared `external: true` because launch.sh creates them up front via
+  # `docker network create` (idempotent). This also avoids compose
+  # complaining about pre-existing networks lacking the compose label, and
+  # lets the autonomy team's compose attach autonomy_stack-N to the same
+  # literal name without compose-project-prefix collisions. The subnet /
+  # gateway authority lives in launch.sh's `ensure_agent_internal_networks`.
+  agent_internal-1:
+    external: true
+    name: agent_internal-1
+  agent_internal-2:
+    external: true
+    name: agent_internal-2
+  agent_internal-3:
+    external: true
+    name: agent_internal-3
+  agent_internal-4:
+    external: true
+    name: agent_internal-4

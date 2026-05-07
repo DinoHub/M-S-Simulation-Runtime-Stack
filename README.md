@@ -95,7 +95,7 @@ PX4_IMAGE=dhdevspace/auto_mns:px4-airsim-px4
 **Important: `ROS2_IMAGE` is global, but each scenario's compose default is different.**
 
 | Scenario | Compose default `ROS2_IMAGE` |
-|----------|-------------------------------|
+|----------|-------------------------------|r
 | `px4-condo` | (no default — `${ROS2_IMAGE:?set ROS2_IMAGE}`, you must set it) |
 | `px4-xfs` | `tevv-airstack-ros2-x11-node-development` |
 | `ardupilot-condo` | `tevv-airstack-ros2-x11-node-development` |
@@ -126,12 +126,17 @@ Quick sanity check for a colleague picking this up fresh:
 ```bash
 ./launch.sh ardupilot-xfs
 docker ps --filter name=ardupilot-xfs --format 'table {{.Names}}\t{{.Status}}'
-# Expect six containers: ardupilot-xfs-{drone-0..3, ros2, qgc}, all healthy.
-# If you only see drone-2 + ros2 + qgc, ARDUPILOT_IMAGE is wrong (slim missing).
-# If all six are up but only Copter1 publishes odom topics, ROS2_IMAGE is wrong.
+docker ps --filter name=airsim_bridge_d --format 'table {{.Names}}\t{{.Status}}'
+# Expect (per-drone default flow):
+#   ardupilot-xfs-{drone-{0..3}, airsim, qgc, pixel-streaming-signalling,
+#                  zenoh-bridge-{1..4}}
+#   airsim_bridge_d{1..4}
+# If you only see drone-2, ARDUPILOT_IMAGE is wrong (slim missing).
+# If bridges crash-loop on X11, check XAUTHORITY is set and `xhost +local:docker`.
+# Pass --legacy-bridge for the old ros2-x11-node + sim-router topology.
 ```
 
-The bare-host Unreal Editor is the default visual front-end for `ardupilot-xfs`; the containerized AirSim service is opt-in via `docker compose --profile containerized-airsim up`. See `compose/ardupilot-xfs/docker-compose.yml` header for full service notes.
+`ardupilot-xfs` defaults to the **per-drone bridge architecture**: four `airsim_bridge_dN` containers (one per Copter) plus four `zenoh-bridge-N` (one per `agent_internal-N` onto `agent_external`). Pass `--legacy-bridge` to fall back to the older single `ros2-x11-node` + `sim-router` stack. See [`compose/ardupilot-xfs/README.md`](./compose/ardupilot-xfs/README.md) for the workflow, validation tool, and the `DRONE_N_DOMAIN_ID` knobs for autonomy-team domain alignment.
 
 ### If the planner is started separately
 

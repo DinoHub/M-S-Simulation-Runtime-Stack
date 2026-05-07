@@ -1,0 +1,53 @@
+// Per-drone sim-side zenoh bridge config — DRONE 2.
+// See zenoh_bridge_drone_1.json5 for a full explanation; this file
+// just changes the per-drone identifiers.
+{
+  id: "2702",
+
+  plugins: {
+    ros2dds: {
+      nodename: "zenoh_bridge_ros2dds_drone_2",
+      ros_localhost_only: false,
+      allow: {
+        publishers:  ["^/shared/drone_2(/.*)?$"],
+        subscribers: ["^/shared/sim(/.*)?$", "^/shared/swarm(/.*)?$"],
+        service_servers: [],
+        service_clients: [],
+        action_servers: [],
+        action_clients: [],
+      },
+    },
+  },
+
+  mode: "router",
+
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7448"],
+  },
+
+  connect: {
+    timeout_ms: { router: -1, peer: -1, client: 0 },
+    endpoints: [
+      "tcp/autonomy_stack-1:7448",
+      "tcp/autonomy_stack-2:7448",
+      "tcp/autonomy_stack-3:7448",
+    ],
+  },
+
+  scouting: {
+    multicast: { enabled: false },
+    gossip: {
+      enabled: true,
+      multihop: false,
+      autoconnect: { router: ["router"], peer: [] },
+    },
+  },
+
+  transport: {
+    link: {
+      protocols: ["tcp"],
+      tx: { lease: 10000, keep_alive: 4 },
+    },
+    unicast: { qos: { enabled: true } },
+  },
+}

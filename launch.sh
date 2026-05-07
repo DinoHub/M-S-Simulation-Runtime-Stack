@@ -12,7 +12,7 @@ fi
 
 usage() {
   cat <<EOF
-Usage: ./launch.sh [scenario] [--with-monitoring] [--with-metrics] [--all]
+Usage: ./launch.sh [scenario] [--headless] [--legacy-bridge] [--with-agent-external] [--with-monitoring] [--with-metrics] [--all]
 
 Scenarios (compose/<scenario>/docker-compose.yml):
 $(ls compose/ | sed 's/^/  /')
@@ -21,20 +21,43 @@ By default only the simulation stack is started.
 Pass --with-monitoring and/or --with-metrics to add cross-cutting stacks,
 or --all as a shortcut for both. These can also be enabled in .env via
 START_MONITORING=true / START_METRICS=true.
+
+--headless runs the containerized AirSim with -RenderOffScreen (no window,
+GPU still renders for cameras and PixelStreaming). Currently only consumed
+by the ardupilot-xfs scenario; ignored by others. Equivalent .env knob:
+AIRSIM_HEADLESS=true.
+
+--legacy-bridge (ardupilot-xfs only) brings up the legacy single-container
+ros2-x11-node + sim-router stack instead of the per-drone airsim_bridge_dN
+path. Equivalent .env knob: LEGACY_BRIDGE=true. See
+compose/ardupilot-xfs/README.md for the architectural difference.
+
+--with-agent-external (ardupilot-xfs default flow only) also starts the
+four per-drone zenoh bridges (zenoh-bridge-{1..4}) onto agent_external for
+/shared/* topic routing. Without this flag, the per-drone airsim_bridge_dN
+containers run DDS-only on agent_internal-N. Incompatible with
+--legacy-bridge (legacy path already brings sim-router on agent_external).
+Equivalent .env knob: WITH_AGENT_EXTERNAL=true.
 EOF
 }
 
 SCENARIO=""
 START_MONITORING="${START_MONITORING:-false}"
 START_METRICS="${START_METRICS:-false}"
+AIRSIM_HEADLESS="${AIRSIM_HEADLESS:-false}"
+LEGACY_BRIDGE="${LEGACY_BRIDGE:-false}"
+WITH_AGENT_EXTERNAL="${WITH_AGENT_EXTERNAL:-false}"
 
 for arg in "$@"; do
   case "$arg" in
-    --with-monitoring) START_MONITORING=true ;;
-    --with-metrics)    START_METRICS=true ;;
-    --all)             START_MONITORING=true; START_METRICS=true ;;
-    -h|--help)         usage; exit 0 ;;
-    --*)               echo "ERROR: Unknown flag: $arg"; usage; exit 1 ;;
+    --with-monitoring)    START_MONITORING=true ;;
+    --with-metrics)       START_METRICS=true ;;
+    --all)                START_MONITORING=true; START_METRICS=true ;;
+    --headless)           AIRSIM_HEADLESS=true ;;
+    --legacy-bridge)      LEGACY_BRIDGE=true ;;
+    --with-agent-external) WITH_AGENT_EXTERNAL=true ;;
+    -h|--help)            usage; exit 0 ;;
+    --*)                  echo "ERROR: Unknown flag: $arg"; usage; exit 1 ;;
     *)
       if [ -z "$SCENARIO" ]; then
         SCENARIO="$arg"
@@ -67,6 +90,31 @@ export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
 # resolve mounts correctly regardless of working directory.
 CONFIG_ROOT="${CONFIG_ROOT:-./config}"
 export CONFIG_ROOT="$(cd "$CONFIG_ROOT" && pwd)"
+
+# Display-mode toggle for ardupilot-xfs's airsim-xfs container.
+export AIRSIM_HEADLESS
+
+# Bridge-architecture toggles (consumed in the COMPOSE_PROFILE_ARGS block below).
+export LEGACY_BRIDGE
+export WITH_AGENT_EXTERNAL
+
+# ardupilot-xfs default flow needs four agent_internal-N docker networks
+# pre-created (the per-drone airsim_bridge_dN + zenoh-bridge-N services
+# attach to them). They're declared in the compose file but with
+# `name:` set, so creating them up front is idempotent and avoids a
+# project-prefix mismatch when the autonomy team's compose attaches
+# autonomy_stack-N to the same networks.
+ensure_agent_internal_networks() {
+  for n in 1 2 3 4; do
+    if ! docker network inspect "agent_internal-${n}" >/dev/null 2>&1; then
+      docker network create \
+        --subnet="172.28.${n}.0/24" \
+        --gateway="172.28.${n}.254" \
+        "agent_internal-${n}" >/dev/null
+      echo "  created agent_internal-${n}"
+    fi
+  done
+}
 
 xhost +local:docker >/dev/null 2>&1 || true
 
@@ -149,15 +197,47 @@ echo "  XAUTHORITY=$XAUTHORITY"
 echo "  LOCAL_PLANNER_MODE=${LOCAL_PLANNER_MODE:-disabled}"
 echo "  START_MONITORING=$START_MONITORING"
 echo "  START_METRICS=$START_METRICS"
+echo "  AIRSIM_HEADLESS=$AIRSIM_HEADLESS"
+echo "  LEGACY_BRIDGE=$LEGACY_BRIDGE"
+echo "  WITH_AGENT_EXTERNAL=$WITH_AGENT_EXTERNAL"
 echo
+
+# Reject incoherent combination: --legacy-bridge already brings sim-router
+# (legacy zenoh on agent_external). Adding the per-drone zenoh bridges on
+# top would attach two parallel sets of zenoh peers to the same mesh.
+if [ "$LEGACY_BRIDGE" = "true" ] && [ "$WITH_AGENT_EXTERNAL" = "true" ]; then
+  echo "ERROR: --legacy-bridge and --with-agent-external are incompatible." >&2
+  echo "       Legacy already includes sim-router on agent_external." >&2
+  exit 1
+fi
 
 if [ "$START_MONITORING" = "true" ]; then
   echo "Starting monitoring stack..."
   docker compose -f docker-compose-monitoring.yml --profile monitoring up -d
 fi
 
+# Pick profiles for ardupilot-xfs. Other scenarios don't have profiles wired
+# up yet — pass through unchanged.
+COMPOSE_PROFILE_ARGS=()
+if [ "$SCENARIO" = "ardupilot-xfs" ]; then
+  if [ "$LEGACY_BRIDGE" = "true" ]; then
+    COMPOSE_PROFILE_ARGS=(--profile legacy-bridge)
+    echo "Bridge architecture: LEGACY (ros2-x11-node + sim-router)"
+  else
+    ensure_agent_internal_networks
+    COMPOSE_PROFILE_ARGS=(--profile per-drone-bridge)
+    if [ "$WITH_AGENT_EXTERNAL" = "true" ]; then
+      COMPOSE_PROFILE_ARGS+=(--profile agent-external)
+      echo "Bridge architecture: per-drone + agent_external zenoh bridges"
+    else
+      echo "Bridge architecture: per-drone (no agent_external bridge — pass --with-agent-external to add it)"
+    fi
+  fi
+fi
+
 echo "Starting simulation stack ($SCENARIO)..."
-docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" up -d
+docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
+  "${COMPOSE_PROFILE_ARGS[@]}" up -d
 
 start_local_planner
 

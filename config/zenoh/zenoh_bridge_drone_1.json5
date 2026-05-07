@@ -1,0 +1,78 @@
+// Per-drone sim-side zenoh bridge config — DRONE 1.
+//
+// One of four drone-specific configs (drone_{1..4}.json5). Replaces the
+// legacy sim_router.json5 (which is preserved for `--legacy-bridge`).
+//
+// This bridge attaches to:
+//   - agent_internal-1 (DDS side: discovers airsim_bridge_d1's ROS2 topics)
+//   - agent_external   (zenoh side: gossips with autonomy_stack-1..3)
+//
+// Topic ownership (asymmetric):
+//   publishers : ROS2 publishers we forward outward to zenoh.
+//                Drone 1 owns its own /shared/drone_1/* namespace.
+//   subscribers: zenoh subscriptions we re-publish into ROS2.
+//                Drone 1 reads /shared/sim/* and /shared/swarm/*.
+//
+// We do NOT subscribe to /shared/drone_M for M!=1: that traffic goes
+// drone-to-drone via agent_external; the sim has no business mirroring
+// it onto agent_internal-1.
+{
+  // Sim-side reservation: 2700 was the legacy single sim_router.
+  // 2701..2704 are the per-drone bridges (this is drone 1).
+  id: "2701",
+
+  plugins: {
+    ros2dds: {
+      nodename: "zenoh_bridge_ros2dds_drone_1",
+
+      // CRITICAL: false (unlike legacy sim_router). The per-drone bridge
+      // discovers airsim_bridge_d1's DDS over the agent_internal-1 docker
+      // network, not over loopback. ROS_LOCALHOST_ONLY=0 in compose pairs
+      // with this.
+      ros_localhost_only: false,
+
+      allow: {
+        publishers:  ["^/shared/drone_1(/.*)?$"],
+        subscribers: ["^/shared/sim(/.*)?$", "^/shared/swarm(/.*)?$"],
+        service_servers: [],
+        service_clients: [],
+        action_servers: [],
+        action_clients: [],
+      },
+    },
+  },
+
+  mode: "router",
+
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7448"],
+  },
+
+  connect: {
+    timeout_ms: { router: -1, peer: -1, client: 0 },
+    // Static seed list — same for all four sim-side bridges. Autonomy
+    // team's compose owns the autonomy_stack-N aliases on agent_external.
+    endpoints: [
+      "tcp/autonomy_stack-1:7448",
+      "tcp/autonomy_stack-2:7448",
+      "tcp/autonomy_stack-3:7448",
+    ],
+  },
+
+  scouting: {
+    multicast: { enabled: false },
+    gossip: {
+      enabled: true,
+      multihop: false,
+      autoconnect: { router: ["router"], peer: [] },
+    },
+  },
+
+  transport: {
+    link: {
+      protocols: ["tcp"],
+      tx: { lease: 10000, keep_alive: 4 },
+    },
+    unicast: { qos: { enabled: true } },
+  },
+}

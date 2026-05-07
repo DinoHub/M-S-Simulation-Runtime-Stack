@@ -56,7 +56,7 @@ what this spec is about.
                                                   agent_internal-3     ... same shape ...
 
    ┌────────────────────┐         ^/shared/sim/*           ┌──────────────────┐
-   │  sim-shared-node   │────────────────────────────────▶│   sim-router     │── agent_external ──▶ drones' ^/shared mesh
+   │  sim-shared-node   │────────────────────────────────▶ │   sim-router     │── agent_external ──▶ drones' ^/shared mesh
    │  (in sim-netns)    │  loopback DDS (LOCALHOST_ONLY=1) │ (zenoh-bridge)   │
    └────────────────────┘                                  └──────────────────┘
 ```
@@ -88,8 +88,7 @@ are equally fine if you'd rather plumb that way.
 
 ### Currently honored knobs that remain valid
 
-These already exist in the compose interface; please keep them working
-per-instance (i.e. each drone's bridge can have its own values):
+These already exist in the compose interface; please keep them working per-instance (i.e. each drone's bridge can have its own values):
 
 - `ENABLE_LOCAL_OBS` (per-vehicle `pointcloud_registration_node`)
 - `LOCAL_OBS_BUFFER_SEC`
@@ -100,14 +99,9 @@ per-instance (i.e. each drone's bridge can have its own values):
 
 ### What the bridge MUST NOT publish
 
-The bridge MUST NOT publish anything on the `^/shared/...` namespace. That
-namespace is owned by the autonomy stacks and the sim-side `sim-router`
-already takes care of it. If the bridge ever needs to surface ground-truth
-into the swarm fabric, route it through a separate sim-only ROS2 node (or
-ask runtime maintainers to add one) — keep the responsibilities split.
+The bridge MUST NOT publish anything on the `^/shared/...` namespace. That namespace is owned by the autonomy stacks and the sim-side `sim-router` already takes care of it. If the bridge ever needs to surface ground-truth into the swarm fabric, route it through a separate sim-only ROS2 node (or ask runtime maintainers to add one) — keep the responsibilities split.
 
-Forbidden topic categories on `agent_external` (i.e. forbidden anywhere
-the bridge could route them):
+Forbidden topic categories on `agent_external` (i.e. forbidden anywhere the bridge could route them):
 
 - `/clock`, `/tf`, `/tf_static`
 - `cmd_vel` / control inputs
@@ -144,27 +138,14 @@ Pick one:
 
 ### Option A — single-vehicle parameterization (preferred)
 
-Modify `rpc_dynamic_vehicles.launch.py` (or its callers) so it can run with
-`VEHICLES=['Copter1']` plus a `ROS_NAMESPACE=/drone_1` remap, AND the
-process stays sane when N=1. This is the smallest delta and aligns with
-the existing env-var contract.
+Modify `rpc_dynamic_vehicles.launch.py` (or its callers) so it can run with `VEHICLES=['Copter1']` plus a `ROS_NAMESPACE=/drone_1` remap, AND the process stays sane when N=1. This is the smallest delta and aligns with the existing env-var contract.
 
 Concrete checklist:
 
-- [ ] Confirm `VEHICLES` of length 1 doesn't trip any "expected ≥ 2"
-      assumptions (e.g. multi-vehicle coordination logic, formation
-      planners).
-- [ ] Honor a `ROS_NAMESPACE` env var by remapping all topic publishers
-      from `/Copter1/*` to `/drone_1/*`. Easiest path is a top-level
-      `<group ns="${ROS_NAMESPACE}">` in the launch file.
-- [ ] Confirm there are no singleton publishers (`/clock`, static TF root)
-      that would conflict if the same launch fires three times on the
-      same host. If any exist, gate them on a `--this-is-the-clock-master`
-      flag so exactly one instance owns them.
-- [ ] AirSim RPC client must tolerate sharing a single AirSim instance
-      across N concurrent client connections (one per bridge process). If
-      this isn't tested today, run three-way concurrent SubscribeImages
-      and confirm no race conditions on the AirSim side.
+- [ ] Confirm `VEHICLES` of length 1 doesn't trip any "expected ≥ 2" assumptions (e.g. multi-vehicle coordination logic, formation planners).
+- [ ] Honor a `ROS_NAMESPACE` env var by remapping all topic publishers from `/Copter1/*` to `/drone_1/*`. Easiest path is a top-level `<group ns="${ROS_NAMESPACE}">` in the launch file.
+- [ ] Confirm there are no singleton publishers (`/clock`, static TF root) that would conflict if the same launch fires three times on the same host. If any exist, gate them on a `--this-is-the-clock-master` flag so exactly one instance owns them.
+- [ ] AirSim RPC client must tolerate sharing a single AirSim instance across N concurrent client connections (one per bridge process). If this isn't tested today, run three-way concurrent SubscribeImages and confirm no race conditions on the AirSim side.
 - [ ] `pointcloud_registration_node` should also be one-per-process
       already (the comment in the runtime compose hints at this), but
       verify.
