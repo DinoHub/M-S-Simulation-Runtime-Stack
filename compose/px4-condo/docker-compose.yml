@@ -280,8 +280,12 @@ services:
       - --HttpPort=${PS_HTTP_PORT:-80}
       - --PublicIp=${PS_PUBLIC_IP:-127.0.0.1}
 
+    # Image (Node.js / wilbur signalling) ships curl/wget/bash/node but NOT nc,
+    # ss, or netstat — so the obvious `nc -z` healthcheck always reports
+    # "nc: not found" and the container is forever unhealthy. We also avoid
+    # `curl -f`: any HTTP response (incl. 404) means the listener is up.
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 ${PS_HTTP_PORT:-80} || exit 1"]
+      test: ["CMD-SHELL", "curl -sS -m 3 -o /dev/null http://127.0.0.1:${PS_HTTP_PORT:-80}/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 6
