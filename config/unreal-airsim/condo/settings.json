@@ -27,7 +27,7 @@
     "Latitude": 42.764938,
     "Longitude": -115.579201,
     "Altitude": 1183,
-    "NorthAngleDegrees": 270.0
+    "NorthAngleDegrees": 0.0
   },
 
   "TimeOfDay": {
@@ -45,8 +45,8 @@
       "DefaultVehicleState": "Disarmed",
       "AutoCreate": true,
 
-      "X": 10,
-      "Y": 0,
+      "X": 0,
+      "Y": -20,
       "Z": 1.3,
 
       "UseSerial": false,

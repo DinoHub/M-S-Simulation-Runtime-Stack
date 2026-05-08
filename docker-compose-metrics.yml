@@ -53,7 +53,7 @@ services:
 
   metrics-collector:
     image: dhdevspace/auto_mns:metrics-collectorV2-release
-    pull_policy: if_not_present
+    pull_policy: always
     container_name: metrics-collector
     hostname: metrics-collector
     network_mode: host
