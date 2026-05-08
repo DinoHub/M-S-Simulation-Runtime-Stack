@@ -38,7 +38,7 @@ services:
   # ArduPilot SITL
   # ---------------------------------------------------------------------------
   ardupilot-drone-0:
-    image: ${ARDUPILOT_IMAGE:-dhdevspace/auto_mns:ardupilot-latest}
+    image: ${ARDUPILOT_IMAGE:-dhdevspace/auto_mns:ardupilot-slim}
     pull_policy: if_not_present
     container_name: ardupilot-drone-0
     hostname: ardupilot-drone-0
