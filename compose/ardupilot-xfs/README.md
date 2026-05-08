@@ -255,15 +255,26 @@ Two distinct causes; check in this order.
 3. **`ros2 topic echo` works but rviz2 shows nothing on
    `registered_point_cloud` (especially after flying far from launch).**
    The cloud's per-message size is roughly
-   `LOCAL_OBS_BUFFER_SEC × lidar_rate × 1/voxel_volume`. Defaults
-   (`buffer=5s`, `voxel=0.50m`) produce ~330 KB messages, which DDS
-   handles cleanly. Bumping the buffer and lowering the voxel
-   (e.g. `LOCAL_OBS_BUFFER_SEC=30`, `LOCAL_OBS_VOXEL_SIZE=0.10`) can
-   blow the cloud past 40 MB / message — `ros2 topic echo` still
-   works (same docker network, `ipc:host` SHM bypasses fragment
-   loss), but rviz2 on the host sees fragment loss and silently
-   drops every message. Either reduce the buffer, raise the voxel,
-   or run rviz2 inside an `agent_internal-N`-attached container.
+   `LOCAL_OBS_BUFFER_SEC × lidar_rate × 1/voxel_volume × 20 bytes`
+   (point_step is 20: x/y/z + 4-byte SSE pad + intensity). Defaults
+   (`buffer=30s`, `voxel=0.15m`, lidar `PointsPerSecond=200000`) produce
+   ~540 KB messages — single-fragment under DDS's ~1 MB cliff,
+   visually dense in rviz. Empirical sizing table:
+
+   | Voxel | ~Points / msg | ~Bytes / msg | DDS-safe? |
+   |---|---|---|---|
+   | 0.05 m | 720K | 14 MB | ❌ rviz drops |
+   | 0.10 m | 91K | 1.8 MB | borderline |
+   | **0.15 m** (default) | **27K** | **540 KB** | ✓ |
+   | 0.20 m | 11K | 220 KB | ✓ |
+   | 0.50 m | 600 | 12 KB | ✓ but visually sparse |
+
+   If you've lowered voxel to chase detail and the cloud goes blank
+   in rviz, you've crossed the fragmentation cliff — `ros2 topic
+   echo` still works (same docker network, `ipc:host` SHM bypasses
+   fragment loss), but rviz2 on the host sees fragment loss and
+   silently drops most messages. Either raise the voxel or run rviz2
+   inside an `agent_internal-N`-attached container.
 
    rviz2 settings for large-cloud streams:
    - **Fixed Frame**: match the cloud's `frame_id` (`map` if
