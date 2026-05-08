@@ -91,12 +91,12 @@ docker compose -f docker-compose-metrics.yml --profile metrics down --remove-orp
 stop_local_planner
 
 echo "Stopping simulation stack ($SCENARIO)..."
-# For ardupilot-xfs, activate ALL bridge-architecture profiles on `down`
-# so containers from any path (default per-drone, --with-agent-external,
-# or --legacy-bridge) get cleaned up regardless of which one was running.
+# For ardupilot-xfs, activate both bridge-architecture profiles on `down`
+# so containers from default per-drone or --with-agent-external get
+# cleaned up regardless of which one was running.
 if [ "$SCENARIO" = "ardupilot-xfs" ]; then
   docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
-    --profile per-drone-bridge --profile agent-external --profile legacy-bridge \
+    --profile per-drone-bridge --profile agent-external \
     down --remove-orphans || true
 else
   docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \

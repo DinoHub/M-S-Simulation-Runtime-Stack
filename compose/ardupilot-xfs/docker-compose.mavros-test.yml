@@ -1,4 +1,8 @@
 # =============================================================================
+# GENERATED FILE — do not edit by hand.
+# Regenerate: python3 tools/generate_scenario.py
+# Source:    compose/ardupilot-xfs/templates/docker-compose.mavros-test.yml.j2
+# =============================================================================
 # Per-drone MAVROS integration test (the agent_internal-N → MAVROS → FCU →
 # SITL → AirSim chain).
 #
@@ -6,11 +10,11 @@
 # `down --remove-orphans` here doesn't sweep up the main `ardupilot-xfs`
 # project's airsim_bridge_dN / SITL / etc.
 #
-# Brings up four mavros_dN containers, one per drone:
+# Brings up 4 mavros_dN containers, one per drone:
 #
 #   mavros_dN  ─(agent_internal-N)─►  airsim_bridge_dN
 #       │
-#       └────(host MAVLink TCP 5760+10*(N-1))────►  ardupilot-drone-{N-1}
+#       └────(host MAVLink TCP 5760+4 drones)────►  ardupilot-drone-{N-1}
 #                                                       │
 #                                                       └──►  AirSim XFS
 #
@@ -23,15 +27,12 @@
 # Prereq: the main stack is up (./launch.sh ardupilot-xfs). The mavros
 # containers depend on the airsim_bridge_dN being healthy so that ROS2
 # topic discovery on agent_internal-N is already warm.
-# =============================================================================
 
 name: ardupilot-xfs-mavros-test
 
 x-mavros: &mavros-defaults
   # Same image family as airsim_bridge_dN — already ships airsim_ros_pkgs +
-  # mavros + mavros_msgs. Fallback matches the main compose's fallback
-  # (multi-agent-bridge) so a fresh checkout without .env behaves
-  # consistently across services.
+  # mavros + mavros_msgs. Fallback matches the main compose's fallback.
   image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-multi-agent-bridge}
   pull_policy: if_not_present
   # init: false (intentional). With tini as PID 1, the image's entrypoint
@@ -52,9 +53,8 @@ x-mavros: &mavros-defaults
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
     - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
     # Bind-mount the per-drone mission script so updates land without
-    # rebuilding. Path matches what test-per-drone-mavros.sh references via
-    # `docker exec`. NOTE: compose resolves ${PWD} to the directory it was
-    # invoked from — test-per-drone-mavros.sh `cd`s here first.
+    # rebuilding. compose resolves ${PWD} to the directory it was invoked
+    # from — test-per-drone-mavros.sh `cd`s here first.
     - ${PWD}/scripts/test_one_drone_mavros.py:/scripts/test_one_drone_mavros.py:ro
 
 services:

@@ -22,6 +22,14 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"   # so docker-compose.mavros-test.yml's ${PWD}-relative bind mount resolves
 
+# Source root .env so NUM_DRONES (and any per-drone overrides) propagate
+# to compose substitution and the loops below. Falls back to 4 if not set.
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a; source "$REPO_ROOT/.env"; set +a
+fi
+NUM_DRONES="${NUM_DRONES:-4}"
+
 WAIT_SEC="${WAIT_SEC:-25}"
 TARGET_ALT="${TARGET_ALT:-5.0}"
 SETPOINT_DURATION="${SETPOINT_DURATION:-8.0}"
@@ -42,15 +50,15 @@ case "$cmd" in
     ;;
 esac
 
-echo "=== pre-flight: airsim_bridge_d{1..4} must be running ==="
-for n in 1 2 3 4; do
+echo "=== pre-flight: airsim_bridge_d{1..${NUM_DRONES}} must be running ==="
+for n in $(seq 1 "$NUM_DRONES"); do
   if ! docker ps --format '{{.Names}}' | grep -qx "airsim_bridge_d${n}"; then
     echo "ERROR: airsim_bridge_d${n} not running."
     echo "       Run: ./launch.sh ardupilot-xfs"
     exit 1
   fi
 done
-echo "  OK — all 4 per-drone bridges up"
+echo "  OK — all ${NUM_DRONES} per-drone bridges up"
 
 echo
 echo "=== bringing up mavros_d{1..4} ==="
@@ -85,12 +93,12 @@ run_one() {
 echo
 echo "=== running missions (${MODE}) ==="
 if [ "$MODE" = "sequential" ]; then
-  for n in 1 2 3 4; do
+  for n in $(seq 1 "$NUM_DRONES"); do
     echo "--- Copter${n} ---"
     run_one "$n"
   done
 else
-  for n in 1 2 3 4; do
+  for n in $(seq 1 "$NUM_DRONES"); do
     run_one "$n" &
   done
   wait
@@ -99,7 +107,7 @@ fi
 echo
 echo "=== summary ==="
 fail=0
-for n in 1 2 3 4; do
+for n in $(seq 1 "$NUM_DRONES"); do
   rc="$(cat "${RESULTS_DIR}/d${n}.txt.rc" 2>/dev/null || echo 99)"
   msg="$(grep -E '^(MOVE|FAIL):' "${RESULTS_DIR}/d${n}.txt" 2>/dev/null | head -1 || echo '(no output)')"
   case "$rc" in

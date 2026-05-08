@@ -1,21 +1,84 @@
 # ardupilot-xfs scenario
 
-Four ArduPilot SITL drones + AirSim XFS + per-drone ROS2 bridges, one
-per `agent_internal-N` docker network. Optionally pair with the
-autonomy team's mesh on `agent_external`.
+`NUM_DRONES` ArduPilot SITL drones + AirSim XFS + per-drone ROS2
+bridges (one per `agent_internal-N` docker network). Optionally pair
+with the autonomy team's mesh on `agent_external`.
+
+The production `docker-compose.yml`, `docker-compose.mavros-test.yml`,
+and `config/unreal-airsim/xfs/settings-ardupilot.json` are **generated**
+from Jinja templates by `tools/generate_scenario.py`. The single source
+of truth is the runtime-stack root `.env` (`NUM_DRONES`,
+`VEHICLE_PREFIX`, port bases, etc.). `./launch.sh ardupilot-xfs`
+auto-regenerates if drift is detected.
 
 ## Modes
 
 | Mode | Command | When to use | Persona |
 |---|---|---|---|
 | **Solo dev/test** | `./launch.sh ardupilot-xfs` | Bring up sim only. No autonomy team running. | Dev |
-| **Autonomy integration** | `./launch.sh ardupilot-xfs --with-agent-external` | Pair with autonomy_stack-1..3 on agent_external (the team's compose creates that network). | Autonomy |
-| **Legacy single-bridge** | `./launch.sh ardupilot-xfs --legacy-bridge` | Reproduce the old `ros2-x11-node` + `sim-router` topology (regression / fallback). | Dev |
+| **Autonomy integration** | `./launch.sh ardupilot-xfs --with-agent-external` | Pair with autonomy_stack-N on agent_external (the team's compose creates that network). | Autonomy |
 
-`--legacy-bridge` is incompatible with `--with-agent-external` (legacy
-already includes `sim-router` on agent_external). Other useful flags:
-`--headless` (off-screen UE5), `--with-monitoring`, `--with-metrics`,
-`--all`.
+Other useful flags: `--headless` (off-screen UE5), `--with-monitoring`,
+`--with-metrics`, `--all`.
+
+## What `./launch.sh ardupilot-xfs` actually brings up
+
+Default flow (no flags) is an `N=NUM_DRONES` stack. Containers (with
+`NUM_DRONES=4`, the shipped default — eleven in total):
+
+| Container(s) | Count | Purpose | Network |
+|---|---|---|---|
+| `ardupilot-xfs-pixel-streaming-signalling` | 1 | WebRTC signalling for UE5 PixelStreaming | bridge |
+| `ardupilot-xfs-airsim` | 1 | UE5 + AirSim plugin (Xfs map) | host |
+| `ardupilot-xfs-drone-{0..N-1}` | N | ArduCopter SITL, one per drone | host |
+| `airsim_bridge_d{1..N}` | N | Per-drone AirSim → ROS 2 bridge | agent_internal-{1..N} |
+| `ardupilot-xfs-qgc` | 1 | QGroundControl viewer | host |
+
+Add `--with-agent-external` to also start N× `zenoh-bridge-{1..N}` on
+agent_internal-N + agent_external.
+
+### Boot sequence
+
+`docker compose` starts everything in parallel; `depends_on` and healthchecks impose the actual ordering. Approximate timing on a warm host (numbers from `start_period:` values + observed cold starts):
+
+```
+T=0s    docker compose up -d
+        │
+        ├─► signalling                (start_period 20s)
+        │       │
+        │       └─ healthy ──┐
+        │                    ▼
+        ├─► airsim-xfs    waits for signalling healthy
+        │       │              ↓ then UE5 cold-start (~5–30s)
+        │       └─ healthy when nc -z 41451 passes (RPC port open)
+        │                    │
+        │                    ▼
+        │       N× airsim_bridge_dN   waits for airsim-xfs healthy
+        │                              ↓ ~6s ROS 2 launch + RPC connect
+        │                              └─ healthy → /CopterN/* publishing
+        │
+        ├─► N× ardupilot-drone-{0..N-1}  start in parallel, no deps
+        │       └─ healthy at T~90–120s (SITL warmup)
+        │
+        └─► qgc           start_period 15s, no deps
+```
+
+End-to-end (warm cache): `/Copter1/registered_point_cloud` publishing within ~30–40s of `./launch.sh`. Cold UE5 cache adds 15–30s of shader compile to `airsim-xfs healthy`.
+
+The `airsim_bridge_d*` services intentionally gate on `airsim-xfs: condition: service_healthy` in the template.
+Earlier `service_started` left the bridge to race AirSim's RPC port and silently land with zero sensor publishers — see Troubleshooting under "For dev" if you ever see `Publisher count: 0`.
+
+### Per-drone port plan
+
+| Drone | Vehicle | INSTANCE_NUM | MAVLink TCP | FDM TCP | FDM UDP |
+|-------|---------|--------------|-------------|---------|---------|
+|   1   | Copter1 |       0      |     5760    |   9002  |   9003  |
+|   2   | Copter2 |       1      |     5770    |   9012  |   9013  |
+|   3   | Copter3 |       2      |     5780    |   9022  |   9023  |
+|   4   | Copter4 |       3      |     5790    |   9032  |   9033  |
+
+Pattern: `5760 + 10*INSTANCE_NUM` for MAVLink, `9002 + 10*INSTANCE_NUM`
+for FDM TCP, `+1` for FDM UDP. SYSID_THISMAV = INSTANCE_NUM + 1.
 
 ## For autonomy (integrating)
 
@@ -44,8 +107,17 @@ often touch:
 |---|---|---|
 | `DRONE_{1..4}_DOMAIN_ID` | `1..4` | Per-drone ROS_DOMAIN_ID. Set all four to a single value (e.g. `20`) if your team aligns on a flat domain. |
 | `LOCAL_OBS_TARGET_FRAME` | `map` | `target_frame` for per-vehicle `pointcloud_registration_node`. Use `base_link` for per-drone REP-105 (`{vehicle}/base_link`); any other string passes through literally. |
+| `LOCAL_OBS_BUFFER_SEC` | `5.0` | Rolling-buffer length (s) per vehicle. Bigger = denser map, more CPU. The publish callback re-voxelizes the full buffer each tick, so this scales linearly. |
+| `LOCAL_OBS_VOXEL_SIZE` | `0.10` | Voxel leaf size (m). Smaller = denser map, more CPU. Defaults pair with `LOCAL_OBS_BUFFER_SEC=5.0` for ~20 Hz publish. |
 | `VEHICLE_{1..4}_NAME` | `Copter{1..4}` | Override per-drone vehicle key in `settings.json`. |
 | `AIRSIM_BRIDGE_IMAGE` | `tevv-airstack-ros2-x11-node-multi-agent-bridge` | Pin a different bridge image for testing. |
+
+The previous defaults (`LOCAL_OBS_BUFFER_SEC=30`, `LOCAL_OBS_VOXEL_SIZE=0.05`)
+measured ~1.7 Hz on the per-drone bridges — every publish tick re-merges +
+voxel-filters the whole buffer (~1500 scans at 50 Hz lidar input) under a
+single mutex shared with the input callback. The retuned defaults trade map
+density for ~20 Hz responsiveness; flip them back via the env vars above if
+you need the denser cloud and have the CPU headroom.
 
 Example for flat-domain + base_link mode:
 
@@ -68,8 +140,9 @@ ros2 topic list | grep ^/Copter1/
 ros2 topic echo --once --qos-reliability best_effort /Copter1/Imu
 ```
 
-The dev-side `./test-per-drone-bridges.sh` script does this for all
-four drones and reports PASS/FAIL.
+For full sensor + flight validation, run `./test-per-drone-mavros.sh`
+from `compose/ardupilot-xfs/` (real flight per drone — see the
+"For dev" section).
 
 ## For dev (running solo)
 
@@ -87,12 +160,19 @@ docker ps --format '{{.Names}} {{.Status}}' | grep -E 'ardupilot-xfs|airsim_brid
 
 ### Validate
 
-Two complementary tools, both from `compose/ardupilot-xfs/`:
+From `compose/ardupilot-xfs/`:
 
 | Tool | Validates | Touches the FCU? |
 |---|---|---|
-| `./test-per-drone-bridges.sh` | `/CopterN/*` topic delivery on each agent_internal-N | No (read-only) |
-| `./test-per-drone-mavros.sh` | Full MAVROS chain: arm, GUIDED, takeoff, setpoint, land — per drone, in isolated containers on `agent_internal-N` | **Yes — flies the drones.** |
+| `./test-per-drone-mavros.sh` | Full MAVROS chain: arm, GUIDED, takeoff, setpoint, land — per drone, in isolated containers on `agent_internal-N`. Reads `NUM_DRONES` from root `.env`. | **Yes — flies the drones.** |
+
+Sensor smoke-test from inside any bridge container:
+
+```bash
+docker exec airsim_bridge_d1 bash -lc \
+  'source /airsim_ros2_ws/install/setup.bash && \
+   timeout 5 ros2 topic hz /Copter1/registered_point_cloud'
+```
 
 For autonomy alignment on a flat domain, set the matching env BEFORE
 running either tool:
@@ -104,15 +184,35 @@ export DRONE_1_DOMAIN_ID=20 DRONE_2_DOMAIN_ID=20 \
        BRIDGE_TEST_D3_DOMAIN_ID=20 BRIDGE_TEST_D4_DOMAIN_ID=20
 ```
 
-### Switch to legacy bridge
+### Troubleshooting
 
-```bash
-./launch.sh ardupilot-xfs --legacy-bridge
-# Brings up sim-netns + sim-router + ros2-x11-node instead of per-drone bridges.
-# Fire MAVROS inside ros2-x11-node:
-docker exec -it ardupilot-xfs-ros2 \
-  bash compose/ardupilot-xfs/scripts/launch_4_mavros.sh
-```
+**`/CopterN/*` topics list but `ros2 topic echo` shows nothing.**
+Two distinct causes; check in this order.
+
+1. **Bridge missed AirSim's RPC boot window.** The bridge's
+   `rpc_dynamic` vehicle discovery races AirSim's RPC port (41451)
+   coming up; if RPC isn't accepting yet, the bridge falls back to an
+   explicit vehicle list AND the `multirotor_node` hangs at "Loading
+   settings from AirSim server..." with no retry. Symptom: `ros2 topic
+   info -v /CopterN/LidarSensor1/points` reports `Publisher count: 0`.
+   Compose now gates the bridge on `airsim-xfs: service_healthy` — but
+   if you ever recreate the bridge while AirSim is still cold, restart
+   only the bridge once AirSim is healthy:
+   ```bash
+   docker compose --profile per-drone-bridge restart airsim_bridge_dN
+   ```
+2. **QoS mismatch on raw lidar / odom topics.** Sensor topics publish
+   `BEST_EFFORT`; default subscribers are `RELIABLE` and never match.
+   `/CopterN/registered_point_cloud` is published `RELIABLE` so default
+   `ros2 topic echo` works on it, but `/CopterN/LidarSensor1/points`
+   and `/CopterN/ground_truth/odom` need:
+   ```bash
+   ros2 topic echo --qos-reliability best_effort /CopterN/LidarSensor1/points
+   ```
+   In **rviz2**, set the topic display's **Reliability Policy** to
+   **Best Effort** for raw lidar/odom. PointCloud2 also needs the
+   **Fixed Frame** to match the cloud's `header.frame_id` (`map` by
+   default, `<vehicle>/base_link` if `LOCAL_OBS_TARGET_FRAME=base_link`).
 
 ## MAVROS data path (how `test-per-drone-mavros.sh` actually moves a drone)
 
@@ -183,23 +283,94 @@ share `/dev/shm` with the bridges, so they only see their own
 per-drone slice over the docker network. Cosmetic, not a correctness
 issue.
 
+## Scaling drone count
+
+Drone count is governed by **`NUM_DRONES`** in the runtime-stack
+root `.env` (default `4`). To run a different fleet size:
+
+```bash
+# 1. Edit .env
+sed -i 's/^NUM_DRONES=.*/NUM_DRONES=8/' .env
+
+# 2. (Optional) Run the generator explicitly to verify before launch
+python3 tools/generate_scenario.py
+python3 tools/generate_scenario.py --self-test
+
+# 3. Bring up — launch.sh detects drift and regenerates automatically
+./launch.sh ardupilot-xfs
+```
+
+The generator (`tools/generate_scenario.py`) renders three files from
+Jinja templates in `compose/ardupilot-xfs/templates/` and
+`config/unreal-airsim/xfs/templates/`:
+
+| Generated file | Template |
+|---|---|
+| `compose/ardupilot-xfs/docker-compose.yml` | `compose/ardupilot-xfs/templates/docker-compose.yml.j2` |
+| `compose/ardupilot-xfs/docker-compose.mavros-test.yml` | `compose/ardupilot-xfs/templates/docker-compose.mavros-test.yml.j2` |
+| `config/unreal-airsim/xfs/settings-ardupilot.json` | `config/unreal-airsim/xfs/templates/settings-ardupilot.json.j2` |
+
+Limits: 1..16 drones (`MAX_DRONES` in `tools/generate_scenario.py`).
+Beyond 16, bump that constant.
+
+### Per-drone overrides
+
+To customize a specific drone's vehicle name or `ROS_DOMAIN_ID`, set
+the per-drone override in `.env`. Defaults are
+`${VEHICLE_PREFIX}{N}` and `{N}`:
+
+```bash
+VEHICLE_5_NAME=ground_drone_1   # appears in settings.json + airsim_bridge_d5 launch
+DRONE_5_DOMAIN_ID=20            # ROS_DOMAIN_ID for drone 5's bridge
+```
+
+### End-to-end test flow
+
+```bash
+# 1. Set count in source of truth
+sed -i 's/^NUM_DRONES=.*/NUM_DRONES=2/' .env
+
+# 2. Verify the generator's invariants (doesn't write)
+python3 tools/generate_scenario.py --self-test
+
+# 3. Validate compose syntax against current .env (writes if drift)
+python3 tools/generate_scenario.py
+docker compose -f compose/ardupilot-xfs/docker-compose.yml \
+  --profile per-drone-bridge --profile agent-external config --quiet
+
+# 4. Bring up
+./launch.sh ardupilot-xfs
+
+# 5. Smoke-test sensor flow
+docker exec airsim_bridge_d1 bash -lc \
+  'source /airsim_ros2_ws/install/setup.bash && \
+   timeout 5 ros2 topic hz /Copter1/registered_point_cloud'
+
+# 6. Flight test (per-drone arm/takeoff/setpoint/land)
+./test-per-drone-mavros.sh
+
+# 7. Teardown
+./stop.sh ardupilot-xfs
+
+# 8. Restore default
+sed -i 's/^NUM_DRONES=.*/NUM_DRONES=4/' .env
+python3 tools/generate_scenario.py
+```
+
 ## File inventory
 
 | File | Purpose |
 |---|---|
-| `docker-compose.yml` | Main scenario — runs the per-drone (default) and legacy services behind compose profiles. |
-| `docker-compose.mavros-test.yml` | 4× `mavros_dN` for the MAVROS integration test (separate compose project). |
-| `docker-compose.bridges.yml` (+ `.bridges.override.yml`, `.bridge-test.yml`, `.networks.yml`) | Vendored standalone bridges + topic-delivery validation. Used by `./test-per-drone-bridges.sh`. |
-| `test-per-drone-bridges.sh` | Topic-delivery validation. |
-| `test-per-drone-mavros.sh` | MAVROS integration test (real flight). |
+| `docker-compose.yml` | **Generated** main scenario (per-drone bridges + agent-external profile). Source: `templates/docker-compose.yml.j2`. |
+| `docker-compose.mavros-test.yml` | **Generated** N× `mavros_dN` services for the MAVROS integration test (separate compose project). Source: `templates/docker-compose.mavros-test.yml.j2`. |
+| `templates/` | Jinja2 templates that drive the two generated compose files above. Edit these to change the production stack shape, then `python3 tools/generate_scenario.py`. |
+| `test-per-drone-mavros.sh` | MAVROS integration test (real flight). Reads `NUM_DRONES` from root `.env`. |
 | `scripts/test_one_drone_mavros.py` | Per-drone arm/takeoff/setpoint/land mission, run via `docker exec` inside `mavros_dN`. |
-| `scripts/{launch_4_mavros,bringup_safe,use_settings,mavros_velocity_demo}.{sh,py}` | Legacy / dev helpers — see comments in each file. |
-| `tools/generate_compose.py` (+ `tools/README.md`) | Regenerate `docker-compose.bridges.yml` from upstream Cosys-AirSim. |
+| `scripts/use_settings.sh` | Helper to swap an alternate AirSim settings file in. |
 
 ## Stop everything
 
 ```bash
 ./stop.sh ardupilot-xfs   # cleans up all profiles
 ./test-per-drone-mavros.sh --teardown   # if mavros containers were up
-./test-per-drone-bridges.sh --teardown  # if bridge-test containers were up
 ```

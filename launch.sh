@@ -12,7 +12,7 @@ fi
 
 usage() {
   cat <<EOF
-Usage: ./launch.sh [scenario] [--headless] [--legacy-bridge] [--with-agent-external] [--with-monitoring] [--with-metrics] [--all]
+Usage: ./launch.sh [scenario] [--headless] [--with-agent-external] [--with-monitoring] [--with-metrics] [--all]
 
 Scenarios (compose/<scenario>/docker-compose.yml):
 $(ls compose/ | sed 's/^/  /')
@@ -27,17 +27,15 @@ GPU still renders for cameras and PixelStreaming). Currently only consumed
 by the ardupilot-xfs scenario; ignored by others. Equivalent .env knob:
 AIRSIM_HEADLESS=true.
 
---legacy-bridge (ardupilot-xfs only) brings up the legacy single-container
-ros2-x11-node + sim-router stack instead of the per-drone airsim_bridge_dN
-path. Equivalent .env knob: LEGACY_BRIDGE=true. See
-compose/ardupilot-xfs/README.md for the architectural difference.
-
 --with-agent-external (ardupilot-xfs default flow only) also starts the
-four per-drone zenoh bridges (zenoh-bridge-{1..4}) onto agent_external for
+per-drone zenoh bridges (zenoh-bridge-{1..N}) onto agent_external for
 /shared/* topic routing. Without this flag, the per-drone airsim_bridge_dN
-containers run DDS-only on agent_internal-N. Incompatible with
---legacy-bridge (legacy path already brings sim-router on agent_external).
+containers run DDS-only on agent_internal-N.
 Equivalent .env knob: WITH_AGENT_EXTERNAL=true.
+
+For ardupilot-xfs, drone count is set via NUM_DRONES in .env (default 4);
+the launcher regenerates compose + settings.json from
+compose/ardupilot-xfs/templates/ via tools/generate_scenario.py.
 EOF
 }
 
@@ -45,7 +43,6 @@ SCENARIO=""
 START_MONITORING="${START_MONITORING:-false}"
 START_METRICS="${START_METRICS:-false}"
 AIRSIM_HEADLESS="${AIRSIM_HEADLESS:-false}"
-LEGACY_BRIDGE="${LEGACY_BRIDGE:-false}"
 WITH_AGENT_EXTERNAL="${WITH_AGENT_EXTERNAL:-false}"
 
 for arg in "$@"; do
@@ -54,7 +51,6 @@ for arg in "$@"; do
     --with-metrics)       START_METRICS=true ;;
     --all)                START_MONITORING=true; START_METRICS=true ;;
     --headless)           AIRSIM_HEADLESS=true ;;
-    --legacy-bridge)      LEGACY_BRIDGE=true ;;
     --with-agent-external) WITH_AGENT_EXTERNAL=true ;;
     -h|--help)            usage; exit 0 ;;
     --*)                  echo "ERROR: Unknown flag: $arg"; usage; exit 1 ;;
@@ -94,22 +90,24 @@ export CONFIG_ROOT="$(cd "$CONFIG_ROOT" && pwd)"
 # Display-mode toggle for ardupilot-xfs's airsim-xfs container.
 export AIRSIM_HEADLESS
 
-# Bridge-architecture toggles (consumed in the COMPOSE_PROFILE_ARGS block below).
-export LEGACY_BRIDGE
+# Bridge-architecture toggle (consumed in the COMPOSE_PROFILE_ARGS block below).
 export WITH_AGENT_EXTERNAL
 
-# ardupilot-xfs default flow needs four agent_internal-N docker networks
+# ardupilot-xfs default flow needs N agent_internal-N docker networks
 # pre-created (the per-drone airsim_bridge_dN + zenoh-bridge-N services
 # attach to them). They're declared in the compose file but with
 # `name:` set, so creating them up front is idempotent and avoids a
 # project-prefix mismatch when the autonomy team's compose attaches
-# autonomy_stack-N to the same networks.
+# autonomy_stack-N to the same networks. NUM_DRONES comes from .env;
+# AGENT_INTERNAL_SUBNET_BASE controls the /24 prefix.
 ensure_agent_internal_networks() {
-  for n in 1 2 3 4; do
+  local count="${NUM_DRONES:-4}"
+  local base="${AGENT_INTERNAL_SUBNET_BASE:-172.28}"
+  for n in $(seq 1 "$count"); do
     if ! docker network inspect "agent_internal-${n}" >/dev/null 2>&1; then
       docker network create \
-        --subnet="172.28.${n}.0/24" \
-        --gateway="172.28.${n}.254" \
+        --subnet="${base}.${n}.0/24" \
+        --gateway="${base}.${n}.254" \
         "agent_internal-${n}" >/dev/null
       echo "  created agent_internal-${n}"
     fi
@@ -198,40 +196,36 @@ echo "  LOCAL_PLANNER_MODE=${LOCAL_PLANNER_MODE:-disabled}"
 echo "  START_MONITORING=$START_MONITORING"
 echo "  START_METRICS=$START_METRICS"
 echo "  AIRSIM_HEADLESS=$AIRSIM_HEADLESS"
-echo "  LEGACY_BRIDGE=$LEGACY_BRIDGE"
 echo "  WITH_AGENT_EXTERNAL=$WITH_AGENT_EXTERNAL"
+echo "  NUM_DRONES=${NUM_DRONES:-4}"
 echo
-
-# Reject incoherent combination: --legacy-bridge already brings sim-router
-# (legacy zenoh on agent_external). Adding the per-drone zenoh bridges on
-# top would attach two parallel sets of zenoh peers to the same mesh.
-if [ "$LEGACY_BRIDGE" = "true" ] && [ "$WITH_AGENT_EXTERNAL" = "true" ]; then
-  echo "ERROR: --legacy-bridge and --with-agent-external are incompatible." >&2
-  echo "       Legacy already includes sim-router on agent_external." >&2
-  exit 1
-fi
 
 if [ "$START_MONITORING" = "true" ]; then
   echo "Starting monitoring stack..."
   docker compose -f docker-compose-monitoring.yml --profile monitoring up -d
 fi
 
+# Regenerate scenario files from Jinja templates if needed.
+# Idempotent: --check exits 0 when outputs match templates and .env, so the
+# generator only writes when something drifted (e.g., NUM_DRONES changed).
+if [ "$SCENARIO" = "ardupilot-xfs" ] && [ -f "$SCRIPT_DIR/tools/generate_scenario.py" ]; then
+  if ! python3 "$SCRIPT_DIR/tools/generate_scenario.py" --check >/dev/null 2>&1; then
+    echo "Regenerating ardupilot-xfs scenario files (drift detected)..."
+    python3 "$SCRIPT_DIR/tools/generate_scenario.py"
+  fi
+fi
+
 # Pick profiles for ardupilot-xfs. Other scenarios don't have profiles wired
 # up yet — pass through unchanged.
 COMPOSE_PROFILE_ARGS=()
 if [ "$SCENARIO" = "ardupilot-xfs" ]; then
-  if [ "$LEGACY_BRIDGE" = "true" ]; then
-    COMPOSE_PROFILE_ARGS=(--profile legacy-bridge)
-    echo "Bridge architecture: LEGACY (ros2-x11-node + sim-router)"
+  ensure_agent_internal_networks
+  COMPOSE_PROFILE_ARGS=(--profile per-drone-bridge)
+  if [ "$WITH_AGENT_EXTERNAL" = "true" ]; then
+    COMPOSE_PROFILE_ARGS+=(--profile agent-external)
+    echo "Bridge architecture: per-drone + agent_external zenoh bridges"
   else
-    ensure_agent_internal_networks
-    COMPOSE_PROFILE_ARGS=(--profile per-drone-bridge)
-    if [ "$WITH_AGENT_EXTERNAL" = "true" ]; then
-      COMPOSE_PROFILE_ARGS+=(--profile agent-external)
-      echo "Bridge architecture: per-drone + agent_external zenoh bridges"
-    else
-      echo "Bridge architecture: per-drone (no agent_external bridge — pass --with-agent-external to add it)"
-    fi
+    echo "Bridge architecture: per-drone (no agent_external bridge — pass --with-agent-external to add it)"
   fi
 fi
 

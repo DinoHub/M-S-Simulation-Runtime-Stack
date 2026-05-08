@@ -1,8 +1,3 @@
-# =============================================================================
-# GENERATED FILE — do not edit by hand.
-# Regenerate: python3 tools/generate_scenario.py
-# Source:    compose/ardupilot-xfs/templates/docker-compose.yml.j2
-# =============================================================================
 # ArduPilot SITL fleet + AirSim XFS + per-drone ROS2 bridges + QGroundControl.
 #
 # Drone count and per-drone overrides live in the runtime-stack root .env
@@ -19,19 +14,18 @@
 # Per-drone overrides (optional): VEHICLE_{N}_NAME, DRONE_{N}_DOMAIN_ID.
 #
 # Default architecture (./launch.sh ardupilot-xfs):
-#   - 4× ArduPilot SITL                 (host net)
+#   - {{ num_drones }}× ArduPilot SITL                 (host net)
 #   - AirSim XFS                                       (host net, GPU)
-#   - airsim_bridge_d{1..4}             (one per drone, on agent_internal-N)
+#   - airsim_bridge_d{1..{{ num_drones }}}             (one per drone, on agent_internal-N)
 #   - QGroundControl + pixel-streaming-signalling      (host net)
 #
 # Opt-in (./launch.sh ardupilot-xfs --with-agent-external):
-#   - zenoh-bridge-{1..4}               (per drone, on agent_internal-N + agent_external)
+#   - zenoh-bridge-{1..{{ num_drones }}}               (per drone, on agent_internal-N + agent_external)
 #
-# Per-drone port plan (this render, N=4):
-#   Instance 0 -> Copter1 : MAVLink TCP 5760 ; FDM TCP 9002 / UDP 9003 ; agent_internal-1 (172.28.1.0/24)
-#   Instance 1 -> Copter2 : MAVLink TCP 5770 ; FDM TCP 9012 / UDP 9013 ; agent_internal-2 (172.28.2.0/24)
-#   Instance 2 -> Copter3 : MAVLink TCP 5780 ; FDM TCP 9022 / UDP 9023 ; agent_internal-3 (172.28.3.0/24)
-#   Instance 3 -> Copter4 : MAVLink TCP 5790 ; FDM TCP 9032 / UDP 9033 ; agent_internal-4 (172.28.4.0/24)
+# Per-drone port plan (this render, N={{ num_drones }}):
+{% for d in drones %}
+#   Instance {{ d.instance }} -> {{ d.vehicle }} : MAVLink TCP {{ d.mavlink_tcp }} ; FDM TCP {{ d.fdm_tcp }} / UDP {{ d.fdm_udp }} ; agent_internal-{{ d.n }} ({{ subnet_base }}.{{ d.subnet_octet }}.0/24)
+{% endfor %}
 
 name: ardupilot-xfs
 
@@ -95,72 +89,26 @@ x-zenoh-bridge: &zenoh-bridge-defaults
 services:
 
   # ---------------------------------------------------------------------------
-  # ArduPilot SITL × 4
+  # ArduPilot SITL × {{ num_drones }}
   # ---------------------------------------------------------------------------
-  ardupilot-drone-0:
+{% for d in drones %}
+  ardupilot-drone-{{ d.instance }}:
     <<: *ardupilot-base
-    container_name: ardupilot-xfs-drone-0
-    hostname: ardupilot-xfs-drone-0
+    container_name: ardupilot-xfs-drone-{{ d.instance }}
+    hostname: ardupilot-xfs-drone-{{ d.instance }}
     environment:
       - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
       - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
       - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
       - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
-      - INSTANCE_NUM=0
+      - INSTANCE_NUM={{ d.instance }}
     volumes:
-      - ./data/ardupilot-xfs/instance_0:/ardupilot_workspace/instances/instance_0
-      - ./data/ardupilot-xfs/logs_0:/ardupilot_data/logs
+      - ./data/ardupilot-xfs/instance_{{ d.instance }}:/ardupilot_workspace/instances/instance_{{ d.instance }}
+      - ./data/ardupilot-xfs/logs_{{ d.instance }}:/ardupilot_data/logs
       - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
-    command: ["0"]
+    command: ["{{ d.instance }}"]
 
-  ardupilot-drone-1:
-    <<: *ardupilot-base
-    container_name: ardupilot-xfs-drone-1
-    hostname: ardupilot-xfs-drone-1
-    environment:
-      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
-      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
-      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
-      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
-      - INSTANCE_NUM=1
-    volumes:
-      - ./data/ardupilot-xfs/instance_1:/ardupilot_workspace/instances/instance_1
-      - ./data/ardupilot-xfs/logs_1:/ardupilot_data/logs
-      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
-    command: ["1"]
-
-  ardupilot-drone-2:
-    <<: *ardupilot-base
-    container_name: ardupilot-xfs-drone-2
-    hostname: ardupilot-xfs-drone-2
-    environment:
-      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
-      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
-      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
-      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
-      - INSTANCE_NUM=2
-    volumes:
-      - ./data/ardupilot-xfs/instance_2:/ardupilot_workspace/instances/instance_2
-      - ./data/ardupilot-xfs/logs_2:/ardupilot_data/logs
-      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
-    command: ["2"]
-
-  ardupilot-drone-3:
-    <<: *ardupilot-base
-    container_name: ardupilot-xfs-drone-3
-    hostname: ardupilot-xfs-drone-3
-    environment:
-      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
-      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
-      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
-      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
-      - INSTANCE_NUM=3
-    volumes:
-      - ./data/ardupilot-xfs/instance_3:/ardupilot_workspace/instances/instance_3
-      - ./data/ardupilot-xfs/logs_3:/ardupilot_data/logs
-      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
-    command: ["3"]
-
+{% endfor %}
   # ---------------------------------------------------------------------------
   # AirSim XFS — Unreal Engine simulator with XFS scene.
   # Containerized AirSim with PixelStreaming. Requires the
@@ -287,7 +235,7 @@ services:
   # ===========================================================================
   # PER-DRONE AIRSIM ROS2 BRIDGES (default flow)
   # ===========================================================================
-  # 4 airsim_bridge_dN containers, one per vehicle, each on its
+  # {{ num_drones }} airsim_bridge_dN containers, one per vehicle, each on its
   # own agent_internal-N docker network.
   #
   # Drone 1 is the CLOCK MASTER: it owns /clock, world_ned static TF,
@@ -302,20 +250,21 @@ services:
   # isolated `agent_internal-N` networks where 127.0.0.1 means the container
   # itself.
   # ===========================================================================
-  airsim_bridge_d1:
+{% for d in drones %}
+  airsim_bridge_d{{ d.n }}:
     <<: *airsim-bridge-defaults
-    container_name: airsim_bridge_d1
-    hostname: airsim_bridge_d1
+    container_name: airsim_bridge_d{{ d.n }}
+    hostname: airsim_bridge_d{{ d.n }}
     environment:
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
-      - ROS_DOMAIN_ID=${DRONE_1_DOMAIN_ID:-1}
+      - ROS_DOMAIN_ID=${DRONE_{{ d.n }}_DOMAIN_ID:-{{ d.domain_id }}}
       - ROS_LOCALHOST_ONLY=0
       - AIRSIM_HOST_IP=host.docker.internal
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
-      - VEHICLE_NAME=${VEHICLE_1_NAME:-Copter1}
+      - VEHICLE_NAME=${VEHICLE_{{ d.n }}_NAME:-{{ d.vehicle }}}
     networks:
-      - agent_internal-1
+      - agent_internal-{{ d.n }}
     command:
       - "bash"
       - "-lc"
@@ -324,104 +273,15 @@ services:
         ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
         host_ip:=host.docker.internal
         host_port:=${AIRSIM_HOST_PORT:-41451}
-        vehicles:="['${VEHICLE_1_NAME:-Copter1}']"
+        vehicles:="['${VEHICLE_{{ d.n }}_NAME:-{{ d.vehicle }}}']"
         enable_localization:=true
-        enable_coordination:=true
+        enable_coordination:={{ "true" if d.n == 1 else "false" }}
         enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
         local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
         local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}
         local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.10}
 
-  airsim_bridge_d2:
-    <<: *airsim-bridge-defaults
-    container_name: airsim_bridge_d2
-    hostname: airsim_bridge_d2
-    environment:
-      - DISPLAY=${DISPLAY:-:0}
-      - XAUTHORITY=/tmp/.Xauthority
-      - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
-      - ROS_LOCALHOST_ONLY=0
-      - AIRSIM_HOST_IP=host.docker.internal
-      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
-      - VEHICLE_NAME=${VEHICLE_2_NAME:-Copter2}
-    networks:
-      - agent_internal-2
-    command:
-      - "bash"
-      - "-lc"
-      - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
-        host_ip:=host.docker.internal
-        host_port:=${AIRSIM_HOST_PORT:-41451}
-        vehicles:="['${VEHICLE_2_NAME:-Copter2}']"
-        enable_localization:=true
-        enable_coordination:=false
-        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
-        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
-        local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}
-        local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.10}
-
-  airsim_bridge_d3:
-    <<: *airsim-bridge-defaults
-    container_name: airsim_bridge_d3
-    hostname: airsim_bridge_d3
-    environment:
-      - DISPLAY=${DISPLAY:-:0}
-      - XAUTHORITY=/tmp/.Xauthority
-      - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
-      - ROS_LOCALHOST_ONLY=0
-      - AIRSIM_HOST_IP=host.docker.internal
-      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
-      - VEHICLE_NAME=${VEHICLE_3_NAME:-Copter3}
-    networks:
-      - agent_internal-3
-    command:
-      - "bash"
-      - "-lc"
-      - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
-        host_ip:=host.docker.internal
-        host_port:=${AIRSIM_HOST_PORT:-41451}
-        vehicles:="['${VEHICLE_3_NAME:-Copter3}']"
-        enable_localization:=true
-        enable_coordination:=false
-        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
-        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
-        local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}
-        local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.10}
-
-  airsim_bridge_d4:
-    <<: *airsim-bridge-defaults
-    container_name: airsim_bridge_d4
-    hostname: airsim_bridge_d4
-    environment:
-      - DISPLAY=${DISPLAY:-:0}
-      - XAUTHORITY=/tmp/.Xauthority
-      - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
-      - ROS_LOCALHOST_ONLY=0
-      - AIRSIM_HOST_IP=host.docker.internal
-      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
-      - VEHICLE_NAME=${VEHICLE_4_NAME:-Copter4}
-    networks:
-      - agent_internal-4
-    command:
-      - "bash"
-      - "-lc"
-      - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
-        host_ip:=host.docker.internal
-        host_port:=${AIRSIM_HOST_PORT:-41451}
-        vehicles:="['${VEHICLE_4_NAME:-Copter4}']"
-        enable_localization:=true
-        enable_coordination:=false
-        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
-        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
-        local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}
-        local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.10}
-
+{% endfor %}
   # ===========================================================================
   # PER-DRONE ZENOH BRIDGES (--with-agent-external profile)
   # ===========================================================================
@@ -435,82 +295,27 @@ services:
   #   - drone N subscribes to /shared/sim/* and /shared/swarm/*
   # See config/zenoh/zenoh_bridge_drone_{1..N}.json5 for details.
   # ===========================================================================
-  zenoh-bridge-1:
+{% for d in drones %}
+  zenoh-bridge-{{ d.n }}:
     <<: *zenoh-bridge-defaults
-    container_name: ardupilot-xfs-zenoh-bridge-1
-    hostname: zenoh-bridge-1
+    container_name: ardupilot-xfs-zenoh-bridge-{{ d.n }}
+    hostname: zenoh-bridge-{{ d.n }}
     networks:
-      - agent_internal-1
+      - agent_internal-{{ d.n }}
       - agent_external
     environment:
       - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
       - ROS_LOCALHOST_ONLY=0
       - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
-      - ROS_DOMAIN_ID=${DRONE_1_DOMAIN_ID:-1}
+      - ROS_DOMAIN_ID=${DRONE_{{ d.n }}_DOMAIN_ID:-{{ d.domain_id }}}
     command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
     volumes:
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_1.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_{{ d.n }}.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
     depends_on:
-      airsim_bridge_d1:
+      airsim_bridge_d{{ d.n }}:
         condition: service_started
 
-  zenoh-bridge-2:
-    <<: *zenoh-bridge-defaults
-    container_name: ardupilot-xfs-zenoh-bridge-2
-    hostname: zenoh-bridge-2
-    networks:
-      - agent_internal-2
-      - agent_external
-    environment:
-      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
-      - ROS_LOCALHOST_ONLY=0
-      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
-      - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
-    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
-    volumes:
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_2.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
-    depends_on:
-      airsim_bridge_d2:
-        condition: service_started
-
-  zenoh-bridge-3:
-    <<: *zenoh-bridge-defaults
-    container_name: ardupilot-xfs-zenoh-bridge-3
-    hostname: zenoh-bridge-3
-    networks:
-      - agent_internal-3
-      - agent_external
-    environment:
-      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
-      - ROS_LOCALHOST_ONLY=0
-      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
-      - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
-    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
-    volumes:
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_3.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
-    depends_on:
-      airsim_bridge_d3:
-        condition: service_started
-
-  zenoh-bridge-4:
-    <<: *zenoh-bridge-defaults
-    container_name: ardupilot-xfs-zenoh-bridge-4
-    hostname: zenoh-bridge-4
-    networks:
-      - agent_internal-4
-      - agent_external
-    environment:
-      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
-      - ROS_LOCALHOST_ONLY=0
-      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
-      - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
-    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
-    volumes:
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_4.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
-    depends_on:
-      airsim_bridge_d4:
-        condition: service_started
-
+{% endfor %}
   # ---------------------------------------------------------------------------
   # QGroundControl X11 — Ground control station with GPU acceleration.
   # ---------------------------------------------------------------------------
@@ -597,7 +402,7 @@ networks:
   # `agent_external` (not `<project>_agent_external`). For solo sim testing
   # without the autonomy compose, pre-create it:
   #   docker network create agent_external \
-  #     --subnet=172.28.0.0/24 --gateway=172.28.0.254
+  #     --subnet={{ subnet_base }}.0.0/24 --gateway={{ subnet_base }}.0.254
   agent_external:
     external: true
 
@@ -609,15 +414,8 @@ networks:
   # Declared `external: true` because launch.sh creates them up front via
   # `docker network create` (idempotent). The subnet / gateway authority
   # lives in launch.sh's `ensure_agent_internal_networks`.
-  agent_internal-1:
+{% for d in drones %}
+  agent_internal-{{ d.n }}:
     external: true
-    name: agent_internal-1
-  agent_internal-2:
-    external: true
-    name: agent_internal-2
-  agent_internal-3:
-    external: true
-    name: agent_internal-3
-  agent_internal-4:
-    external: true
-    name: agent_internal-4
+    name: agent_internal-{{ d.n }}
+{% endfor %}

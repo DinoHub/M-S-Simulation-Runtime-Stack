@@ -1,0 +1,84 @@
+# Per-drone MAVROS integration test (the agent_internal-N → MAVROS → FCU →
+# SITL → AirSim chain).
+#
+# Distinct compose project name (`ardupilot-xfs-mavros-test`) so that
+# `down --remove-orphans` here doesn't sweep up the main `ardupilot-xfs`
+# project's airsim_bridge_dN / SITL / etc.
+#
+# Brings up {{ num_drones }} mavros_dN containers, one per drone:
+#
+#   mavros_dN  ─(agent_internal-N)─►  airsim_bridge_dN
+#       │
+#       └────(host MAVLink TCP {{ mavlink_port_base }}+{{ num_drones }} drones)────►  ardupilot-drone-{N-1}
+#                                                       │
+#                                                       └──►  AirSim XFS
+#
+# Use via ./test-per-drone-mavros.sh (orchestrator) — that script also runs
+# the per-drone arm/takeoff/setpoint/land mission inside each mavros_dN.
+#
+# Bring-up:   docker compose -f docker-compose.mavros-test.yml up -d
+# Tear-down:  docker compose -f docker-compose.mavros-test.yml down
+#
+# Prereq: the main stack is up (./launch.sh ardupilot-xfs). The mavros
+# containers depend on the airsim_bridge_dN being healthy so that ROS2
+# topic discovery on agent_internal-N is already warm.
+
+name: ardupilot-xfs-mavros-test
+
+x-mavros: &mavros-defaults
+  # Same image family as airsim_bridge_dN — already ships airsim_ros_pkgs +
+  # mavros + mavros_msgs. Fallback matches the main compose's fallback.
+  image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-multi-agent-bridge}
+  pull_policy: if_not_present
+  # init: false (intentional). With tini as PID 1, the image's entrypoint
+  # hangs at the "Cleaning DDS state to prevent stale node accumulation..."
+  # step before exec'ing our command — ros2 launch's DDS cleanup forks
+  # children that get re-parented to tini and never finish. Without init,
+  # bash is PID 1 and reaps cleanly. Verified empirically.
+  init: false
+  restart: unless-stopped
+  ipc: host
+  # Avoid the X11 entrypoint's root→1000 user-switch that strips DISPLAY
+  # (same quirk as airsim_bridge_dN).
+  user: "${UID:-1000}:${GID:-1000}"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - /dev/shm:/dev/shm:rw
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
+    # Bind-mount the per-drone mission script so updates land without
+    # rebuilding. compose resolves ${PWD} to the directory it was invoked
+    # from — test-per-drone-mavros.sh `cd`s here first.
+    - ${PWD}/scripts/test_one_drone_mavros.py:/scripts/test_one_drone_mavros.py:ro
+
+services:
+{% for d in drones %}
+  mavros_d{{ d.n }}:
+    <<: *mavros-defaults
+    container_name: mavros_d{{ d.n }}
+    hostname: mavros_d{{ d.n }}
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_{{ d.n }}_DOMAIN_ID:-{{ d.domain_id }}}
+      - ROS_LOCALHOST_ONLY=0
+    networks:
+      - agent_internal-{{ d.n }}
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        source /airsim_ros2_ws/install/setup.bash &&
+        ros2 launch airsim_ros_pkgs mavros_bringup.launch.py
+        vehicle:={{ d.vehicle }}
+        fcu_url:=tcp://host.docker.internal:{{ d.mavlink_tcp }}
+        target_system_id:={{ d.n }}
+        mavros_config:=mavros_ardupilot.yaml
+        enable_dds_cleanup:={{ "true" if d.n == 1 else "false" }}
+
+{% endfor %}
+networks:
+{% for d in drones %}
+  agent_internal-{{ d.n }}: { external: true, name: agent_internal-{{ d.n }} }
+{% endfor %}
