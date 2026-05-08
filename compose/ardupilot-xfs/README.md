@@ -96,6 +96,45 @@ docker network as `airsim_bridge_dN` and consume:
 
 You don't talk to AirSim's RPC directly. The bridge does that for you.
 
+### Network ownership contract
+
+`agent_internal-{1..N}` is **co-owned** by the sim stack and the
+autonomy stack. Both compose files attach to the same docker network,
+but only one creates it. Five rules to keep the contract clean:
+
+- **Both compose files MUST declare each network with `external:
+  true, name: agent_internal-N`.** Without `name:`, docker prefixes
+  the network with the compose project name (`<project>_agent_internal-N`),
+  and the two teams end up on parallel networks that look the same
+  but aren't connected. Silent split-brain — docker doesn't warn
+  you. Sim's compose follows this convention; verify autonomy's does
+  too.
+- **Whoever runs first creates the network; the other side
+  attaches.** `launch.sh:ensure_agent_internal_networks()` is
+  idempotent: if the network exists it just logs the actual subnet
+  and skips creation. So either start order works.
+- **Subnet authority: whoever creates first wins.** Sim's default is
+  `${AGENT_INTERNAL_SUBNET_BASE}.${n}.0/24` (`172.28.${n}.0/24`).
+  If autonomy creates with a different prefix, sim's launch logs
+  `agent_internal-1: 172.20.1.0/24 (expected 172.28.1.0/24) — using
+  existing (likely autonomy-owned)` and continues. **DDS uses
+  container hostnames over docker DNS, not IPs**, so the subnet
+  difference is cosmetic — sensor topics still flow.
+- **`agent_external` is autonomy-owned. Sim never creates it.** The
+  zenoh bridges' `external: true` declaration on `agent_external`
+  fails fast if autonomy isn't up — that's intentional. For solo
+  sim testing without the autonomy compose, pre-create it manually:
+  ```bash
+  docker network create agent_external \
+    --subnet=172.28.0.0/24 --gateway=172.28.0.254
+  ```
+- **Subnet collision is the one real failure mode.** If autonomy's
+  network already occupies `172.28.0.0/16` for some other purpose
+  and sim tries to create at the same prefix, `docker network
+  create` errors. The launcher will surface that error directly;
+  override `AGENT_INTERNAL_SUBNET_BASE` in `.env` to a non-colliding
+  prefix.
+
 ### The few env knobs you actually flip
 
 Edit the **runtime-stack root** `.env` (NOT

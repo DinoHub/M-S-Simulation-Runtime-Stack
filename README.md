@@ -1,12 +1,8 @@
 # M-S-Simulation-Runtime-Stack
 
-Runtime environment used by the autonomy team. Launches the simulation
-(SITL + AirSim + ROS 2 bridges + ground control), and optionally a
-local planner, monitoring stack, and metrics collection.
+Runtime environment used by the autonomy team. Launches the simulation(SITL + AirSim + ROS 2 bridges + ground control), and optionally a local planner, monitoring stack, and metrics collection.
 
-This repo **does not contain the planner implementation** — the planner
-lives in its own repository and is integrated via `LOCAL_PLANNER_MODE`
-in `.env`.
+This repo **does not contain the planner implementation** — the planner lives in its own repository and is integrated via `LOCAL_PLANNER_MODE` in `.env`.
 
 ---
 
@@ -292,3 +288,10 @@ M-S-Simulation-Runtime-Stack/
 - **If the stack fails to start**: check Docker image tags first
   (especially `ARDUPILOT_IMAGE=ardupilot-slim` for multi-drone), then
   X11 (`xhost +local:docker` and `XAUTHORITY` exported).
+- **`agent_internal-N` is co-owned with the autonomy stack.** Whoever
+  runs first creates the docker network; the other side attaches.
+  See "Network ownership contract" in
+  [`compose/ardupilot-xfs/README.md`](./compose/ardupilot-xfs/README.md)
+  for the rules (especially: both sides MUST declare networks with
+  `external: true, name: agent_internal-N` to avoid silent
+  split-brain).

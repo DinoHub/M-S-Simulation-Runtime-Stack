@@ -104,12 +104,25 @@ ensure_agent_internal_networks() {
   local count="${NUM_DRONES:-4}"
   local base="${AGENT_INTERNAL_SUBNET_BASE:-172.28}"
   for n in $(seq 1 "$count"); do
-    if ! docker network inspect "agent_internal-${n}" >/dev/null 2>&1; then
+    local expected="${base}.${n}.0/24"
+    local existing
+    if existing=$(docker network inspect "agent_internal-${n}" \
+        --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null); then
+      # Network exists. Surface its actual subnet so a mismatch with
+      # AGENT_INTERNAL_SUBNET_BASE (likely autonomy-owned) is visible.
+      if [ -z "$existing" ]; then
+        echo "  agent_internal-${n}: exists (no IPAM subnet reported)"
+      elif [ "$existing" = "$expected" ]; then
+        echo "  agent_internal-${n}: ${existing} (already exists)"
+      else
+        echo "  agent_internal-${n}: ${existing} (expected ${expected}) — using existing (likely autonomy-owned)"
+      fi
+    else
       docker network create \
-        --subnet="${base}.${n}.0/24" \
+        --subnet="${expected}" \
         --gateway="${base}.${n}.254" \
         "agent_internal-${n}" >/dev/null
-      echo "  created agent_internal-${n}"
+      echo "  agent_internal-${n}: created at ${expected}"
     fi
   done
 }
