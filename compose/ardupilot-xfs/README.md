@@ -344,33 +344,14 @@ issue.
 
 ## Scaling drone count
 
-Drone count is governed by **`NUM_DRONES`** in the runtime-stack
-root `.env` (default `4`). To run a different fleet size:
+Drone count is `NUM_DRONES` in the runtime-stack root `.env`. The
+canonical recipe — TL;DR, knob table, worked example, generator
+commands — lives in the
+[root README's "Generating the ardupilot-xfs scenario"](../../README.md#generating-the-ardupilot-xfs-scenario)
+section.
 
-```bash
-# 1. Edit .env
-sed -i 's/^NUM_DRONES=.*/NUM_DRONES=8/' .env
-
-# 2. (Optional) Run the generator explicitly to verify before launch
-python3 tools/generate_scenario.py
-python3 tools/generate_scenario.py --self-test
-
-# 3. Bring up — launch.sh detects drift and regenerates automatically
-./launch.sh ardupilot-xfs
-```
-
-The generator (`tools/generate_scenario.py`) renders three files from
-Jinja templates in `compose/ardupilot-xfs/templates/` and
-`config/unreal-airsim/xfs/templates/`:
-
-| Generated file | Template |
-|---|---|
-| `compose/ardupilot-xfs/docker-compose.yml` | `compose/ardupilot-xfs/templates/docker-compose.yml.j2` |
-| `compose/ardupilot-xfs/docker-compose.mavros-test.yml` | `compose/ardupilot-xfs/templates/docker-compose.mavros-test.yml.j2` |
-| `config/unreal-airsim/xfs/settings-ardupilot.json` | `config/unreal-airsim/xfs/templates/settings-ardupilot.json.j2` |
-
-Limits: 1..16 drones (`MAX_DRONES` in `tools/generate_scenario.py`).
-Beyond 16, bump that constant.
+The rest of this section is ardupilot-xfs-specific: per-drone
+overrides and the end-to-end verification runbook.
 
 ### Per-drone overrides
 

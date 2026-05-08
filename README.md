@@ -40,6 +40,21 @@ Three pillars:
 
 ## Generating the `ardupilot-xfs` scenario
 
+### TL;DR — change drone count (or any other shape knob)
+
+```bash
+# Edit .env
+sed -i 's/^NUM_DRONES=.*/NUM_DRONES=8/' .env
+
+# Bring up — launch.sh detects drift and regenerates automatically
+./launch.sh ardupilot-xfs
+```
+
+That's it for the common case. Read on for the full set of knobs,
+a worked example, and how to invoke the generator directly.
+
+### What's source, what's generated
+
 `ardupilot-xfs` is parameterized: drone count, vehicle prefix, port
 bases, and subnet base all live in `.env`. The compose files and
 AirSim `settings-ardupilot.json` are **generated** from Jinja2
@@ -62,10 +77,45 @@ Templates and outputs:
 | `compose/ardupilot-xfs/templates/docker-compose.mavros-test.yml.j2` | `compose/ardupilot-xfs/docker-compose.mavros-test.yml` |
 | `config/unreal-airsim/xfs/templates/settings-ardupilot.json.j2` | `config/unreal-airsim/xfs/settings-ardupilot.json` |
 
-The three generated files have a "do not edit by hand" banner. To
-change shape, edit the template (or the `.env` knob) and regenerate.
+> **Do not hand-edit the generated files.** Every `./launch.sh
+> ardupilot-xfs` invocation will overwrite them via the generator's
+> drift check. Edit the **template** (the `.j2` file), then run
+> `python3 tools/generate_scenario.py` (or just relaunch).
 
-### Generator usage
+### Worked example: 8-drone fleet, custom prefix, flat ROS_DOMAIN_ID
+
+Edit `.env`:
+
+```env
+NUM_DRONES=8
+VEHICLE_PREFIX=Spirit       # vehicles will be Spirit1..Spirit8
+DRONE_X_SPACING_M=10        # 10m apart instead of default 8m
+
+# Per-drone overrides (optional). Set the same domain on all 8 to
+# share a single ROS_DOMAIN_ID with the autonomy team:
+DRONE_1_DOMAIN_ID=20
+DRONE_2_DOMAIN_ID=20
+DRONE_3_DOMAIN_ID=20
+DRONE_4_DOMAIN_ID=20
+DRONE_5_DOMAIN_ID=20
+DRONE_6_DOMAIN_ID=20
+DRONE_7_DOMAIN_ID=20
+DRONE_8_DOMAIN_ID=20
+```
+
+Then:
+
+```bash
+./launch.sh ardupilot-xfs
+```
+
+The generator picks up `NUM_DRONES=8`, renders 8 SITL containers,
+8 bridges, and 8 vehicles in `settings-ardupilot.json` named
+`Spirit1..Spirit8`. The launcher creates 8 `agent_internal-{1..8}`
+networks. Topics flow on `/Spirit1/*`..`/Spirit8/*`, all on
+`ROS_DOMAIN_ID=20`.
+
+### Generator usage (direct invocation)
 
 ```bash
 python3 tools/generate_scenario.py             # write all 3 outputs
@@ -79,19 +129,9 @@ Dependencies (Python 3, `jinja2`, `python-dotenv`):
 pip install -r tools/requirements.txt
 ```
 
-### Scaling drone count
-
-```bash
-sed -i 's/^NUM_DRONES=.*/NUM_DRONES=8/' .env
-./launch.sh ardupilot-xfs   # auto-regenerates if needed, then brings up
-```
-
-Per-drone overrides remain optional:
-`VEHICLE_5_NAME=ground_drone_1`, `DRONE_5_DOMAIN_ID=20`, etc.
-
-Deep dive: [`compose/ardupilot-xfs/README.md`](./compose/ardupilot-xfs/README.md)
-covers the boot sequence, autonomy integration, MAVROS data path, and
-troubleshooting.
+For the per-scenario verification runbook (smoke-test sensors,
+flight test, teardown), see
+[`compose/ardupilot-xfs/README.md`](./compose/ardupilot-xfs/README.md).
 
 ---
 
