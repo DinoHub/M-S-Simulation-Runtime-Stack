@@ -252,6 +252,26 @@ Two distinct causes; check in this order.
    **Best Effort** for raw lidar/odom. PointCloud2 also needs the
    **Fixed Frame** to match the cloud's `header.frame_id` (`map` by
    default, `<vehicle>/base_link` if `LOCAL_OBS_TARGET_FRAME=base_link`).
+3. **`ros2 topic echo` works but rviz2 shows nothing on
+   `registered_point_cloud` (especially after flying far from launch).**
+   The cloud's per-message size is roughly
+   `LOCAL_OBS_BUFFER_SEC × lidar_rate × 1/voxel_volume`. Defaults
+   (`buffer=5s`, `voxel=0.50m`) produce ~330 KB messages, which DDS
+   handles cleanly. Bumping the buffer and lowering the voxel
+   (e.g. `LOCAL_OBS_BUFFER_SEC=30`, `LOCAL_OBS_VOXEL_SIZE=0.10`) can
+   blow the cloud past 40 MB / message — `ros2 topic echo` still
+   works (same docker network, `ipc:host` SHM bypasses fragment
+   loss), but rviz2 on the host sees fragment loss and silently
+   drops every message. Either reduce the buffer, raise the voxel,
+   or run rviz2 inside an `agent_internal-N`-attached container.
+
+   rviz2 settings for large-cloud streams:
+   - **Fixed Frame**: match the cloud's `frame_id` (`map` if
+     `LOCAL_OBS_TARGET_FRAME=map`, `<vehicle>/base_link` if `=base_link`).
+   - **Reliability Policy**: Reliable (the cloud publishes RELIABLE).
+   - **Queue Size**: 1 — don't backlog 40 MB messages.
+   - **Decay Time**: 0 — display the latest message only.
+   - **Style**: Points (cheaper than Spheres / Boxes).
 
 ## MAVROS data path (how `test-per-drone-mavros.sh` actually moves a drone)
 
