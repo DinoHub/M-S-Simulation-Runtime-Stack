@@ -272,6 +272,30 @@ Two distinct causes; check in this order.
    - **Queue Size**: 1 — don't backlog 40 MB messages.
    - **Decay Time**: 0 — display the latest message only.
    - **Style**: Points (cheaper than Spheres / Boxes).
+4. **Cloud renders empty even though display status is OK** (and the
+   raw `/CopterN/LidarSensor1/points` renders fine). With
+   `LOCAL_OBS_TARGET_FRAME=base_link`, the registered cloud is in
+   the drone's **current** body frame. Points captured at past body
+   positions get re-expressed in the current body frame on every
+   publish — so a point captured 5 m in front of the drone at takeoff
+   is, after flying 800 m forward, at body-frame `X ≈ -800 m`. With
+   rviz Fixed Frame also set to `Copter1/base_link`, the camera is
+   pinned to the drone (origin) and those points are 100s of metres
+   off-screen of the default frustum. rviz IS rendering them — they
+   just live way outside the camera view.
+
+   The clean fix is **rviz-side only** (no `.env` change, cloud's
+   `frame_id` stays `Copter1/base_link` for downstream consumers):
+   - Set rviz Fixed Frame to `map`. The TF chain
+     `Copter1/base_link → Copter1/odom → map` already exists.
+   - Right-click the 3D viewport → "Focus Camera on" `Copter1/base_link`
+     (or hit `f` after selecting the cloud display) to recenter on
+     the drone.
+
+   If you'd rather the cloud itself live in world frame (some autonomy
+   stacks prefer this), set `LOCAL_OBS_TARGET_FRAME=map` in `.env` —
+   but that changes the topic's `frame_id` and is a downstream-contract
+   change, not just a viz tweak.
 
 ## MAVROS data path (how `test-per-drone-mavros.sh` actually moves a drone)
 
