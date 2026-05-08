@@ -262,10 +262,14 @@ def _self_test() -> None:
         assert last.fdm_tcp == 9002 + 10 * last.instance
         assert last.fdm_udp == last.fdm_tcp + 1
 
-        # Coordination: drone-1 is the clock master, exactly one such.
-        assert "enable_coordination:=true" in compose_yaml
-        assert compose_yaml.count("enable_coordination:=true") == 1, \
-            f"expected exactly one clock master, got {compose_yaml.count('enable_coordination:=true')} for N={n}"
+        # Coordination disabled on every bridge — coordination_node's /clock
+        # publisher races multirotor_node's /clock and triggers tf2 buffer
+        # resets that wipe the registered cloud. Each multirotor_node is its
+        # own /clock publisher on its agent_internal-N network.
+        assert "enable_coordination:=true" not in compose_yaml, \
+            f"enable_coordination must be false on every bridge for N={n}"
+        assert compose_yaml.count("enable_coordination:=false") == n, \
+            f"expected {n} bridges with enable_coordination:=false, got {compose_yaml.count('enable_coordination:=false')} for N={n}"
 
         # No unsubstituted Jinja tokens.
         for label, body in (("compose", compose_yaml), ("mavros", mavros_yaml), ("settings", settings_json)):

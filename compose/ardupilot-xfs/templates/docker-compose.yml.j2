@@ -238,9 +238,18 @@ services:
   # {{ num_drones }} airsim_bridge_dN containers, one per vehicle, each on its
   # own agent_internal-N docker network.
   #
-  # Drone 1 is the CLOCK MASTER: it owns /clock, world_ned static TF,
-  # /origin_geo_point, and fleet services. Drones 2..N publish only their own
-  # vehicle topics.
+  # Each per-drone bridge is its own /clock publisher on its own
+  # agent_internal-N network — `enable_coordination=false` everywhere.
+  # Don't enable the singleton `airsim_coordination_node` on drone-1:
+  # it duplicates the multirotor_node's /clock publisher (an upstream
+  # bug in the bridge image), and the two compete with slightly
+  # out-of-sync timestamps. tf2's "jump back in time" detector then
+  # clears the buffer every few seconds, wiping the registered cloud.
+  # Coordination-only topics (/origin_geo_point, /fleet_target_detection,
+  # /system_status) had zero subscribers in the live deployment; the
+  # claimed `world_ned` static TF doesn't actually publish in this
+  # image build. Re-enable per-deployment via env if a future
+  # consumer needs them.
   #
   # Domain id strategy: per-drone domains (1..N by default) keep SHM-discovery
   # isolated between bridges. Override with `DRONE_N_DOMAIN_ID=20` if the
@@ -275,7 +284,7 @@ services:
         host_port:=${AIRSIM_HOST_PORT:-41451}
         vehicles:="['${VEHICLE_{{ d.n }}_NAME:-{{ d.vehicle }}}']"
         enable_localization:=true
-        enable_coordination:={{ "true" if d.n == 1 else "false" }}
+        enable_coordination:=false
         enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
         local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
         local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}
