@@ -12,7 +12,7 @@ fi
 
 usage() {
   cat <<EOF
-Usage: ./launch.sh [scenario] [--headless] [--with-agent-external] [--with-monitoring] [--with-metrics] [--all]
+Usage: ./launch.sh [scenario] [--headless] [--with-agent-external] [--with-pixel-streaming] [--with-monitoring] [--with-metrics] [--all]
 
 Scenarios (compose/<scenario>/docker-compose.yml):
 $(ls compose/ | sed 's/^/  /')
@@ -33,6 +33,12 @@ per-drone zenoh bridges (zenoh-bridge-{1..N}) onto agent_external for
 containers run DDS-only on agent_internal-N.
 Equivalent .env knob: WITH_AGENT_EXTERNAL=true.
 
+--with-pixel-streaming (ardupilot-xfs, px4-condo) starts the
+pixel-streaming-signalling sidecar AND tells UE5 to dial it
+(-PixelStreamingURL). Default off — browser viewer disabled. View at
+http://localhost:\${PS_HTTP_PORT:-80} when enabled.
+Equivalent .env knob: ENABLE_PIXEL_STREAMING=true.
+
 For ardupilot-xfs, drone count is set via NUM_DRONES in .env (default 4);
 the launcher regenerates compose + settings.json from
 compose/ardupilot-xfs/templates/ via tools/generate_scenario.py.
@@ -44,15 +50,17 @@ START_MONITORING="${START_MONITORING:-false}"
 START_METRICS="${START_METRICS:-false}"
 AIRSIM_HEADLESS="${AIRSIM_HEADLESS:-false}"
 WITH_AGENT_EXTERNAL="${WITH_AGENT_EXTERNAL:-false}"
+ENABLE_PIXEL_STREAMING="${ENABLE_PIXEL_STREAMING:-false}"
 
 for arg in "$@"; do
   case "$arg" in
-    --with-monitoring)    START_MONITORING=true ;;
-    --with-metrics)       START_METRICS=true ;;
-    --all)                START_MONITORING=true; START_METRICS=true ;;
-    --headless)           AIRSIM_HEADLESS=true ;;
+    --with-monitoring)     START_MONITORING=true ;;
+    --with-metrics)        START_METRICS=true ;;
+    --all)                 START_MONITORING=true; START_METRICS=true ;;
+    --headless)            AIRSIM_HEADLESS=true ;;
     --with-agent-external) WITH_AGENT_EXTERNAL=true ;;
-    -h|--help)            usage; exit 0 ;;
+    --with-pixel-streaming) ENABLE_PIXEL_STREAMING=true ;;
+    -h|--help)             usage; exit 0 ;;
     --*)                  echo "ERROR: Unknown flag: $arg"; usage; exit 1 ;;
     *)
       if [ -z "$SCENARIO" ]; then
@@ -92,6 +100,10 @@ export AIRSIM_HEADLESS
 
 # Bridge-architecture toggle (consumed in the COMPOSE_PROFILE_ARGS block below).
 export WITH_AGENT_EXTERNAL
+
+# PixelStreaming toggle (gates both the sidecar profile and the
+# -PixelStreamingURL flag inside the airsim container's bash wrapper).
+export ENABLE_PIXEL_STREAMING
 
 # ardupilot-xfs default flow needs N agent_internal-N docker networks
 # pre-created (the per-drone airsim_bridge_dN + zenoh-bridge-N services
@@ -210,6 +222,7 @@ echo "  START_MONITORING=$START_MONITORING"
 echo "  START_METRICS=$START_METRICS"
 echo "  AIRSIM_HEADLESS=$AIRSIM_HEADLESS"
 echo "  WITH_AGENT_EXTERNAL=$WITH_AGENT_EXTERNAL"
+echo "  ENABLE_PIXEL_STREAMING=$ENABLE_PIXEL_STREAMING"
 echo "  NUM_DRONES=${NUM_DRONES:-4}"
 echo
 
@@ -228,8 +241,8 @@ if [ "$SCENARIO" = "ardupilot-xfs" ] && [ -f "$SCRIPT_DIR/tools/generate_scenari
   fi
 fi
 
-# Pick profiles for ardupilot-xfs. Other scenarios don't have profiles wired
-# up yet — pass through unchanged.
+# Pick profiles for ardupilot-xfs and px4-condo. Other scenarios don't have
+# profiles wired up yet — pass through unchanged.
 COMPOSE_PROFILE_ARGS=()
 if [ "$SCENARIO" = "ardupilot-xfs" ]; then
   ensure_agent_internal_networks
@@ -241,6 +254,19 @@ if [ "$SCENARIO" = "ardupilot-xfs" ]; then
     echo "Bridge architecture: per-drone (no agent_external bridge — pass --with-agent-external to add it)"
   fi
 fi
+
+# Pixel-streaming profile applies to scenarios that ship the
+# pixel-streaming-signalling sidecar (ardupilot-xfs, px4-condo).
+case "$SCENARIO" in
+  ardupilot-xfs|px4-condo)
+    if [ "$ENABLE_PIXEL_STREAMING" = "true" ]; then
+      COMPOSE_PROFILE_ARGS+=(--profile pixel-streaming)
+      echo "Pixel streaming: enabled (signalling sidecar + UE5 dials it)"
+    else
+      echo "Pixel streaming: disabled (pass --with-pixel-streaming to enable)"
+    fi
+    ;;
+esac
 
 echo "Starting simulation stack ($SCENARIO)..."
 docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \

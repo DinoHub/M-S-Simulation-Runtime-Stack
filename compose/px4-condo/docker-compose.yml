@@ -14,6 +14,10 @@ services:
     depends_on:
       pixel-streaming-signalling:
         condition: service_healthy
+        # required: false → Compose silently skips the dependency when
+        # the `pixel-streaming` profile is inactive (the default). When
+        # --with-pixel-streaming is passed, the dependency is enforced.
+        required: false
 
     user: "${UID:?set UID}:${GID:?set GID}"
     group_add:
@@ -26,9 +30,14 @@ services:
       - DISPLAY=${DISPLAY:?set DISPLAY}
       - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
       - XAUTHORITY=/tmp/.Xauthority
-      # UE5 PixelStreaming dials this signalling-server URL at startup.
-      # Host networking → 127.0.0.1 reaches the pixel-streaming-signalling container.
+      # UE5 PixelStreaming dials this signalling-server URL at startup,
+      # but only when ENABLE_PIXEL_STREAMING=true (see command block —
+      # we unset PIXELSTREAMING_URL otherwise so the entrypoint script
+      # doesn't construct -PixelStreamingURL).
       - PIXELSTREAMING_URL=${PS_URL:-ws://127.0.0.1:${PS_STREAMER_PORT:-8888}}
+      # When true, the pixel-streaming sidecar starts and UE5 dials it.
+      # Default false. Toggle: ./launch.sh px4-condo --with-pixel-streaming
+      - ENABLE_PIXEL_STREAMING=${ENABLE_PIXEL_STREAMING:-false}
 
     network_mode: host
     networks: !reset []
@@ -48,6 +57,10 @@ services:
       - |
         echo "Waiting 3s before starting Condo..."
         sleep 3
+        if [ "$$ENABLE_PIXEL_STREAMING" != "true" ]; then
+          unset PIXELSTREAMING_URL
+        fi
+        echo "AirSim pixel-streaming: $$ENABLE_PIXEL_STREAMING"
         exec /usr/local/bin/airsim-entrypoint.sh /app/Condo/Condo.sh -windowed -ResX=1920 -ResY=1080
 
     healthcheck:
@@ -253,8 +266,12 @@ services:
   # ============================================================================
   # Pixel Streaming Signalling Server
   # Bridges the UE5 PixelStreaming plugin (listening on :8888 inside
-  # airsim-condo) and browser viewers. Open http://localhost:${PS_HTTP_PORT}
-  # to view the sim scene as a WebRTC stream.
+  # airsim-condo) and browser viewers. Opt-in via the `pixel-streaming`
+  # profile: pass --with-pixel-streaming (or ENABLE_PIXEL_STREAMING=true).
+  # When inactive, this service isn't created AND airsim-condo's
+  # depends_on edge above is silently dropped — UE5 launches without the
+  # -PixelStreamingURL flag (the wrapper unsets PIXELSTREAMING_URL) and
+  # the plugin stays idle. Browser viewer at http://localhost:${PS_HTTP_PORT}.
   # ============================================================================
   pixel-streaming-signalling:
     image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.5}
@@ -262,6 +279,7 @@ services:
     container_name: pixel-streaming-signalling
     hostname: pixel-streaming-signalling
     restart: unless-stopped
+    profiles: ["pixel-streaming"]
 
     # No depends_on — this service boots first so airsim-condo can dial it.
 

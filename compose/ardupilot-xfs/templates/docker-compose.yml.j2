@@ -17,10 +17,13 @@
 #   - {{ num_drones }}× ArduPilot SITL                 (host net)
 #   - AirSim XFS                                       (host net, GPU)
 #   - airsim_bridge_d{1..{{ num_drones }}}             (one per drone, on agent_internal-N)
-#   - QGroundControl + pixel-streaming-signalling      (host net)
+#   - QGroundControl                                   (host net)
 #
-# Opt-in (./launch.sh ardupilot-xfs --with-agent-external):
-#   - zenoh-bridge-{1..{{ num_drones }}}               (per drone, on agent_internal-N + agent_external)
+# Opt-in flags:
+#   --with-agent-external    → zenoh-bridge-{1..{{ num_drones }}} on agent_external
+#   --with-pixel-streaming   → pixel-streaming-signalling sidecar + UE5 dials it
+#                              (browser viewer at http://localhost:${PS_HTTP_PORT})
+#   --headless               → UE5 -RenderOffScreen (no native window)
 #
 # Per-drone port plan (this render, N={{ num_drones }}):
 {% for d in drones %}
@@ -111,11 +114,13 @@ services:
 {% endfor %}
   # ---------------------------------------------------------------------------
   # AirSim XFS — Unreal Engine simulator with XFS scene.
-  # Containerized AirSim with PixelStreaming. Requires the
-  # `pixel-streaming-signalling` sidecar (declared below). UE5 dials the
-  # signalling URL at startup; without it, the AirSim API socket never
-  # opens and ardupilot SITLs can't connect on the per-vehicle FDM ports.
-  # View the live scene at http://localhost:${PS_HTTP_PORT:-80}.
+  # PixelStreaming is opt-in: by default UE5 is NOT given -PixelStreamingURL
+  # and the `pixel-streaming-signalling` sidecar (declared below) doesn't
+  # start (profile: pixel-streaming). Pass --with-pixel-streaming to enable
+  # the browser viewer at http://localhost:${PS_HTTP_PORT:-80}; in that
+  # mode UE5 dials the signalling URL and the depends_on edge below is
+  # active (compose treats depends_on to an inactive-profile service as a
+  # no-op, so the default flow doesn't wait for it).
   # ---------------------------------------------------------------------------
   airsim-xfs:
     image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:xfs-latest}
@@ -127,6 +132,12 @@ services:
     depends_on:
       pixel-streaming-signalling:
         condition: service_healthy
+        # required: false → Compose silently skips the dependency when
+        # the `pixel-streaming` profile is inactive (the default). When
+        # --with-pixel-streaming is passed and the profile activates,
+        # the dependency is enforced (UE5 waits for signalling to be
+        # healthy before launching to avoid the dial-too-early hang).
+        required: false
 
     user: "${UID:-1000}:${GID:-1000}"
     group_add:
@@ -147,14 +158,19 @@ services:
       - DISPLAY=${DISPLAY:-:0}
       - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
       - XAUTHORITY=/tmp/.Xauthority
-      # UE5 PixelStreaming dials this signalling-server URL at startup.
+      # UE5 PixelStreaming dials this signalling-server URL at startup,
+      # but ONLY when ENABLE_PIXEL_STREAMING=true (see command block).
       # Host networking → 127.0.0.1 reaches the pixel-streaming-signalling
-      # container.
+      # container when the pixel-streaming profile is active.
       - PIXELSTREAMING_URL=${PS_URL:-ws://127.0.0.1:${PS_STREAMER_PORT:-8888}}
       # When true, UE5 runs without a window via -RenderOffScreen. Cameras
       # and PixelStreaming still work; the GUI doesn't pop up. Toggle at
       # launch with: ./launch.sh ardupilot-xfs --headless
       - AIRSIM_HEADLESS=${AIRSIM_HEADLESS:-false}
+      # When true, UE5 is given -PixelStreamingURL and the signalling
+      # sidecar starts. Default false — browser viewer disabled. Toggle
+      # with: ./launch.sh ardupilot-xfs --with-pixel-streaming
+      - ENABLE_PIXEL_STREAMING=${ENABLE_PIXEL_STREAMING:-false}
 
     network_mode: host
     ipc: host
@@ -169,9 +185,11 @@ services:
 
     # xfs-latest doesn't ship /usr/local/bin/airsim-entrypoint.sh (the wrapper
     # exists in the condo image only). Pass -PixelStreamingURL directly to
-    # the UE5 binary instead — the plugin reads it from CLI when present,
-    # ignores it when not. `$$VAR` survives compose interpolation so bash
-    # inside the container reads vars from the env block above.
+    # the UE5 binary — but only when ENABLE_PIXEL_STREAMING=true. Otherwise
+    # the plugin would dial an unreachable signalling endpoint (the sidecar
+    # is profile-gated off by default) and hang on init. `$$VAR` survives
+    # compose interpolation so bash inside the container reads vars from
+    # the env block above.
     #
     # AIRSIM_HEADLESS=true selects -RenderOffScreen (off-screen GPU render,
     # cameras still work, no window). false (default) keeps -windowed for
@@ -187,8 +205,13 @@ services:
         else
           DISPLAY_FLAGS="-windowed"
         fi
+        PS_FLAG=""
+        if [ "$$ENABLE_PIXEL_STREAMING" = "true" ]; then
+          PS_FLAG="-PixelStreamingURL=$$PIXELSTREAMING_URL"
+        fi
         echo "AirSim display mode: $$DISPLAY_FLAGS"
-        exec /app/Xfs/Xfs.sh $$DISPLAY_FLAGS -ResX=1920 -ResY=1080 -PixelStreamingURL=$$PIXELSTREAMING_URL
+        echo "AirSim pixel-streaming: $$ENABLE_PIXEL_STREAMING"
+        exec /app/Xfs/Xfs.sh $$DISPLAY_FLAGS -ResX=1920 -ResY=1080 $$PS_FLAG
 
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 41451 || exit 1"]
@@ -200,10 +223,13 @@ services:
   # ---------------------------------------------------------------------------
   # Pixel Streaming Signalling Server.
   # Bridges the UE5 PixelStreaming plugin (listening on :8888 inside
-  # airsim-xfs) and browser viewers. airsim-xfs depends on this being
-  # healthy before UE5 starts; without it, UE5 hangs on plugin init and
-  # the AirSim API socket never opens. Open http://localhost:${PS_HTTP_PORT}
-  # to view the live scene as a WebRTC stream.
+  # airsim-xfs) and browser viewers. Opt-in via the `pixel-streaming`
+  # profile: pass --with-pixel-streaming to launch.sh (or set
+  # ENABLE_PIXEL_STREAMING=true). When the profile is inactive, this
+  # service isn't created AND the airsim-xfs depends_on edge above is
+  # silently dropped — UE5 launches without -PixelStreamingURL and the
+  # plugin stays idle. Open http://localhost:${PS_HTTP_PORT} to view the
+  # live scene as a WebRTC stream when enabled.
   # ---------------------------------------------------------------------------
   pixel-streaming-signalling:
     image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.5}
@@ -211,6 +237,7 @@ services:
     container_name: ardupilot-xfs-pixel-streaming-signalling
     hostname: ardupilot-xfs-pixel-streaming-signalling
     restart: unless-stopped
+    profiles: ["pixel-streaming"]
     network_mode: host
     init: true
     environment:
@@ -319,7 +346,14 @@ services:
       - ROS_DOMAIN_ID=${DRONE_{{ d.n }}_DOMAIN_ID:-{{ d.domain_id }}}
     command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
     volumes:
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/zenoh/zenoh_bridge_drone_{{ d.n }}.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
+      # `${CONFIG_ROOT:-./config}` (default-fallback) instead of `${CONFIG_ROOT?...}`
+      # (strict-required) — Compose interpolates all services during parse,
+      # even profile-gated ones that won't be created, so a strict-required
+      # here would fail `docker compose up airsim_bridge_d1` whenever
+      # CONFIG_ROOT isn't exported. The bogus `./config/...` resolution is
+      # harmless because this service is profile-gated off without
+      # --with-agent-external.
+      - ${CONFIG_ROOT:-./config}/zenoh/zenoh_bridge_drone_{{ d.n }}.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
     depends_on:
       airsim_bridge_d{{ d.n }}:
         condition: service_started

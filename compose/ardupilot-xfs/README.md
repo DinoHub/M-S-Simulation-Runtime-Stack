@@ -18,7 +18,9 @@ auto-regenerates if drift is detected.
 | **Solo dev/test** | `./launch.sh ardupilot-xfs` | Bring up sim only. No autonomy team running. | Dev |
 | **Autonomy integration** | `./launch.sh ardupilot-xfs --with-agent-external` | Pair with autonomy_stack-N on agent_external (the team's compose creates that network). | Autonomy |
 
-Other useful flags: `--headless` (off-screen UE5), `--with-monitoring`,
+Other useful flags: `--headless` (off-screen UE5), `--with-pixel-streaming`
+(browser viewer at http://localhost:80 via the WebRTC signalling sidecar —
+default OFF since most runs don't open the browser), `--with-monitoring`,
 `--with-metrics`, `--all`.
 
 ## What `./launch.sh ardupilot-xfs` actually brings up
@@ -28,7 +30,6 @@ Default flow (no flags) is an `N=NUM_DRONES` stack. Containers (with
 
 | Container(s) | Count | Purpose | Network |
 |---|---|---|---|
-| `ardupilot-xfs-pixel-streaming-signalling` | 1 | WebRTC signalling for UE5 PixelStreaming | bridge |
 | `ardupilot-xfs-airsim` | 1 | UE5 + AirSim plugin (Xfs map) | host |
 | `ardupilot-xfs-drone-{0..N-1}` | N | ArduCopter SITL, one per drone | host |
 | `airsim_bridge_d{1..N}` | N | Per-drone AirSim → ROS 2 bridge | agent_internal-{1..N} |
@@ -36,6 +37,12 @@ Default flow (no flags) is an `N=NUM_DRONES` stack. Containers (with
 
 Add `--with-agent-external` to also start N× `zenoh-bridge-{1..N}` on
 agent_internal-N + agent_external.
+
+Add `--with-pixel-streaming` to also start
+`ardupilot-xfs-pixel-streaming-signalling` (WebRTC signalling sidecar; UE5
+dials it via `-PixelStreamingURL`; browser viewer at http://localhost:80).
+Default off — the sidecar's WebRTC encode pipeline isn't free and most
+runs don't open the browser.
 
 ### Boot sequence
 
@@ -48,7 +55,9 @@ T=0s    docker compose up -d
         │       │
         │       └─ healthy ──┐
         │                    ▼
-        ├─► airsim-xfs    waits for signalling healthy
+        ├─► airsim-xfs    waits for signalling healthy|release controls the archive format (-Compressed) but secretly hard-codes -clientconfig=Development regardless. Asking for "release" gave a Development binary in a compressed pak. Shipping was unreachable from the surface.
+
+
         │       │              ↓ then UE5 cold-start (~5–30s)
         │       └─ healthy when nc -z 41451 passes (RPC port open)
         │                    │
