@@ -18,6 +18,14 @@
 #
 # Per-drone overrides (optional): VEHICLE_{N}_NAME, DRONE_{N}_DOMAIN_ID.
 #
+# Env-var interpolation policy: volume mounts use `${VAR:-default}`
+# (default-fallback) rather than `${VAR?msg}` (strict-required). Compose
+# evaluates all service interpolations during parse — a strict-required
+# pattern on ANY service blocks ad-hoc `docker compose up <X>` calls in
+# a fresh shell, even when X doesn't need that var. launch.sh always
+# exports CONFIG_ROOT / XAUTHORITY before invoking compose, so the
+# `:-default` fallback path is never exercised on the recommended path.
+#
 # Default architecture (./launch.sh ardupilot-xfs):
 #   - 4× ArduPilot SITL                 (host net)
 #   - AirSim XFS                                       (host net, GPU)
@@ -70,7 +78,7 @@ x-airsim-bridge: &airsim-bridge-defaults
     - /dev/shm:/dev/shm:rw
     - /tmp/iceoryx2:/tmp/iceoryx2:rw
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
-    - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
+    - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
   depends_on:
     # service_healthy (NOT service_started). The bridge's rpc_dynamic
     # discovery probes AirSim's RPC port on launch; if the port isn't
@@ -232,8 +240,8 @@ services:
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
       - /dev/shm:/dev/shm:rw
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/unreal-airsim/xfs/settings-ardupilot.json:/home/airsim_user/Documents/AirSim/settings.json:ro
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/unreal-airsim/xfs/settings-ardupilot.json:/app/Xfs/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/xfs/settings-ardupilot.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/xfs/settings-ardupilot.json:/app/Xfs/settings.json:ro
 
     # xfs-latest doesn't ship /usr/local/bin/airsim-entrypoint.sh (the wrapper
     # exists in the condo image only). Pass -PixelStreamingURL directly to
@@ -485,13 +493,6 @@ services:
       - ROS_DOMAIN_ID=${DRONE_1_DOMAIN_ID:-1}
     command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
     volumes:
-      # `${CONFIG_ROOT:-./config}` (default-fallback) instead of `${CONFIG_ROOT?...}`
-      # (strict-required) — Compose interpolates all services during parse,
-      # even profile-gated ones that won't be created, so a strict-required
-      # here would fail `docker compose up airsim_bridge_d1` whenever
-      # CONFIG_ROOT isn't exported. The bogus `./config/...` resolution is
-      # harmless because this service is profile-gated off without
-      # --with-agent-external.
       - ${CONFIG_ROOT:-./config}/zenoh/zenoh_bridge_drone_1.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
     depends_on:
       airsim_bridge_d1:
@@ -511,13 +512,6 @@ services:
       - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
     command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
     volumes:
-      # `${CONFIG_ROOT:-./config}` (default-fallback) instead of `${CONFIG_ROOT?...}`
-      # (strict-required) — Compose interpolates all services during parse,
-      # even profile-gated ones that won't be created, so a strict-required
-      # here would fail `docker compose up airsim_bridge_d1` whenever
-      # CONFIG_ROOT isn't exported. The bogus `./config/...` resolution is
-      # harmless because this service is profile-gated off without
-      # --with-agent-external.
       - ${CONFIG_ROOT:-./config}/zenoh/zenoh_bridge_drone_2.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
     depends_on:
       airsim_bridge_d2:
@@ -537,13 +531,6 @@ services:
       - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
     command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
     volumes:
-      # `${CONFIG_ROOT:-./config}` (default-fallback) instead of `${CONFIG_ROOT?...}`
-      # (strict-required) — Compose interpolates all services during parse,
-      # even profile-gated ones that won't be created, so a strict-required
-      # here would fail `docker compose up airsim_bridge_d1` whenever
-      # CONFIG_ROOT isn't exported. The bogus `./config/...` resolution is
-      # harmless because this service is profile-gated off without
-      # --with-agent-external.
       - ${CONFIG_ROOT:-./config}/zenoh/zenoh_bridge_drone_3.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
     depends_on:
       airsim_bridge_d3:
@@ -563,13 +550,6 @@ services:
       - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
     command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
     volumes:
-      # `${CONFIG_ROOT:-./config}` (default-fallback) instead of `${CONFIG_ROOT?...}`
-      # (strict-required) — Compose interpolates all services during parse,
-      # even profile-gated ones that won't be created, so a strict-required
-      # here would fail `docker compose up airsim_bridge_d1` whenever
-      # CONFIG_ROOT isn't exported. The bogus `./config/...` resolution is
-      # harmless because this service is profile-gated off without
-      # --with-agent-external.
       - ${CONFIG_ROOT:-./config}/zenoh/zenoh_bridge_drone_4.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
     depends_on:
       airsim_bridge_d4:
@@ -617,8 +597,8 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/qgroundcontrol/qgc_config:/config-template:ro
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/qgroundcontrol/user_config:/home/qgc/.config/QGroundControl
+      - ${CONFIG_ROOT:-./config}/qgroundcontrol/qgc_config:/config-template:ro
+      - ${CONFIG_ROOT:-./config}/qgroundcontrol/user_config:/home/qgc/.config/QGroundControl
 
     devices:
       - /dev/dri:/dev/dri
