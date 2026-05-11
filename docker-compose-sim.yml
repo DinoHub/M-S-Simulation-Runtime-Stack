@@ -41,7 +41,7 @@ services:
       - |
         echo "Waiting 3s before starting Condo..."
         sleep 3
-        exec /usr/local/bin/airsim-entrypoint.sh /app/Condo/Condo.sh -windowed -ResX=1920 -ResY=1080
+        exec /usr/local/bin/airsim-entrypoint.sh /app/Condo/Condo.sh -windowed -ResX=640 -ResY=480
 
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 41451 || exit 1"]

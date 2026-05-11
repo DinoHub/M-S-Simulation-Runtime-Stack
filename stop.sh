@@ -70,5 +70,13 @@ docker compose -f docker-compose-sim.yml down --remove-orphans || true
 echo "Stopping monitoring stack..."
 docker compose -f docker-compose-monitoring.yml --profile monitoring down --remove-orphans || true
 
+echo "Stopping Xvfb..."
+XVFB_PID_FILE="/tmp/.xvfb-sim.pid"
+if [ -f "${XVFB_PID_FILE}" ]; then
+  kill "$(cat "${XVFB_PID_FILE}")" 2>/dev/null || true
+  rm -f "${XVFB_PID_FILE}"
+  echo "Xvfb stopped."
+fi
+
 echo
 echo "All stacks stopped."
