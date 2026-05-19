@@ -1,0 +1,433 @@
+# =============================================================================
+# PX4 + XFS Simulation Scenario — Standalone Host-Network Compose File
+# =============================================================================
+#
+# What this file does:
+#   Runs the full TEVV AirSim/PX4 linux-integrated simulation stack on host
+#   networking. All services share the host network namespace (network_mode: host,
+#   ipc: host), which eliminates Docker bridge overhead and lets PX4, AirSim,
+#   ROS2, and QGroundControl communicate via localhost without any DNS lookups.
+#
+# Services included:
+#   - airsim-xfs          : AirSim simulator with XFS Unreal scene (GPU required)
+#   - px4-bridge-drone-1  : PX4 SITL instance 0  (cpu core 8)
+#   - px4-bridge-drone-2  : PX4 SITL instance 1  (cpu core 9)
+#   - px4-bridge-drone-3  : PX4 SITL instance 2  (cpu core 10)
+#   - px4-bridge-drone-4  : PX4 SITL instance 3  (cpu core 11)
+#   - ros2-x11-node       : ROS2 + MAVROS with X11 forwarding (cpu cores 12-15)
+#   - qgroundcontrol-x11  : QGroundControl with X11 forwarding + GPU acceleration
+#
+# Prerequisites:
+#   1. Allow X11 connections from containers:
+#        xhost +local:docker
+#   2. Create a .env file (or export variables) with at minimum:
+#        CONFIG_ROOT=/path/to/your/config       # required — contains settings.json & QGC config
+#        ROS2_IMAGE=dhdevspace/auto_mns:ros2-x11-latest
+#        UID=$(id -u)
+#        GID=$(id -g)
+#   3. Optional overrides (all have sensible defaults for localhost operation):
+#        DISPLAY, XAUTHORITY, PX4_SIM_HOSTNAME, AIRSIM_HOST_IP, ROS_DOMAIN_ID …
+#
+# How to run:
+#   cd runtime/compose/px4-xfs
+#   docker compose up                  # all services
+#   docker compose up airsim-xfs px4-bridge-drone-1  # individual services
+#   docker compose down
+#
+# Performance notes (host networking vs bridge):
+#   - Network latency:  ~0.1 ms  (was ~0.5 ms on bridge)
+#   - CPU overhead:     ~30-40% lower per container
+#   - Packet loss:      ~90% reduction
+#   - ROS2 DDS:         native multicast, no bridge firewall rules needed
+#
+# Merged from:
+#   runtime/compose/docker-compose-px4-xfs.yml          (base, linux-integrated profile)
+#   runtime/compose/docker-compose-px4-xfs-override.yml (host-network override)
+# =============================================================================
+
+name: tevv-airstack-px4-xfs
+
+services:
+
+  # ===========================================================================
+  # AIRSIM XFS — AirSim simulator with XFS Unreal scene
+  # ===========================================================================
+  airsim-xfs:
+    image: dhdevspace/auto_mns:tevv-airsim-xfs-latest
+    pull_policy: if_not_present
+    container_name: airsim-xfs
+    hostname: airsim-xfs
+
+    # Host networking — all ports exposed directly on the host
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+    shm_size: "4gb"
+
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      SDL_VIDEODRIVER: ${SDL_VIDEODRIVER:-x11}
+      XAUTHORITY: /tmp/.Xauthority
+
+    volumes:
+      # X11 socket + auth (required for Unreal Engine GUI)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Shared memory for iceoryx2 zero-copy transport
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      # AirSim settings — REQUIRED: must be present before starting
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/unreal-airsim/xfs/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: all
+
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 41451 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # PX4 SITL — Drone 1  (instance 0, cpu core 8)
+  # ===========================================================================
+  px4-bridge-drone-1:
+    image: dhdevspace/auto_mns:px4-airsim-px4
+    pull_policy: if_not_present
+    container_name: px4-drone-1
+    hostname: px4-drone-1
+
+    network_mode: "host"
+    ipc: host
+
+    # Dedicate a single core for minimal SITL latency
+    cpuset: "8"
+
+    command: >
+      bash -c "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim simulation to fully initialize...' &&
+        sleep 20 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 1 (instance 0) on HOST NETWORK...' &&
+        exec ./Scripts/run_airsim_sitl.sh 0
+      "
+
+    environment:
+      PX4_SIM_HOSTNAME: ${PX4_SIM_HOSTNAME:-localhost}
+      PX4_SIM_MODEL: ${PX4_SIM_MODEL:-none_iris}
+      PX4_SIMULATOR: none
+      PX4_HOME_LAT: ${PX4_HOME_LAT:-42.76919401}
+      PX4_HOME_LON: ${PX4_HOME_LON:--115.59330958}
+      PX4_HOME_ALT: ${PX4_HOME_ALT:-0.0}
+      PX4_SYS_AUTOSTART: ${PX4_SYS_AUTOSTART:-10016}
+      PX4_INSTANCE: 0
+      MAV_0_BROADCAST: 1
+      MAV_1_BROADCAST: 1
+      MAV_2_BROADCAST: 1
+      SWARM_ID: ${SWARM_ID:-1}
+      SWARM_SIZE: ${SWARM_SIZE:-4}
+      # MAVLink router — use 'router' for optimised multi-drone routing
+      MAVLINK_MODE: ${MAVLINK_MODE:-router}
+      MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
+      ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
+      ROUTER_DEDUPE_PERIOD: ${ROUTER_DEDUPE_PERIOD:-500}
+      HOST_NETWORK_MODE: "true"
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # PX4 SITL — Drone 2  (instance 1, cpu core 9)
+  # ===========================================================================
+  px4-bridge-drone-2:
+    image: dhdevspace/auto_mns:px4-airsim-px4
+    pull_policy: if_not_present
+    container_name: px4-drone-2
+    hostname: px4-drone-2
+
+    network_mode: "host"
+    ipc: host
+
+    cpuset: "9"
+
+    command: >
+      bash -c "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim simulation to fully initialize (staggered)...' &&
+        sleep 20 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 2 (instance 1) on HOST NETWORK...' &&
+        exec ./Scripts/run_airsim_sitl.sh 1
+      "
+
+    environment:
+      PX4_SIM_HOSTNAME: ${PX4_SIM_HOSTNAME:-localhost}
+      PX4_SIM_MODEL: ${PX4_SIM_MODEL:-none_iris}
+      PX4_SIMULATOR: none
+      PX4_HOME_LAT: ${PX4_HOME_LAT:-42.76919401}
+      PX4_HOME_LON: ${PX4_HOME_LON:--115.59330958}
+      PX4_HOME_ALT: ${PX4_HOME_ALT:-0.0}
+      PX4_SYS_AUTOSTART: ${PX4_SYS_AUTOSTART:-10016}
+      PX4_INSTANCE: 1
+      MAV_0_BROADCAST: 1
+      MAV_1_BROADCAST: 1
+      MAV_2_BROADCAST: 1
+      SWARM_ID: ${SWARM_ID:-1}
+      SWARM_SIZE: ${SWARM_SIZE:-4}
+      MAVLINK_MODE: ${MAVLINK_MODE:-router}
+      MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
+      ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
+      ROUTER_DEDUPE_PERIOD: ${ROUTER_DEDUPE_PERIOD:-500}
+      HOST_NETWORK_MODE: "true"
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # PX4 SITL — Drone 3  (instance 2, cpu core 10)
+  # ===========================================================================
+  px4-bridge-drone-3:
+    image: dhdevspace/auto_mns:px4-airsim-px4
+    pull_policy: if_not_present
+    container_name: px4-drone-3
+    hostname: px4-drone-3
+
+    network_mode: "host"
+    ipc: host
+
+    cpuset: "10"
+
+    command: >
+      bash -c "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim simulation to fully initialize (staggered)...' &&
+        sleep 25 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 3 (instance 2) on HOST NETWORK...' &&
+        exec ./Scripts/run_airsim_sitl.sh 2
+      "
+
+    environment:
+      PX4_SIM_HOSTNAME: ${PX4_SIM_HOSTNAME:-localhost}
+      PX4_SIM_MODEL: ${PX4_SIM_MODEL:-none_iris}
+      PX4_SIMULATOR: none
+      PX4_HOME_LAT: ${PX4_HOME_LAT:-42.76919401}
+      PX4_HOME_LON: ${PX4_HOME_LON:--115.59330958}
+      PX4_HOME_ALT: ${PX4_HOME_ALT:-0.0}
+      PX4_SYS_AUTOSTART: ${PX4_SYS_AUTOSTART:-10016}
+      PX4_INSTANCE: 2
+      MAV_0_BROADCAST: 1
+      MAV_1_BROADCAST: 1
+      MAV_2_BROADCAST: 1
+      SWARM_ID: ${SWARM_ID:-1}
+      SWARM_SIZE: ${SWARM_SIZE:-4}
+      MAVLINK_MODE: ${MAVLINK_MODE:-router}
+      MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
+      ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
+      ROUTER_DEDUPE_PERIOD: ${ROUTER_DEDUPE_PERIOD:-500}
+      HOST_NETWORK_MODE: "true"
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # PX4 SITL — Drone 4  (instance 3, cpu core 11)
+  # ===========================================================================
+  px4-bridge-drone-4:
+    image: dhdevspace/auto_mns:px4-airsim-px4
+    pull_policy: if_not_present
+    container_name: px4-drone-4
+    hostname: px4-drone-4
+
+    network_mode: "host"
+    ipc: host
+
+    cpuset: "11"
+
+    command: >
+      bash -c "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim simulation to fully initialize (staggered)...' &&
+        sleep 30 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 4 (instance 3) on HOST NETWORK...' &&
+        exec ./Scripts/run_airsim_sitl.sh 3
+      "
+
+    environment:
+      PX4_SIM_HOSTNAME: ${PX4_SIM_HOSTNAME:-localhost}
+      PX4_SIM_MODEL: ${PX4_SIM_MODEL:-none_iris}
+      PX4_SIMULATOR: none
+      PX4_HOME_LAT: ${PX4_HOME_LAT:-42.76919401}
+      PX4_HOME_LON: ${PX4_HOME_LON:--115.59330958}
+      PX4_HOME_ALT: ${PX4_HOME_ALT:-0.0}
+      PX4_SYS_AUTOSTART: ${PX4_SYS_AUTOSTART:-10016}
+      PX4_INSTANCE: 3
+      MAV_0_BROADCAST: 1
+      MAV_1_BROADCAST: 1
+      MAV_2_BROADCAST: 1
+      SWARM_ID: ${SWARM_ID:-1}
+      SWARM_SIZE: ${SWARM_SIZE:-4}
+      MAVLINK_MODE: ${MAVLINK_MODE:-router}
+      MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
+      ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
+      ROUTER_DEDUPE_PERIOD: ${ROUTER_DEDUPE_PERIOD:-500}
+      HOST_NETWORK_MODE: "true"
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # ROS2 X11 NODE — ROS2 + MAVROS with X11 forwarding  (cpu cores 12-15)
+  # ===========================================================================
+  ros2-x11-node:
+    image: ${ROS2_IMAGE:-dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-development}
+    pull_policy: if_not_present
+    container_name: ros2-x11-node
+    hostname: ros2-x11
+
+    network_mode: "host"
+    # IPC namespace sharing required for iceoryx2 zero-copy shared memory transport
+    ipc: host
+
+    # Multi-core allocation for ROS2 multi-threaded executors
+    cpuset: "12-15"
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["tail -f /dev/null"]
+
+    environment:
+      # X11 forwarding
+      DISPLAY: ${DISPLAY:-:0}
+      XAUTHORITY: /tmp/.Xauthority
+      QT_X11_NO_MITSHM: 1
+
+      # ROS2 configuration
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_LOCALHOST_ONLY: 0    # Allow DDS multicast on host network
+
+      # AirSim connection — localhost because AirSim runs on host network too
+      AIRSIM_HOST_IP: ${AIRSIM_HOST_IP:-localhost}
+      AIRSIM_HOST_PORT: ${AIRSIM_HOST_PORT:-41451}
+
+      # Launch configuration
+      LAUNCH_MODE: ${LAUNCH_MODE:-multi}
+      ENABLE_COORDINATION: ${ENABLE_COORDINATION:-true}
+      RPC_TIMEOUT: ${RPC_TIMEOUT:-10.0}
+      LAUNCH_RVIZ: ${LAUNCH_RVIZ:-false}
+      DEBUG: ${DEBUG:-false}
+      AUTO_BUILD: ${AUTO_BUILD:-false}
+
+      # Auto-launch ROS2 system
+      AUTO_LAUNCH_ROS2: ${AUTO_LAUNCH_ROS2:-true}
+      ENABLE_SUPERVISOR: ${ENABLE_SUPERVISOR:-true}
+      VEHICLES: ${VEHICLES:-"['Copter1']"}
+      ENABLE_MAVROS: ${ENABLE_MAVROS:-true}
+      ENABLE_LOCAL_OBS: ${ENABLE_LOCAL_OBS:-true}
+      TEST_LOCAL_PLANNER: ${TEST_LOCAL_PLANNER:-true}
+      AUTO_START_ON_TAKEOFF: ${AUTO_START_ON_TAKEOFF:-true}
+      AUTO_END_ON_LANDING: ${AUTO_END_ON_LANDING:-true}
+
+      # MAVROS — localhost mode: PX4 and ROS2 are on the same host network
+      # Pattern: udp://localhost:14540@14550, udp://localhost:14541@14551, …
+      MAVROS_FCU_URL: ${MAVROS_FCU_URL:-udp://localhost:14540@14550}
+      MAVROS_NUM_DRONES: ${MAVROS_NUM_DRONES:-4}
+      MAVROS_USE_HOST_NETWORK: "true"
+      MAVROS_PX4_NETWORK_MODE: localhost
+
+    volumes:
+      # X11 socket + auth
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Persist ROS2 build artefacts for faster rebuilds
+      - ros2_x11_build:/airsim_ros2_ws/build
+      - ros2_x11_install:/airsim_ros2_ws/install
+      - ros2_x11_logs:/airsim_ros2_ws/log
+      # Shared memory for iceoryx2 zero-copy transport
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+
+  # ===========================================================================
+  # QGROUNDCONTROL X11 — Ground control station with GPU acceleration
+  # ===========================================================================
+  qgroundcontrol-x11:
+    image: dhdevspace/auto_mns:airsim-qgc-x11-latest
+    pull_policy: if_not_present
+    container_name: qgroundcontrol-x11
+    hostname: qgc-x11
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:-1000}:${GID:-1000}"
+
+    environment:
+      # X11 forwarding
+      DISPLAY: ${DISPLAY:-:0}
+      XAUTHORITY: /tmp/.Xauthority
+      QT_X11_NO_MITSHM: 1
+
+      # QGroundControl
+      QGC_APPIMAGE: /opt/qgroundcontrol/QGroundControl.AppImage
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+
+      # GPU / rendering
+      LIBGL_ALWAYS_SOFTWARE: 0
+      MESA_GL_VERSION_OVERRIDE: "3.3"
+      QT_QPA_PLATFORM: "xcb:depth=24"
+
+    volumes:
+      # X11 socket + auth
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # QGC config (comm links template + persistent user config)
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/qgroundcontrol/qgc_config:/config-template:ro
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/qgroundcontrol/user_config:/home/qgc/.config/QGroundControl
+
+    devices:
+      - /dev/dri:/dev/dri
+
+    shm_size: "2gb"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, graphics, utility]
+
+    security_opt:
+      - seccomp:unconfined
+
+    group_add:
+      - video
+
+    init: true
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "xdpyinfo > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+# =============================================================================
+# NAMED VOLUMES — persist ROS2 build artefacts across container restarts
+# =============================================================================
+volumes:
+  ros2_x11_build:
+    driver: local
+  ros2_x11_install:
+    driver: local
+  ros2_x11_logs:
+    driver: local

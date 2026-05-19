@@ -1,0 +1,76 @@
+# Metrics Runner Configuration
+#
+# Environment variable substitution is supported via ${VAR:-default} syntax.
+# Substitution happens BEFORE YAML parsing, so ${VAR} can appear anywhere.
+#
+# Override at container launch via METRICS_CONFIG env var or bind mount.
+
+framework:
+  vehicles: ["${VEHICLE:-Copter1}"]
+  output_dir: "${OUTPUT_DIR:-/metrics/outputs}"
+  evaluation_config: "${EVALUATION_CONFIG:-/metrics/config/evaluation.yaml}"
+  mission_file: "${MISSION_FILE:-/metrics/mission/mission.json}"
+
+adapters:
+  odom:
+    enabled: true
+    topic_suffix: "${ODOM_TOPIC_SUFFIX:-odom}"
+  ground_truth:
+    enabled: false
+  goal:
+    enabled: true
+    topic: "${GOAL_TOPIC:-/goal}"
+  collision:
+    enabled: true
+  metrics_trigger:
+    enabled: true
+  run_state:
+    enabled: false
+  command:
+    enabled: false
+  planner_timing:
+    enabled: false
+  tf_status:
+    enabled: false
+
+plugins:
+  path_length:
+    enabled: true
+    params:
+      max_delta_m: 2.0
+  travel_time:
+    enabled: true
+  goal_reached:
+    enabled: true
+    params:
+      tolerance_m: 0.5
+      use_2d: true
+  collision_count:
+    enabled: true
+  ate:
+    enabled: false
+  rpe:
+    enabled: false
+  planner_latency:
+    enabled: false
+  command_rate:
+    enabled: false
+  jerk:
+    enabled: false
+  smoothness:
+    enabled: false
+
+exporters:
+  json_summary:
+    enabled: true
+  csv_trajectory:
+    enabled: false
+  elasticsearch:
+    enabled: true
+    host: "${ELASTICSEARCH_HOST:-elasticsearch}"
+    port: ${ELASTICSEARCH_PORT:-9200}
+    timeout: 10
+  prometheus:
+    enabled: false
+    pushgateway_url: "${PROMETHEUS_PUSHGATEWAY_URL:-http://pushgateway:9091}"
+    job: "metrics-collector"

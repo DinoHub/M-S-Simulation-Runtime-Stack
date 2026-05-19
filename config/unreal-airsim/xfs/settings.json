@@ -1,0 +1,58 @@
+{
+  "SeeDocsAt": "https://cosys-lab.github.io/settings/",
+  "SettingsVersion": 2.0,
+  "ClockSpeed": 1,
+  "LocalHostIp": "0.0.0.0",
+  "ApiServerPort": 41451,
+  "RecordUIVisible": false,
+  "MoveWorldOrigin": true,
+  "InitialInstanceSegmentation": false,
+  "LogMessagesVisible": true,
+  "ShowLosDebugLines": false,
+  "ViewMode": "",
+  "RpcEnabled": true,
+  "EngineSound": false,
+  "SimMode": "Multirotor",
+  "Wind": {
+    "X": 0,
+    "Y": 0,
+    "Z": 0
+  },
+  "OriginGeopoint": {
+    "Latitude": 42.764970,
+    "Longitude": -115.579139,
+    "Altitude": 1130
+  },
+  "TimeOfDay": {
+    "Enabled": false,
+    "StartDateTime": "",
+    "CelestialClockSpeed": 1,
+    "StartDateTimeDst": false,
+    "UpdateIntervalSecs": 60
+  },
+  "Vehicles": {
+     "Drone1": {
+      "VehicleType": "SimpleFlight",
+      "DefaultVehicleState": "Disarmed",
+      "AutoCreate": true,
+      "X": 0,
+      "Y": 0,
+      "Z": 0,
+      "UseSerial": false,
+      "LockStep": false,
+      "UseTcp": true,
+      "TcpPort": 4560,
+      "ControlIp": "127.0.0.1",
+      "ControlPortLocal": 14540,
+      "ControlPortRemote": 14580,
+      "LocalHostIp": "0.0.0.0",
+      "Sensors": {
+        "Barometer": {
+          "SensorType": 1,
+          "Enabled": true,
+          "PressureFactorSigma": 0.0001825
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# Dev/user tools service for the runtime stack.
+#
+# Bundles the tools from Cosys-AirSim's rpc-clients/python/tools/ in the
+# dhdevspace/auto_mns:airsim-tools-* image (built & published from that repo:
+# `docker compose -f runtime/docker/compose/docker-compose.tools.yml build/push tools`).
+#
+# One-shot, behind the `tools` profile — `docker compose up` never starts it.
+# Host-networked like the rest of the stack, so it reaches AirSim on 127.0.0.1
+# and doesn't need to share a compose project with the running scenario.
+#
+# Usage (or just use ./tools.sh, which wraps this):
+#   docker compose -f docker-compose-tools.yml --profile tools run --rm tools                 # list tools
+#   docker compose -f docker-compose-tools.yml --profile tools run --rm tools <name> [args]   # run a tool
+#   docker compose -f docker-compose-tools.yml --profile tools run --rm tools weather_gui      # web panel -> http://localhost:8088
+#
+# Web tools (PORT = ..., e.g. weather_gui) stay attached and serve a port; under
+# host networking that's just localhost:<port>. A native-window tool (GUI = True)
+# would print host instructions instead — run those on the host (see tools/README.md).
+name: tools
+
+services:
+  tools:
+    image: ${AIRSIM_TOOLS_IMAGE:-dhdevspace/auto_mns:airsim-tools-latest}
+    pull_policy: if_not_present
+    profiles: ["tools"]
+    network_mode: host
+    ipc: host
+    init: true
+    environment:
+      - AIRSIM_HOST=${AIRSIM_HOST_IP:-127.0.0.1}
+      - AIRSIM_PORT=${AIRSIM_HOST_PORT:-41451}
+      - WEATHER_GUI_PORT=${WEATHER_GUI_PORT:-8088}   # port the weather_gui web tool listens on
+    volumes:
+      # Optional — handy for future tools that read scenario config / settings.json.
+      - ${CONFIG_ROOT:-./config}:/config:ro

@@ -1,0 +1,75 @@
+// Sim-side zenoh router. Joins the autonomy team's inter-drone mesh on
+// `agent_external` and bridges ONLY ^/shared(/.*)? ROS2 topics. Treat
+// `agent_external` as the comms-under-test network: the bridge is the only
+// thing on it; nothing here should route sensors / clock / tf / control.
+{
+  // Unique zenoh node id — drones use 2711..271N; reserve 2700 for the sim.
+  id: "2700",
+
+  plugins: {
+    ros2dds: {
+      nodename: "zenoh_bridge_ros2dds_sim_router",
+      // True so the plugin's DDS participant only uses the *shared loopback*
+      // (the ros2-x11-node and sim-router containers share sim-netns's
+      // netns). Pair this with ROS_LOCALHOST_ONLY=1 on the ROS2 app side
+      // (set in compose) so application DDS is also loopback-only.
+      ros_localhost_only: true,
+      // Sim-side ownership rules, enforced at the bridge:
+      //   publish only /shared/sim/...
+      //   subscribe to /shared/drone_N/... and /shared/swarm/...
+      // Drones own /shared/drone_N; swarm topics are drone-write/sim-read.
+      // CAVEAT: zenoh-bridge-ros2dds allow-list semantics ("publishers" =
+      // local ROS publishers we forward outward, "subscribers" = local ROS
+      // subscribers whose remote matches we forward inward) should be
+      // confirmed with the smoke test in the verification task before
+      // relying on these patterns. If the smoke test fails despite legal
+      // traffic, fall back to the broader `^/shared(/.*)?$` for both lists
+      // and re-introduce the strict patterns once semantics are pinned down.
+      allow: {
+        publishers:  ["^/shared/sim(/.*)?$"],
+        subscribers: ["^/shared/drone_[0-9]+(/.*)?$", "^/shared/swarm(/.*)?$"],
+        service_servers: [],
+        service_clients: [],
+        action_servers: [],
+        action_clients: [],
+      },
+    },
+  },
+
+  // Router mode matches the drones; gossip auto-connect joins us up with
+  // their mesh once any link forms.
+  mode: "router",
+
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7448"],
+  },
+
+  connect: {
+    timeout_ms: { router: -1, peer: -1, client: 0 },
+    // Static seed list. The autonomy team's compose owns the
+    // `autonomy_stack-N` aliases on `agent_external`. If those aliases
+    // change, edit this file (no env-driven override in this milestone).
+    endpoints: [
+      "tcp/autonomy_stack-1:7448",
+      "tcp/autonomy_stack-2:7448",
+      "tcp/autonomy_stack-3:7448",
+    ],
+  },
+
+  scouting: {
+    multicast: { enabled: false },
+    gossip: {
+      enabled: true,
+      multihop: false,
+      autoconnect: { router: ["router"], peer: [] },
+    },
+  },
+
+  transport: {
+    link: {
+      protocols: ["tcp"],
+      tx: { lease: 10000, keep_alive: 4 },
+    },
+    unicast: { qos: { enabled: true } },
+  },
+}

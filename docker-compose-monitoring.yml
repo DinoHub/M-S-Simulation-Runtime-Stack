@@ -194,7 +194,7 @@ services:
     container_name: cadvisor
     privileged: true
     ports:
-      - '8080:8080'
+      - '${CADVISOR_HOST_PORT:-8085}:8080'
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -385,19 +385,22 @@ services:
   # VISUALIZATION TOOLS
   # =================================
 
-  ros-bridge-server:
-    image: dhdevspace/auto_mns:my-ros-humble-rosbridge-server-latest
-    container_name: my-ros-humble-rosbridge-server
-    ports:
-      - '9091:9090'
-    networks:
-      - monitoring-internal
-      - airsim-ecosystem
+  # foxglove-bridge: replaces rosbridge_suite (its v1 protocol does not
+  # render sensor_msgs/Image in Lichtblick). Image bakes in ros-humble-
+  # foxglove-bridge 3.2.5 + mavros_msgs + octomap_msgs + airsim_interfaces
+  # so AirSim-custom types resolve out of the box.
+  #
+  # Uses host networking because foxglove_bridge advertises topics via DDS
+  # discovery, which bridge-network containers do not cross. When host net
+  # is active, port 8765 is reachable on the host directly (no ports: map).
+  foxglove-bridge:
+    image: dhdevspace/auto_mns:tevv-foxglove-bridge-humble-3.2
+    container_name: foxglove-bridge
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
     restart: unless-stopped
-    command: >
-      bash -c "
-      ros2 launch rosbridge_server rosbridge_websocket_launch.xml
-      "
     profiles:
       - monitoring
 

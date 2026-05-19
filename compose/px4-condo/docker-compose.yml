@@ -11,6 +11,14 @@ services:
     hostname: airsim-condo
     restart: unless-stopped
 
+    depends_on:
+      pixel-streaming-signalling:
+        condition: service_healthy
+        # required: false → Compose silently skips the dependency when
+        # the `pixel-streaming` profile is inactive (the default). When
+        # --with-pixel-streaming is passed, the dependency is enforced.
+        required: false
+
     user: "${UID:?set UID}:${GID:?set GID}"
     group_add:
       - video
@@ -22,6 +30,14 @@ services:
       - DISPLAY=${DISPLAY:?set DISPLAY}
       - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
       - XAUTHORITY=/tmp/.Xauthority
+      # UE5 PixelStreaming dials this signalling-server URL at startup,
+      # but only when ENABLE_PIXEL_STREAMING=true (see command block —
+      # we unset PIXELSTREAMING_URL otherwise so the entrypoint script
+      # doesn't construct -PixelStreamingURL).
+      - PIXELSTREAMING_URL=${PS_URL:-ws://127.0.0.1:${PS_STREAMER_PORT:-8888}}
+      # When true, the pixel-streaming sidecar starts and UE5 dials it.
+      # Default false. Toggle: ./launch.sh px4-condo --with-pixel-streaming
+      - ENABLE_PIXEL_STREAMING=${ENABLE_PIXEL_STREAMING:-false}
 
     network_mode: host
     networks: !reset []
@@ -30,17 +46,21 @@ services:
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
       - /dev/shm:/dev/shm:rw
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
-      - ${CONFIG_ROOT:?set CONFIG_ROOT}/unreal-airsim/condo/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
-      - ${CONFIG_ROOT:?set CONFIG_ROOT}/unreal-airsim/condo/settings.json:/app/Condo/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings.json:/app/Condo/settings.json:ro
 
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         echo "Waiting 3s before starting Condo..."
         sleep 3
+        if [ "$$ENABLE_PIXEL_STREAMING" != "true" ]; then
+          unset PIXELSTREAMING_URL
+        fi
+        echo "AirSim pixel-streaming: $$ENABLE_PIXEL_STREAMING"
         exec /usr/local/bin/airsim-entrypoint.sh /app/Condo/Condo.sh -windowed -ResX=1920 -ResY=1080
 
     healthcheck:
@@ -176,7 +196,7 @@ services:
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
       - /dev/shm:/dev/shm:rw
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
 
@@ -212,8 +232,8 @@ services:
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${XAUTHORITY:?set XAUTHORITY}:/tmp/.Xauthority:ro
-      - ${CONFIG_ROOT:?set CONFIG_ROOT}/qgroundcontrol/user_config:/home/qgc/.config/QGroundControl
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      - ${CONFIG_ROOT:-./config}/qgroundcontrol/user_config:/home/qgc/.config/QGroundControl
 
     devices:
       - /dev/dri:/dev/dri
@@ -242,3 +262,49 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  # ============================================================================
+  # Pixel Streaming Signalling Server
+  # Bridges the UE5 PixelStreaming plugin (listening on :8888 inside
+  # airsim-condo) and browser viewers. Opt-in via the `pixel-streaming`
+  # profile: pass --with-pixel-streaming (or ENABLE_PIXEL_STREAMING=true).
+  # When inactive, this service isn't created AND airsim-condo's
+  # depends_on edge above is silently dropped — UE5 launches without the
+  # -PixelStreamingURL flag (the wrapper unsets PIXELSTREAMING_URL) and
+  # the plugin stays idle. Browser viewer at http://localhost:${PS_HTTP_PORT}.
+  # ============================================================================
+  pixel-streaming-signalling:
+    image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.5}
+    pull_policy: if_not_present
+    container_name: pixel-streaming-signalling
+    hostname: pixel-streaming-signalling
+    restart: unless-stopped
+    profiles: ["pixel-streaming"]
+
+    # No depends_on — this service boots first so airsim-condo can dial it.
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    init: true
+
+    environment:
+      - PIXELSTREAMING_STREAMER_PORT=${PS_STREAMER_PORT:-8888}
+      - PIXELSTREAMING_HTTP_PORT=${PS_HTTP_PORT:-80}
+      - PIXELSTREAMING_PUBLIC_IP=${PS_PUBLIC_IP:-127.0.0.1}
+
+    command:
+      - --StreamerPort=${PS_STREAMER_PORT:-8888}
+      - --HttpPort=${PS_HTTP_PORT:-80}
+      - --PublicIp=${PS_PUBLIC_IP:-127.0.0.1}
+
+    # Image (Node.js / wilbur signalling) ships curl/wget/bash/node but NOT nc,
+    # ss, or netstat — so the obvious `nc -z` healthcheck always reports
+    # "nc: not found" and the container is forever unhealthy. We also avoid
+    # `curl -f`: any HTTP response (incl. 404) means the listener is up.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -m 3 -o /dev/null http://127.0.0.1:${PS_HTTP_PORT:-80}/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s

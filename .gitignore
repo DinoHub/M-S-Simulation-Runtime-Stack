@@ -1,10 +1,16 @@
 .env
+.env.bridge
+**/.env.bridge
 metrics_outputs/
 logs/
 tmp/
+data/
 *.log
 .DS_Store
 .vscode/
 .idea/
 __pycache__/
 *.pyc
+
+# UE5 crash-dump captures pulled from xfs containers for local debugging
+xfs-container-crashes/
