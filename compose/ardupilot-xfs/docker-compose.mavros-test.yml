@@ -31,15 +31,15 @@
 name: ardupilot-xfs-mavros-test
 
 x-mavros: &mavros-defaults
-  # Same image family as airsim_bridge_dN — already ships airsim_ros_pkgs +
-  # mavros + mavros_msgs. Fallback matches the main compose's fallback.
-  image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-multi-agent-bridge}
+  # Same image family as airsim_bridge_dN — already ships airsim_mavros_bringup
+  # + mavros + mavros_msgs. Fallback matches the main compose's fallback.
+  image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
   pull_policy: if_not_present
-  # init: false (intentional). With tini as PID 1, the image's entrypoint
-  # hangs at the "Cleaning DDS state to prevent stale node accumulation..."
-  # step before exec'ing our command — ros2 launch's DDS cleanup forks
-  # children that get re-parented to tini and never finish. Without init,
-  # bash is PID 1 and reaps cleanly. Verified empirically.
+  # init: false (intentional). mavros_bringup.launch.py's DDS cleanup step
+  # (enable_dds_cleanup, on for d1 only) forks children; with tini as PID 1
+  # they get re-parented to tini and never finish, hanging bring-up. The
+  # `bash -lc` wrapper below keeps bash as PID 1 so it reaps them cleanly.
+  # Verified empirically.
   init: false
   restart: unless-stopped
   ipc: host
@@ -63,18 +63,24 @@ services:
     container_name: mavros_d1
     hostname: mavros_d1
     environment:
+      # HOME must point at a writable dir — uid 1000 is absent from the
+      # image's /etc/passwd, so HOME defaults to / and `ros2 launch` cannot
+      # create its ~/.ros/log dir (same fix as airsim_bridge_dN).
+      - HOME=/tmp
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
       - ROS_DOMAIN_ID=${DRONE_1_DOMAIN_ID:-1}
       - ROS_LOCALHOST_ONLY=0
     networks:
       - agent_internal-1
+    # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
+    # `init: false` note above). The image ENTRYPOINT already sources ROS +
+    # the workspace, so no explicit `source` line is needed.
     command:
       - "bash"
       - "-lc"
       - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs mavros_bringup.launch.py
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter1
         fcu_url:=tcp://host.docker.internal:5760
         target_system_id:=1
@@ -86,18 +92,24 @@ services:
     container_name: mavros_d2
     hostname: mavros_d2
     environment:
+      # HOME must point at a writable dir — uid 1000 is absent from the
+      # image's /etc/passwd, so HOME defaults to / and `ros2 launch` cannot
+      # create its ~/.ros/log dir (same fix as airsim_bridge_dN).
+      - HOME=/tmp
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
       - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
       - ROS_LOCALHOST_ONLY=0
     networks:
       - agent_internal-2
+    # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
+    # `init: false` note above). The image ENTRYPOINT already sources ROS +
+    # the workspace, so no explicit `source` line is needed.
     command:
       - "bash"
       - "-lc"
       - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs mavros_bringup.launch.py
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter2
         fcu_url:=tcp://host.docker.internal:5770
         target_system_id:=2
@@ -109,18 +121,24 @@ services:
     container_name: mavros_d3
     hostname: mavros_d3
     environment:
+      # HOME must point at a writable dir — uid 1000 is absent from the
+      # image's /etc/passwd, so HOME defaults to / and `ros2 launch` cannot
+      # create its ~/.ros/log dir (same fix as airsim_bridge_dN).
+      - HOME=/tmp
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
       - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
       - ROS_LOCALHOST_ONLY=0
     networks:
       - agent_internal-3
+    # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
+    # `init: false` note above). The image ENTRYPOINT already sources ROS +
+    # the workspace, so no explicit `source` line is needed.
     command:
       - "bash"
       - "-lc"
       - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs mavros_bringup.launch.py
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter3
         fcu_url:=tcp://host.docker.internal:5780
         target_system_id:=3
@@ -132,18 +150,24 @@ services:
     container_name: mavros_d4
     hostname: mavros_d4
     environment:
+      # HOME must point at a writable dir — uid 1000 is absent from the
+      # image's /etc/passwd, so HOME defaults to / and `ros2 launch` cannot
+      # create its ~/.ros/log dir (same fix as airsim_bridge_dN).
+      - HOME=/tmp
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
       - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
       - ROS_LOCALHOST_ONLY=0
     networks:
       - agent_internal-4
+    # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
+    # `init: false` note above). The image ENTRYPOINT already sources ROS +
+    # the workspace, so no explicit `source` line is needed.
     command:
       - "bash"
       - "-lc"
       - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs mavros_bringup.launch.py
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter4
         fcu_url:=tcp://host.docker.internal:5790
         target_system_id:=4

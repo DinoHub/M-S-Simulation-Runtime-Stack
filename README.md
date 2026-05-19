@@ -213,7 +213,7 @@ team has pinned a different version.
 ```env
 ARDUPILOT_IMAGE=dhdevspace/auto_mns:ardupilot-slim
 AIRSIM_IMAGE=dhdevspace/auto_mns:xfs-latest
-AIRSIM_BRIDGE_IMAGE=dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-multi-agent-bridge
+AIRSIM_BRIDGE_IMAGE=dhdevspace/auto_mns:airsim-ros2-bridge
 ZENOH_BRIDGE_IMAGE=eclipse/zenoh-bridge-ros2dds:1.4.0
 PX4_IMAGE=dhdevspace/auto_mns:px4-airsim-px4
 ```

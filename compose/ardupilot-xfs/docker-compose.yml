@@ -65,7 +65,7 @@ x-ardupilot-base: &ardupilot-base
 
 # Per-drone airsim_bridge_dN defaults.
 x-airsim-bridge: &airsim-bridge-defaults
-  image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-multi-agent-bridge}
+  image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
   pull_policy: if_not_present
   init: true
   restart: unless-stopped
@@ -80,13 +80,14 @@ x-airsim-bridge: &airsim-bridge-defaults
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
     - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
   depends_on:
-    # service_healthy (NOT service_started). The bridge's rpc_dynamic
-    # discovery probes AirSim's RPC port on launch; if the port isn't
-    # open yet it falls back to explicit-vehicle mode AND the
-    # multirotor_node hangs at "Loading settings from AirSim server..."
+    # service_healthy (NOT service_started). single_vehicle.launch.py's
+    # vehicle node queries AirSim's RPC port on launch ("Loading settings
+    # from AirSim server..."); if the port isn't open yet the node hangs
     # with no retry, leaving every /<vehicle>/* sensor topic with 0
-    # publishers. service_healthy gates on airsim-xfs's `nc -z 41451`
-    # check, so the bridge only starts after RPC is actually accepting.
+    # publishers, and an RPC call landing mid engine-init can crash the
+    # sim outright. service_healthy gates on airsim-xfs's healthcheck (RPC
+    # port open AND engine init finished), so the bridge only starts once
+    # the sim is actually safe to query.
     airsim-xfs:
       condition: service_healthy
 
@@ -273,12 +274,21 @@ services:
         echo "AirSim pixel-streaming: $$ENABLE_PIXEL_STREAMING"
         exec /app/Xfs/Xfs.sh $$DISPLAY_FLAGS -ResX=1920 -ResY=1080 $$PS_FLAG
 
+    # Health = RPC port open *and* the engine has finished bringing the level
+    # up. Plain `nc -z 41451` flips healthy the instant ASimModeBase::startApiServer()
+    # opens the listen socket — but that can be a few frames before vehicles are
+    # safe to query, and an early RPC call from a bridge's rpc_dynamic discovery
+    # then SIGSEGVs the sim (it crashes, Docker restarts it, second time the
+    # bridge has backed off so it survives — the classic "always crashes first").
+    # Gating additionally on the "Display Control listening" log line (emitted at
+    # the tail of engine init) plus a long start_period pushes bridge startup
+    # past that window. (The durable fix is plugin-side; this is the band-aid.)
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 41451 || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 41451 && grep -q 'Display Control listening on port' /app/Xfs/Xfs/Saved/Logs/Xfs.log || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 18
-      start_period: 90s
+      retries: 24
+      start_period: 150s
 
   # ---------------------------------------------------------------------------
   # Pixel Streaming Signalling Server.
@@ -351,6 +361,10 @@ services:
     container_name: airsim_bridge_d1
     hostname: airsim_bridge_d1
     environment:
+      # HOME must point at a writable dir: the container runs as uid 1000,
+      # which is absent from the image's /etc/passwd, so HOME would default
+      # to / and `ros2 launch` would fail to create its ~/.ros/log dir.
+      - HOME=/tmp
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
       - ROS_DOMAIN_ID=${DRONE_1_DOMAIN_ID:-1}
@@ -360,27 +374,35 @@ services:
       - VEHICLE_NAME=${VEHICLE_1_NAME:-Copter1}
     networks:
       - agent_internal-1
+    # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
+    # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
+    # single_vehicle.launch.py pins this instance to exactly one vehicle via
+    # vehicle_name:= (airsim_bringup.launch.py's vehicles:= is only an
+    # RPC-discovery fallback and would otherwise bridge ALL vehicles).
     command:
-      - "bash"
-      - "-lc"
-      - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
-        host_ip:=host.docker.internal
-        host_port:=${AIRSIM_HOST_PORT:-41451}
-        vehicles:="['${VEHICLE_1_NAME:-Copter1}']"
-        enable_localization:=true
-        enable_coordination:=false
-        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
-        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
-        local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}
-        local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_1_NAME:-Copter1}"
+      - "host_ip:=host.docker.internal"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
 
   airsim_bridge_d2:
     <<: *airsim-bridge-defaults
     container_name: airsim_bridge_d2
     hostname: airsim_bridge_d2
     environment:
+      # HOME must point at a writable dir: the container runs as uid 1000,
+      # which is absent from the image's /etc/passwd, so HOME would default
+      # to / and `ros2 launch` would fail to create its ~/.ros/log dir.
+      - HOME=/tmp
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
       - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
@@ -390,27 +412,35 @@ services:
       - VEHICLE_NAME=${VEHICLE_2_NAME:-Copter2}
     networks:
       - agent_internal-2
+    # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
+    # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
+    # single_vehicle.launch.py pins this instance to exactly one vehicle via
+    # vehicle_name:= (airsim_bringup.launch.py's vehicles:= is only an
+    # RPC-discovery fallback and would otherwise bridge ALL vehicles).
     command:
-      - "bash"
-      - "-lc"
-      - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
-        host_ip:=host.docker.internal
-        host_port:=${AIRSIM_HOST_PORT:-41451}
-        vehicles:="['${VEHICLE_2_NAME:-Copter2}']"
-        enable_localization:=true
-        enable_coordination:=false
-        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
-        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
-        local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}
-        local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_2_NAME:-Copter2}"
+      - "host_ip:=host.docker.internal"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
 
   airsim_bridge_d3:
     <<: *airsim-bridge-defaults
     container_name: airsim_bridge_d3
     hostname: airsim_bridge_d3
     environment:
+      # HOME must point at a writable dir: the container runs as uid 1000,
+      # which is absent from the image's /etc/passwd, so HOME would default
+      # to / and `ros2 launch` would fail to create its ~/.ros/log dir.
+      - HOME=/tmp
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
       - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
@@ -420,27 +450,35 @@ services:
       - VEHICLE_NAME=${VEHICLE_3_NAME:-Copter3}
     networks:
       - agent_internal-3
+    # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
+    # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
+    # single_vehicle.launch.py pins this instance to exactly one vehicle via
+    # vehicle_name:= (airsim_bringup.launch.py's vehicles:= is only an
+    # RPC-discovery fallback and would otherwise bridge ALL vehicles).
     command:
-      - "bash"
-      - "-lc"
-      - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
-        host_ip:=host.docker.internal
-        host_port:=${AIRSIM_HOST_PORT:-41451}
-        vehicles:="['${VEHICLE_3_NAME:-Copter3}']"
-        enable_localization:=true
-        enable_coordination:=false
-        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
-        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
-        local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}
-        local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_3_NAME:-Copter3}"
+      - "host_ip:=host.docker.internal"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
 
   airsim_bridge_d4:
     <<: *airsim-bridge-defaults
     container_name: airsim_bridge_d4
     hostname: airsim_bridge_d4
     environment:
+      # HOME must point at a writable dir: the container runs as uid 1000,
+      # which is absent from the image's /etc/passwd, so HOME would default
+      # to / and `ros2 launch` would fail to create its ~/.ros/log dir.
+      - HOME=/tmp
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
       - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
@@ -450,21 +488,25 @@ services:
       - VEHICLE_NAME=${VEHICLE_4_NAME:-Copter4}
     networks:
       - agent_internal-4
+    # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
+    # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
+    # single_vehicle.launch.py pins this instance to exactly one vehicle via
+    # vehicle_name:= (airsim_bringup.launch.py's vehicles:= is only an
+    # RPC-discovery fallback and would otherwise bridge ALL vehicles).
     command:
-      - "bash"
-      - "-lc"
-      - >
-        source /airsim_ros2_ws/install/setup.bash &&
-        ros2 launch airsim_ros_pkgs airsim_bringup.launch.py
-        host_ip:=host.docker.internal
-        host_port:=${AIRSIM_HOST_PORT:-41451}
-        vehicles:="['${VEHICLE_4_NAME:-Copter4}']"
-        enable_localization:=true
-        enable_coordination:=false
-        enable_local_obs:=${ENABLE_LOCAL_OBS:-true}
-        local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}
-        local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}
-        local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_4_NAME:-Copter4}"
+      - "host_ip:=host.docker.internal"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
 
   # ===========================================================================
   # PER-DRONE ZENOH BRIDGES (--with-agent-external profile)

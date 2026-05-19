@@ -158,7 +158,7 @@ often touch:
 | `LOCAL_OBS_BUFFER_SEC` | `5.0` | Rolling-buffer length (s) per vehicle. Bigger = denser map, more CPU. The publish callback re-voxelizes the full buffer each tick, so this scales linearly. |
 | `LOCAL_OBS_VOXEL_SIZE` | `0.10` | Voxel leaf size (m). Smaller = denser map, more CPU. Defaults pair with `LOCAL_OBS_BUFFER_SEC=5.0` for ~20 Hz publish. |
 | `VEHICLE_{1..4}_NAME` | `Copter{1..4}` | Override per-drone vehicle key in `settings.json`. |
-| `AIRSIM_BRIDGE_IMAGE` | `tevv-airstack-ros2-x11-node-multi-agent-bridge` | Pin a different bridge image for testing. |
+| `AIRSIM_BRIDGE_IMAGE` | `dhdevspace/auto_mns:airsim-ros2-bridge` | Pin a different bridge image for testing. |
 
 The previous defaults (`LOCAL_OBS_BUFFER_SEC=30`, `LOCAL_OBS_VOXEL_SIZE=0.05`)
 measured ~1.7 Hz on the per-drone bridges — every publish tick re-merges +
