@@ -58,6 +58,12 @@ SCENARIOS: dict[str, list[tuple[str, str]]] = {
             "compose/px4-condo/docker-compose.yml",
         ),
     ],
+    "ardupilot-condo": [
+        (
+            "compose/ardupilot-condo/templates/docker-compose.yml.j2",
+            "compose/ardupilot-condo/docker-compose.yml",
+        ),
+    ],
 }
 
 
@@ -217,6 +223,7 @@ CONTEXT_BUILDERS: dict[str, Callable[[dict], dict]] = {
     "ardupilot-xfs": build_context_ardupilot_xfs,
     "px4-xfs": build_context_px4_xfs,
     "px4-condo": build_context_condo,
+    "ardupilot-condo": build_context_condo,
 }
 
 
@@ -383,6 +390,19 @@ def _self_test_px4_xfs() -> None:
             f"unsubstituted Jinja in px4-xfs output for N={n}"
 
 
+def _self_test_ardupilot_condo() -> None:
+    j_env = make_env()
+    ctx = build_context_condo({})
+    pairs = SCENARIOS["ardupilot-condo"]
+    a = [render(j_env, t, ctx) for t, _ in pairs]
+    b = [render(j_env, t, ctx) for t, _ in pairs]
+    assert a == b, "ardupilot-condo render not idempotent"
+    (compose_yaml,) = a
+    for svc in ("ardupilot-drone-0:", "airsim-condo:", "qgroundcontrol-x11:"):
+        assert svc in compose_yaml, f"missing service {svc} in ardupilot-condo"
+    assert "{{" not in compose_yaml and "{%" not in compose_yaml
+
+
 def _self_test_px4_condo() -> None:
     j_env = make_env()
     ctx = build_context_condo({})
@@ -402,6 +422,7 @@ SELF_TESTS: dict[str, Callable[[], None]] = {
     "ardupilot-xfs": _self_test_ardupilot_xfs,
     "px4-xfs": _self_test_px4_xfs,
     "px4-condo": _self_test_px4_condo,
+    "ardupilot-condo": _self_test_ardupilot_condo,
 }
 
 _missing_builders = SCENARIOS.keys() - CONTEXT_BUILDERS.keys()

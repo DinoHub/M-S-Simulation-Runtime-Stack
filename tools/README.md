@@ -20,6 +20,7 @@ Single source of truth: the runtime-stack root `.env`.
 | `config/unreal-airsim/xfs/settings-ardupilot.json` | `config/unreal-airsim/xfs/templates/settings-ardupilot.json.j2` |
 | `compose/px4-xfs/docker-compose.yml` | `compose/px4-xfs/templates/docker-compose.yml.j2` |
 | `compose/px4-condo/docker-compose.yml` | `compose/px4-condo/templates/docker-compose.yml.j2` |
+| `compose/ardupilot-condo/docker-compose.yml` | `compose/ardupilot-condo/templates/docker-compose.yml.j2` |
 
 ### Inputs (from root `.env`)
 
