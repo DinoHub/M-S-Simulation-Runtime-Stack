@@ -173,7 +173,7 @@ def make_env() -> Environment:
 
 
 def render(env: Environment, template_rel: str, ctx: dict) -> str:
-    """Render a template; prepend a 'do not edit' banner appropriate for the file type."""
+    """Render a template; prepend a 'do not edit' banner (YAML/shell comment). JSON templates get no banner — the template must ship its own header."""
     tmpl = env.get_template(template_rel)
     body = tmpl.render(**ctx)
     banner_lines = [
@@ -189,12 +189,11 @@ def render(env: Environment, template_rel: str, ctx: dict) -> str:
     return f"# =============================================================================\n{banner}\n# =============================================================================\n{body}"
 
 
-def write_outputs(scenario: str, ctx: dict, dry_run: bool = False) -> dict[Path, str]:
+def write_outputs(j_env: Environment, scenario: str, ctx: dict, dry_run: bool = False) -> dict[Path, str]:
     """Render one scenario's templates. Returns {output_path: content}; writes when not dry-run."""
-    env = make_env()
     out: dict[Path, str] = {}
     for tmpl_rel, out_rel in SCENARIOS[scenario]:
-        content = render(env, tmpl_rel, ctx)
+        content = render(j_env, tmpl_rel, ctx)
         out_path = REPO_ROOT / out_rel
         out[out_path] = content
         if not dry_run:
@@ -205,10 +204,11 @@ def write_outputs(scenario: str, ctx: dict, dry_run: bool = False) -> dict[Path,
 def check_drift(scenarios: list[str]) -> int:
     """Render to memory, compare against on-disk. Exit 0 if match, 1 if drift."""
     env = load_env(REPO_ROOT)
+    j_env = make_env()
     drift = []
     for scenario in scenarios:
         ctx = CONTEXT_BUILDERS[scenario](env)
-        rendered = write_outputs(scenario, ctx, dry_run=True)
+        rendered = write_outputs(j_env, scenario, ctx, dry_run=True)
         for path, content in rendered.items():
             existing = path.read_text(encoding="utf-8") if path.exists() else ""
             if existing != content:
@@ -297,9 +297,14 @@ SELF_TESTS: dict[str, Callable[[], None]] = {
     "ardupilot-xfs": _self_test_ardupilot_xfs,
 }
 
+_missing_builders = SCENARIOS.keys() - CONTEXT_BUILDERS.keys()
+_missing_tests = SCENARIOS.keys() - SELF_TESTS.keys()
+assert not _missing_builders, f"No CONTEXT_BUILDERS entry for: {_missing_builders}"
+assert not _missing_tests, f"No SELF_TESTS entry for: {_missing_tests}"
 
-def _self_test() -> None:
-    for name in sorted(SELF_TESTS):
+
+def _self_test(scenarios: list[str]) -> None:
+    for name in sorted(scenarios):
         SELF_TESTS[name]()
         print(f"self_test[{name}]: OK")
     print("self_test: OK")
@@ -313,23 +318,24 @@ def main(argv: list[str]) -> int:
     g.add_argument("--check", action="store_true",
                    help="exit 1 if outputs differ from a fresh render (no write)")
     g.add_argument("--self-test", action="store_true",
-                   help="run invariant checks and exit (no write, no .env read)")
+                   help="run invariant checks and exit (no write, no .env read; respects --scenario)")
     args = p.parse_args(argv)
 
     scenarios = args.scenario or sorted(SCENARIOS)
 
     if args.self_test:
-        _self_test()
+        _self_test(scenarios)
         return 0
 
     if args.check:
         return check_drift(scenarios)
 
     env = load_env(REPO_ROOT)
+    j_env = make_env()
     total = 0
     for scenario in scenarios:
         ctx = CONTEXT_BUILDERS[scenario](env)
-        write_outputs(scenario, ctx)
+        write_outputs(j_env, scenario, ctx)
         total += len(SCENARIOS[scenario])
         print(f"Regenerated {scenario} ({len(SCENARIOS[scenario])} files).",
               file=sys.stderr)

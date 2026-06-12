@@ -7,7 +7,8 @@ see [Sim-facing tools](#sim-facing-tools-toolssh) below.
 
 ## generate_scenario.py
 
-Jinja2-templated regenerator for the **ardupilot-xfs** scenario.
+Jinja2-templated regenerator for scenario compose files (ardupilot-xfs today;
+more scenarios register via the `SCENARIOS` dict).
 Single source of truth: the runtime-stack root `.env`.
 
 ### What it generates
