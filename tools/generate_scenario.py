@@ -398,8 +398,13 @@ def _self_test_ardupilot_condo() -> None:
     b = [render(j_env, t, ctx) for t, _ in pairs]
     assert a == b, "ardupilot-condo render not idempotent"
     (compose_yaml,) = a
-    for svc in ("ardupilot-drone-0:", "airsim-condo:", "qgroundcontrol-x11:"):
+    for svc in ("ardupilot-drone-0:", "airsim-condo:", "airsim_bridge_d1:",
+                "mavros_d1:", "qgroundcontrol-x11:"):
         assert svc in compose_yaml, f"missing service {svc} in ardupilot-condo"
+    assert "ros2-x11-node:" not in compose_yaml, "legacy monolith still present in ardupilot-condo"
+    assert "tevv-airstack-ros2-x11-node" not in compose_yaml, "monolith image still referenced"
+    assert "mavros_config:=mavros_ardupilot.yaml" in compose_yaml
+    assert "enable_coordination:=false" in compose_yaml
     assert "{{" not in compose_yaml and "{%" not in compose_yaml
 
 
