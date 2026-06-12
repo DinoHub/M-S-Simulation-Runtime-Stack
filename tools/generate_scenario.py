@@ -411,9 +411,13 @@ def _self_test_px4_condo() -> None:
     b = [render(j_env, t, ctx) for t, _ in pairs]
     assert a == b, "px4-condo render not idempotent"
     (compose_yaml,) = a
-    for svc in ("airsim-condo:", "px4-drone-1:", "qgroundcontrol-x11:",
-                "pixel-streaming-signalling:"):
+    for svc in ("airsim-condo:", "px4-drone-1:", "airsim_bridge_d1:",
+                "mavros_d1:", "qgroundcontrol-x11:", "pixel-streaming-signalling:"):
         assert svc in compose_yaml, f"missing service {svc} in px4-condo"
+    assert "ros2-x11-node:" not in compose_yaml, "legacy monolith still present in px4-condo"
+    assert "enable_coordination:=false" in compose_yaml
+    assert "enable_coordination:=true" not in compose_yaml
+    assert "tevv-airstack-ros2-x11-node" not in compose_yaml, "monolith image still referenced"
     assert "{{" not in compose_yaml and "{%" not in compose_yaml
 
 
