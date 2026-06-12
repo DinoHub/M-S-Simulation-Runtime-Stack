@@ -46,6 +46,12 @@ SCENARIOS: dict[str, list[tuple[str, str]]] = {
             "config/unreal-airsim/xfs/settings-ardupilot.json",
         ),
     ],
+    "px4-xfs": [
+        (
+            "compose/px4-xfs/templates/docker-compose.yml.j2",
+            "compose/px4-xfs/docker-compose.yml",
+        ),
+    ],
 }
 
 
@@ -60,6 +66,17 @@ class Drone:
     fdm_udp: int           # FDM UDP port (SITL -> AirSim)
     subnet_octet: int      # third octet of agent_internal-N subnet
     x_offset: float        # spawn X (m) in AirSim NED frame
+
+
+@dataclass(frozen=True)
+class Px4Drone:
+    n: int                 # 1-indexed drone number
+    instance: int          # 0-indexed PX4 SITL instance (n - 1)
+    cpuset: int            # dedicated host cpu core
+    stagger_s: int         # startup sleep before SITL launch (s)
+    domain_id: int         # ROS_DOMAIN_ID default (Phase 2 bridges)
+    mavros_local: int      # MAVROS local udp port (14540 + instance)
+    mavros_remote: int     # MAVROS remote udp port (14580 + instance)
 
 
 def _int(env: dict, key: str, default: int) -> int:
@@ -155,9 +172,36 @@ def build_context_ardupilot_xfs(env: dict) -> dict:
     }
 
 
+def build_context_px4_xfs(env: dict) -> dict:
+    """Assemble the Jinja render context for px4-xfs."""
+    n = _num_drones(env)
+    vehicle_prefix = env.get("VEHICLE_PREFIX") or "Copter"
+    cpuset_base = _int(env, "PX4_CPUSET_BASE", 8)
+    drones = [
+        Px4Drone(
+            n=k,
+            instance=k - 1,
+            cpuset=cpuset_base + k - 1,
+            stagger_s=20 + 5 * max(0, k - 2),
+            domain_id=_int(env, f"DRONE_{k}_DOMAIN_ID", k),
+            mavros_local=14540 + k - 1,
+            mavros_remote=14580 + k - 1,
+        )
+        for k in range(1, n + 1)
+    ]
+    ros2_first = cpuset_base + n
+    return {
+        "num_drones": n,
+        "vehicle_prefix": vehicle_prefix,
+        "px4_drones": drones,
+        "ros2_cpuset": f"{ros2_first}-{ros2_first + 3}",
+    }
+
+
 # scenario -> context builder. Tasks registering new scenarios add entries.
 CONTEXT_BUILDERS: dict[str, Callable[[dict], dict]] = {
     "ardupilot-xfs": build_context_ardupilot_xfs,
+    "px4-xfs": build_context_px4_xfs,
 }
 
 
@@ -292,9 +336,37 @@ def _self_test_ardupilot_xfs() -> None:
                 f"unsubstituted Jinja in {label} output for N={n}"
 
 
+def _self_test_px4_xfs() -> None:
+    j_env = make_env()
+    pairs = SCENARIOS["px4-xfs"]
+    for n in (1, 2, 4, 8):
+        ctx = build_context_px4_xfs({"NUM_DRONES": str(n), "PX4_CPUSET_BASE": "8"})
+        renders = [render(j_env, t, ctx) for t, _ in pairs]
+        renders2 = [render(j_env, t, ctx) for t, _ in pairs]
+        for a, b in zip(renders, renders2):
+            assert a == b, f"px4-xfs render not idempotent for N={n}"
+        (compose_yaml,) = renders
+        for d in ctx["px4_drones"]:
+            assert f"px4-bridge-drone-{d.n}:" in compose_yaml, \
+                f"missing px4-bridge-drone-{d.n} for N={n}"
+            assert f'cpuset: "{d.cpuset}"' in compose_yaml, \
+                f"missing cpuset {d.cpuset} for drone {d.n}, N={n}"
+            assert f"PX4_INSTANCE: {d.instance}" in compose_yaml, \
+                f"missing PX4_INSTANCE {d.instance} for N={n}"
+        assert f"px4-bridge-drone-{n + 1}:" not in compose_yaml, \
+            f"unexpected drone {n + 1} for N={n}"
+        # Stagger arithmetic: d1=20, d2=20, d3=25, d4=30, ...
+        assert ctx["px4_drones"][0].stagger_s == 20
+        if n >= 3:
+            assert ctx["px4_drones"][2].stagger_s == 25
+        assert "{{" not in compose_yaml and "{%" not in compose_yaml, \
+            f"unsubstituted Jinja in px4-xfs output for N={n}"
+
+
 # scenario -> self-test function. Tasks registering new scenarios add entries.
 SELF_TESTS: dict[str, Callable[[], None]] = {
     "ardupilot-xfs": _self_test_ardupilot_xfs,
+    "px4-xfs": _self_test_px4_xfs,
 }
 
 _missing_builders = SCENARIOS.keys() - CONTEXT_BUILDERS.keys()
