@@ -190,8 +190,7 @@ def build_context_px4_xfs(env: dict) -> dict:
     vehicle_prefix = env.get("VEHICLE_PREFIX") or "Copter"
     cpuset_base = _int(env, "PX4_CPUSET_BASE", 8)
     # Startup stagger: d1=d2=20s (both early starters wait for the same AirSim
-    # init window), then +5s per drone: d3=25, d4=30, ... The 4-core ros2_cpuset
-    # window below serves the legacy ros2-x11-node and is removed in Phase 2.
+    # init window), then +5s per drone: d3=25, d4=30, ...
     drones = [
         Px4Drone(
             n=k,
@@ -204,12 +203,10 @@ def build_context_px4_xfs(env: dict) -> dict:
         )
         for k in range(1, n + 1)
     ]
-    ros2_first = cpuset_base + n
     return {
         "num_drones": n,
         "vehicle_prefix": vehicle_prefix,
         "px4_drones": drones,
-        "ros2_cpuset": f"{ros2_first}-{ros2_first + 3}",
     }
 
 
@@ -381,11 +378,23 @@ def _self_test_px4_xfs() -> None:
         assert ctx["px4_drones"][0].stagger_s == 20
         if n >= 2:
             assert ctx["px4_drones"][1].stagger_s == 20, "d2 intentionally ties d1"
-        # ros2 cpuset window starts right after the last drone core (no overlap).
-        assert ctx["ros2_cpuset"] == f"{8 + n}-{8 + n + 3}"
-        assert f'cpuset: "{ctx["ros2_cpuset"]}"' in compose_yaml
         if n >= 3:
             assert ctx["px4_drones"][2].stagger_s == 25
+        for d in ctx["px4_drones"]:
+            assert f"airsim_bridge_d{d.n}:" in compose_yaml, \
+                f"missing bridge for drone {d.n}, N={n}"
+            assert f"mavros_d{d.n}:" in compose_yaml, \
+                f"missing mavros for drone {d.n}, N={n}"
+            assert f"udp://:{d.mavros_local}@127.0.0.1:{d.mavros_remote}" in compose_yaml, \
+                f"bad mavros port pair for drone {d.n}, N={n}"
+        assert f"airsim_bridge_d{n + 1}:" not in compose_yaml, \
+            f"unexpected bridge {n + 1} for N={n}"
+        assert "ros2-x11-node:" not in compose_yaml, "legacy monolith still present in px4-xfs"
+        assert "tevv-airstack-ros2-x11-node" not in compose_yaml
+        assert compose_yaml.count("enable_coordination:=false") == n
+        assert "enable_coordination:=true" not in compose_yaml
+        assert compose_yaml.count("enable_dds_cleanup:=true") == 1, \
+            f"dds cleanup must run on d1 only, N={n}"
         assert "{{" not in compose_yaml and "{%" not in compose_yaml, \
             f"unsubstituted Jinja in px4-xfs output for N={n}"
 

@@ -13,7 +13,9 @@
 {% for d in px4_drones %}
 #   - px4-bridge-drone-{{ d.n }}  : PX4 SITL instance {{ d.instance }}  (cpu core {{ d.cpuset }})
 {% endfor %}
-#   - ros2-x11-node       : ROS2 + MAVROS with X11 forwarding (cpu cores {{ ros2_cpuset }})
+{% for d in px4_drones %}
+#   - airsim_bridge_d{{ d.n }} + mavros_d{{ d.n }}   (ROS_DOMAIN_ID {{ d.domain_id }})
+{% endfor %}
 #   - qgroundcontrol-x11  : QGroundControl with X11 forwarding + GPU acceleration
 #
 # Prerequisites:
@@ -21,7 +23,7 @@
 #        xhost +local:docker
 #   2. Create a .env file (or export variables) with at minimum:
 #        CONFIG_ROOT=/path/to/your/config       # required — contains settings.json & QGC config
-#        ROS2_IMAGE=dhdevspace/auto_mns:ros2-x11-latest
+#        AIRSIM_BRIDGE_IMAGE=dhdevspace/auto_mns:airsim-ros2-bridge   # optional override
 #        UID=$(id -u)
 #        GID=$(id -g)
 #   3. Optional overrides (all have sensible defaults for localhost operation):
@@ -52,7 +54,7 @@ services:
   # AIRSIM XFS — AirSim simulator with XFS Unreal scene
   # ===========================================================================
   airsim-xfs:
-    image: dhdevspace/auto_mns:tevv-airsim-xfs-latest
+    image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:tevv-airsim-xfs-latest}
     pull_policy: if_not_present
     container_name: airsim-xfs
     hostname: airsim-xfs
@@ -101,7 +103,7 @@ services:
   # PX4 SITL — Drone {{ d.n }}  (instance {{ d.instance }}, cpu core {{ d.cpuset }})
   # ===========================================================================
   px4-bridge-drone-{{ d.n }}:
-    image: dhdevspace/auto_mns:px4-airsim-px4
+    image: ${PX4_IMAGE:-dhdevspace/auto_mns:px4-airsim-px4}
     pull_policy: if_not_present
     container_name: px4-drone-{{ d.n }}
     hostname: px4-drone-{{ d.n }}
@@ -151,82 +153,118 @@ services:
 
 {% endfor %}
   # ===========================================================================
-  # ROS2 X11 NODE — ROS2 + MAVROS with X11 forwarding  (cpu cores {{ ros2_cpuset }})
+  # PER-DRONE AIRSIM BRIDGES + MAVROS (standalone airsim-ros2-bridge image —
+  # replaces the legacy ros2-x11 monolith; ardupilot-xfs recipe adapted to
+  # host networking).
+  #
+  # All services share the host network, so per-drone isolation comes from
+  # ROS_DOMAIN_ID (default: drone number; override DRONE_N_DOMAIN_ID). Each
+  # bridge is its own /clock publisher inside its own domain — N bridges on
+  # one domain would race /clock and reset tf2 buffers.
   # ===========================================================================
-  ros2-x11-node:
-    image: ${ROS2_IMAGE:-dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-development}
+{% for d in px4_drones %}
+  airsim_bridge_d{{ d.n }}:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
     pull_policy: if_not_present
-    container_name: ros2-x11-node
-    hostname: ros2-x11
+    container_name: airsim_bridge_d{{ d.n }}
+    hostname: airsim_bridge_d{{ d.n }}
+    init: true
+    restart: unless-stopped
 
     network_mode: "host"
-    # IPC namespace sharing required for iceoryx2 zero-copy shared memory transport
     ipc: host
-
-    # Multi-core allocation for ROS2 multi-threaded executors
-    cpuset: "{{ ros2_cpuset }}"
 
     user: "${UID:?set UID}:${GID:?set GID}"
 
-    entrypoint: ["/bin/bash", "-lc"]
-    command: ["tail -f /dev/null"]
+    depends_on:
+      # service_healthy: the bridge's first RPC mid engine-init can crash
+      # the sim, and a closed RPC port leaves sensor topics with 0
+      # publishers and no retry.
+      airsim-xfs:
+        condition: service_healthy
 
     environment:
-      # X11 forwarding
-      DISPLAY: ${DISPLAY:-:0}
-      XAUTHORITY: /tmp/.Xauthority
-      QT_X11_NO_MITSHM: 1
-
-      # ROS2 configuration
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-      ROS_LOCALHOST_ONLY: 0    # Allow DDS multicast on host network
-
-      # AirSim connection — localhost because AirSim runs on host network too
-      AIRSIM_HOST_IP: ${AIRSIM_HOST_IP:-localhost}
-      AIRSIM_HOST_PORT: ${AIRSIM_HOST_PORT:-41451}
-
-      # Launch configuration
-      LAUNCH_MODE: ${LAUNCH_MODE:-multi}
-      ENABLE_COORDINATION: ${ENABLE_COORDINATION:-true}
-      RPC_TIMEOUT: ${RPC_TIMEOUT:-10.0}
-      LAUNCH_RVIZ: ${LAUNCH_RVIZ:-false}
-      DEBUG: ${DEBUG:-false}
-      AUTO_BUILD: ${AUTO_BUILD:-false}
-
-      # Auto-launch ROS2 system
-      AUTO_LAUNCH_ROS2: ${AUTO_LAUNCH_ROS2:-true}
-      ENABLE_SUPERVISOR: ${ENABLE_SUPERVISOR:-true}
-      VEHICLES: ${VEHICLES:-"['Copter1']"}
-      ENABLE_MAVROS: ${ENABLE_MAVROS:-true}
-      ENABLE_LOCAL_OBS: ${ENABLE_LOCAL_OBS:-true}
-      TEST_LOCAL_PLANNER: ${TEST_LOCAL_PLANNER:-true}
-      AUTO_START_ON_TAKEOFF: ${AUTO_START_ON_TAKEOFF:-true}
-      AUTO_END_ON_LANDING: ${AUTO_END_ON_LANDING:-true}
-
-      # MAVROS — localhost mode: PX4 and ROS2 are on the same host network
-      # Pattern: udp://localhost:14540@14550, udp://localhost:14541@14551, …
-      MAVROS_FCU_URL: ${MAVROS_FCU_URL:-udp://localhost:14540@14550}
-      MAVROS_NUM_DRONES: ${MAVROS_NUM_DRONES:-{{ num_drones }}}
-      MAVROS_USE_HOST_NETWORK: "true"
-      MAVROS_PX4_NETWORK_MODE: localhost
+      # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
+      # HOME would default to / and `ros2 launch` couldn't create ~/.ros/log.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_{{ d.n }}_DOMAIN_ID:-{{ d.domain_id }}}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_{{ d.n }}_NAME:-{{ vehicle_prefix }}{{ d.n }}}
 
     volumes:
-      # X11 socket + auth
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
-      # Persist ROS2 build artefacts for faster rebuilds
-      - ros2_x11_build:/airsim_ros2_ws/build
-      - ros2_x11_install:/airsim_ros2_ws/install
-      - ros2_x11_logs:/airsim_ros2_ws/log
-      # Shared memory for iceoryx2 zero-copy transport
       - /dev/shm:/dev/shm:rw
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
 
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_{{ d.n }}_NAME:-{{ vehicle_prefix }}{{ d.n }}}"
+      - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+
+  mavros_d{{ d.n }}:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: mavros_d{{ d.n }}
+    hostname: mavros_d{{ d.n }}
+    # init: false: mavros_bringup's DDS-cleanup forks children that tini
+    # would orphan; the bash -lc wrapper keeps bash as PID 1 to reap them.
+    init: false
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      airsim_bridge_d{{ d.n }}:
+        condition: service_started
+      px4-bridge-drone-{{ d.n }}:
+        condition: service_started
+
+    environment:
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${DRONE_{{ d.n }}_DOMAIN_ID:-{{ d.domain_id }}}
+      - ROS_LOCALHOST_ONLY=0
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+
+    # PX4 offboard MAVLink pair: local 14540+i / remote 14580+i per SITL
+    # instance i. Override per drone with DRONE_N_FCU_URL if the
+    # mavlink-router profile maps differently.
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
+        vehicle:=${VEHICLE_{{ d.n }}_NAME:-{{ vehicle_prefix }}{{ d.n }}}
+        fcu_url:=${DRONE_{{ d.n }}_FCU_URL:-udp://:{{ d.mavros_local }}@127.0.0.1:{{ d.mavros_remote }}}
+        target_system_id:={{ d.n }}
+        mavros_config:=mavros_px4.yaml
+        enable_dds_cleanup:={{ "true" if d.n == 1 else "false" }}
+
+{% endfor %}
   # ===========================================================================
   # QGROUNDCONTROL X11 — Ground control station with GPU acceleration
   # ===========================================================================
   qgroundcontrol-x11:
-    image: dhdevspace/auto_mns:airsim-qgc-x11-latest
+    image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
     pull_policy: if_not_present
     container_name: qgroundcontrol-x11
     hostname: qgc-x11
@@ -287,14 +325,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
-
-# =============================================================================
-# NAMED VOLUMES — persist ROS2 build artefacts across container restarts
-# =============================================================================
-volumes:
-  ros2_x11_build:
-    driver: local
-  ros2_x11_install:
-    driver: local
-  ros2_x11_logs:
-    driver: local
