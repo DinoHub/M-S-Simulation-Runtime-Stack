@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -132,6 +133,11 @@ def load_env(repo_root: Path) -> dict:
         "FDM_PORT_STRIDE",
         "AGENT_INTERNAL_SUBNET_BASE",
         "PX4_CPUSET_BASE",
+        "CAMERA_ENABLE",
+        "CAMERA_NAME",
+        "CAMERA_WIDTH",
+        "CAMERA_HEIGHT",
+        "CAMERA_FOV",
     ):
         if k in os.environ:
             base[k] = os.environ[k]
@@ -182,6 +188,26 @@ def build_context_ardupilot_xfs(env: dict) -> dict:
         "x_spacing": x_spacing,
         "mavlink_port_base": mavlink_base,
         "fdm_tcp_port_base": fdm_tcp_base,
+        "camera": _camera_context(env),
+    }
+
+
+def _camera_context(env: dict) -> dict:
+    """Per-vehicle camera block for settings.json (CAMERA_* keys in .env).
+
+    Off by default — the bridge auto-discovers cameras from settings
+    (auto_discover_cameras defaults true), so flipping CAMERA_ENABLE=true and
+    regenerating is all it takes to get /<vehicle>/<name>_Scene/image topics.
+    Resolution defaults stay modest: every enabled camera is rendered for
+    EVERY drone, and large captures load both the GPU and AirSim's
+    single-threaded RPC server.
+    """
+    return {
+        "enable": (env.get("CAMERA_ENABLE") or "false").strip().lower() == "true",
+        "name": env.get("CAMERA_NAME") or "Camera1",
+        "width": _int(env, "CAMERA_WIDTH", 1280),
+        "height": _int(env, "CAMERA_HEIGHT", 720),
+        "fov": _float(env, "CAMERA_FOV", 81.0),
     }
 
 
@@ -357,6 +383,21 @@ def _self_test_ardupilot_xfs() -> None:
         for label, body in (("compose", compose_yaml), ("mavros", mavros_yaml), ("settings", settings_json)):
             assert "{{" not in body and "{%" not in body, \
                 f"unsubstituted Jinja in {label} output for N={n}"
+
+    # Camera block: off by default; per-vehicle and valid JSON when enabled.
+    settings_tmpl = pairs[2][0]
+    off = render(j_env, settings_tmpl,
+                 build_context_ardupilot_xfs(dict(base_env, NUM_DRONES="2")))
+    assert '"Cameras": {}' in off, "cameras must default to empty"
+    json.loads(off)
+    on = render(j_env, settings_tmpl,
+                build_context_ardupilot_xfs(dict(base_env, NUM_DRONES="2",
+                                                 CAMERA_ENABLE="true",
+                                                 CAMERA_WIDTH="640")))
+    assert on.count('"Camera1":') == 2, "camera block must appear on every vehicle"
+    assert '"Width": 640' in on
+    assert '"Cameras": {}' not in on
+    json.loads(on)
 
 
 def _self_test_px4_xfs() -> None:
