@@ -7,7 +7,8 @@ see [Sim-facing tools](#sim-facing-tools-toolssh) below.
 
 ## generate_scenario.py
 
-Jinja2-templated regenerator for the **ardupilot-xfs** scenario.
+Jinja2-templated regenerator for scenario compose files (ardupilot-xfs today;
+more scenarios register via the `SCENARIOS` dict).
 Single source of truth: the runtime-stack root `.env`.
 
 ### What it generates
@@ -17,6 +18,9 @@ Single source of truth: the runtime-stack root `.env`.
 | `compose/ardupilot-xfs/docker-compose.yml` | `compose/ardupilot-xfs/templates/docker-compose.yml.j2` |
 | `compose/ardupilot-xfs/docker-compose.mavros-test.yml` | `compose/ardupilot-xfs/templates/docker-compose.mavros-test.yml.j2` |
 | `config/unreal-airsim/xfs/settings-ardupilot.json` | `config/unreal-airsim/xfs/templates/settings-ardupilot.json.j2` |
+| `compose/px4-xfs/docker-compose.yml` | `compose/px4-xfs/templates/docker-compose.yml.j2` |
+| `compose/px4-condo/docker-compose.yml` | `compose/px4-condo/templates/docker-compose.yml.j2` |
+| `compose/ardupilot-condo/docker-compose.yml` | `compose/ardupilot-condo/templates/docker-compose.yml.j2` |
 
 ### Inputs (from root `.env`)
 

@@ -39,9 +39,9 @@ pixel-streaming-signalling sidecar AND tells UE5 to dial it
 http://localhost:\${PS_HTTP_PORT:-80} when enabled.
 Equivalent .env knob: ENABLE_PIXEL_STREAMING=true.
 
-For ardupilot-xfs, drone count is set via NUM_DRONES in .env (default 4);
-the launcher regenerates compose + settings.json from
-compose/ardupilot-xfs/templates/ via tools/generate_scenario.py.
+Scenarios with a compose/<scenario>/templates/ dir are generated from Jinja
+templates via tools/generate_scenario.py (drone count via NUM_DRONES in .env,
+default 4); the launcher regenerates them automatically on drift.
 EOF
 }
 
@@ -232,12 +232,14 @@ if [ "$START_MONITORING" = "true" ]; then
 fi
 
 # Regenerate scenario files from Jinja templates if needed.
-# Idempotent: --check exits 0 when outputs match templates and .env, so the
-# generator only writes when something drifted (e.g., NUM_DRONES changed).
-if [ "$SCENARIO" = "ardupilot-xfs" ] && [ -f "$SCRIPT_DIR/tools/generate_scenario.py" ]; then
-  if ! python3 "$SCRIPT_DIR/tools/generate_scenario.py" --check >/dev/null 2>&1; then
-    echo "Regenerating ardupilot-xfs scenario files (drift detected)..."
-    python3 "$SCRIPT_DIR/tools/generate_scenario.py"
+# Generic: any scenario with a compose/<scenario>/templates/ dir is
+# generator-managed. Idempotent: --check exits 0 when outputs match
+# templates and .env, so the generator only writes on drift (e.g.,
+# NUM_DRONES changed).
+if [ -d "compose/${SCENARIO}/templates" ] && [ -f "$SCRIPT_DIR/tools/generate_scenario.py" ]; then
+  if ! python3 "$SCRIPT_DIR/tools/generate_scenario.py" --scenario "$SCENARIO" --check >/dev/null 2>&1; then
+    echo "Regenerating ${SCENARIO} scenario files (drift detected)..."
+    python3 "$SCRIPT_DIR/tools/generate_scenario.py" --scenario "$SCENARIO"
   fi
 fi
 
