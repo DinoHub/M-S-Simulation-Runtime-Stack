@@ -177,6 +177,9 @@ def build_context_px4_xfs(env: dict) -> dict:
     n = _num_drones(env)
     vehicle_prefix = env.get("VEHICLE_PREFIX") or "Copter"
     cpuset_base = _int(env, "PX4_CPUSET_BASE", 8)
+    # Startup stagger: d1=d2=20s (both early starters wait for the same AirSim
+    # init window), then +5s per drone: d3=25, d4=30, ... The 4-core ros2_cpuset
+    # window below serves the legacy ros2-x11-node and is removed in Phase 2.
     drones = [
         Px4Drone(
             n=k,
@@ -357,6 +360,11 @@ def _self_test_px4_xfs() -> None:
             f"unexpected drone {n + 1} for N={n}"
         # Stagger arithmetic: d1=20, d2=20, d3=25, d4=30, ...
         assert ctx["px4_drones"][0].stagger_s == 20
+        if n >= 2:
+            assert ctx["px4_drones"][1].stagger_s == 20, "d2 intentionally ties d1"
+        # ros2 cpuset window starts right after the last drone core (no overlap).
+        assert ctx["ros2_cpuset"] == f"{8 + n}-{8 + n + 3}"
+        assert f'cpuset: "{ctx["ros2_cpuset"]}"' in compose_yaml
         if n >= 3:
             assert ctx["px4_drones"][2].stagger_s == 25
         assert "{{" not in compose_yaml and "{%" not in compose_yaml, \
