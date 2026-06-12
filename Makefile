@@ -48,7 +48,7 @@ endif
 
 SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) attach stop logs ps generate check self-test
+.PHONY: help $(SCENARIOS) attach teleop stop logs ps generate check self-test
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
@@ -56,6 +56,7 @@ help:
 	@echo "Flag vars (=true): HEADLESS AGENT_EXTERNAL PIXEL_STREAMING MONITORING METRICS ALL"
 	@echo "Utility targets:"
 	@echo "  attach     tmux dashboard on the running stack (per-drone log panes + shell)"
+	@echo "  teleop     WASD keyboard flight via mavros_dN [DRONE=1 AUTOPILOT=px4|ardupilot]"
 	@echo "  stop       ./stop.sh [SCENARIO=name]"
 	@echo "  logs       ./logs.sh"
 	@echo "  ps         running containers (name/status/image)"
@@ -72,6 +73,20 @@ $(SCENARIOS):
 # Detach with Ctrl-b d — containers keep running either way.
 attach:
 	./tools/attach-session.sh
+
+# WASD keyboard teleop over MAVROS — exec into the running mavros_dN, which
+# already carries the right ROS_DOMAIN_ID for its drone. Run from any
+# terminal while the stack is up. Keys: wasd move, r/f up/down, q/e yaw,
+# 1 mode, 2 arm, 3 takeoff, 4 land, 0 disarm, space stop, x quit.
+#   make teleop                    # drone 1, autopilot auto-detected
+#   make teleop DRONE=2            # px4-xfs drone 2
+#   make teleop AUTOPILOT=ardupilot VEHICLE=Copter1
+DRONE     ?= 1
+VEHICLE   ?= Copter$(DRONE)
+AUTOPILOT ?= $(shell docker ps --format '{{.Names}}' | grep -q '^ardupilot' && echo ardupilot || echo px4)
+teleop:
+	docker exec -it mavros_d$(DRONE) bash -lc 'ros2 run airsim_mavros_bringup mavros_teleop_keyboard.py \
+		--ros-args -p vehicle:=$(VEHICLE) -p autopilot:=$(AUTOPILOT)'
 
 stop:
 	./stop.sh $(SCENARIO)
