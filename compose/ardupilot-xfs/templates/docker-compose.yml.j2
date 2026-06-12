@@ -382,7 +382,7 @@ services:
   # QGroundControl X11 — Ground control station with GPU acceleration.
   # ---------------------------------------------------------------------------
   qgroundcontrol-x11:
-    image: dhdevspace/auto_mns:airsim-qgc-x11-latest
+    image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
     pull_policy: if_not_present
     container_name: ardupilot-xfs-qgc
     hostname: ardupilot-xfs-qgc

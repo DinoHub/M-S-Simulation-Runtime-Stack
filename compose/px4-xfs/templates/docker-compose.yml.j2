@@ -54,6 +54,8 @@ services:
   # AIRSIM XFS — AirSim simulator with XFS Unreal scene
   # ===========================================================================
   airsim-xfs:
+    # Default tag differs from ardupilot-xfs's xfs-latest on purpose (PX4-flavoured
+    # XFS build); root .env's AIRSIM_IMAGE overrides both scenarios identically.
     image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:tevv-airsim-xfs-latest}
     pull_policy: if_not_present
     container_name: airsim-xfs

@@ -19,7 +19,7 @@
 #   XAUTHORITY    — path to Xauthority file (e.g. /run/user/1000/gdm/Xauthority)
 #
 # Optional image overrides:
-#   ARDUPILOT_IMAGE      (default: dhdevspace/auto_mns:tevv-ardupilot-sitl-latest)
+#   ARDUPILOT_IMAGE      (default: dhdevspace/auto_mns:ardupilot-slim)
 #   AIRSIM_CONDO_IMAGE   (default: dhdevspace/auto_mns:tevv-airsim-condo-latest-ceilingless)
 #   AIRSIM_BRIDGE_IMAGE  (default: dhdevspace/auto_mns:airsim-ros2-bridge)
 #   QGC_IMAGE            (default: dhdevspace/auto_mns:airsim-qgc-x11-latest)
@@ -68,7 +68,7 @@ services:
     volumes:
       - ardupilot_instance_0:/ardupilot_workspace/instances/instance_0
       - ardupilot_logs_0:/ardupilot_data/logs
-      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+      - ${CONFIG_ROOT:-./config}/ardupilot/config:/ardupilot_config:ro
 
     command: ["0"]
 
@@ -122,8 +122,8 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       # settings.json mounted to both locations: Documents/AirSim (primary) and
       # the executable directory (fallback), consistent with upstream behaviour.
-      - ${CONFIG_ROOT}/unreal-airsim/condo/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
-      - ${CONFIG_ROOT}/unreal-airsim/condo/settings.json:/app/Condo/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings.json:/app/Condo/settings.json:ro
 
     entrypoint: ["/bin/bash", "-c"]
     command:
@@ -248,7 +248,7 @@ services:
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=true
 
-# ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
   # QGroundControl X11 — Ground control station with GPU acceleration
   # ---------------------------------------------------------------------------
   qgroundcontrol-x11:
