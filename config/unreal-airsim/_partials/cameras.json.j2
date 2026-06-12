@@ -1,0 +1,17 @@
+{% if camera.enable %}
+      "Cameras": {
+        "{{ camera.name }}": {
+          "CaptureSettings": [
+            { "ImageType": 0,
+              "Width": {{ camera.width }}, "Height": {{ camera.height }},
+              "FovDegrees": {{ camera.fov }},
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
+          ],
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
+        }
+      }
+{% else %}
+      "Cameras": {}
+{% endif %}

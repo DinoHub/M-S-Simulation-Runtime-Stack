@@ -88,7 +88,7 @@ services:
       - /dev/shm:/dev/shm:rw
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       # AirSim settings — REQUIRED: must be present before starting
-      - ${CONFIG_ROOT?set CONFIG_ROOT}/unreal-airsim/xfs/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT?set CONFIG_ROOT}/unreal-airsim/xfs/settings-px4.json:/home/airsim_user/Documents/AirSim/settings.json:ro
 
     deploy:
       resources:

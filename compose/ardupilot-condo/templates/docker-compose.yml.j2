@@ -8,7 +8,7 @@
 # Required environment variables (set in a .env file or export before running):
 #   CONFIG_ROOT   — absolute path to the config root containing:
 #                     ardupilot/config/
-#                     unreal-airsim/condo/settings.json
+#                     unreal-airsim/condo/settings-ardupilot.json
 #   UID / GID     — numeric user/group id for GPU-capable services
 #   DISPLAY       — X11 display (e.g. :1)
 #   XAUTHORITY    — path to Xauthority file (e.g. /run/user/1000/gdm/Xauthority)
@@ -117,8 +117,8 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       # settings.json mounted to both locations: Documents/AirSim (primary) and
       # the executable directory (fallback), consistent with upstream behaviour.
-      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
-      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings.json:/app/Condo/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings-ardupilot.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings-ardupilot.json:/app/Condo/settings.json:ro
 
     entrypoint: ["/bin/bash", "-c"]
     command:

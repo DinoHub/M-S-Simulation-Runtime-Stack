@@ -52,17 +52,29 @@ SCENARIOS: dict[str, list[tuple[str, str]]] = {
             "compose/px4-xfs/templates/docker-compose.yml.j2",
             "compose/px4-xfs/docker-compose.yml",
         ),
+        (
+            "config/unreal-airsim/xfs/templates/settings-px4.json.j2",
+            "config/unreal-airsim/xfs/settings-px4.json",
+        ),
     ],
     "px4-condo": [
         (
             "compose/px4-condo/templates/docker-compose.yml.j2",
             "compose/px4-condo/docker-compose.yml",
         ),
+        (
+            "config/unreal-airsim/condo/templates/settings-px4.json.j2",
+            "config/unreal-airsim/condo/settings-px4.json",
+        ),
     ],
     "ardupilot-condo": [
         (
             "compose/ardupilot-condo/templates/docker-compose.yml.j2",
             "compose/ardupilot-condo/docker-compose.yml",
+        ),
+        (
+            "config/unreal-airsim/condo/templates/settings-ardupilot.json.j2",
+            "config/unreal-airsim/condo/settings-ardupilot.json",
         ),
     ],
 }
@@ -91,6 +103,10 @@ class Px4Drone:
     mavros_local: int      # MAVROS bind port (14560 + instance, the px4 image's
                            # mavlink-router MAVROS endpoint; AirSim owns 14540+i,
                            # QGC owns 14550+i)
+    tcp_port: int          # AirSim <-> PX4 SITL lockstep TCP (4560 + instance)
+    control_local: int     # AirSim ControlPortLocal (14540 + instance, mavlink-router's AirSim endpoint)
+    control_remote: int    # AirSim ControlPortRemote (14580 + instance, router's AirSim_Inbound)
+    x_offset: float        # spawn X (m), instance * DRONE_X_SPACING_M
 
 
 def _int(env: dict, key: str, default: int) -> int:
@@ -216,6 +232,7 @@ def build_context_px4_xfs(env: dict) -> dict:
     n = _num_drones(env)
     vehicle_prefix = env.get("VEHICLE_PREFIX") or "Copter"
     cpuset_base = _int(env, "PX4_CPUSET_BASE", 8)
+    x_spacing = _float(env, "DRONE_X_SPACING_M", 8.0)
     # Startup stagger: d1=d2=20s (both early starters wait for the same AirSim
     # init window), then +5s per drone: d3=25, d4=30, ...
     drones = [
@@ -230,6 +247,10 @@ def build_context_px4_xfs(env: dict) -> dict:
             # 14540/14580 pair (AirSim binds ControlPortLocal/Remote) and
             # NOT 14550+i (QGC's listener).
             mavros_local=14560 + k - 1,
+            tcp_port=4560 + k - 1,
+            control_local=14540 + k - 1,
+            control_remote=14580 + k - 1,
+            x_offset=(k - 1) * x_spacing,
         )
         for k in range(1, n + 1)
     ]
@@ -237,12 +258,13 @@ def build_context_px4_xfs(env: dict) -> dict:
         "num_drones": n,
         "vehicle_prefix": vehicle_prefix,
         "px4_drones": drones,
+        "camera": _camera_context(env),
     }
 
 
 def build_context_condo(env: dict) -> dict:
     """Condo scenarios are single-drone by design; pinned, not NUM_DRONES-driven."""
-    return {"num_drones": 1}
+    return {"num_drones": 1, "camera": _camera_context(env)}
 
 
 # scenario -> context builder. Tasks registering new scenarios add entries.
@@ -409,7 +431,7 @@ def _self_test_px4_xfs() -> None:
         renders2 = [render(j_env, t, ctx) for t, _ in pairs]
         for a, b in zip(renders, renders2):
             assert a == b, f"px4-xfs render not idempotent for N={n}"
-        (compose_yaml,) = renders
+        compose_yaml, settings_json = renders
         for d in ctx["px4_drones"]:
             assert f"px4-bridge-drone-{d.n}:" in compose_yaml, \
                 f"missing px4-bridge-drone-{d.n} for N={n}"
@@ -417,8 +439,20 @@ def _self_test_px4_xfs() -> None:
                 f"missing cpuset {d.cpuset} for drone {d.n}, N={n}"
             assert f"PX4_INSTANCE: {d.instance}" in compose_yaml, \
                 f"missing PX4_INSTANCE {d.instance} for N={n}"
+            # Settings checks
+            assert f'"{ctx["vehicle_prefix"]}{d.n}":' in settings_json, \
+                f"missing vehicle {ctx['vehicle_prefix']}{d.n} in settings for N={n}"
+            assert f'"TcpPort": {d.tcp_port}' in settings_json, \
+                f"missing TcpPort {d.tcp_port} for drone {d.n}, N={n}"
         assert f"px4-bridge-drone-{n + 1}:" not in compose_yaml, \
             f"unexpected drone {n + 1} for N={n}"
+        assert f'"{ctx["vehicle_prefix"]}{n + 1}":' not in settings_json, \
+            f"unexpected vehicle {n + 1} in settings for N={n}"
+        json.loads(settings_json), f"settings not valid JSON for N={n}"
+        assert '"PX4Multirotor"' in settings_json, \
+            f"VehicleType PX4Multirotor missing in settings for N={n}"
+        assert '"Cameras": {}' in settings_json, \
+            f"cameras must default to empty in settings for N={n}"
         # Stagger arithmetic: d1=20, d2=20, d3=25, d4=30, ...
         assert ctx["px4_drones"][0].stagger_s == 20
         if n >= 2:
@@ -445,6 +479,15 @@ def _self_test_px4_xfs() -> None:
         assert "{{" not in compose_yaml and "{%" not in compose_yaml, \
             f"unsubstituted Jinja in px4-xfs output for N={n}"
 
+    # Camera-enabled render for N=2: each vehicle gets a camera block
+    ctx2 = build_context_px4_xfs({"NUM_DRONES": "2", "PX4_CPUSET_BASE": "8",
+                                   "CAMERA_ENABLE": "true"})
+    _, settings_cam = [render(j_env, t, ctx2) for t, _ in pairs]
+    assert settings_cam.count('"Camera1":') == 2, \
+        "camera block must appear on every vehicle (N=2, camera enabled)"
+    assert '"Cameras": {}' not in settings_cam
+    json.loads(settings_cam)
+
 
 def _self_test_ardupilot_condo() -> None:
     j_env = make_env()
@@ -453,7 +496,7 @@ def _self_test_ardupilot_condo() -> None:
     a = [render(j_env, t, ctx) for t, _ in pairs]
     b = [render(j_env, t, ctx) for t, _ in pairs]
     assert a == b, "ardupilot-condo render not idempotent"
-    (compose_yaml,) = a
+    compose_yaml, settings_json = a
     for svc in ("ardupilot-drone-0:", "airsim-condo:", "airsim_bridge_d1:",
                 "mavros_d1:", "qgroundcontrol-x11:"):
         assert svc in compose_yaml, f"missing service {svc} in ardupilot-condo"
@@ -462,6 +505,16 @@ def _self_test_ardupilot_condo() -> None:
     assert "mavros_config:=mavros_ardupilot.yaml" in compose_yaml
     assert "enable_coordination:=false" in compose_yaml
     assert "{{" not in compose_yaml and "{%" not in compose_yaml
+    # Settings checks
+    json.loads(settings_json)
+    assert '"ArduCopter"' in settings_json, "VehicleType ArduCopter missing"
+    assert '"UdpPort": 9003' in settings_json, "FDM UdpPort 9003 missing"
+    assert '"Cameras": {}' in settings_json, "cameras must default to empty"
+    # Camera-enabled render
+    ctx_cam = build_context_condo({"CAMERA_ENABLE": "true"})
+    _, body = [render(j_env, t, ctx_cam) for t, _ in pairs]
+    assert '"Camera1":' in body, "camera block missing when enabled"
+    json.loads(body)
 
 
 def _self_test_px4_condo() -> None:
@@ -471,7 +524,7 @@ def _self_test_px4_condo() -> None:
     a = [render(j_env, t, ctx) for t, _ in pairs]
     b = [render(j_env, t, ctx) for t, _ in pairs]
     assert a == b, "px4-condo render not idempotent"
-    (compose_yaml,) = a
+    compose_yaml, settings_json = a
     for svc in ("airsim-condo:", "px4-drone-1:", "airsim_bridge_d1:",
                 "mavros_d1:", "qgroundcontrol-x11:", "pixel-streaming-signalling:"):
         assert svc in compose_yaml, f"missing service {svc} in px4-condo"
@@ -480,6 +533,15 @@ def _self_test_px4_condo() -> None:
     assert "enable_coordination:=true" not in compose_yaml
     assert "tevv-airstack-ros2-x11-node" not in compose_yaml, "monolith image still referenced"
     assert "{{" not in compose_yaml and "{%" not in compose_yaml
+    # Settings checks
+    json.loads(settings_json)
+    assert '"PX4Multirotor"' in settings_json, "VehicleType PX4Multirotor missing"
+    assert '"Cameras": {}' in settings_json, "cameras must default to empty"
+    # Camera-enabled render
+    ctx_cam = build_context_condo({"CAMERA_ENABLE": "true"})
+    _, body = [render(j_env, t, ctx_cam) for t, _ in pairs]
+    assert '"Camera1":' in body, "camera block missing when enabled"
+    json.loads(body)
 
 
 # scenario -> self-test function. Tasks registering new scenarios add entries.

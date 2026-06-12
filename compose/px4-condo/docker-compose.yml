@@ -54,8 +54,8 @@ services:
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
       - /dev/shm:/dev/shm:rw
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
-      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings.json:/home/airsim_user/Documents/AirSim/settings.json:ro
-      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings.json:/app/Condo/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings-px4.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings-px4.json:/app/Condo/settings.json:ro
 
     entrypoint: ["/bin/bash", "-c"]
     command:

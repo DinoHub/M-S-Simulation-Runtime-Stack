@@ -73,8 +73,11 @@ a worked example, and how to invoke the generator directly.
 ### What's source, what's generated
 
 Scenario shape (drone count, vehicle prefix, port bases, subnet base)
-lives in `.env`. The compose files and AirSim `settings-ardupilot.json`
+lives in `.env`. The compose files and AirSim `settings.json` variants
 are **generated** from Jinja2 templates by `tools/generate_scenario.py`.
+Every scenario generates both its compose file and its own `settings.json`
+— px4 and ardupilot variants are kept separate so the two condo scenarios
+don't fight over a single file.
 
 | Source of truth (`.env`) | Default | Purpose |
 |---|---|---|
@@ -87,19 +90,46 @@ are **generated** from Jinja2 templates by `tools/generate_scenario.py`.
 
 Templates and outputs:
 
-| Template | Generated output |
-|---|---|
-| `compose/ardupilot-xfs/templates/docker-compose.yml.j2` | `compose/ardupilot-xfs/docker-compose.yml` |
-| `compose/ardupilot-xfs/templates/docker-compose.mavros-test.yml.j2` | `compose/ardupilot-xfs/docker-compose.mavros-test.yml` |
-| `compose/px4-xfs/templates/docker-compose.yml.j2` | `compose/px4-xfs/docker-compose.yml` |
-| `compose/px4-condo/templates/docker-compose.yml.j2` | `compose/px4-condo/docker-compose.yml` |
-| `compose/ardupilot-condo/templates/docker-compose.yml.j2` | `compose/ardupilot-condo/docker-compose.yml` |
-| `config/unreal-airsim/xfs/templates/settings-ardupilot.json.j2` | `config/unreal-airsim/xfs/settings-ardupilot.json` |
+| Template | Generated output | Mounted by |
+|---|---|---|
+| `compose/ardupilot-xfs/templates/docker-compose.yml.j2` | `compose/ardupilot-xfs/docker-compose.yml` | — |
+| `compose/ardupilot-xfs/templates/docker-compose.mavros-test.yml.j2` | `compose/ardupilot-xfs/docker-compose.mavros-test.yml` | — |
+| `config/unreal-airsim/xfs/templates/settings-ardupilot.json.j2` | `config/unreal-airsim/xfs/settings-ardupilot.json` | `airsim-xfs` (ardupilot-xfs) |
+| `compose/px4-xfs/templates/docker-compose.yml.j2` | `compose/px4-xfs/docker-compose.yml` | — |
+| `config/unreal-airsim/xfs/templates/settings-px4.json.j2` | `config/unreal-airsim/xfs/settings-px4.json` | `airsim-xfs` (px4-xfs) |
+| `compose/px4-condo/templates/docker-compose.yml.j2` | `compose/px4-condo/docker-compose.yml` | — |
+| `config/unreal-airsim/condo/templates/settings-px4.json.j2` | `config/unreal-airsim/condo/settings-px4.json` | `airsim-condo` (px4-condo) |
+| `compose/ardupilot-condo/templates/docker-compose.yml.j2` | `compose/ardupilot-condo/docker-compose.yml` | — |
+| `config/unreal-airsim/condo/templates/settings-ardupilot.json.j2` | `config/unreal-airsim/condo/settings-ardupilot.json` | `airsim-condo` (ardupilot-condo) |
+
+A shared Jinja partial (`config/unreal-airsim/_partials/cameras.json.j2`)
+is included by all four settings templates — camera knobs apply uniformly
+across every scenario.
 
 > **Do not hand-edit the generated files.** Every `./launch.sh <scenario>`
 > invocation will overwrite them via the generator's drift check. Edit
 > the **template** (the `.j2` file), then run
 > `python3 tools/generate_scenario.py` (or just relaunch).
+
+### Cameras
+
+The bridge auto-discovers cameras from `settings.json`
+(`auto_discover_cameras` defaults true), so enabling cameras is a
+two-step process: flip the knob in `.env`, regenerate, restart the sim.
+Topics appear as `/<vehicle>/<camera>_Scene/image`.
+
+| `.env` key | Default | Purpose |
+|---|---|---|
+| `CAMERA_ENABLE` | `false` | set `true` to add a camera to every vehicle |
+| `CAMERA_NAME` | `Camera1` | AirSim camera key (also the ROS topic prefix) |
+| `CAMERA_WIDTH` | `1280` | capture width in pixels |
+| `CAMERA_HEIGHT` | `720` | capture height in pixels |
+| `CAMERA_FOV` | `81` | horizontal field of view in degrees |
+
+> **Note:** every enabled camera is rendered for **every** drone. Large
+> resolutions or high drone counts load both the GPU and AirSim's
+> single-threaded RPC server. A sim restart is required after regenerating
+> with changed camera settings.
 
 ### Worked example: 8-drone fleet, custom prefix, flat ROS_DOMAIN_ID
 
@@ -342,8 +372,10 @@ M-S-Simulation-Runtime-Stack/
 │   ├── experiments/
 │   ├── metrics-collector/
 │   ├── qgroundcontrol/{qgc_config,user_config}/
-│   ├── unreal-airsim/{condo,xfs}/
-│   │   └── xfs/templates/                      ← Jinja for settings-ardupilot.json
+│   ├── unreal-airsim/
+│   │   ├── _partials/cameras.json.j2           ← shared camera Jinja partial
+│   │   ├── condo/templates/                    ← Jinja for settings-px4/ardupilot.json
+│   │   └── xfs/templates/                      ← Jinja for settings-ardupilot/px4.json
 │   ├── zenoh/                                  ← per-drone bridge configs
 │   └── CONFIG_README.md
 ├── tools/
@@ -370,9 +402,9 @@ M-S-Simulation-Runtime-Stack/
   got removed. `launch.sh` always loads the root `.env`.
 - **All 4 scenario shapes live in `.env`.** Any changes to on-disk
   generated files (`docker-compose.yml`, `docker-compose.mavros-test.yml`,
-  `settings-ardupilot.json`) will be overwritten by the generator on the
-  next launch. Edit the template (`.j2` file) instead, then run
-  `make generate` or just relaunch.
+  `settings-ardupilot.json`, `settings-px4.json`) will be overwritten by
+  the generator on the next launch. Edit the template (`.j2` file) instead,
+  then run `make generate` or just relaunch.
 - **If `ros2 topic echo` is silent on `/CopterN/*` topics**: see the
   Troubleshooting section in [`compose/ardupilot-xfs/README.md`](./compose/ardupilot-xfs/README.md)
   — usually a QoS or boot-race issue, both with documented workarounds.
