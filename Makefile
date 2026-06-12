@@ -48,16 +48,15 @@ endif
 
 SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) attach teleop rviz stop logs ps generate check self-test
+.PHONY: help $(SCENARIOS) attach teleop stop logs ps generate check self-test
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
 	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo"
 	@echo "Flag vars (=true): HEADLESS AGENT_EXTERNAL PIXEL_STREAMING MONITORING METRICS ALL"
 	@echo "Utility targets:"
-	@echo "  attach     tmux dashboard on the running stack (per-drone log panes + shell)"
+	@echo "  attach     tmux dev session: rviz2|teleop side by side + sim/per-drone log windows"
 	@echo "  teleop     WASD keyboard flight via mavros_dN [DRONE=1 AUTOPILOT=px4|ardupilot]"
-	@echo "  rviz       rviz2 in the bridge container (registered cloud + camera) [DRONE=1]"
 	@echo "  stop       ./stop.sh [SCENARIO=name]"
 	@echo "  logs       ./logs.sh"
 	@echo "  ps         running containers (name/status/image)"
@@ -70,8 +69,10 @@ $(SCENARIOS):
 	./launch.sh $@ $(LAUNCH_FLAGS)
 
 # tmux dev-session UX on top of the detached stack (bridge-repo `make dev`
-# style): per-drone bridge|mavros log panes, sim logs, shell into bridge d1.
-# Detach with Ctrl-b d — containers keep running either way.
+# style). Focus window "dev": rviz2 (left, GUI on $DISPLAY) | teleop (right),
+# each dropping to a shell in its container when the process exits. Plus sim
+# logs and per-drone bridge|mavros log windows. Detach with Ctrl-b d —
+# containers keep running either way.
 attach:
 	./tools/attach-session.sh
 
@@ -88,17 +89,6 @@ AUTOPILOT ?= $(shell docker ps --format '{{.Names}}' | grep -q '^ardupilot' && e
 teleop:
 	docker exec -it mavros_d$(DRONE) bash -lc 'ros2 run airsim_mavros_bringup mavros_teleop_keyboard.py \
 		--ros-args -p vehicle:=$(VEHICLE) -p autopilot:=$(AUTOPILOT)'
-
-# rviz2 inside the running bridge container (shares its ROS graph + X11
-# mount, so it actually receives the topics — no cross-container DDS).
-# Uses the image-baked layout (registered cloud + camera + raw lidar),
-# rewriting its hardcoded Drone1 topics/frames to $(VEHICLE) on the fly.
-# px4-xfs: the bridge's own ROS_DOMAIN_ID applies automatically per drone.
-RVIZ_CFG ?= /opt/airsim/rviz/lidar_single.rviz
-rviz:
-	docker exec -e DISPLAY=$${DISPLAY:-:1} airsim_bridge_d$(DRONE) bash -lc '\
-		sed "s/Drone1/$(VEHICLE)/g" $(RVIZ_CFG) > /tmp/rviz_$(VEHICLE).rviz && \
-		exec rviz2 -d /tmp/rviz_$(VEHICLE).rviz'
 
 stop:
 	./stop.sh $(SCENARIO)
