@@ -192,6 +192,7 @@ services:
       - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
       - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
       - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   # ============================================================================
   # MAVROS toward the PX4 SITL (same image family — ships airsim_mavros_bringup

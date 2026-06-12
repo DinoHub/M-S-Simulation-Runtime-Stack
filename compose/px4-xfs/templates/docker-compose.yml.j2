@@ -217,6 +217,7 @@ services:
       - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
       - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
       - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d{{ d.n }}:
     image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
@@ -247,9 +248,12 @@ services:
     volumes:
       - /dev/shm:/dev/shm:rw
 
-    # PX4 offboard MAVLink pair: local 14540+i / remote 14580+i per SITL
-    # instance i. Override per drone with DRONE_N_FCU_URL if the
-    # mavlink-router profile maps differently.
+    # PX4 GCS MAVLink link: MAVROS binds 14550+i, PX4 instance i binds
+    # 18570+i. NOT the 14540/14580 offboard pair — AirSim owns that link
+    # (settings.json ControlPortLocal/Remote; UnrealEditor binds udp 14540).
+    # NOTE: QGC also listens on 14550 — if drone 1's MAVROS and QGC fight
+    # over it, point one of them elsewhere via DRONE_N_FCU_URL (the image's
+    # mavlink-router can fan out).
     command:
       - "bash"
       - "-lc"

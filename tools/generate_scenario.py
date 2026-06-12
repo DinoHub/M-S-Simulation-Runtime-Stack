@@ -87,8 +87,8 @@ class Px4Drone:
     cpuset: int            # dedicated host cpu core
     stagger_s: int         # startup sleep before SITL launch (s)
     domain_id: int         # ROS_DOMAIN_ID default (Phase 2 bridges)
-    mavros_local: int      # MAVROS local udp port (14540 + instance)
-    mavros_remote: int     # MAVROS remote udp port (14580 + instance)
+    mavros_local: int      # MAVROS local udp port (14550 + instance, PX4 GCS link)
+    mavros_remote: int     # MAVROS remote udp port (18570 + instance, PX4-local)
 
 
 def _int(env: dict, key: str, default: int) -> int:
@@ -198,8 +198,12 @@ def build_context_px4_xfs(env: dict) -> dict:
             cpuset=cpuset_base + k - 1,
             stagger_s=20 + 5 * max(0, k - 2),
             domain_id=_int(env, f"DRONE_{k}_DOMAIN_ID", k),
-            mavros_local=14540 + k - 1,
-            mavros_remote=14580 + k - 1,
+            # PX4 GCS link, NOT the 14540/14580 offboard pair — AirSim itself
+            # binds ControlPortLocal/Remote (settings.json), so MAVROS on
+            # 14540 fights the sim for the socket. PX4 instance i binds
+            # 18570+i and sends to 14550+i.
+            mavros_local=14550 + k - 1,
+            mavros_remote=18570 + k - 1,
         )
         for k in range(1, n + 1)
     ]
