@@ -87,8 +87,9 @@ class Px4Drone:
     cpuset: int            # dedicated host cpu core
     stagger_s: int         # startup sleep before SITL launch (s)
     domain_id: int         # ROS_DOMAIN_ID default (Phase 2 bridges)
-    mavros_local: int      # MAVROS local udp port (14550 + instance, PX4 GCS link)
-    mavros_remote: int     # MAVROS remote udp port (18570 + instance, PX4-local)
+    mavros_local: int      # MAVROS bind port (14560 + instance, the px4 image's
+                           # mavlink-router MAVROS endpoint; AirSim owns 14540+i,
+                           # QGC owns 14550+i)
 
 
 def _int(env: dict, key: str, default: int) -> int:
@@ -198,12 +199,11 @@ def build_context_px4_xfs(env: dict) -> dict:
             cpuset=cpuset_base + k - 1,
             stagger_s=20 + 5 * max(0, k - 2),
             domain_id=_int(env, f"DRONE_{k}_DOMAIN_ID", k),
-            # PX4 GCS link, NOT the 14540/14580 offboard pair — AirSim itself
-            # binds ControlPortLocal/Remote (settings.json), so MAVROS on
-            # 14540 fights the sim for the socket. PX4 instance i binds
-            # 18570+i and sends to 14550+i.
-            mavros_local=14550 + k - 1,
-            mavros_remote=18570 + k - 1,
+            # The px4 image's mavlink-router opens a dedicated MAVROS UDP
+            # endpoint per instance, sending to 127.0.0.1:14560+i. NOT the
+            # 14540/14580 pair (AirSim binds ControlPortLocal/Remote) and
+            # NOT 14550+i (QGC's listener).
+            mavros_local=14560 + k - 1,
         )
         for k in range(1, n + 1)
     ]
@@ -389,8 +389,10 @@ def _self_test_px4_xfs() -> None:
                 f"missing bridge for drone {d.n}, N={n}"
             assert f"mavros_d{d.n}:" in compose_yaml, \
                 f"missing mavros for drone {d.n}, N={n}"
-            assert f"udp://:{d.mavros_local}@127.0.0.1:{d.mavros_remote}" in compose_yaml, \
-                f"bad mavros port pair for drone {d.n}, N={n}"
+            assert f"udp://:{d.mavros_local}@}}" in compose_yaml, \
+                f"bad mavros bind port for drone {d.n}, N={n}"
+            assert d.mavros_local == 14560 + d.instance, \
+                f"mavros endpoint must be 14560+i (router conf), drone {d.n}"
         assert f"airsim_bridge_d{n + 1}:" not in compose_yaml, \
             f"unexpected bridge {n + 1} for N={n}"
         assert "ros2-x11-node:" not in compose_yaml, "legacy monolith still present in px4-xfs"

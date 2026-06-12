@@ -110,6 +110,14 @@ services:
     container_name: px4-drone-{{ d.n }}
     hostname: px4-drone-{{ d.n }}
 
+    depends_on:
+      # service_healthy: PX4's lockstep handshake wedges if it starts while
+      # the sim is still initializing (cold start needed a manual SITL
+      # restart). Gate on the sim healthcheck; the sleep below stays as a
+      # secondary stagger.
+      airsim-xfs:
+        condition: service_healthy
+
     network_mode: "host"
     ipc: host
 
@@ -248,19 +256,18 @@ services:
     volumes:
       - /dev/shm:/dev/shm:rw
 
-    # PX4 GCS MAVLink link: MAVROS binds 14550+i, PX4 instance i binds
-    # 18570+i. NOT the 14540/14580 offboard pair — AirSim owns that link
-    # (settings.json ControlPortLocal/Remote; UnrealEditor binds udp 14540).
-    # NOTE: QGC also listens on 14550 — if drone 1's MAVROS and QGC fight
-    # over it, point one of them elsewhere via DRONE_N_FCU_URL (the image's
-    # mavlink-router can fan out).
+    # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
+    # endpoint sending to 127.0.0.1:14560+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14560+i). MAVROS binds :14560+i with no fixed
+    # remote and locks onto the router from the first packet. Do NOT bind
+    # 14540+i / 14550+i — AirSim and QGC own those sockets.
     command:
       - "bash"
       - "-lc"
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_{{ d.n }}_NAME:-{{ vehicle_prefix }}{{ d.n }}}
-        fcu_url:=${DRONE_{{ d.n }}_FCU_URL:-udp://:{{ d.mavros_local }}@127.0.0.1:{{ d.mavros_remote }}}
+        fcu_url:=${DRONE_{{ d.n }}_FCU_URL:-udp://:{{ d.mavros_local }}@}
         target_system_id:={{ d.n }}
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:={{ "true" if d.n == 1 else "false" }}

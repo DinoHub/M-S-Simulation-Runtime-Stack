@@ -88,8 +88,12 @@ services:
     restart: "no"
 
     depends_on:
+      # service_healthy: PX4's lockstep handshake wedges if it starts while
+      # the sim is still initializing (cold start needed a manual SITL
+      # restart every time). Gate on the sim's RPC healthcheck so the SITL
+      # binds 4560 only once AirSim is up and retrying its connection.
       airsim-condo:
-        condition: service_started
+        condition: service_healthy
 
     init: true
 
@@ -196,8 +200,12 @@ services:
 
   # ============================================================================
   # MAVROS toward the PX4 SITL (same image family — ships airsim_mavros_bringup
-  # + mavros + mavros_msgs). The PX4 image's mavlink-router exposes the FCU on
-  # tcp 5760 (this matches the legacy monolith's MAVROS_FCU_URL).
+  # + mavros + mavros_msgs). The PX4 image's mavlink-router has a dedicated
+  # MAVROS UDP endpoint that sends to 127.0.0.1:14560 (per-instance: 14560+i).
+  # MAVROS binds :14560 with no fixed remote and locks onto the router's
+  # source address from the first packet. Do NOT use tcp 5760 (that's the
+  # router's QGC TCP server — its sends error out under mavros) and do NOT
+  # bind 14540/14550 (AirSim and QGC own those sockets respectively).
   # ============================================================================
   mavros_d1:
     image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
@@ -238,7 +246,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_1_NAME:-Copter1}
-        fcu_url:=${MAVROS_FCU_URL:-tcp://127.0.0.1:5760}
+        fcu_url:=${MAVROS_FCU_URL:-udp://:14560@}
         target_system_id:=1
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:=true

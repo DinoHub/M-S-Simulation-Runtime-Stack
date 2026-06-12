@@ -48,13 +48,14 @@ endif
 
 SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) stop logs ps generate check self-test
+.PHONY: help $(SCENARIOS) attach stop logs ps generate check self-test
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
 	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo"
 	@echo "Flag vars (=true): HEADLESS AGENT_EXTERNAL PIXEL_STREAMING MONITORING METRICS ALL"
 	@echo "Utility targets:"
+	@echo "  attach     tmux dashboard on the running stack (per-drone log panes + shell)"
 	@echo "  stop       ./stop.sh [SCENARIO=name]"
 	@echo "  logs       ./logs.sh"
 	@echo "  ps         running containers (name/status/image)"
@@ -65,6 +66,12 @@ help:
 
 $(SCENARIOS):
 	./launch.sh $@ $(LAUNCH_FLAGS)
+
+# tmux dev-session UX on top of the detached stack (bridge-repo `make dev`
+# style): per-drone bridge|mavros log panes, sim logs, shell into bridge d1.
+# Detach with Ctrl-b d — containers keep running either way.
+attach:
+	./tools/attach-session.sh
 
 stop:
 	./stop.sh $(SCENARIO)
