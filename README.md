@@ -16,6 +16,15 @@ cp .env.example .env
 ./stop.sh                             # tear down
 ```
 
+A root `Makefile` wraps `./launch.sh` for convenience:
+
+```bash
+make ardupilot-xfs                    # same as ./launch.sh ardupilot-xfs
+make px4-xfs HEADLESS=true ALL=true   # flags as Make vars
+make stop                             # ./stop.sh
+make help                             # full flag/target reference
+```
+
 The first launch pulls Docker images, which can take several minutes.
 Subsequent launches are warm.
 
@@ -28,17 +37,25 @@ Three pillars:
 1. **`.env` is the single source of truth.** It holds scenario shape
    (`NUM_DRONES`, `VEHICLE_PREFIX`, port bases), scenario selection
    (`SCENARIO=...`), planner mode, image tags, and feature flags.
-2. **`./launch.sh` regenerates + starts.** For `ardupilot-xfs` it runs
-   `tools/generate_scenario.py --check` first; if `.env` (or the
-   templates) drifted from the on-disk compose/settings, it regenerates
-   them. Then `docker compose up -d` brings the stack up.
+2. **`./launch.sh` regenerates + starts.** Before every launch it runs
+   `tools/generate_scenario.py --check` on the target scenario; if `.env`
+   (or the templates) drifted from the on-disk compose/settings, it
+   regenerates them. Then `docker compose up -d` brings the stack up.
+   All 4 scenarios are Jinja-template-generated — do not hand-edit the
+   rendered compose files directly.
 3. **`./stop.sh` tears down.** Stops the scenario stack (with all
    profiles activated so any flag combination cleans up), the
    monitoring stack, and the metrics stack — idempotent.
 
 ---
 
-## Generating the `ardupilot-xfs` scenario
+## Template-generated scenarios
+
+All 4 scenarios (`ardupilot-xfs`, `px4-xfs`, `px4-condo`,
+`ardupilot-condo`) are rendered from Jinja2 templates by
+`tools/generate_scenario.py`. The root `.env` is the single source of
+truth; `launch.sh` detects drift and regenerates automatically before
+every launch.
 
 ### TL;DR — change drone count (or any other shape knob)
 
@@ -55,10 +72,9 @@ a worked example, and how to invoke the generator directly.
 
 ### What's source, what's generated
 
-`ardupilot-xfs` is parameterized: drone count, vehicle prefix, port
-bases, and subnet base all live in `.env`. The compose files and
-AirSim `settings-ardupilot.json` are **generated** from Jinja2
-templates by `tools/generate_scenario.py`.
+Scenario shape (drone count, vehicle prefix, port bases, subnet base)
+lives in `.env`. The compose files and AirSim `settings-ardupilot.json`
+are **generated** from Jinja2 templates by `tools/generate_scenario.py`.
 
 | Source of truth (`.env`) | Default | Purpose |
 |---|---|---|
@@ -75,11 +91,14 @@ Templates and outputs:
 |---|---|
 | `compose/ardupilot-xfs/templates/docker-compose.yml.j2` | `compose/ardupilot-xfs/docker-compose.yml` |
 | `compose/ardupilot-xfs/templates/docker-compose.mavros-test.yml.j2` | `compose/ardupilot-xfs/docker-compose.mavros-test.yml` |
+| `compose/px4-xfs/templates/docker-compose.yml.j2` | `compose/px4-xfs/docker-compose.yml` |
+| `compose/px4-condo/templates/docker-compose.yml.j2` | `compose/px4-condo/docker-compose.yml` |
+| `compose/ardupilot-condo/templates/docker-compose.yml.j2` | `compose/ardupilot-condo/docker-compose.yml` |
 | `config/unreal-airsim/xfs/templates/settings-ardupilot.json.j2` | `config/unreal-airsim/xfs/settings-ardupilot.json` |
 
-> **Do not hand-edit the generated files.** Every `./launch.sh
-> ardupilot-xfs` invocation will overwrite them via the generator's
-> drift check. Edit the **template** (the `.j2` file), then run
+> **Do not hand-edit the generated files.** Every `./launch.sh <scenario>`
+> invocation will overwrite them via the generator's drift check. Edit
+> the **template** (the `.j2` file), then run
 > `python3 tools/generate_scenario.py` (or just relaunch).
 
 ### Worked example: 8-drone fleet, custom prefix, flat ROS_DOMAIN_ID
@@ -118,9 +137,19 @@ networks. Topics flow on `/Spirit1/*`..`/Spirit8/*`, all on
 ### Generator usage (direct invocation)
 
 ```bash
-python3 tools/generate_scenario.py             # write all 3 outputs
-python3 tools/generate_scenario.py --check     # exit 1 if drift; no write
-python3 tools/generate_scenario.py --self-test # invariants for N in {1,2,4,8,16}
+python3 tools/generate_scenario.py                          # render all 4 scenarios
+python3 tools/generate_scenario.py --scenario px4-xfs       # render one scenario only
+python3 tools/generate_scenario.py --check                  # exit 1 if drift; no write
+python3 tools/generate_scenario.py --self-test              # invariants for N in {1,2,4,8,16}
+```
+
+Or via the Makefile:
+
+```bash
+make generate                    # all scenarios
+make generate SCENARIO=px4-xfs   # one scenario
+make check                       # drift check
+make self-test                   # invariant suite
 ```
 
 Dependencies (Python 3, `jinja2`, `python-dotenv`):
@@ -135,7 +164,7 @@ flight test, teardown), see
 
 ---
 
-## Running (`./launch.sh`)
+## Running (`./launch.sh` / `make`)
 
 ```bash
 ./launch.sh                                  # default scenario from .env
@@ -145,13 +174,26 @@ flight test, teardown), see
 ./launch.sh px4-xfs --all
 ```
 
-| Flag | Effect | `.env` equivalent |
+The root `Makefile` is a thin wrapper — flag vars translate to launch.sh flags:
+
+```bash
+make ardupilot-xfs                                      # basic launch
+make ardupilot-xfs HEADLESS=true AGENT_EXTERNAL=true    # with flags
+make px4-xfs PIXEL_STREAMING=true                       # UE5 signalling sidecar
+make px4-condo ALL=true                                 # monitoring + metrics
+make stop                                               # ./stop.sh
+make logs                                               # ./logs.sh
+make ps                                                 # docker ps formatted
+```
+
+| Flag / Make var | Effect | `.env` equivalent |
 |---|---|---|
-| `--with-monitoring` | Start `docker-compose-monitoring.yml` (Prometheus, Grafana, exporters, foxglove-bridge, Lichtblick) | `START_MONITORING=true` |
-| `--with-metrics` | Start `docker-compose-metrics.yml` (metrics-collector, mission-supervisor) | `START_METRICS=true` |
-| `--all` | `--with-monitoring` + `--with-metrics` | both |
-| `--headless` | UE5 runs with `-RenderOffScreen` (cameras + PixelStreaming still work) — `ardupilot-xfs` only | `AIRSIM_HEADLESS=true` |
-| `--with-agent-external` | Also start per-drone `zenoh-bridge-{1..N}` on `agent_external` for `/shared/*` mesh — `ardupilot-xfs` only | `WITH_AGENT_EXTERNAL=true` |
+| `--with-monitoring` / `MONITORING=true` | Start `docker-compose-monitoring.yml` (Prometheus, Grafana, exporters, foxglove-bridge, Lichtblick) | `START_MONITORING=true` |
+| `--with-metrics` / `METRICS=true` | Start `docker-compose-metrics.yml` (metrics-collector, mission-supervisor) | `START_METRICS=true` |
+| `--all` / `ALL=true` | `--with-monitoring` + `--with-metrics` | both |
+| `--headless` / `HEADLESS=true` | UE5 runs with `-RenderOffScreen` (cameras + PixelStreaming still work) | `AIRSIM_HEADLESS=true` |
+| `--with-pixel-streaming` / `PIXEL_STREAMING=true` | Start UE5 signalling sidecar for browser streaming | `WITH_PIXEL_STREAMING=true` |
+| `--with-agent-external` / `AGENT_EXTERNAL=true` | Also start per-drone `zenoh-bridge-{1..N}` on `agent_external` for `/shared/*` mesh | `WITH_AGENT_EXTERNAL=true` |
 
 Logs:
 
@@ -247,7 +289,8 @@ target container depends on which scenario is up:
 | Scenario | Where to run MAVROS commands |
 |---|---|
 | `ardupilot-xfs` | inside `mavros_d1` (started by `./compose/ardupilot-xfs/test-per-drone-mavros.sh`) |
-| `px4-condo` / `px4-xfs` | inside the autonomy team's MAVROS container, or any host with ROS 2 + the right `ROS_DOMAIN_ID` |
+| `px4-xfs` | inside `mavros_d1`..`mavros_d4` — one per drone, started by the scenario itself |
+| `px4-condo` / `ardupilot-condo` | inside `mavros_d1` — started by the scenario itself |
 
 ```bash
 # Confirm MAVROS is connected
@@ -278,9 +321,15 @@ for a full arm → takeoff → setpoint → land mission.
 ```text
 M-S-Simulation-Runtime-Stack/
 ├── compose/
-│   ├── px4-condo/docker-compose.yml
-│   ├── px4-xfs/docker-compose.yml
-│   ├── ardupilot-condo/docker-compose.yml
+│   ├── px4-condo/
+│   │   ├── docker-compose.yml                  ← generated
+│   │   └── templates/                          ← Jinja sources
+│   ├── px4-xfs/
+│   │   ├── docker-compose.yml                  ← generated
+│   │   └── templates/                          ← Jinja sources
+│   ├── ardupilot-condo/
+│   │   ├── docker-compose.yml                  ← generated
+│   │   └── templates/                          ← Jinja sources
 │   └── ardupilot-xfs/
 │       ├── docker-compose.yml                  ← generated
 │       ├── docker-compose.mavros-test.yml      ← generated
@@ -303,6 +352,7 @@ M-S-Simulation-Runtime-Stack/
 │   └── README.md
 ├── docker-compose-monitoring.yml
 ├── docker-compose-metrics.yml
+├── Makefile                                    ← convenience wrapper for launch.sh
 ├── launch.sh
 ├── stop.sh
 ├── logs.sh
@@ -318,10 +368,11 @@ M-S-Simulation-Runtime-Stack/
 - **`.env` is the single source of truth.** Don't add scenario-local
   `.env` files inside `compose/<scenario>/` — they were a footgun that
   got removed. `launch.sh` always loads the root `.env`.
-- **`ardupilot-xfs` shape lives in `.env`.** Any changes to the on-disk
-  `docker-compose.yml`, `docker-compose.mavros-test.yml`, or
-  `settings-ardupilot.json` will be overwritten by the generator on
-  next `./launch.sh ardupilot-xfs`. Edit the templates instead.
+- **All 4 scenario shapes live in `.env`.** Any changes to on-disk
+  generated files (`docker-compose.yml`, `docker-compose.mavros-test.yml`,
+  `settings-ardupilot.json`) will be overwritten by the generator on the
+  next launch. Edit the template (`.j2` file) instead, then run
+  `make generate` or just relaunch.
 - **If `ros2 topic echo` is silent on `/CopterN/*` topics**: see the
   Troubleshooting section in [`compose/ardupilot-xfs/README.md`](./compose/ardupilot-xfs/README.md)
   — usually a QoS or boot-race issue, both with documented workarounds.
