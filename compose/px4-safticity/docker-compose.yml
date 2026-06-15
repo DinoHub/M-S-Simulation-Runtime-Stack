@@ -1,0 +1,382 @@
+# =============================================================================
+# GENERATED FILE — do not edit by hand.
+# Regenerate: python3 tools/generate_scenario.py
+# Source:    compose/px4-safticity/templates/docker-compose.yml.j2
+# =============================================================================
+name: simstack-px4-safticity
+
+services:
+  # ============================================================================
+  # AirSim Safti
+  # ============================================================================
+  airsim-safti:
+    image: ${AIRSIM_SAFTI_IMAGE:-dhdevspace/auto_mns:safti-latest}
+    pull_policy: always
+    container_name: airsim-safti
+    hostname: airsim-safti
+    restart: unless-stopped
+
+    depends_on:
+      pixel-streaming-signalling:
+        condition: service_healthy
+        # required: false → Compose silently skips the dependency when
+        # the `pixel-streaming` profile is inactive (the default). When
+        # --with-pixel-streaming is passed, the dependency is enforced.
+        required: false
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+    group_add:
+      - video
+    init: true
+    gpus: all
+
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - DISPLAY=${DISPLAY:?set DISPLAY}
+      - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
+      - XAUTHORITY=/tmp/.Xauthority
+      # UE5 PixelStreaming dials this signalling-server URL at startup,
+      # but only when ENABLE_PIXEL_STREAMING=true (see command block —
+      # we unset PIXELSTREAMING_URL otherwise so the entrypoint script
+      # doesn't construct -PixelStreamingURL).
+      - PIXELSTREAMING_URL=${PS_URL:-ws://127.0.0.1:${PS_STREAMER_PORT:-8888}}
+      # When true, the pixel-streaming sidecar starts and UE5 dials it.
+      # Default false. Toggle: ./launch.sh px4-safticity --with-pixel-streaming
+      - ENABLE_PIXEL_STREAMING=${ENABLE_PIXEL_STREAMING:-false}
+      # true → -RenderOffScreen (no window, cameras still render). Default
+      # false → -windowed interactive. See command block below.
+      - AIRSIM_HEADLESS=${AIRSIM_HEADLESS:-false}
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    ipc: host
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/safticity/settings-px4.json:/home/airsim_user/Documents/AirSim/settings.json:ro
+      - ${CONFIG_ROOT:-./config}/unreal-airsim/safticity/settings-px4.json:/app/safti/settings.json:ro
+
+    # safti-latest doesn't ship /usr/local/bin/airsim-entrypoint.sh — exec the
+    # UE5 binary directly. Pass -PixelStreamingURL only when ENABLE_PIXEL_STREAMING
+    # =true (else the plugin dials an unreachable signalling endpoint and hangs).
+    # `$$VAR` survives compose interpolation so bash inside the container reads it.
+    #
+    # AIRSIM_HEADLESS=true → -RenderOffScreen (off-screen GPU render, cameras
+    # still work, no window). false (default) → -windowed. Never -NullRHI: it
+    # skips rendering and breaks AirSim cameras.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting 3s before starting Safti..."
+        sleep 3
+        if [ "$$AIRSIM_HEADLESS" = "true" ]; then
+          DISPLAY_FLAGS="-RenderOffScreen -NoSound -Unattended -NoSplash"
+        else
+          DISPLAY_FLAGS="-windowed"
+        fi
+        PS_FLAG=""
+        if [ "$$ENABLE_PIXEL_STREAMING" = "true" ]; then
+          PS_FLAG="-PixelStreamingURL=$$PIXELSTREAMING_URL"
+        fi
+        echo "AirSim display mode: $$DISPLAY_FLAGS"
+        echo "AirSim pixel-streaming: $$ENABLE_PIXEL_STREAMING"
+        exec /app/safti/safti.sh $$DISPLAY_FLAGS -ResX=1920 -ResY=1080 $$PS_FLAG
+
+    # Health = RPC port open. safti-latest's AirSim build doesn't emit the
+    # "Display Control listening" tail-of-init line the xfs scenarios gate on,
+    # so we can't log-gate here. Plain port check + a long start_period instead:
+    # the window pushes PX4/bridge startup past engine init (depends_on +
+    # restart cover the residual early-RPC race).
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 41451 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 120s
+
+  # ============================================================================
+  # PX4 SITL - Single Drone
+  # NOTE: kept as root for now because current PX4 image/runtime tree still
+  # writes into /px4_workspace/PX4-Autopilot at startup.
+  # ============================================================================
+  px4-drone-1:
+    image: ${PX4_IMAGE:-dhdevspace/auto_mns:px4-airsim-px4}
+    pull_policy: always
+    container_name: px4-drone-1
+    hostname: px4-drone-1
+    restart: "no"
+
+    depends_on:
+      # service_healthy: PX4's lockstep handshake wedges if it starts while
+      # the sim is still initializing (cold start needed a manual SITL
+      # restart every time). Gate on the sim's RPC healthcheck so the SITL
+      # binds 4560 only once AirSim is up and retrying its connection.
+      airsim-safti:
+        condition: service_healthy
+
+    init: true
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+
+    environment:
+      - PX4_SIM_MODEL=${PX4_SIM_MODEL:-none_iris}
+      - PX4_SIMULATOR=${PX4_SIMULATOR:-none}
+      - PX4_HOME_LAT=${PX4_HOME_LAT:-42.764938}
+      - PX4_HOME_LON=${PX4_HOME_LON:--115.579201}
+      - PX4_HOME_ALT=${PX4_HOME_ALT:-1183}
+      - PX4_SYS_AUTOSTART=${PX4_SYS_AUTOSTART:-10016}
+      - PX4_INSTANCE=0
+
+      - MAV_0_BROADCAST=1
+      - MAV_1_BROADCAST=1
+      - MAV_2_BROADCAST=1
+
+      - SWARM_ID=${SWARM_ID:-1}
+      - SWARM_SIZE=1
+
+      - PX4_SIM_HOSTNAME=${PX4_SIM_HOSTNAME:-127.0.0.1}
+      - MAVLINK_TARGET=${MAVLINK_TARGET:-127.0.0.1}
+      - MAVLINK_MODE=${MAVLINK_MODE:-router}
+      - ROUTER_LOG_LEVEL=${ROUTER_LOG_LEVEL:-info}
+      - ROUTER_DEDUPE_PERIOD=${ROUTER_DEDUPE_PERIOD:-500}
+      - HOST_NETWORK_MODE=true
+
+    command: >
+      bash -lc "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim Safti to fully initialize...' &&
+        sleep 20 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 1 (instance 0)...' &&
+        exec ./Scripts/run_airsim_sitl.sh 0
+      "
+
+  # ============================================================================
+  # AirSim ROS2 bridge (standalone image — replaces the legacy ros2-x11 monolith;
+  # same recipe as ardupilot-xfs, adapted to host networking).
+  # ============================================================================
+  airsim_bridge_d1:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: airsim_bridge_d1
+    hostname: airsim_bridge_d1
+    init: true
+    restart: unless-stopped
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      # service_healthy (NOT service_started): single_vehicle.launch.py's
+      # vehicle node queries AirSim's RPC port on launch with no retry; a
+      # call landing mid engine-init can crash the sim. Gate on the
+      # airsim-safti healthcheck (RPC port open).
+      airsim-safti:
+        condition: service_healthy
+
+    environment:
+      # HOME must point at a writable dir: the container runs as uid 1000,
+      # which is absent from the image's /etc/passwd, so HOME would default
+      # to / and `ros2 launch` would fail to create its ~/.ros/log dir.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_1_NAME:-Copter1}
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+
+    # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
+    # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_1_NAME:-Copter1}"
+      - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+
+  # ============================================================================
+  # MAVROS toward the PX4 SITL (same image family — ships airsim_mavros_bringup
+  # + mavros + mavros_msgs). The PX4 image's mavlink-router has a dedicated
+  # MAVROS UDP endpoint that sends to 127.0.0.1:14560 (per-instance: 14560+i).
+  # MAVROS binds :14560 with no fixed remote and locks onto the router's
+  # source address from the first packet. Do NOT use tcp 5760 (that's the
+  # router's QGC TCP server — its sends error out under mavros) and do NOT
+  # bind 14540/14550 (AirSim and QGC own those sockets respectively).
+  # ============================================================================
+  mavros_d1:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: mavros_d1
+    hostname: mavros_d1
+    # init: false (intentional). mavros_bringup.launch.py's DDS cleanup step
+    # forks children; with tini as PID 1 they get re-parented and never
+    # finish, hanging bring-up. The bash -lc wrapper keeps bash as PID 1.
+    init: false
+    restart: unless-stopped
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      airsim_bridge_d1:
+        condition: service_started
+      px4-drone-1:
+        condition: service_started
+
+    environment:
+      # Same writable-HOME fix as airsim_bridge_d1.
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - ROS_LOCALHOST_ONLY=0
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
+        vehicle:=${VEHICLE_1_NAME:-Copter1}
+        fcu_url:=${MAVROS_FCU_URL:-udp://:14560@}
+        target_system_id:=1
+        mavros_config:=mavros_px4.yaml
+        enable_dds_cleanup:=true
+
+  # ============================================================================
+  # QGroundControl X11
+  # ============================================================================
+  qgroundcontrol-x11:
+    image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
+    pull_policy: always
+    container_name: qgroundcontrol-x11
+    hostname: qgc-x11
+    restart: unless-stopped
+
+    depends_on:
+      px4-drone-1:
+        condition: service_started
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+
+    environment:
+      - DISPLAY=${DISPLAY:?set DISPLAY}
+      - XAUTHORITY=/tmp/.Xauthority
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_SOFTWARE=0
+      - MESA_GL_VERSION_OVERRIDE=3.3
+      - QT_QPA_PLATFORM=xcb:depth=24
+      - QGC_APPIMAGE=/opt/qgroundcontrol/QGroundControl.AppImage
+      - APPIMAGE_EXTRACT_AND_RUN=1
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      - ${CONFIG_ROOT:-./config}/qgroundcontrol/user_config:/home/qgc/.config/QGroundControl
+
+    devices:
+      - /dev/dri:/dev/dri
+
+    shm_size: "2gb"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, graphics, utility]
+
+    security_opt:
+      - seccomp:unconfined
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+    group_add:
+      - video
+    init: true
+
+    healthcheck:
+      test: ["CMD-SHELL", "xdpyinfo > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ============================================================================
+  # Pixel Streaming Signalling Server
+  # Bridges the UE5 PixelStreaming plugin (listening on :8888 inside
+  # airsim-safti) and browser viewers. Opt-in via the `pixel-streaming`
+  # profile: pass --with-pixel-streaming (or ENABLE_PIXEL_STREAMING=true).
+  # When inactive, this service isn't created AND airsim-safti's
+  # depends_on edge above is silently dropped — UE5 launches without the
+  # -PixelStreamingURL flag (the wrapper unsets PIXELSTREAMING_URL) and
+  # the plugin stays idle. Browser viewer at http://localhost:${PS_HTTP_PORT}.
+  # ============================================================================
+  pixel-streaming-signalling:
+    image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.5}
+    pull_policy: if_not_present
+    container_name: pixel-streaming-signalling
+    hostname: pixel-streaming-signalling
+    restart: unless-stopped
+    profiles: ["pixel-streaming"]
+
+    # No depends_on — this service boots first so airsim-safti can dial it.
+
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    init: true
+
+    environment:
+      - PIXELSTREAMING_STREAMER_PORT=${PS_STREAMER_PORT:-8888}
+      - PIXELSTREAMING_HTTP_PORT=${PS_HTTP_PORT:-80}
+      - PIXELSTREAMING_PUBLIC_IP=${PS_PUBLIC_IP:-127.0.0.1}
+
+    command:
+      - --StreamerPort=${PS_STREAMER_PORT:-8888}
+      - --HttpPort=${PS_HTTP_PORT:-80}
+      - --PublicIp=${PS_PUBLIC_IP:-127.0.0.1}
+
+    # Image (Node.js / wilbur signalling) ships curl/wget/bash/node but NOT nc,
+    # ss, or netstat — so the obvious `nc -z` healthcheck always reports
+    # "nc: not found" and the container is forever unhealthy. We also avoid
+    # `curl -f`: any HTTP response (incl. 404) means the listener is up.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -m 3 -o /dev/null http://127.0.0.1:${PS_HTTP_PORT:-80}/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s

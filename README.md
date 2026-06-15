@@ -300,6 +300,7 @@ to `launch.sh` / `stop.sh`.
 | Scenario | Autopilot | Drones | Scene | Notes |
 |---|---|---|---|---|
 | `px4-condo` | PX4 SITL | 1 | AirSim Condo | Browser viewer via pixel-streaming-signalling |
+| `px4-safticity` | PX4 SITL | 1 | AirSim SAFTI City | Image `AIRSIM_SAFTI_IMAGE` (default `safti-latest`) |
 | `px4-xfs` | PX4 SITL | 4 | AirSim XFS | Multi-drone swarm |
 | `ardupilot-condo` | ArduPilot SITL | 1 | AirSim Condo | MAVROS over UDP `:14550` |
 | `ardupilot-xfs` | ArduPilot SITL | **N** | AirSim XFS | Per-drone bridges; **N from `NUM_DRONES`**. See [`compose/ardupilot-xfs/README.md`](./compose/ardupilot-xfs/README.md). |
