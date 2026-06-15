@@ -131,6 +131,36 @@ Topics appear as `/<vehicle>/<camera>_Scene/image`.
 > single-threaded RPC server. A sim restart is required after regenerating
 > with changed camera settings.
 
+### Fisheye cameras
+
+A calibrated fisheye rig, independent of the pinhole `CAMERA_*` block
+above — both can render at once. Enabling adds polynomial-distortion
+fisheyes (`FisheyeModel 3`, with `Fx/Fy/Cx/Cy`, `K1..K4`, lens mask, and
+per-camera chromatic aberration) to **every** vehicle. Same two-step
+flow: flip the knob in `.env`, regenerate, restart the sim. Topics appear
+as `/<vehicle>/Camera_N_Scene/image`.
+
+| `.env` key | Default | Purpose |
+|---|---|---|
+| `FISHEYE_ENABLE` | `false` | set `true` to add the fisheye rig to every vehicle |
+| `FISHEYE_COUNT` | `4` | `4` → surround ring (`Camera_0..3`, ±0.30 m offsets, ±45/±135° yaw); `1` → single forward `Camera_0` |
+| `FISHEYE_WIDTH` | `618` | capture width in pixels |
+| `FISHEYE_HEIGHT` | `516` | capture height in pixels |
+| `FISHEYE_FOV` | `220` | field of view in degrees |
+
+```env
+# Single forward fisheye
+FISHEYE_ENABLE=true
+FISHEYE_COUNT=1
+```
+
+> **Note:** the rich per-camera schema (intrinsics, lens mask, seam
+> blending, tonemap) is fixed in the shared cameras partial; only mount
+> pose and chromatic aberration vary per ring position. A 4-fisheye ring ×
+> N drones is heavy on GPU + AirSim's single-threaded RPC — drop
+> resolution or use `FISHEYE_COUNT=1` if it bogs. Sim restart required
+> after regenerating.
+
 ### Worked example: 8-drone fleet, custom prefix, flat ROS_DOMAIN_ID
 
 Edit `.env`:
