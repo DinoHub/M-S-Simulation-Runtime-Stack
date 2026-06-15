@@ -47,11 +47,12 @@
       "AutoCreate": true,
 
       "X": 0,
-      "Y": -20,
-      "Z": 1.3,
+      "Y": 0,
+      "Z": -2.3,
 
       "UseSerial": false,
-      "LockStep": false,
+      "_comment_LockStep": "true freezes AirSim physics until PX4 connects (~20s in this stack), so the drone can't free-fall through SAFTI City's World-Partition floor while building/landscape cells are still streaming in. UE streaming runs in real time regardless of the frozen sim clock.",
+      "LockStep": true,
 
       "UseTcp": true,
       "TcpPort": 4560,
