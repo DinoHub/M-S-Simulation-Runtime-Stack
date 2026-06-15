@@ -154,6 +154,11 @@ def load_env(repo_root: Path) -> dict:
         "CAMERA_WIDTH",
         "CAMERA_HEIGHT",
         "CAMERA_FOV",
+        "FISHEYE_ENABLE",
+        "FISHEYE_COUNT",
+        "FISHEYE_WIDTH",
+        "FISHEYE_HEIGHT",
+        "FISHEYE_FOV",
     ):
         if k in os.environ:
             base[k] = os.environ[k]
@@ -205,6 +210,7 @@ def build_context_ardupilot_xfs(env: dict) -> dict:
         "mavlink_port_base": mavlink_base,
         "fdm_tcp_port_base": fdm_tcp_base,
         "camera": _camera_context(env),
+        "fisheye": _fisheye_context(env),
     }
 
 
@@ -224,6 +230,45 @@ def _camera_context(env: dict) -> dict:
         "width": _int(env, "CAMERA_WIDTH", 1280),
         "height": _int(env, "CAMERA_HEIGHT", 720),
         "fov": _float(env, "CAMERA_FOV", 81.0),
+    }
+
+
+# Per-position fisheye rig layouts (mount offset/yaw + per-cam CA). Intrinsics
+# (FisheyeModel/Fx/Cx/K1-4/LensMask/...) are shared and live in the partial.
+# (name, X, Y, Z, Yaw, ca_enabled, ca_strength)
+_FISHEYE_RING = [
+    ("Camera_0", 0.30, -0.30, 0.20, -45.0, False, 3.0),
+    ("Camera_1", 0.30, 0.30, 0.20, 45.0, True, 10.0),
+    ("Camera_2", -0.30, -0.30, 0.20, -135.0, False, 3.0),
+    ("Camera_3", -0.30, 0.30, 0.20, 135.0, True, 10.0),
+]
+# FISHEYE_COUNT=1 → single forward-facing fisheye.
+_FISHEYE_FRONT = [
+    ("Camera_0", 0.30, 0.0, 0.20, 0.0, False, 3.0),
+]
+
+
+def _fisheye_context(env: dict) -> dict:
+    """Per-vehicle fisheye rig for settings.json (FISHEYE_* keys in .env).
+
+    Off by default; independent of the pinhole CAMERA_* block (both can render).
+    FISHEYE_COUNT selects layout: 4 → surround ring (default), 1 → front only.
+    Calibrated polynomial schema (FisheyeModel 3) with shared intrinsics in the
+    partial; only mount pose + per-cam chromatic aberration vary per position.
+    """
+    count = _int(env, "FISHEYE_COUNT", 4)
+    layout = _FISHEYE_FRONT if count <= 1 else _FISHEYE_RING
+    cameras = [
+        {"name": n, "x": x, "y": y, "z": z, "yaw": yaw,
+         "ca_enabled": "true" if ca else "false", "ca_strength": cas}
+        for (n, x, y, z, yaw, ca, cas) in layout
+    ]
+    return {
+        "enable": (env.get("FISHEYE_ENABLE") or "false").strip().lower() == "true",
+        "width": _int(env, "FISHEYE_WIDTH", 618),
+        "height": _int(env, "FISHEYE_HEIGHT", 516),
+        "fov": _float(env, "FISHEYE_FOV", 220.0),
+        "cameras": cameras,
     }
 
 
@@ -259,12 +304,14 @@ def build_context_px4_xfs(env: dict) -> dict:
         "vehicle_prefix": vehicle_prefix,
         "px4_drones": drones,
         "camera": _camera_context(env),
+        "fisheye": _fisheye_context(env),
     }
 
 
 def build_context_condo(env: dict) -> dict:
     """Condo scenarios are single-drone by design; pinned, not NUM_DRONES-driven."""
-    return {"num_drones": 1, "camera": _camera_context(env)}
+    return {"num_drones": 1, "camera": _camera_context(env),
+            "fisheye": _fisheye_context(env)}
 
 
 # scenario -> context builder. Tasks registering new scenarios add entries.
