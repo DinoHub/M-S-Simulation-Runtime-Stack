@@ -67,6 +67,16 @@ SCENARIOS: dict[str, list[tuple[str, str]]] = {
             "config/unreal-airsim/condo/settings-px4.json",
         ),
     ],
+    "px4-safticity": [
+        (
+            "compose/px4-safticity/templates/docker-compose.yml.j2",
+            "compose/px4-safticity/docker-compose.yml",
+        ),
+        (
+            "config/unreal-airsim/safticity/templates/settings-px4.json.j2",
+            "config/unreal-airsim/safticity/settings-px4.json",
+        ),
+    ],
     "ardupilot-condo": [
         (
             "compose/ardupilot-condo/templates/docker-compose.yml.j2",
@@ -319,6 +329,7 @@ CONTEXT_BUILDERS: dict[str, Callable[[dict], dict]] = {
     "ardupilot-xfs": build_context_ardupilot_xfs,
     "px4-xfs": build_context_px4_xfs,
     "px4-condo": build_context_condo,
+    "px4-safticity": build_context_condo,
     "ardupilot-condo": build_context_condo,
 }
 
@@ -591,11 +602,41 @@ def _self_test_px4_condo() -> None:
     json.loads(body)
 
 
+def _self_test_px4_safticity() -> None:
+    j_env = make_env()
+    ctx = build_context_condo({})
+    pairs = SCENARIOS["px4-safticity"]
+    a = [render(j_env, t, ctx) for t, _ in pairs]
+    b = [render(j_env, t, ctx) for t, _ in pairs]
+    assert a == b, "px4-safticity render not idempotent"
+    compose_yaml, settings_json = a
+    for svc in ("airsim-safti:", "px4-drone-1:", "airsim_bridge_d1:",
+                "mavros_d1:", "qgroundcontrol-x11:", "pixel-streaming-signalling:"):
+        assert svc in compose_yaml, f"missing service {svc} in px4-safticity"
+    assert "airsim-condo:" not in compose_yaml, "stale condo service name in px4-safticity"
+    assert "/app/safti/safti.sh" in compose_yaml, "safti exec path missing"
+    assert "safti-latest" in compose_yaml, "safti image missing"
+    assert "ros2-x11-node:" not in compose_yaml, "legacy monolith still present in px4-safticity"
+    assert "enable_coordination:=false" in compose_yaml
+    assert "enable_coordination:=true" not in compose_yaml
+    assert "{{" not in compose_yaml and "{%" not in compose_yaml
+    # Settings checks
+    json.loads(settings_json)
+    assert '"PX4Multirotor"' in settings_json, "VehicleType PX4Multirotor missing"
+    assert '"Cameras": {}' in settings_json, "cameras must default to empty"
+    # Camera-enabled render
+    ctx_cam = build_context_condo({"CAMERA_ENABLE": "true"})
+    _, body = [render(j_env, t, ctx_cam) for t, _ in pairs]
+    assert '"Camera1":' in body, "camera block missing when enabled"
+    json.loads(body)
+
+
 # scenario -> self-test function. Tasks registering new scenarios add entries.
 SELF_TESTS: dict[str, Callable[[], None]] = {
     "ardupilot-xfs": _self_test_ardupilot_xfs,
     "px4-xfs": _self_test_px4_xfs,
     "px4-condo": _self_test_px4_condo,
+    "px4-safticity": _self_test_px4_safticity,
     "ardupilot-condo": _self_test_ardupilot_condo,
 }
 

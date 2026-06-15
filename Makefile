@@ -46,13 +46,13 @@ ifeq ($(ALL),true)
 LAUNCH_FLAGS += --all
 endif
 
-SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
+SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo px4-safticity
 
 .PHONY: help $(SCENARIOS) attach teleop stop logs ps generate check self-test
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
-	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo"
+	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo | px4-safticity"
 	@echo "Flag vars (=true): HEADLESS AGENT_EXTERNAL PIXEL_STREAMING MONITORING METRICS ALL"
 	@echo "Utility targets:"
 	@echo "  attach     tmux dev session: rviz2|teleop side by side + sim/per-drone log windows"
