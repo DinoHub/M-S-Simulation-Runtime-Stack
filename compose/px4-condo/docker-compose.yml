@@ -10,7 +10,7 @@ services:
   # AirSim Condo
   # ============================================================================
   airsim-condo:
-    image: ${AIRSIM_CONDO_IMAGE:-dhdevspace/auto_mns:tevv-airsim-condo-latest-ceilingless}
+    image: ${AIRSIM_CONDO_IMAGE:-dhdevspace/auto_mns:condo-latest}
     pull_policy: always
     container_name: airsim-condo
     hostname: airsim-condo
@@ -43,6 +43,9 @@ services:
       # When true, the pixel-streaming sidecar starts and UE5 dials it.
       # Default false. Toggle: ./launch.sh px4-condo --with-pixel-streaming
       - ENABLE_PIXEL_STREAMING=${ENABLE_PIXEL_STREAMING:-false}
+      # true → -RenderOffScreen (no window, cameras still render). Default
+      # false → -windowed interactive. See command block below.
+      - AIRSIM_HEADLESS=${AIRSIM_HEADLESS:-false}
 
     network_mode: host
     networks: !reset []
@@ -57,23 +60,43 @@ services:
       - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings-px4.json:/home/airsim_user/Documents/AirSim/settings.json:ro
       - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings-px4.json:/app/Condo/settings.json:ro
 
+    # condo-latest doesn't ship /usr/local/bin/airsim-entrypoint.sh — exec the
+    # UE5 binary directly. Pass -PixelStreamingURL only when ENABLE_PIXEL_STREAMING
+    # =true (else the plugin dials an unreachable signalling endpoint and hangs).
+    # `$$VAR` survives compose interpolation so bash inside the container reads it.
+    #
+    # AIRSIM_HEADLESS=true → -RenderOffScreen (off-screen GPU render, cameras
+    # still work, no window). false (default) → -windowed. Never -NullRHI: it
+    # skips rendering and breaks AirSim cameras.
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         echo "Waiting 3s before starting Condo..."
         sleep 3
-        if [ "$$ENABLE_PIXEL_STREAMING" != "true" ]; then
-          unset PIXELSTREAMING_URL
+        if [ "$$AIRSIM_HEADLESS" = "true" ]; then
+          DISPLAY_FLAGS="-RenderOffScreen -NoSound -Unattended -NoSplash"
+        else
+          DISPLAY_FLAGS="-windowed"
         fi
+        PS_FLAG=""
+        if [ "$$ENABLE_PIXEL_STREAMING" = "true" ]; then
+          PS_FLAG="-PixelStreamingURL=$$PIXELSTREAMING_URL"
+        fi
+        echo "AirSim display mode: $$DISPLAY_FLAGS"
         echo "AirSim pixel-streaming: $$ENABLE_PIXEL_STREAMING"
-        exec /usr/local/bin/airsim-entrypoint.sh /app/Condo/Condo.sh -windowed -ResX=1920 -ResY=1080
+        exec /app/Condo/Condo.sh $$DISPLAY_FLAGS -ResX=1920 -ResY=1080 $$PS_FLAG
 
+    # Health = RPC port open. condo-latest's AirSim build doesn't emit the
+    # "Display Control listening" tail-of-init line the xfs scenarios gate on,
+    # so we can't log-gate here. Plain port check + a long start_period instead:
+    # the window pushes PX4/bridge startup past engine init (depends_on +
+    # restart cover the residual early-RPC race).
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 41451 || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 41451 || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 18
-      start_period: 60s
+      retries: 24
+      start_period: 120s
 
   # ============================================================================
   # PX4 SITL - Single Drone

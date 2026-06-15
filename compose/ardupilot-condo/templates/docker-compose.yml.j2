@@ -106,6 +106,9 @@ services:
       - DISPLAY=${DISPLAY:-:1}
       - SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-x11}
       - XAUTHORITY=/tmp/.Xauthority
+      # true → -RenderOffScreen (no window, cameras still render). Default
+      # false → -windowed interactive. See command block below.
+      - AIRSIM_HEADLESS=${AIRSIM_HEADLESS:-false}
 
     network_mode: host
     ipc: host
@@ -120,19 +123,32 @@ services:
       - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings-ardupilot.json:/home/airsim_user/Documents/AirSim/settings.json:ro
       - ${CONFIG_ROOT:-./config}/unreal-airsim/condo/settings-ardupilot.json:/app/Condo/settings.json:ro
 
+    # condo-latest doesn't ship /usr/local/bin/airsim-entrypoint.sh — exec the
+    # UE5 binary directly. AIRSIM_HEADLESS=true → -RenderOffScreen (off-screen
+    # GPU render, cameras still work, no window). false (default) → -windowed.
+    # Never -NullRHI: it skips rendering and breaks AirSim cameras.
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         echo "Waiting 3s for ArduPilot to initialize..."
         sleep 3
-        exec /usr/local/bin/airsim-entrypoint.sh /app/Condo/Condo.sh -windowed -ResX=1920 -ResY=1080
+        if [ "$$AIRSIM_HEADLESS" = "true" ]; then
+          DISPLAY_FLAGS="-RenderOffScreen -NoSound -Unattended -NoSplash"
+        else
+          DISPLAY_FLAGS="-windowed"
+        fi
+        echo "AirSim display mode: $$DISPLAY_FLAGS"
+        exec /app/Condo/Condo.sh $$DISPLAY_FLAGS -ResX=1920 -ResY=1080
 
+    # Plain RPC port check + long start_period; condo-latest's AirSim build
+    # doesn't emit a tail-of-init log line to gate on. depends_on + restart
+    # cover the residual early-RPC race.
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 41451 || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 41451 || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 18
-      start_period: 60s
+      retries: 24
+      start_period: 120s
 
       
 
