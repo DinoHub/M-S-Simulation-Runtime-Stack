@@ -45,7 +45,7 @@ default 4); the launcher regenerates them automatically on drift.
 EOF
 }
 
-SCENARIO=""
+SCENARIO="${SCENARIO:-}"
 START_MONITORING="${START_MONITORING:-false}"
 START_METRICS="${START_METRICS:-false}"
 AIRSIM_HEADLESS="${AIRSIM_HEADLESS:-false}"
