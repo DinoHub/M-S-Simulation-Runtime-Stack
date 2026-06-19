@@ -60,12 +60,14 @@ services:
     profiles:
       - logs
 
-  # Augment the (baked-image) Grafana with a Loki datasource via a mounted
-  # provisioning file. Compose concatenates this volume onto grafana's existing
-  # volumes; it does not replace them.
+  # Augment the (baked-image) Grafana with a Loki datasource AND the TEVV
+  # Exploration dashboard via mounted provisioning files. Compose concatenates
+  # these volumes onto grafana's existing ones; it does not replace them.
   grafana:
     volumes:
       - ./config/grafana/provisioning/datasources/loki.yaml:/etc/grafana/provisioning/datasources/loki.yaml:ro
+      - ./config/grafana/provisioning/dashboards/tevv.yaml:/etc/grafana/provisioning/dashboards/tevv.yaml:ro
+      - ./config/grafana/dashboards/tevv-exploration.json:/etc/grafana/provisioning/dashboards/tevv/tevv-exploration.json:ro
     depends_on:
       - loki
 

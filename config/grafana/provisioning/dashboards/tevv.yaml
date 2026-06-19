@@ -1,0 +1,14 @@
+# Dashboard provider for TEVV dashboards mounted by docker-compose-logs.yml.
+# Grafana scans the path below and loads any dashboard JSON found there, so the
+# TEVV Exploration dashboard appears without rebuilding the baked grafana image.
+apiVersion: 1
+
+providers:
+  - name: tevv
+    type: file
+    folder: TEVV
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/tevv
+      foldersFromFilesStructure: false

@@ -169,7 +169,7 @@ services:
   #     static_configs:
   #       - targets: ['pushgateway:9091']
   pushgateway:
-    image: prom/pushgateway:latest
+    image: prom/pushgateway:v1.11.1
     container_name: pushgateway
     ports:
       - '${PUSHGATEWAY_HOST_PORT:-9091}:9091'
@@ -182,6 +182,41 @@ services:
       - mock-testing
       - exploration-mock
       - local-planner-mock-testing
+
+  # JSONL ingestor — reads metrics_emitter events.jsonl, computes the TEVV metric
+  # set, and pushes per-run docs to Elasticsearch (run-summaries) + gauges to the
+  # pushgateway. One-shot batch job (NOT long-running), gated behind the `ingest`
+  # profile so it never starts on a plain `up`. Run it on demand:
+  #   METRICS_INPUT=/path/to/Saved/metrics docker compose \
+  #     -f docker-compose-monitoring.yml --profile ingest run --rm jsonl-ingestor
+  #
+  # Image is published by the TEVV-Metrics CI from metrics/jsonl_ingestor/Dockerfile.
+  # Until it is on the registry, uncomment `build:` to build locally.
+  jsonl-ingestor:
+    image: dhdevspace/auto_mns:tevv-jsonl-ingest-latest
+    pull_policy: if_not_present
+    # build:
+    #   context: ../TEVV-Metrics/metrics/jsonl_ingestor
+    #   dockerfile: Dockerfile
+    container_name: jsonl-ingestor
+    environment:
+      INPUT_DIR: /in
+      OUTPUT_DIR: /out
+      SINKS: ${INGEST_SINKS:-json_file,elasticsearch}
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      ES_INDEX: ${ES_INDEX:-run-summaries}
+      PROMETHEUS_PUSHGATEWAY_URL: http://pushgateway:9091
+      LOCAL_PLANNER: ${LOCAL_PLANNER:-}
+      EVALUATION_CONFIG: ${EVALUATION_CONFIG:-}
+    volumes:
+      - ${METRICS_INPUT:-./metrics_outputs}:/in:ro
+      - ${INGEST_OUTPUT:-./metrics_outputs/ingested}:/out
+    networks:
+      - monitoring-internal
+    restart: "no"
+    profiles:
+      - ingest
 
   grafana:
     # build:
