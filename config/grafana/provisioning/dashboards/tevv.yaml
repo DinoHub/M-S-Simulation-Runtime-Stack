@@ -10,5 +10,7 @@ providers:
     disableDeletion: false
     allowUiUpdates: true
     options:
-      path: /etc/grafana/provisioning/dashboards/tevv
+      # Outside /etc/grafana/provisioning/dashboards so the baked "AirSim
+      # Dashboards" provider does not also scan this file (double-load => dup uid).
+      path: /etc/grafana/tevv
       foldersFromFilesStructure: false

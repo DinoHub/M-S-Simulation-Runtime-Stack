@@ -67,7 +67,7 @@ services:
     volumes:
       - ./config/grafana/provisioning/datasources/loki.yaml:/etc/grafana/provisioning/datasources/loki.yaml:ro
       - ./config/grafana/provisioning/dashboards/tevv.yaml:/etc/grafana/provisioning/dashboards/tevv.yaml:ro
-      - ./config/grafana/dashboards/tevv-exploration.json:/etc/grafana/provisioning/dashboards/tevv/tevv-exploration.json:ro
+      - ./config/grafana/dashboards/tevv-exploration.json:/etc/grafana/tevv/tevv-exploration.json:ro
     depends_on:
       - loki
 
