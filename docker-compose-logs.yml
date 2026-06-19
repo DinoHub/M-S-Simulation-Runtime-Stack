@@ -1,0 +1,76 @@
+# Logs plane overlay — Loki + Grafana Alloy.
+#
+# Adds a THIRD observability plane (logs) alongside the existing two:
+#   - Elasticsearch  -> per-run evaluation docs (run-summaries)   [WHAT passed]
+#   - Prometheus     -> real-time system/sim time-series          [HOW it ran]
+#   - Loki (this)    -> container + Unreal + events.jsonl logs    [WHY it failed]
+#
+# Alloy is the shipper (tails logs), Loki stores/indexes, Grafana "Explore" queries.
+# This is an OVERLAY: it reuses the monitoring stack's `monitoring-internal` network
+# (external: true), so bring monitoring up first, then add this file:
+#
+#   docker compose -f docker-compose-monitoring.yml --profile monitoring up -d
+#   docker compose -f docker-compose-monitoring.yml -f docker-compose-logs.yml \
+#     --profile monitoring --profile logs up -d
+#
+# Point SIM_LOGS_DIR at your Unreal Project's Saved dir (holds Logs/ + metrics/).
+name: tevv-monitoring
+
+networks:
+  monitoring-internal:
+    name: monitoring-internal
+    external: true        # created by docker-compose-monitoring.yml; start it first
+
+services:
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: loki
+    command: -config.file=/etc/loki/loki-config.yaml
+    ports:
+      - '${LOKI_HOST_PORT:-3100}:3100'
+    volumes:
+      - ./config/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - monitoring-internal
+    restart: unless-stopped
+    profiles:
+      - logs
+
+  alloy:
+    image: grafana/alloy:v1.7.5
+    container_name: alloy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    ports:
+      - '${ALLOY_HOST_PORT:-12345}:12345'   # Alloy UI (component graph / debug)
+    volumes:
+      - ./config/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # read container logs
+      - ${SIM_LOGS_DIR:-./logs}:/sim-logs:ro            # Unreal Saved/ (Logs + metrics)
+      - alloy_data:/var/lib/alloy/data
+    networks:
+      - monitoring-internal
+    depends_on:
+      - loki
+    restart: unless-stopped
+    profiles:
+      - logs
+
+  # Augment the (baked-image) Grafana with a Loki datasource via a mounted
+  # provisioning file. Compose concatenates this volume onto grafana's existing
+  # volumes; it does not replace them.
+  grafana:
+    volumes:
+      - ./config/grafana/provisioning/datasources/loki.yaml:/etc/grafana/provisioning/datasources/loki.yaml:ro
+    depends_on:
+      - loki
+
+volumes:
+  loki_data:
+    driver: local
+  alloy_data:
+    driver: local
