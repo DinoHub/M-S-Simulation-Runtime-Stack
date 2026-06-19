@@ -156,6 +156,33 @@ services:
       - exploration-mock
       - local-planner-mock-testing
 
+  # Pushgateway — receives per-run gauges from the JSONL ingestor's `prometheus`
+  # sink (and the runtime collector's prometheus exporter, which already targets
+  # pushgateway:9091 per config/metrics-collector/default_metrics.yaml). Lands a
+  # batch/stream job's results into Prometheus, which cannot scrape it directly.
+  #
+  # NOTE: prometheus.yml is BAKED into the prometheus image and has no pushgateway
+  # scrape job yet. Add this to that config (and rebuild the prometheus image) so
+  # the gauges are collected — honor_labels keeps the run_id/scenario_id labels:
+  #   - job_name: pushgateway
+  #     honor_labels: true
+  #     static_configs:
+  #       - targets: ['pushgateway:9091']
+  pushgateway:
+    image: prom/pushgateway:latest
+    container_name: pushgateway
+    ports:
+      - '${PUSHGATEWAY_HOST_PORT:-9091}:9091'
+    networks:
+      - monitoring-internal
+    restart: unless-stopped
+    profiles:
+      - monitoring
+      - monitoring-minimal
+      - mock-testing
+      - exploration-mock
+      - local-planner-mock-testing
+
   grafana:
     # build:
     #   context: ../monitoring
