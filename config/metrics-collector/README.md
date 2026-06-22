@@ -102,10 +102,32 @@ already built + installed):
 - Exposes an `ExplorationStatus` lifecycle per agent — `GetExplorationStatus` srv /
   `ExplorationStatus.msg`: `IDLE=1, TRANSIT=2, BUSY=3, CANCELLED=4, TARGET_DETECTED=5`.
 
-Suggested wiring: publish `RunState{RUNNING}` when you start exploration; poll
-`GetExplorationStatus` and publish `RunState{COMPLETED}` when all agents return to
-`IDLE` (area covered) — or `{ABORTED}` on `CANCELLED`. For search missions,
-`TARGET_DETECTED` is the natural terminal → `COMPLETED`.
+### Hands-off wiring: `tools/run_state_bridge.py`
+
+`tools/run_state_bridge.py` does the wiring automatically: it polls
+`/exploration/get_exploration_status` and publishes `/run_state` on transitions —
+`RUNNING` when any agent goes TRANSIT/BUSY, `COMPLETED` when all agents return to
+IDLE (area covered) or one hits TARGET_DETECTED, `ABORTED` on CANCELLED. So a full
+exploration benchmark needs no manual `ros2 topic pub`.
+
+Run it anywhere on the same `ROS_DOMAIN_ID` with both interfaces on the path
+(`airsim_interfaces` for RunState, `exploration_interfaces` for the status srv):
+
+```bash
+source /opt/ros/airsim/setup.bash
+source /home/mnsuser/integration/autonomy_stack/install/setup.bash
+python3 tools/run_state_bridge.py --ros-args \
+    -p run_id:=expl-001 -p scenario_id:=airsim-condo
+```
+
+Params: `status_service`, `run_state_topic`, `poll_period_sec` (1.0), `run_id`,
+`scenario_id`, `target_detected_completes` (true), `publish_repeat` (3),
+`oneshot` (true — exit after the terminal publish; false = reset and wait for the
+next run). `/run_state` is published RELIABLE + TRANSIENT_LOCAL (latched) so the
+collector reliably receives each transition.
+
+Manual equivalent (no bridge): publish `RunState{RUNNING}` at start and
+`RunState{COMPLETED}`/`{ABORTED}` at the end yourself (see commands above).
 
 For a **no-planner smoke test** of the dashboard side only, the
 `exploration-mock-generator` service (`docker-compose-monitoring.yml`) emits synthetic
