@@ -63,11 +63,14 @@ config/
 ├── experiments/
 │   └── mission.json                     # Mission template
 ├── metrics-collector/
+│   ├── README.md                       # trigger modes (goal / run_state / Bool), exploration flow
 │   ├── default_metrics.yaml
 │   ├── evaluation.yaml
 │   ├── evaluation.yaml.example
 │   ├── mission.json
-│   └── scenario_controller.yaml
+│   ├── scenario_controller.yaml
+│   ├── entrypoint.sh                    # vendored+patched: USE_RUN_STATE_TRIGGER, skip controller in run_state
+│   └── ingest_to_es.py                  # vendored+patched: run_id from metrics.json
 ├── qgroundcontrol/
 │   ├── qgc_config/
 │   └── user_config/
