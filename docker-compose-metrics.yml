@@ -64,8 +64,16 @@ services:
       - ${CONFIG_ROOT:?set CONFIG_ROOT}/metrics-collector/evaluation.yaml:/metrics/config/evaluation.yaml:ro
       - ${CONFIG_ROOT:?set CONFIG_ROOT}/metrics-collector/mission.json:/metrics/mission/mission.json:ro
       - ${CONFIG_ROOT:?set CONFIG_ROOT}/metrics-collector/scenario_controller.yaml:/metrics/config/scenario_controller.yaml:ro
+      # Patched entrypoint: makes use_run_state_trigger env-driven (default false).
+      # Set USE_RUN_STATE_TRIGGER=true for planner-agnostic (exploration) runs.
+      - ${CONFIG_ROOT:?set CONFIG_ROOT}/metrics-collector/entrypoint.sh:/metrics/entrypoint.sh:ro
+      # Patched ES ingest: sources run_id/scenario_id from metrics.json (per-run
+      # /run_state id), not the empty container env, so exploration runs correlate.
+      - ${CONFIG_ROOT:?set CONFIG_ROOT}/metrics-collector/ingest_to_es.py:/metrics/scripts/ingest_to_es.py:ro
 
     environment:
+      # false = goal-triggered (local planner). true = /run_state-triggered (exploration / any planner).
+      USE_RUN_STATE_TRIGGER: ${USE_RUN_STATE_TRIGGER:-false}
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FASTDDS_BUILTIN_TRANSPORTS: ${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}
 

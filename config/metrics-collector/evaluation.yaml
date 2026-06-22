@@ -18,9 +18,9 @@ evaluation:
   # Enable/disable specific metrics. All default to true for backward compatibility.
   # Set to false to skip computation and threshold checking for that metric.
   metrics:
-    path_length: true      # Enable/disable path length metric
+    path_length: true      # informational / coverage proxy for exploration (gate disabled below)
     travel_time: true      # Enable/disable travel time metric
-    goal_reached: true     # Enable/disable goal reached check
+    goal_reached: false    # EXPLORATION: no single goal — disabled
     collisions: true       # Enable/disable collision count
 
   # =============================================================================
@@ -29,21 +29,20 @@ evaluation:
   # These apply to totals across all vehicles
 
   # Maximum allowed path length in meters (0 = disabled)
-  # Path length is computed as the sum of Euclidean distances between
-  # consecutive ground truth positions: sum(|p_i - p_{i-1}|)
-  max_path_length_m: 500.0
+  # EXPLORATION: long path = more coverage, NOT a failure. Gate disabled.
+  max_path_length_m: 0.0
 
   # Maximum allowed travel time in seconds (0 = disabled)
-  # Travel time is measured using simulation time from /clock topic
-  max_travel_time_sec: 300.0
+  # EXPLORATION: runs to its own stop signal/timeout, not a time budget. Gate disabled.
+  max_travel_time_sec: 0.0
 
   # =============================================================================
   # Goal and Safety Checks
   # =============================================================================
 
   # Require all vehicles to reach their goal within tolerance
-  # If true, mission fails if any vehicle doesn't reach its goal
-  require_goal_reached: true
+  # EXPLORATION: no goal — must be false or every run FAILs.
+  require_goal_reached: false
 
   # Maximum allowed collisions (-1 = disabled, 0 = no collisions allowed)
   # Requires enable_collision_detection:=true on supervisor node
