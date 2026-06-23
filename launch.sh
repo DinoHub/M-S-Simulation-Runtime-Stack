@@ -227,8 +227,15 @@ echo "  NUM_DRONES=${NUM_DRONES:-4}"
 echo
 
 if [ "$START_MONITORING" = "true" ]; then
-  echo "Starting monitoring stack..."
-  docker compose -f docker-compose-monitoring.yml --profile monitoring up -d
+  echo "Starting monitoring + logs stack..."
+  # docker-compose-logs.yml is an OVERLAY: it adds Loki + Alloy (profile logs)
+  # and merges a Loki datasource onto monitoring's grafana. It must be passed
+  # alongside the monitoring file with both profiles, or grafana's depends_on
+  # loki resolves to an undefined service.
+  docker compose \
+    -f docker-compose-monitoring.yml \
+    -f docker-compose-logs.yml \
+    --profile monitoring --profile logs up -d
 fi
 
 # Regenerate scenario files from Jinja templates if needed.

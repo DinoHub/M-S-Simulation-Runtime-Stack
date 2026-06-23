@@ -103,8 +103,13 @@ else
     down --remove-orphans || true
 fi
 
-echo "Stopping monitoring stack..."
-docker compose -f docker-compose-monitoring.yml --profile monitoring down --remove-orphans || true
+echo "Stopping monitoring + logs stack..."
+# Mirror launch.sh: tear down the logs overlay (Loki + Alloy, profile logs)
+# alongside monitoring so they don't orphan.
+docker compose \
+  -f docker-compose-monitoring.yml \
+  -f docker-compose-logs.yml \
+  --profile monitoring --profile logs down --remove-orphans || true
 
 echo
 echo "All stacks stopped."
