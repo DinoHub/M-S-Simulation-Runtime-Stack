@@ -6,10 +6,10 @@
 #   - Loki (this)    -> container + Unreal + events.jsonl logs    [WHY it failed]
 #
 # Alloy is the shipper (tails logs), Loki stores/indexes, Grafana "Explore" queries.
-# This is an OVERLAY: it reuses the monitoring stack's `monitoring-internal` network
-# (external: true), so bring monitoring up first, then add this file:
+# This is an OVERLAY: always merge it with docker-compose-monitoring.yml in a
+# single `up` (launch.sh does this when START_MONITORING=true). The monitoring
+# file declares the shared `monitoring-internal` network as creatable:
 #
-#   docker compose -f docker-compose-monitoring.yml --profile monitoring up -d
 #   docker compose -f docker-compose-monitoring.yml -f docker-compose-logs.yml \
 #     --profile monitoring --profile logs up -d
 #
@@ -19,7 +19,10 @@ name: tevv-monitoring
 networks:
   monitoring-internal:
     name: monitoring-internal
-    external: true        # created by docker-compose-monitoring.yml; start it first
+    # NOT external: this overlay is always merged with docker-compose-monitoring.yml
+    # in a single `up` (see launch.sh), where the monitoring file declares this
+    # network as creatable. Marking it external here would override that on merge
+    # ("network monitoring-internal declared as external, but could not be found").
 
 services:
   loki:
