@@ -255,6 +255,11 @@ make ps                                                 # docker ps formatted
 | `--with-pixel-streaming` / `PIXEL_STREAMING=true` | Start UE5 signalling sidecar for browser streaming | `WITH_PIXEL_STREAMING=true` |
 | `--with-agent-external` / `AGENT_EXTERNAL=true` | Also start per-drone `zenoh-bridge-{1..N}` on `agent_external` for `/shared/*` mesh | `WITH_AGENT_EXTERNAL=true` |
 
+Running benchmark metrics (goal / exploration / teleop trigger modes, the
+`/run_state` flow, and the `run_state_bridge`) → **`config/metrics-collector/README.md`**.
+The monitoring & observability plane (Grafana/Prometheus/ES/Loki, endpoints, data flow,
+ES disk gotcha) → **`config/grafana/README.md`**.
+
 Logs:
 
 ```bash

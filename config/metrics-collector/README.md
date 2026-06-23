@@ -67,6 +67,23 @@ off (no single goal); `max_path_length_m` + `max_travel_time_sec` gates off (lon
 `path_length`. There is **no** coverage/frontier/map-% metric in this node yet — that is
 net-new code.
 
+### Manual / teleop run (no planner)
+
+Any motion source works — `/run_state` is the only trigger. Validated example flying
+a live drone by teleop on the px4-safticity stack: publish `RUNNING`, fly, publish
+`COMPLETED`. Live progress is on `/mission/supervisor/{path_length,travel_time,status}`:
+
+```bash
+# watch accumulating distance/time mid-run
+docker exec metrics-collector bash -lc 'source /opt/ros/*/setup.bash; \
+ ros2 topic echo --once /mission/supervisor/path_length'
+```
+
+A real teleop run produced `path_length_m: 126.92, travel_time_sec: 273.95,
+odom_messages: 13698, collisions: 0` → verdict PASS → ES `run-summaries/safti-teleop-001`.
+Set `SCENARIO_ID` / `VEHICLE` env to match the stack (safticity uses `Copter1`,
+`/Copter1/ground_truth/odom`).
+
 ## Input / output state
 
 | | INPUT (consumed) | OUTPUT |
@@ -187,6 +204,11 @@ writes `metrics.json` on `COMPLETED`.
 - `MISSION_TIMEOUT_SEC` is a **double** — pass `3600.0`, not `3600`, or the collector
   aborts (`parameter 'mission_timeout_sec' has invalid type`). Default `600.0`; raise it
   for long exploration runs or the collector self-exits mid-run.
+- `metrics.json` is written on stop regardless, but **ES ingest fails if the host disk is
+  >95%** — Elasticsearch trips its flood-stage watermark and sets a `read-only-allow-delete`
+  block (`429 ... TOO_MANY_REQUESTS/12/... read-only`). Free disk (`docker system prune -f`)
+  below 95%; the block auto-releases, then re-run `ingest_to_es.py` (no re-fly — metrics.json
+  persists). See the monitoring README for the watermark-override alternative.
 - `entrypoint.sh` / `ingest_to_es.py` are single-file bind mounts — editing them
   replaces the inode; **recreate the container** to pick up changes (`--force-recreate`).
 - The container is **one-shot** (`restart: "no"`). After a full finalize it tends to
