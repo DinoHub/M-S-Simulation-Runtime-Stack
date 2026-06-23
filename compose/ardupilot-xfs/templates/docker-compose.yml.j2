@@ -133,7 +133,7 @@ services:
   # ---------------------------------------------------------------------------
   airsim-xfs:
     image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:xfs-latest}
-    pull_policy: if_not_present
+    pull_policy: always
     container_name: ardupilot-xfs-airsim
     hostname: ardupilot-xfs-airsim
     restart: unless-stopped

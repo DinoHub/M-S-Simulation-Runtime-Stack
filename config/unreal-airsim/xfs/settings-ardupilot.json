@@ -66,50 +66,16 @@
                          "DrawDebugPoints": false, "ExternalController": false }
       },
       "Cameras": {
-        "Camera_0": {
+        "Camera1": {
           "CaptureSettings": [
             { "ImageType": 0,
-              "Width": 618, "Height": 516,
-              "FovDegrees": 220.0,
-              "SceneType": "outdoor",
-
-              "FisheyeModel": 3,
-              "FisheyeEnableBarrelDistortion": false,
-              "FisheyeFx": 117.898602594,
-              "FisheyeFy": 117.898602594,
-              "FisheyeCx": 305.025644077,
-              "FisheyeCy": 243.933321625,
-              "FisheyeK1": -0.133546,
-              "FisheyeK2": 0.107245,
-              "FisheyeK3": -0.051197,
-              "FisheyeK4": 0.008939,
-
-              "EnableOpticalEffects": true,
-              "LensMaskEnabled": true,
-              "LensMaskRingStart": 0.92,
-              "LensMaskRingEnd": 0.98,
-              "LensMaskRingDarkness": 0.02,
-              "FisheyeCircularMask": true,
-
-              "NoiseAmount": 0.03,
-              "FisheyeChromaticAberrationEnabled": false,
-              "FisheyeChromaticAberrationStrength": 3.0,
-              "FisheyeChromaticAberrationFalloff": 0.3,
-              "SeamBlendingEnabled": true,
-              "SeamBlendWidth": 0.1,
-
-              "VignetteStrength": 0.0,
-              "OpticalVignetteStrength": 0.0,
-              "ISPCenterLift": 0.0,
-              "ContrastCompression": 0.0,
-              "BloomStrength": 0.0,
-              "TonemapMode": 1,
-              "HDRBloomEnabled": false,
-              "bVeilingGlareEnabled": false,
-              "ExposureCompensation": 0.0 }
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
           ],
-          "X": 0.3, "Y": 0.0, "Z": 0.2,
-          "Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
         }      }
     },
     "Copter2": {
@@ -146,50 +112,16 @@
                          "DrawDebugPoints": false, "ExternalController": false }
       },
       "Cameras": {
-        "Camera_0": {
+        "Camera1": {
           "CaptureSettings": [
             { "ImageType": 0,
-              "Width": 618, "Height": 516,
-              "FovDegrees": 220.0,
-              "SceneType": "outdoor",
-
-              "FisheyeModel": 3,
-              "FisheyeEnableBarrelDistortion": false,
-              "FisheyeFx": 117.898602594,
-              "FisheyeFy": 117.898602594,
-              "FisheyeCx": 305.025644077,
-              "FisheyeCy": 243.933321625,
-              "FisheyeK1": -0.133546,
-              "FisheyeK2": 0.107245,
-              "FisheyeK3": -0.051197,
-              "FisheyeK4": 0.008939,
-
-              "EnableOpticalEffects": true,
-              "LensMaskEnabled": true,
-              "LensMaskRingStart": 0.92,
-              "LensMaskRingEnd": 0.98,
-              "LensMaskRingDarkness": 0.02,
-              "FisheyeCircularMask": true,
-
-              "NoiseAmount": 0.03,
-              "FisheyeChromaticAberrationEnabled": false,
-              "FisheyeChromaticAberrationStrength": 3.0,
-              "FisheyeChromaticAberrationFalloff": 0.3,
-              "SeamBlendingEnabled": true,
-              "SeamBlendWidth": 0.1,
-
-              "VignetteStrength": 0.0,
-              "OpticalVignetteStrength": 0.0,
-              "ISPCenterLift": 0.0,
-              "ContrastCompression": 0.0,
-              "BloomStrength": 0.0,
-              "TonemapMode": 1,
-              "HDRBloomEnabled": false,
-              "bVeilingGlareEnabled": false,
-              "ExposureCompensation": 0.0 }
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
           ],
-          "X": 0.3, "Y": 0.0, "Z": 0.2,
-          "Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
         }      }
     },
     "Copter3": {
@@ -226,50 +158,16 @@
                          "DrawDebugPoints": false, "ExternalController": false }
       },
       "Cameras": {
-        "Camera_0": {
+        "Camera1": {
           "CaptureSettings": [
             { "ImageType": 0,
-              "Width": 618, "Height": 516,
-              "FovDegrees": 220.0,
-              "SceneType": "outdoor",
-
-              "FisheyeModel": 3,
-              "FisheyeEnableBarrelDistortion": false,
-              "FisheyeFx": 117.898602594,
-              "FisheyeFy": 117.898602594,
-              "FisheyeCx": 305.025644077,
-              "FisheyeCy": 243.933321625,
-              "FisheyeK1": -0.133546,
-              "FisheyeK2": 0.107245,
-              "FisheyeK3": -0.051197,
-              "FisheyeK4": 0.008939,
-
-              "EnableOpticalEffects": true,
-              "LensMaskEnabled": true,
-              "LensMaskRingStart": 0.92,
-              "LensMaskRingEnd": 0.98,
-              "LensMaskRingDarkness": 0.02,
-              "FisheyeCircularMask": true,
-
-              "NoiseAmount": 0.03,
-              "FisheyeChromaticAberrationEnabled": false,
-              "FisheyeChromaticAberrationStrength": 3.0,
-              "FisheyeChromaticAberrationFalloff": 0.3,
-              "SeamBlendingEnabled": true,
-              "SeamBlendWidth": 0.1,
-
-              "VignetteStrength": 0.0,
-              "OpticalVignetteStrength": 0.0,
-              "ISPCenterLift": 0.0,
-              "ContrastCompression": 0.0,
-              "BloomStrength": 0.0,
-              "TonemapMode": 1,
-              "HDRBloomEnabled": false,
-              "bVeilingGlareEnabled": false,
-              "ExposureCompensation": 0.0 }
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
           ],
-          "X": 0.3, "Y": 0.0, "Z": 0.2,
-          "Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
         }      }
     },
     "Copter4": {
@@ -306,50 +204,246 @@
                          "DrawDebugPoints": false, "ExternalController": false }
       },
       "Cameras": {
-        "Camera_0": {
+        "Camera1": {
           "CaptureSettings": [
             { "ImageType": 0,
-              "Width": 618, "Height": 516,
-              "FovDegrees": 220.0,
-              "SceneType": "outdoor",
-
-              "FisheyeModel": 3,
-              "FisheyeEnableBarrelDistortion": false,
-              "FisheyeFx": 117.898602594,
-              "FisheyeFy": 117.898602594,
-              "FisheyeCx": 305.025644077,
-              "FisheyeCy": 243.933321625,
-              "FisheyeK1": -0.133546,
-              "FisheyeK2": 0.107245,
-              "FisheyeK3": -0.051197,
-              "FisheyeK4": 0.008939,
-
-              "EnableOpticalEffects": true,
-              "LensMaskEnabled": true,
-              "LensMaskRingStart": 0.92,
-              "LensMaskRingEnd": 0.98,
-              "LensMaskRingDarkness": 0.02,
-              "FisheyeCircularMask": true,
-
-              "NoiseAmount": 0.03,
-              "FisheyeChromaticAberrationEnabled": false,
-              "FisheyeChromaticAberrationStrength": 3.0,
-              "FisheyeChromaticAberrationFalloff": 0.3,
-              "SeamBlendingEnabled": true,
-              "SeamBlendWidth": 0.1,
-
-              "VignetteStrength": 0.0,
-              "OpticalVignetteStrength": 0.0,
-              "ISPCenterLift": 0.0,
-              "ContrastCompression": 0.0,
-              "BloomStrength": 0.0,
-              "TonemapMode": 1,
-              "HDRBloomEnabled": false,
-              "bVeilingGlareEnabled": false,
-              "ExposureCompensation": 0.0 }
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
           ],
-          "X": 0.3, "Y": 0.0, "Z": 0.2,
-          "Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
+        }      }
+    },
+    "Copter5": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "PawnPath": "SpiritPawn",
+      "AutoCreate": true,
+      "EnableCollisions": true,
+      "AllowAPIAlways": true,
+      "X": 32.0, "Y": 0, "Z": -1, "Yaw": 0,
+      "UseSerial": false,
+      "UdpIp": "127.0.0.1",
+      "UdpPort": 9043,
+      "ControlIp": "127.0.0.1",
+      "ControlPortLocal": 9042,
+      "ControlPortRemote": 9043,
+      "Sensors": {
+        "Barometer":   { "SensorType": 1, "Enabled": true, "PressureFactorSigma": 0.0001825 },
+        "Imu":         { "SensorType": 2, "Enabled": true },
+        "Gps":         { "SensorType": 3, "Enabled": true,
+                         "EphTimeConstant": 0.3, "EpvTimeConstant": 0.3,
+                         "EphInitial": 2.0, "EpvInitial": 3.0,
+                         "EphFinal": 0.1, "EpvFinal": 0.1,
+                         "EphMin3d": 3.0, "EphMin2d": 4.0,
+                         "UpdateLatency": 0.1, "UpdateFrequency": 50, "StartupDelay": 0 },
+        "Magnetometer":{ "SensorType": 4, "Enabled": true },
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "Roll": 0, "Pitch": 0, "Yaw": 0,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180,
+                         "DrawDebugPoints": false, "ExternalController": false }
+      },
+      "Cameras": {
+        "Camera1": {
+          "CaptureSettings": [
+            { "ImageType": 0,
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
+          ],
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
+        }      }
+    },
+    "Copter6": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "PawnPath": "SpiritPawn",
+      "AutoCreate": true,
+      "EnableCollisions": true,
+      "AllowAPIAlways": true,
+      "X": 40.0, "Y": 0, "Z": -1, "Yaw": 0,
+      "UseSerial": false,
+      "UdpIp": "127.0.0.1",
+      "UdpPort": 9053,
+      "ControlIp": "127.0.0.1",
+      "ControlPortLocal": 9052,
+      "ControlPortRemote": 9053,
+      "Sensors": {
+        "Barometer":   { "SensorType": 1, "Enabled": true, "PressureFactorSigma": 0.0001825 },
+        "Imu":         { "SensorType": 2, "Enabled": true },
+        "Gps":         { "SensorType": 3, "Enabled": true,
+                         "EphTimeConstant": 0.3, "EpvTimeConstant": 0.3,
+                         "EphInitial": 2.0, "EpvInitial": 3.0,
+                         "EphFinal": 0.1, "EpvFinal": 0.1,
+                         "EphMin3d": 3.0, "EphMin2d": 4.0,
+                         "UpdateLatency": 0.1, "UpdateFrequency": 50, "StartupDelay": 0 },
+        "Magnetometer":{ "SensorType": 4, "Enabled": true },
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "Roll": 0, "Pitch": 0, "Yaw": 0,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180,
+                         "DrawDebugPoints": false, "ExternalController": false }
+      },
+      "Cameras": {
+        "Camera1": {
+          "CaptureSettings": [
+            { "ImageType": 0,
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
+          ],
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
+        }      }
+    },
+    "Copter7": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "PawnPath": "SpiritPawn",
+      "AutoCreate": true,
+      "EnableCollisions": true,
+      "AllowAPIAlways": true,
+      "X": 48.0, "Y": 0, "Z": -1, "Yaw": 0,
+      "UseSerial": false,
+      "UdpIp": "127.0.0.1",
+      "UdpPort": 9063,
+      "ControlIp": "127.0.0.1",
+      "ControlPortLocal": 9062,
+      "ControlPortRemote": 9063,
+      "Sensors": {
+        "Barometer":   { "SensorType": 1, "Enabled": true, "PressureFactorSigma": 0.0001825 },
+        "Imu":         { "SensorType": 2, "Enabled": true },
+        "Gps":         { "SensorType": 3, "Enabled": true,
+                         "EphTimeConstant": 0.3, "EpvTimeConstant": 0.3,
+                         "EphInitial": 2.0, "EpvInitial": 3.0,
+                         "EphFinal": 0.1, "EpvFinal": 0.1,
+                         "EphMin3d": 3.0, "EphMin2d": 4.0,
+                         "UpdateLatency": 0.1, "UpdateFrequency": 50, "StartupDelay": 0 },
+        "Magnetometer":{ "SensorType": 4, "Enabled": true },
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "Roll": 0, "Pitch": 0, "Yaw": 0,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180,
+                         "DrawDebugPoints": false, "ExternalController": false }
+      },
+      "Cameras": {
+        "Camera1": {
+          "CaptureSettings": [
+            { "ImageType": 0,
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
+          ],
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
+        }      }
+    },
+    "Copter8": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "PawnPath": "SpiritPawn",
+      "AutoCreate": true,
+      "EnableCollisions": true,
+      "AllowAPIAlways": true,
+      "X": 56.0, "Y": 0, "Z": -1, "Yaw": 0,
+      "UseSerial": false,
+      "UdpIp": "127.0.0.1",
+      "UdpPort": 9073,
+      "ControlIp": "127.0.0.1",
+      "ControlPortLocal": 9072,
+      "ControlPortRemote": 9073,
+      "Sensors": {
+        "Barometer":   { "SensorType": 1, "Enabled": true, "PressureFactorSigma": 0.0001825 },
+        "Imu":         { "SensorType": 2, "Enabled": true },
+        "Gps":         { "SensorType": 3, "Enabled": true,
+                         "EphTimeConstant": 0.3, "EpvTimeConstant": 0.3,
+                         "EphInitial": 2.0, "EpvInitial": 3.0,
+                         "EphFinal": 0.1, "EpvFinal": 0.1,
+                         "EphMin3d": 3.0, "EphMin2d": 4.0,
+                         "UpdateLatency": 0.1, "UpdateFrequency": 50, "StartupDelay": 0 },
+        "Magnetometer":{ "SensorType": 4, "Enabled": true },
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "Roll": 0, "Pitch": 0, "Yaw": 0,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180,
+                         "DrawDebugPoints": false, "ExternalController": false }
+      },
+      "Cameras": {
+        "Camera1": {
+          "CaptureSettings": [
+            { "ImageType": 0,
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
+          ],
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
+        }      }
+    },
+    "Copter9": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "PawnPath": "SpiritPawn",
+      "AutoCreate": true,
+      "EnableCollisions": true,
+      "AllowAPIAlways": true,
+      "X": 64.0, "Y": 0, "Z": -1, "Yaw": 0,
+      "UseSerial": false,
+      "UdpIp": "127.0.0.1",
+      "UdpPort": 9083,
+      "ControlIp": "127.0.0.1",
+      "ControlPortLocal": 9082,
+      "ControlPortRemote": 9083,
+      "Sensors": {
+        "Barometer":   { "SensorType": 1, "Enabled": true, "PressureFactorSigma": 0.0001825 },
+        "Imu":         { "SensorType": 2, "Enabled": true },
+        "Gps":         { "SensorType": 3, "Enabled": true,
+                         "EphTimeConstant": 0.3, "EpvTimeConstant": 0.3,
+                         "EphInitial": 2.0, "EpvInitial": 3.0,
+                         "EphFinal": 0.1, "EpvFinal": 0.1,
+                         "EphMin3d": 3.0, "EphMin2d": 4.0,
+                         "UpdateLatency": 0.1, "UpdateFrequency": 50, "StartupDelay": 0 },
+        "Magnetometer":{ "SensorType": 4, "Enabled": true },
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "Roll": 0, "Pitch": 0, "Yaw": 0,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180,
+                         "DrawDebugPoints": false, "ExternalController": false }
+      },
+      "Cameras": {
+        "Camera1": {
+          "CaptureSettings": [
+            { "ImageType": 0,
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
+          ],
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
         }      }
     }
   },

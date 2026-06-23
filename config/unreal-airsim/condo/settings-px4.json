@@ -86,9 +86,11 @@
         },
 
         "LidarSensor1": {
-          "SensorType": 6,
+          "SensorType": 8,
           "Enabled": true,
           "ExternalController": false,
+
+          "GenerateIntensity": true,
 
           "NumberOfChannels": 16,
           "RotationsPerSecond": 30,
@@ -110,7 +112,18 @@
           "DrawDebugPoints": false
         }
       },
-      "Cameras": {}
+      "Cameras": {
+        "Camera1": {
+          "CaptureSettings": [
+            { "ImageType": 0,
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
+          ],
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
+        }      }
     }
   }
 }

@@ -229,7 +229,7 @@ services:
       # LIDAR_KIND (lidar -> LidarSensor1/points, gpulidar -> gpulidar/points<sensor>)
       # so the one toggle keeps sim + bridge in sync; LIDAR_TOPIC_SUFFIX still
       # overrides at runtime if needed.
-      - "lidar_topic_suffix:=${LIDAR_TOPIC_SUFFIX:-LidarSensor1/points}"
+      - "lidar_topic_suffix:=${LIDAR_TOPIC_SUFFIX:-gpulidar/pointsLidarSensor1}"
 
   # ============================================================================
   # MAVROS toward the PX4 SITL (same image family — ships airsim_mavros_bringup
