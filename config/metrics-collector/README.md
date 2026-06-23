@@ -133,10 +133,60 @@ For a **no-planner smoke test** of the dashboard side only, the
 `exploration-mock-generator` service (`docker-compose-monitoring.yml`) emits synthetic
 exploration metrics to Prometheus — it does not move the drone or feed this collector.
 
+## Run it end-to-end (user quickstart)
+
+Validated exploration run, start to ES. Assumes the sim + monitoring (ES on host
+`:9210`) are up — e.g. `./launch.sh px4-condo --all`.
+
+**1. Start the collector in run_state mode.** `MISSION_TIMEOUT_SEC` must be a float
+(`3600.0`, not `3600`) — the node aborts on an int. Bump it above your expected run
+length so the collector doesn't self-exit mid-run (default 600s).
+
+```bash
+CONFIG_ROOT=$PWD/config USE_RUN_STATE_TRIGGER=true MISSION_TIMEOUT_SEC=3600.0 \
+ docker compose -f docker-compose-metrics.yml --profile metrics up -d metrics-collector
+```
+
+**2. Launch the exploration planner** (`exploration_core_node` + your search area) —
+this is the autonomy side; it must report agent state via
+`/exploration/get_exploration_status`.
+
+**3. Run the bridge** so `/run_state` is driven automatically. It needs both
+`airsim_interfaces` and `exploration_interfaces` on the path. The
+`tevv-airstack-ros2-x11-node-development` image carries humble + airsim_interfaces;
+mount the built autonomy_stack for `exploration_interfaces`:
+
+```bash
+docker run -d --name run-state-bridge --network host --ipc host \
+  -e ROS_DOMAIN_ID=0 -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+  -v /home/mnsuser/integration/autonomy_stack:/home/mnsuser/integration/autonomy_stack \
+  -v $PWD:/ws/repo \
+  --entrypoint bash dhdevspace/auto_mns:tevv-airstack-ros2-x11-node-development \
+  -lc 'source /opt/ros/humble/setup.bash;
+       source /airsim_ros2_ws/install/setup.bash;
+       source /home/mnsuser/integration/autonomy_stack/install/setup.bash;
+       exec python3 /ws/repo/tools/run_state_bridge.py --ros-args \
+         -p run_id:=expl-001 -p scenario_id:=airsim-condo'
+```
+
+The bridge publishes `RUNNING` when exploration starts, `COMPLETED` when the area is
+covered (all agents IDLE) / `ABORTED` on cancel. The collector records throughout and
+writes `metrics.json` on `COMPLETED`.
+
+**4. Finalize** (evaluate + push to ES/Grafana) — see the finalize command under
+*Input / output state*. The run lands in the ES `run-summaries` index keyed by `run_id`.
+
+> All four processes must share `ROS_DOMAIN_ID` (default 0) and `FASTDDS_BUILTIN_TRANSPORTS=UDPv4`.
+> Run **exactly one** status server on `/exploration/get_exploration_status` — two
+> servers make the bridge flap between states.
+
 ## Gotchas
 
 - Container shows **unhealthy** = cosmetic: health server can't bind `:8888`
   (`Errno 98 Address already in use` on host net). Collector node runs fine.
+- `MISSION_TIMEOUT_SEC` is a **double** — pass `3600.0`, not `3600`, or the collector
+  aborts (`parameter 'mission_timeout_sec' has invalid type`). Default `600.0`; raise it
+  for long exploration runs or the collector self-exits mid-run.
 - `entrypoint.sh` / `ingest_to_es.py` are single-file bind mounts — editing them
   replaces the inode; **recreate the container** to pick up changes (`--force-recreate`).
 - The container is **one-shot** (`restart: "no"`). After a full finalize it tends to
