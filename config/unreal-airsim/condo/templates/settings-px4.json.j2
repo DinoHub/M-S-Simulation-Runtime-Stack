@@ -86,9 +86,11 @@
         },
 
         "LidarSensor1": {
-          "SensorType": 6,
+          "SensorType": {{ lidar.sensor_type }},
           "Enabled": true,
           "ExternalController": false,
+
+          "GenerateIntensity": true,
 
           "NumberOfChannels": 16,
           "RotationsPerSecond": 30,

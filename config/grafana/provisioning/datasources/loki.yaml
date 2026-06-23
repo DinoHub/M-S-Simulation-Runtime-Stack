@@ -1,0 +1,19 @@
+# Loki datasource for Grafana.
+#
+# Grafana's datasources (Elasticsearch, Prometheus) are baked into the
+# dhdevspace/auto_mns:grafana-monitoring-latest image. This file is bind-mounted
+# into /etc/grafana/provisioning/datasources/ by docker-compose-logs.yml so Grafana
+# learns about Loki WITHOUT rebuilding the image. Adding a file to the dir augments
+# the baked set; it does not replace it.
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    uid: loki
+    url: http://loki:3100
+    isDefault: false
+    editable: true
+    jsonData:
+      maxLines: 1000

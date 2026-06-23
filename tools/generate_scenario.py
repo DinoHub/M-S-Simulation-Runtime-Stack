@@ -321,7 +321,27 @@ def build_context_px4_xfs(env: dict) -> dict:
 def build_context_condo(env: dict) -> dict:
     """Condo scenarios are single-drone by design; pinned, not NUM_DRONES-driven."""
     return {"num_drones": 1, "camera": _camera_context(env),
-            "fisheye": _fisheye_context(env)}
+            "fisheye": _fisheye_context(env),
+            "lidar": _lidar_context(env)}
+
+
+def _lidar_context(env: dict) -> dict:
+    """LiDAR generation toggle (LIDAR_KIND in .env: 'lidar' (CPU, default) or
+    'gpulidar' (GPU)). Drives the settings.json SensorType AND the default
+    registration-backend input topic, so one knob keeps sim + bridge in sync.
+
+    NOTE: GPU LiDAR (SensorType 8) currently segfaults the condo-latest AirSim
+    build (RealtimeGPUProfiler IsInGameThread assertion); usable only on a
+    GPU-lidar-capable sim. The CPU default is the safe path."""
+    kind = (env.get("LIDAR_KIND") or "lidar").strip().lower()
+    if kind not in ("lidar", "gpulidar"):
+        raise ValueError(f"LIDAR_KIND must be 'lidar' or 'gpulidar', got {kind!r}")
+    if kind == "gpulidar":
+        # Bridge publishes '<vehicle>/gpulidar/points<sensor>' for SensorType 8.
+        return {"kind": kind, "sensor_type": 8,
+                "topic_suffix": "gpulidar/pointsLidarSensor1"}
+    return {"kind": kind, "sensor_type": 6,
+            "topic_suffix": "LidarSensor1/points"}
 
 
 # scenario -> context builder. Tasks registering new scenarios add entries.

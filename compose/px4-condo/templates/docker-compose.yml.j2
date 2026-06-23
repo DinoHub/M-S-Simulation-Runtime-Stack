@@ -6,7 +6,7 @@ services:
   # ============================================================================
   airsim-condo:
     image: ${AIRSIM_CONDO_IMAGE:-dhdevspace/auto_mns:condo-latest}
-    pull_policy: always
+    pull_policy: if_not_present
     container_name: airsim-condo
     hostname: airsim-condo
     restart: unless-stopped
@@ -215,6 +215,16 @@ services:
       - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
       - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+      # Registered-cloud backend select. Defaults preserve the built-in GT
+      # registration when REGISTRATION_SOURCE is unset. rtabmap needs a bridge
+      # image whose single_vehicle.launch.py declares these args.
+      - "registration_source:=${REGISTRATION_SOURCE:-ground_truth}"
+      - "rtabmap_odometry:=${RTABMAP_ODOMETRY:-gt}"
+      # LiDAR input topic for the registration backend. Default is derived from
+      # LIDAR_KIND (lidar -> LidarSensor1/points, gpulidar -> gpulidar/points<sensor>)
+      # so the one toggle keeps sim + bridge in sync; LIDAR_TOPIC_SUFFIX still
+      # overrides at runtime if needed.
+      - "lidar_topic_suffix:=${LIDAR_TOPIC_SUFFIX:-{{ lidar.topic_suffix }}}"
 
   # ============================================================================
   # MAVROS toward the PX4 SITL (same image family — ships airsim_mavros_bringup

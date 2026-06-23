@@ -1,0 +1,65 @@
+// Grafana Alloy — telemetry collector for the LOGS plane.
+// Tails (1) all docker container stdout/stderr and (2) Unreal sim logs +
+// metrics_emitter events.jsonl from disk, and ships them to Loki.
+//
+// This is the shipper; Loki stores/indexes; Grafana "Explore" queries.
+
+// ---------------------------------------------------------------------------
+// 1. Docker container logs (crash diagnosis next to the metrics verdict).
+// ---------------------------------------------------------------------------
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.process.add_job.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// 2. Unreal logs + events.jsonl from a mounted host dir (/sim-logs).
+//    Mount your Project/Saved (logs + metrics) there in the compose file.
+// ---------------------------------------------------------------------------
+local.file_match "sim" {
+  path_targets = [
+    {"__path__" = "/sim-logs/**/Logs/*.log", "job" = "ue-logs"},
+    {"__path__" = "/sim-logs/**/metrics/**/events.jsonl", "job" = "events-jsonl"},
+  ]
+}
+
+loki.source.file "sim" {
+  targets    = local.file_match.sim.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+// Stamp a job label on docker logs so Grafana can split sim vs infra.
+loki.process "add_job" {
+  stage.static_labels {
+    values = { job = "docker" }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Sink: push everything to Loki.
+// ---------------------------------------------------------------------------
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
