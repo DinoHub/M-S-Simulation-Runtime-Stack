@@ -64,15 +64,19 @@ done
 # its container so the panes stay usable after the process exits.
 tmux new-window -t "$SESSION" -n dev \
   "docker exec -it -e DISPLAY=${DISPLAY:-:1} $first_bridge bash -lc '\
+     source /opt/ros/humble/setup.bash && source install/setup.bash && \
      sed \"s/Drone1/${VEHICLE}/g\" ${RVIZ_CFG} > /tmp/rviz_live.rviz && \
      rviz2 -d /tmp/rviz_live.rviz; exec bash -l'"
 if docker ps --format '{{.Names}}' | grep -qx mavros_d1; then
   tmux split-window -t "$SESSION:dev" -h \
     "docker exec -it mavros_d1 bash -lc '\
+       source /opt/ros/humble/setup.bash && source install/setup.bash && \
        ros2 run airsim_mavros_bringup mavros_teleop_keyboard.py \
          --ros-args -p vehicle:=${VEHICLE} -p autopilot:=${AUTOPILOT}; exec bash -l'"
 else
-  tmux split-window -t "$SESSION:dev" -h "docker exec -it $first_bridge bash -l"
+  tmux split-window -t "$SESSION:dev" -h \
+    "docker exec -it $first_bridge bash -lc '\
+       source /opt/ros/humble/setup.bash && source /airsim_ros2_ws/install/setup.bash && exec bash'"
 fi
 tmux select-window -t "$SESSION:dev"
 
