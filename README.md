@@ -161,6 +161,45 @@ FISHEYE_COUNT=1
 > resolution or use `FISHEYE_COUNT=1` if it bogs. Sim restart required
 > after regenerating.
 
+### Terrain origin / home position
+
+Two **independent** knobs set "where on Earth the sim is," and they must
+agree or the autopilot's EKF origin jumps when AirSim GPS arrives:
+
+1. **AirSim `OriginGeopoint`** — maps Unreal world origin `(0,0,0)` to a real
+   GPS coordinate. This is the authoritative GPS source at runtime. It is
+   **hardcoded in the settings `*.json.j2` template** (e.g.
+   `config/unreal-airsim/safticity/templates/settings-px4.json.j2`), so edit
+   the template and regenerate (`make generate`), **not** the rendered file.
+   In `--editor` / `EDITOR=true` mode the containerized sim is skipped and
+   AirSim reads the **host** `~/Documents/AirSim/settings.json` instead — set
+   `OriginGeopoint` there for the editor level.
+
+2. **Autopilot home (`.env`)** — PX4 / ArduPilot SITL carry their own home /
+   EKF origin, separate from `OriginGeopoint`. These are **not** generator
+   inputs; they are `${VAR:-default}` interpolated by compose at launch, so a
+   change needs only a stack restart (no regen). **You must set them to match
+   the `OriginGeopoint` of the terrain you fly** — otherwise home is wrong
+   before GPS lock and the EKF origin jumps once AirSim's GPS streams in.
+
+| `.env` key | Applies to | Purpose |
+|---|---|---|
+| `PX4_HOME_LAT` / `PX4_HOME_LON` / `PX4_HOME_ALT` | px4-* scenarios | PX4 SITL home / EKF origin |
+| `ARDUPILOT_HOME_LAT` / `ARDUPILOT_HOME_LON` / `ARDUPILOT_HOME_ALT` | ardupilot-* scenarios | ArduPilot SITL home |
+
+```env
+# Match the terrain's OriginGeopoint (e.g. safticity, Singapore)
+PX4_HOME_LAT=1.3738003
+PX4_HOME_LON=103.677839
+PX4_HOME_ALT=16.0
+```
+
+> **Note:** defaults ship as an Idaho test coordinate (`42.76 / -115.57`),
+> **not** the Singapore terrains — always set the home trio when you change
+> map or run `--editor` against a relocated level. If `setup-env.sh`
+> generates a `compose/<scenario>/.env`, it shadows the root `.env`; set the
+> home trio there too.
+
 ### Worked example: 8-drone fleet, custom prefix, flat ROS_DOMAIN_ID
 
 Edit `.env`:
@@ -241,6 +280,8 @@ make ardupilot-xfs                                      # basic launch
 make ardupilot-xfs HEADLESS=true AGENT_EXTERNAL=true    # with flags
 make px4-xfs PIXEL_STREAMING=true                       # UE5 signalling sidecar
 make px4-condo ALL=true                                 # monitoring + metrics
+make dev SCENARIO=px4-xfs                               # launch + tmux dashboard
+make dev EDITOR=true                                    # run AirSim from the Unreal editor on host
 make stop                                               # ./stop.sh
 make logs                                               # ./logs.sh
 make ps                                                 # docker ps formatted
@@ -254,6 +295,7 @@ make ps                                                 # docker ps formatted
 | `--headless` / `HEADLESS=true` | UE5 runs with `-RenderOffScreen` (cameras + PixelStreaming still work) | `AIRSIM_HEADLESS=true` |
 | `--with-pixel-streaming` / `PIXEL_STREAMING=true` | Start UE5 signalling sidecar for browser streaming | `WITH_PIXEL_STREAMING=true` |
 | `--with-agent-external` / `AGENT_EXTERNAL=true` | Also start per-drone `zenoh-bridge-{1..N}` on `agent_external` for `/shared/*` mesh | `WITH_AGENT_EXTERNAL=true` |
+| `--editor` / `EDITOR=true` | Skip the containerized AirSim (`sim` profile off); run AirSim from the Unreal editor on the host instead. Launcher **waits for the editor RPC** (`localhost:41451`, i.e. Play the level) before starting bridges — they query RPC once with no retry (window: `EDITOR_RPC_TIMEOUT`, default 180s, `0` = forever). Set the editor's host `~/Documents/AirSim/settings.json` `OriginGeopoint` + matching `PX4_HOME_*`/`ARDUPILOT_HOME_*` (see Terrain origin) | `EDITOR_MODE=true` |
 
 Running benchmark metrics (goal / exploration / teleop trigger modes, the
 `/run_state` flow, and the `run_state_bridge`) → **`config/metrics-collector/README.md`**.

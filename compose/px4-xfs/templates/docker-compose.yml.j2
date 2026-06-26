@@ -61,6 +61,11 @@ services:
     container_name: airsim-xfs
     hostname: airsim-xfs
 
+    # `sim` profile: launch.sh enables it by default, drops it with --editor so
+    # AirSim runs from the Unreal editor on the host instead. Bridges depend on
+    # this service with required: false, so skipping the profile is clean.
+    profiles: ["sim"]
+
     # Host networking — all ports exposed directly on the host
     network_mode: "host"
     ipc: host
@@ -117,6 +122,9 @@ services:
       # secondary stagger.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     network_mode: "host"
     ipc: host
@@ -192,6 +200,9 @@ services:
       # publishers and no retry.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     environment:
       # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
