@@ -105,7 +105,9 @@ services:
   # ============================================================================
   px4-drone-1:
     image: ${PX4_IMAGE:-dhdevspace/auto_mns:px4-airsim-px4}
-    pull_policy: always
+    # if_not_present (not always): a local-only overlay tag (PX4_IMAGE) must not
+    # be re-pulled — `always` reverts it to the registry image (no C2/14555).
+    pull_policy: if_not_present
     container_name: px4-drone-1
     hostname: px4-drone-1
     restart: "no"
@@ -240,8 +242,9 @@ services:
   # ============================================================================
   # MAVROS toward the PX4 SITL (same image family — ships airsim_mavros_bringup
   # + mavros + mavros_msgs). The PX4 image's mavlink-router has a dedicated
-  # MAVROS UDP endpoint that sends to 127.0.0.1:14560 (per-instance: 14560+i).
-  # MAVROS binds :14560 with no fixed remote and locks onto the router's
+  # MAVROS UDP endpoint is a Server on 0.0.0.0:14555 (per-instance: 14555+i).
+  # MAVROS dials it (udp://:0@<px4-host>:14555) so it sends first and the router
+  # learns its
   # source address from the first packet. Do NOT use tcp 5760 (that's the
   # router's QGC TCP server — its sends error out under mavros) and do NOT
   # bind 14540/14550 (AirSim and QGC own those sockets respectively).
@@ -285,7 +288,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_1_NAME:-Copter1}
-        fcu_url:=${MAVROS_FCU_URL:-udp://:14560@}
+        fcu_url:=${MAVROS_FCU_URL:-udp://:0@127.0.0.1:14555}
         target_system_id:=1
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:=true

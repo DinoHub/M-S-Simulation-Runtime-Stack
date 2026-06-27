@@ -268,9 +268,9 @@ services:
       - /dev/shm:/dev/shm:rw
 
     # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
-    # endpoint sending to 127.0.0.1:14560+i (router conf: AirSim 14540+i,
-    # QGC 14550+i, MAVROS 14560+i). MAVROS binds :14560+i with no fixed
-    # remote and locks onto the router from the first packet. Do NOT bind
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
     # 14540+i / 14550+i — AirSim and QGC own those sockets.
     command:
       - "bash"
@@ -278,7 +278,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_{{ d.n }}_NAME:-{{ vehicle_prefix }}{{ d.n }}}
-        fcu_url:=${DRONE_{{ d.n }}_FCU_URL:-udp://:{{ d.mavros_local }}@}
+        fcu_url:=${DRONE_{{ d.n }}_FCU_URL:-udp://:0@127.0.0.1:{{ d.mavros_local }}}
         target_system_id:={{ d.n }}
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:={{ "true" if d.n == 1 else "false" }}
