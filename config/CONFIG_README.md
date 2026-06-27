@@ -278,6 +278,36 @@ Use this only if QGC-specific behavior or user configuration needs to be updated
 
 This is typically edited less often than the metrics or mission configs.
 
+`QGroundControl.ini` `[LinkConfigurations]` is where QGC's MAVLink links live:
+
+- `Link0` — UDP listen on `14550` (`auto=true`), the active PX4 link. Matches
+  the router's `QGC_UDP` endpoint.
+- To watch the **C2** stream in QGC too, add a UDP link on `14552` (the
+  router's `C2` endpoint). `QGroundControlBackup.ini` already carries this as a
+  reference (`Link2\port=14552`).
+- A `5760` TCP link may remain from older images; current images drop the QGC
+  TCP server, so leave it `auto=false` or remove it.
+
+---
+
+## MAVLink routing / ports
+
+The PX4 mavlink-router endpoints (PX4 ↔ AirSim ↔ QGC ↔ MAVROS ↔ C2) and the
+**three** places ports are configured — compose `fcu_url`/`.env`, AirSim
+`settings.json` `ControlPort*`, and QGC `[LinkConfigurations]` — are documented
+in one table in the top-level [`README.md`](../README.md#mavlink-ports--endpoints).
+
+Quick map of what to edit for each leg:
+
+| Leg | File to edit |
+|---|---|
+| MAVROS ↔ router (`14555+i`) | `compose/<scenario>/templates/*.j2` → `make generate` (or `MAVROS_FCU_URL`/`DRONE_<N>_FCU_URL` in `.env`) |
+| AirSim ↔ router (`14540+i` / `14580+i`) | `config/unreal-airsim/<scene>/settings*.json` `ControlPortLocal`/`ControlPortRemote` (host `~/Documents/AirSim/settings.json` in `EDITOR=true` mode) |
+| QGC / C2 ↔ router (`14550` / `14552`) | `config/qgroundcontrol/QGroundControl.ini` `[LinkConfigurations]` |
+
+The router config itself is baked into the PX4 image
+(`mavlink-router.conf.template`) — not edited here.
+
 ---
 
 ## What to edit most often

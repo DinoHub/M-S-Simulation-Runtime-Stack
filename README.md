@@ -389,6 +389,67 @@ Configuration reference: [`config/CONFIG_README.md`](./config/CONFIG_README.md).
 
 ---
 
+## MAVLink ports & endpoints
+
+The PX4 image's **mavlink-router** is the single hub between PX4 SITL, AirSim,
+QGC, MAVROS, and any C2 client. Its config is generated **inside the image** at
+container start from a baked template (`mavlink-router.conf.template`); the host
+stack only has to dial the matching ports.
+
+Per PX4 instance `i` (instance 0 = drone 1), host networking:
+
+| Endpoint | Router mode | Port | Peer & direction | Configured where |
+|---|---|---|---|---|
+| `PX4_Local` | Server | `5760+i` | PX4 SITL → router | in-image |
+| `AirSim` | Normal | `14540+i` | router → AirSim `ControlPortLocal` | AirSim `settings.json` |
+| `AirSim_Inbound` | Server | `14580+i` | AirSim `ControlPortRemote` → router | AirSim `settings.json` |
+| `QGC_UDP` | Normal | `14550` | router → QGC (UDP listen) | QGC `QGroundControl.ini` |
+| `MAVROS_UDP` | **Server** | `14555+i` | **MAVROS dials in** | compose `fcu_url` / `*_FCU_URL` |
+| `C2` | Normal | `14552` | router → C2 client | external C2 / extra QGC link |
+
+`Normal` endpoints **send to** `MAVLINK_TARGET` (default `127.0.0.1`).
+`Server` endpoints **bind and wait** — the peer must initiate.
+
+### MAVROS — must dial the router
+
+`MAVROS_UDP` is a **Server**, so the sidecar connects *out* to it:
+
+```text
+fcu_url:=udp://:0@127.0.0.1:14555      # instance 0; port is 14555+i per drone
+```
+
+This is the compose default. To override:
+
+- single-drone (`px4-condo`, `px4-safticity`): set `MAVROS_FCU_URL` in `.env`
+- multi-drone (`px4-xfs`): set `DRONE_<N>_FCU_URL` in `.env`
+
+Defaults are produced by `tools/generate_scenario.py` (`mavros_local = 14555+i`)
+into each `compose/<scenario>/docker-compose.yml`. **Edit the `.j2` template
+then `make generate`** — never the rendered file (`make check` fails on drift).
+
+> ⚠️ Old images used MAVROS `Normal :14560` (router pushed, MAVROS bound
+> passively). Current images use `Server :14555` (MAVROS dials). A stale
+> `MAVROS_FCU_URL=udp://:14560@` silently fails to connect.
+
+### C2 — command & control
+
+`C2` is a dedicated GCS-style endpoint, separate from QGC, so a C2 client can
+attach without sharing QGC's sink or forcing QGC closed during uploads. The
+router **emits** to `${MAVLINK_TARGET}:14552`; **nothing in the default stack
+consumes it.** To use it, point a C2 client — or an extra QGC UDP link — at
+`127.0.0.1:14552`.
+
+### Editor mode (`EDITOR=true`) caveat
+
+AirSim then runs from the Unreal editor on the host, so it reads the **host**
+`~/Documents/AirSim/settings.json` — *not* the container-mounted
+`config/unreal-airsim/<scene>/settings*.json`. The host file's
+`ControlPortLocal`/`ControlPortRemote` (14540/14580) must match the router for
+AirSim↔PX4 HIL. MAVROS and C2 are router↔client and are unaffected by where
+AirSim runs.
+
+---
+
 ## Manual MAVROS smoke test (PX4 OFFBOARD)
 
 Reference flow for driving a single PX4 vehicle from MAVROS CLI. The
