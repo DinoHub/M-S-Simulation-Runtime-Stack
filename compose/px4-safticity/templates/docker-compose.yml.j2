@@ -51,6 +51,15 @@ services:
     networks: !reset []
     ports: !reset []
     ipc: host
+    # pid:host unifies the PID namespace across containers. Required because
+    # ipc:host + shared /dev/shm makes all ROS2 participants share FastDDS SHM
+    # segments, but FastDDS's SHM port liveliness check resolves writer PIDs in
+    # the local namespace. With per-container PID namespaces those PIDs map to
+    # wrong/dead processes -> the domain SHM port is repeatedly reset -> data is
+    # silently never delivered (discovery still works over UDP). Symptom: topics
+    # discoverable but echo/hz get zero messages; rviz TF shows ~4s (tf_static
+    # transient_local) then vanishes when dynamic /tf never arrives.
+    pid: host
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
@@ -178,6 +187,15 @@ services:
     networks: !reset []
     ports: !reset []
     ipc: host
+    # pid:host unifies the PID namespace across containers. Required because
+    # ipc:host + shared /dev/shm makes all ROS2 participants share FastDDS SHM
+    # segments, but FastDDS's SHM port liveliness check resolves writer PIDs in
+    # the local namespace. With per-container PID namespaces those PIDs map to
+    # wrong/dead processes -> the domain SHM port is repeatedly reset -> data is
+    # silently never delivered (discovery still works over UDP). Symptom: topics
+    # discoverable but echo/hz get zero messages; rviz TF shows ~4s (tf_static
+    # transient_local) then vanishes when dynamic /tf never arrives.
+    pid: host
 
     user: "${UID:?set UID}:${GID:?set GID}"
 
@@ -204,12 +222,20 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_1_NAME:-Copter1}
+      # Force rmw_fastrtps onto UDPv4 (no SHM transport). The bridge couples
+      # lidar/images to Iceoryx + FastDDS shared-memory; on this multi-process,
+      # ipc:host setup the SHM path delivers to NO subscriber (not even the
+      # co-located registration node / rviz), while plain UDP (mavros) works and
+      # also reaches the Orin over the network. Override with BRIDGE_FASTDDS_PROFILE
+      # (empty string restores default SHM+UDP).
+      - FASTRTPS_DEFAULT_PROFILES_FILE=${BRIDGE_FASTDDS_PROFILE-/cfg/fastdds-udp-only.xml}
 
     volumes:
       - /dev/shm:/dev/shm:rw
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      - ${CONFIG_ROOT:-./config}/fastdds/fastdds-udp-only.xml:/cfg/fastdds-udp-only.xml:ro
 
     # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
     # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
@@ -254,6 +280,15 @@ services:
     networks: !reset []
     ports: !reset []
     ipc: host
+    # pid:host unifies the PID namespace across containers. Required because
+    # ipc:host + shared /dev/shm makes all ROS2 participants share FastDDS SHM
+    # segments, but FastDDS's SHM port liveliness check resolves writer PIDs in
+    # the local namespace. With per-container PID namespaces those PIDs map to
+    # wrong/dead processes -> the domain SHM port is repeatedly reset -> data is
+    # silently never delivered (discovery still works over UDP). Symptom: topics
+    # discoverable but echo/hz get zero messages; rviz TF shows ~4s (tf_static
+    # transient_local) then vanishes when dynamic /tf never arrives.
+    pid: host
 
     user: "${UID:?set UID}:${GID:?set GID}"
 
