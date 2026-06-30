@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Local (same-host) CycloneDDS: bind to loopback. All ROS containers are
+     network_mode:host, so they reach each other on lo. Cross-HOST traffic to the
+     Orin goes over zenoh TCP (zenoh-bridge-ros2dds), not raw DDS, so per-host DDS
+     on lo is correct. Avoids the enp14s0 hardcode in cyclonedds-sim.xml. -->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="lo" multicast="true" priority="default"/>
+      </Interfaces>
+      <AllowMulticast>true</AllowMulticast>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
