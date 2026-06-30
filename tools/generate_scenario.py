@@ -87,6 +87,20 @@ SCENARIOS: dict[str, list[tuple[str, str]]] = {
             "config/unreal-airsim/condo/settings-ardupilot.json",
         ),
     ],
+    "ardupilot-pendleton": [
+        (
+            "compose/ardupilot-pendleton/templates/docker-compose.yml.j2",
+            "compose/ardupilot-pendleton/docker-compose.yml",
+        ),
+        (
+            "compose/ardupilot-pendleton/templates/docker-compose.mavros-test.yml.j2",
+            "compose/ardupilot-pendleton/docker-compose.mavros-test.yml",
+        ),
+        (
+            "config/unreal-airsim/pendleton/templates/settings-ardupilot.json.j2",
+            "config/unreal-airsim/pendleton/settings-ardupilot.json",
+        ),
+    ],
 }
 
 
@@ -351,6 +365,7 @@ CONTEXT_BUILDERS: dict[str, Callable[[dict], dict]] = {
     "px4-condo": build_context_condo,
     "px4-safticity": build_context_condo,
     "ardupilot-condo": build_context_condo,
+    "ardupilot-pendleton": build_context_ardupilot_xfs,
 }
 
 
@@ -651,6 +666,70 @@ def _self_test_px4_safticity() -> None:
     json.loads(body)
 
 
+def _self_test_ardupilot_pendleton() -> None:
+    """Idempotency + invariant checks for several drone counts."""
+    base_env = {
+        "NUM_DRONES": "4",
+        "VEHICLE_PREFIX": "Copter",
+        "DRONE_X_SPACING_M": "8",
+        "MAVLINK_PORT_BASE": "5760",
+        "MAVLINK_PORT_STRIDE": "10",
+        "FDM_TCP_PORT_BASE": "9002",
+        "FDM_UDP_PORT_BASE": "9003",
+        "FDM_PORT_STRIDE": "10",
+        "AGENT_INTERNAL_SUBNET_BASE": "172.28",
+    }
+    j_env = make_env()
+    pairs = SCENARIOS["ardupilot-pendleton"]
+
+    for n in (1, 2, 4):
+        env = dict(base_env, NUM_DRONES=str(n))
+        ctx = build_context_ardupilot_xfs(env)
+
+        renders = [render(j_env, t, ctx) for t, _ in pairs]
+        renders2 = [render(j_env, t, ctx) for t, _ in pairs]
+        for a, b in zip(renders, renders2):
+            assert a == b, f"ardupilot-pendleton render not idempotent for N={n}"
+
+        compose_yaml, mavros_yaml, settings_json = renders
+
+        assert compose_yaml.count("ardupilot-pendleton-drone-") >= n, \
+            f"expected at least {n} SITL containers in compose for N={n}"
+        for d in ctx["drones"]:
+            assert f"ardupilot-drone-{d.instance}:" in compose_yaml, \
+                f"missing SITL service for drone instance {d.instance}"
+            assert f"airsim_bridge_d{d.n}:" in compose_yaml, \
+                f"missing bridge service for drone {d.n}"
+            assert f"agent_internal-{d.n}" in compose_yaml, \
+                f"missing agent_internal-{d.n} attachment"
+            assert f"mavros_d{d.n}:" in mavros_yaml, \
+                f"missing mavros service for drone {d.n}"
+            assert f'"{d.vehicle}":' in settings_json, \
+                f"missing {d.vehicle} in settings.json"
+
+        assert "airsim-pendleton:" in compose_yaml, "airsim-pendleton service missing"
+        assert "enable_coordination:=true" not in compose_yaml, \
+            "enable_coordination must be false on every bridge"
+        assert compose_yaml.count("enable_coordination:=false") == n, \
+            f"expected {n} bridges with enable_coordination:=false for N={n}"
+        for label, body in (("compose", compose_yaml), ("mavros", mavros_yaml), ("settings", settings_json)):
+            assert "{{" not in body and "{%" not in body, \
+                f"unsubstituted Jinja in {label} output for N={n}"
+
+    settings_tmpl = pairs[2][0]
+    off = render(j_env, settings_tmpl,
+                 build_context_ardupilot_xfs(dict(base_env, NUM_DRONES="2")))
+    assert '"Cameras": {}' in off, "cameras must default to empty"
+    assert '"ArduCopter"' in off, "VehicleType ArduCopter missing"
+    json.loads(off)
+    on = render(j_env, settings_tmpl,
+                build_context_ardupilot_xfs(dict(base_env, NUM_DRONES="2",
+                                                 CAMERA_ENABLE="true",
+                                                 CAMERA_WIDTH="640")))
+    assert '"Camera1":' in on, "camera block missing when enabled"
+    json.loads(on)
+
+
 # scenario -> self-test function. Tasks registering new scenarios add entries.
 SELF_TESTS: dict[str, Callable[[], None]] = {
     "ardupilot-xfs": _self_test_ardupilot_xfs,
@@ -658,6 +737,7 @@ SELF_TESTS: dict[str, Callable[[], None]] = {
     "px4-condo": _self_test_px4_condo,
     "px4-safticity": _self_test_px4_safticity,
     "ardupilot-condo": _self_test_ardupilot_condo,
+    "ardupilot-pendleton": _self_test_ardupilot_pendleton,
 }
 
 _missing_builders = SCENARIOS.keys() - CONTEXT_BUILDERS.keys()

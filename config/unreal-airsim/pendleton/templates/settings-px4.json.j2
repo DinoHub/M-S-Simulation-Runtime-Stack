@@ -1,0 +1,96 @@
+{
+  "_comment": "GENERATED FILE — do not edit by hand. Regenerate via tools/generate_scenario.py. Source: config/unreal-airsim/xfs/templates/settings-px4.json.j2",
+  "SeeDocsAt": "https://cosys-lab.github.io/settings/",
+  "SettingsVersion": 2.0,
+  "SimMode": "Multirotor",
+  "ClockSpeed": 1,
+  "LocalHostIp": "0.0.0.0",
+  "ApiServerPort": 41451,
+  "RecordUIVisible": false,
+  "MoveWorldOrigin": true,
+  "InitialInstanceSegmentation": false,
+  "LogMessagesVisible": true,
+  "ShowLosDebugLines": false,
+  "ViewMode": "",
+  "RpcEnabled": true,
+  "EngineSound": false,
+  "Wind": { "X": 0, "Y": 0, "Z": 0 },
+  "OriginGeopoint": {
+    "Latitude": 45.09965,
+    "Longitude": -118.81846,
+    "Altitude": 94.0
+  },
+  "PawnPaths": {
+    "SpiritPawn": {"PawnBP": "Class'/Game/Meshes/BP_SpiritPawn.BP_SpiritPawn_C'"},
+    "DjiPawn": {"PawnBP": "Class'/Game/Meshes/BP_MyPawn.BP_MyPawn_C'"}
+  },
+  "TimeOfDay": {
+    "Enabled": false,
+    "StartDateTime": "",
+    "CelestialClockSpeed": 1,
+    "StartDateTimeDst": false,
+    "UpdateIntervalSecs": 60
+  },
+  "Vehicles": {
+{% for d in px4_drones %}
+    "{{ vehicle_prefix }}{{ d.n }}": {
+      "VehicleType": "PX4Multirotor",
+      "DefaultVehicleState": "Disarmed",
+      "AutoCreate": true,
+      "X": {{ d.x_offset }}, "Y": 0, "Z": 0,
+      "UseSerial": false,
+      "LockStep": false,
+      "UseTcp": true,
+      "TcpPort": {{ d.tcp_port }},
+      "ControlIp": "127.0.0.1",
+      "ControlPortLocal": {{ d.control_local }},
+      "ControlPortRemote": {{ d.control_remote }},
+      "LocalHostIp": "0.0.0.0",
+      "Sensors": {
+        "Barometer": {
+          "SensorType": 1,
+          "Enabled": true,
+          "PressureFactorSigma": 0.0001825
+        },
+        "Gps": {
+          "SensorType": 3,
+          "Enabled": true,
+          "EphTimeConstant": 0.3,
+          "EpvTimeConstant": 0.3,
+          "EphInitial": 2.0,
+          "EpvInitial": 3.0,
+          "EphFinal": 0.1,
+          "EpvFinal": 0.1,
+          "EphMin3d": 3.0,
+          "EphMin2d": 4.0,
+          "UpdateLatency": 0.1,
+          "UpdateFrequency": 50,
+          "StartupDelay": 0
+        },
+        "LidarSensor1": {
+          "SensorType": 6,
+          "Enabled": true,
+          "ExternalController": false,
+          "NumberOfChannels": 16,
+          "RotationsPerSecond": 30,
+          "PointsPerSecond": 200000,
+          "X": 0,
+          "Y": 0,
+          "Z": 0.5,
+          "Roll": 0,
+          "Pitch": 0,
+          "Yaw": 0,
+          "VerticalFOVUpper": 15,
+          "VerticalFOVLower": -25,
+          "HorizontalFOVStart": -180,
+          "HorizontalFOVEnd": 180,
+          "DrawDebugPoints": false
+        }
+      },
+{% include 'config/unreal-airsim/_partials/cameras.json.j2' %}
+    }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+  },
+  "Recording": { "RecordOnMove": false, "RecordInterval": 0.05 }
+}
