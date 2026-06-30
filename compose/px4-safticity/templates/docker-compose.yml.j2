@@ -329,6 +329,46 @@ services:
         enable_dds_cleanup:=true
 
   # ============================================================================
+  # Registration pose-extrapolation tuner (CycloneDDS fix)
+  # ----------------------------------------------------------------------------
+  # Under CycloneDDS, ground_truth/odom is delivered ~0.25s behind the LiDAR, so
+  # the registration node's pose buffer lags past its default 0.1s extrapolation
+  # limit -> every scan is dropped (lookup_pose_at_timestamp fails) and
+  # registered_point_cloud stays empty. Widen the tolerance via a live param.
+  # The bridge image's launch does not expose this arg, so a tiny sidecar re-applies
+  # it (and re-applies after any bridge restart). Proper fix: expose
+  # max_pose_extrapolation_sec in single_vehicle.launch.py on the next image build.
+  # No-op on FastDDS (set LOCAL_OBS_MAX_EXTRAP=0.1 to disable widening).
+  # ============================================================================
+  registration_tune_d1:
+    image: ${AIRSIM_BRIDGE_IMAGE:-tevv-airsim-ros2-bridge:humble}
+    container_name: registration_tune_d1
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    pid: host
+    user: "${UID:?set UID}:${GID:?set GID}"
+    environment:
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=${ROS_RMW:-rmw_cyclonedds_cpp}
+      - CYCLONEDDS_URI=${CYCLONEDDS_URI:-file:///cfg/cyclonedds-local.xml}
+    volumes:
+      - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-local.xml:/cfg/cyclonedds-local.xml:ro
+    depends_on:
+      airsim_bridge_d1:
+        condition: service_started
+    entrypoint: ["bash", "-lc"]
+    command:
+      - >
+        source /opt/ros/humble/setup.bash;
+        node=/${VEHICLE_1_NAME:-Copter1}_registration;
+        while true; do
+        ros2 param set "$$node" max_pose_extrapolation_sec ${LOCAL_OBS_MAX_EXTRAP:-0.5} >/dev/null 2>&1 && echo "[tune] $$node extrap=${LOCAL_OBS_MAX_EXTRAP:-0.5}";
+        sleep 30;
+        done
+
+  # ============================================================================
   # QGroundControl X11
   # ============================================================================
   qgroundcontrol-x11:
