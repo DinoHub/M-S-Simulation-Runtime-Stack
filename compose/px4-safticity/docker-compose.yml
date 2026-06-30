@@ -233,11 +233,13 @@ services:
       # FastDDS local graph can't be ingested by the Cyclone zenoh bridge).
       # The bridge's FastDDS SHM/Iceoryx path delivered to NO subscriber under
       # ipc:host; Cyclone-on-lo avoids that AND unifies local + cross-host transport.
-      # FALLBACK to FastDDS-UDP (no SHM) — set both:
-      #   ROS_RMW=rmw_fastrtps_cpp  BRIDGE_FASTDDS_PROFILE=/cfg/fastdds-udp-only.xml
-      - RMW_IMPLEMENTATION=${ROS_RMW:-rmw_cyclonedds_cpp}
+      # FALLBACK to FastDDS-UDP (no SHM) — flip ONE knob:
+      #   RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      # The UDP-only profile is always mounted+defaulted below, so it auto-applies
+      # under FastDDS (and is ignored under Cyclone) — no second var to remember.
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       - CYCLONEDDS_URI=${CYCLONEDDS_URI:-file:///cfg/cyclonedds-local.xml}
-      - FASTRTPS_DEFAULT_PROFILES_FILE=${BRIDGE_FASTDDS_PROFILE-}
+      - FASTRTPS_DEFAULT_PROFILES_FILE=${BRIDGE_FASTDDS_PROFILE:-/cfg/fastdds-udp-only.xml}
 
     volumes:
       - /dev/shm:/dev/shm:rw
@@ -314,13 +316,15 @@ services:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=0
       # Match airsim_bridge_d1's DDS transport so mavros joins the same local
-      # graph (default CycloneDDS on lo). Fallback: ROS_RMW=rmw_fastrtps_cpp.
-      - RMW_IMPLEMENTATION=${ROS_RMW:-rmw_cyclonedds_cpp}
+      # graph (default CycloneDDS on lo). Fallback: RMW_IMPLEMENTATION=rmw_fastrtps_cpp.
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       - CYCLONEDDS_URI=${CYCLONEDDS_URI:-file:///cfg/cyclonedds-local.xml}
+      - FASTRTPS_DEFAULT_PROFILES_FILE=${BRIDGE_FASTDDS_PROFILE:-/cfg/fastdds-udp-only.xml}
 
     volumes:
       - /dev/shm:/dev/shm:rw
       - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-local.xml:/cfg/cyclonedds-local.xml:ro
+      - ${CONFIG_ROOT:-./config}/fastdds/fastdds-udp-only.xml:/cfg/fastdds-udp-only.xml:ro
 
     command:
       - "bash"
@@ -356,7 +360,7 @@ services:
     environment:
       - HOME=/tmp
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - RMW_IMPLEMENTATION=${ROS_RMW:-rmw_cyclonedds_cpp}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       - CYCLONEDDS_URI=${CYCLONEDDS_URI:-file:///cfg/cyclonedds-local.xml}
     volumes:
       - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-local.xml:/cfg/cyclonedds-local.xml:ro
@@ -369,7 +373,7 @@ services:
         source /opt/ros/humble/setup.bash;
         node=/${VEHICLE_1_NAME:-Copter1}_registration;
         while true; do
-        ros2 param set "$$node" max_pose_extrapolation_sec ${LOCAL_OBS_MAX_EXTRAP:-0.5} >/dev/null 2>&1 && echo "[tune] $$node extrap=${LOCAL_OBS_MAX_EXTRAP:-0.5}";
+        ros2 param set "$$node" max_pose_extrapolation_sec ${LOCAL_OBS_MAX_EXTRAP:-0.5} >/dev/null 2>&1 && echo "[tune] $$node extrap=${LOCAL_OBS_MAX_EXTRAP:-0.5}" || echo "[tune] $$node not reachable (rtabmap registration_source, or node not up yet) — skipping";
         sleep 30;
         done
 

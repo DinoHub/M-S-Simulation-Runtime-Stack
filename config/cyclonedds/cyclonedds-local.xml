@@ -14,6 +14,19 @@
     </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
+      <!-- Default cap is 9 participants/host/domain. Host-networked = one
+           participant PER node; the px4-safticity graph (bridge + mavros +
+           registration + rviz + every ros2 CLI call) exceeds it and late
+           participants fail with "Failed to find a free participant index".
+           120 gives headroom (mirrors cyclonedds-sim.xml). -->
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
     </Discovery>
+    <Internal>
+      <!-- 10MB receive-buffer floor; needs host net.core.rmem_max>=16MB
+           (scripts/setup-host.sh). Without it the OS-default buffer drops
+           discovery/data packets on the busy graph (big lidar/registered clouds).
+           Current schema (min= attr); the old element is silently ignored. -->
+      <SocketReceiveBufferSize min="10MB" />
+    </Internal>
   </Domain>
 </CycloneDDS>
