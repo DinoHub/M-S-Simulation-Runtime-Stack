@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Local (same-host) CycloneDDS: bind to loopback. All ROS containers are
-     network_mode:host, so they reach each other on lo. Cross-HOST traffic to the
-     Orin goes over zenoh TCP (zenoh-bridge-ros2dds), not raw DDS, so per-host DDS
-     on lo is correct. Avoids the enp14s0 hardcode in cyclonedds-sim.xml. -->
+<!-- Local (same-host) CycloneDDS for the px4-safticity graph: bind to loopback,
+     discover over UNICAST to localhost. All ROS containers are network_mode:host
+     so they reach each other on lo; cross-HOST traffic to the Orin goes over
+     zenoh TCP (zenoh-bridge-ros2dds), not raw DDS, so per-host DDS stays on lo.
+
+     UNICAST (not multicast): the deployment hosts run k8s/Calico, which drops
+     multicast — including same-host loopback on a real NIC — so AllowMulticast
+     would silently break discovery on the real sim host. Unicast to 127.0.0.1
+     always works. Mirrors config/cyclonedds.xml in the bridge repo. -->
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain id="any">
     <General>
       <Interfaces>
-        <NetworkInterface name="lo" multicast="true" priority="default"/>
+        <NetworkInterface name="lo" priority="default" multicast="default"/>
       </Interfaces>
-      <AllowMulticast>true</AllowMulticast>
+      <AllowMulticast>false</AllowMulticast>
       <MaxMessageSize>65500B</MaxMessageSize>
     </General>
     <Discovery>
@@ -20,13 +25,20 @@
            participants fail with "Failed to find a free participant index".
            120 gives headroom (mirrors cyclonedds-sim.xml). -->
       <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      <!-- Unicast-only: localhost is the sole discovery path (AllowMulticast=false
+           above). No cross-host peers — the graph stays on this box. -->
+      <Peers>
+        <Peer address="localhost"/>
+      </Peers>
     </Discovery>
     <Internal>
-      <!-- 10MB receive-buffer floor; needs host net.core.rmem_max>=16MB
-           (scripts/setup-host.sh). Without it the OS-default buffer drops
-           discovery/data packets on the busy graph (big lidar/registered clouds).
-           Current schema (min= attr); the old element is silently ignored. -->
-      <SocketReceiveBufferSize min="10MB" />
+      <!-- 10MB rx+tx buffer floors for large samples (lidar/registered clouds);
+           needs host net.core.rmem_max/wmem_max>=16MB (scripts/setup-host.sh).
+           Without it the OS-default buffer drops discovery/data packets on the
+           busy graph. Current schema (min= attr); the old element is silently
+           ignored. Send buffer matters too — the publisher socket needs headroom. -->
+      <SocketReceiveBufferSize min="10MB"/>
+      <SocketSendBufferSize min="10MB"/>
     </Internal>
   </Domain>
 </CycloneDDS>
