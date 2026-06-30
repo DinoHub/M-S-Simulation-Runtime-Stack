@@ -204,7 +204,18 @@ services:
       - HOME=/tmp
       - DISPLAY=${DISPLAY:-:0}
       - XAUTHORITY=/tmp/.Xauthority
+      # DDS: defaults preserve FastDDS on domain 0. To match the Orin perception
+      # stack (Cyclone, domain 42), set these in .env ON THE SIM HOST ONLY — the
+      # mounted cyclonedds-sim.xml hardcodes that host's NIC (enp14s0) + the
+      # 192.168.100.x unicast peers, so enabling it on a box without that NIC
+      # aborts cyclone ("does not match an available interface") and every node
+      # dies. See the "Cyclone DDS (sim<->Orin)" block in .env.
+      #   RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      #   CYCLONEDDS_URI=file:///cfg/cyclonedds-sim.xml
+      #   ROS_DOMAIN_ID=42
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-}
+      - CYCLONEDDS_URI=${CYCLONEDDS_URI:-}
       - ROS_LOCALHOST_ONLY=0
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
@@ -215,6 +226,9 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Cyclone sim config (used only when CYCLONEDDS_URI points here). Each host
+      # edits the NetworkInterface name + <Peers> in this file to match itself.
+      - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-sim.xml:/cfg/cyclonedds-sim.xml:ro
 
     # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
     # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
@@ -271,11 +285,17 @@ services:
     environment:
       # Same writable-HOME fix as airsim_bridge_d1.
       - HOME=/tmp
+      # DDS: MUST match airsim_bridge_d1 (same defaults / same .env overrides) or
+      # mavros and the bridge land in different DDS graphs and never discover
+      # each other. Defaults preserve FastDDS/domain 0; enable Cyclone via .env.
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-}
+      - CYCLONEDDS_URI=${CYCLONEDDS_URI:-}
       - ROS_LOCALHOST_ONLY=0
 
     volumes:
       - /dev/shm:/dev/shm:rw
+      - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-sim.xml:/cfg/cyclonedds-sim.xml:ro
 
     command:
       - "bash"
