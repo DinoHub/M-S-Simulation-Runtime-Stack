@@ -14,3 +14,6 @@ __pycache__/
 
 # UE5 crash-dump captures pulled from xfs containers for local debugging
 xfs-container-crashes/
+
+# python
+.venv
