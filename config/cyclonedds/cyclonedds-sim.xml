@@ -29,7 +29,13 @@
   <Domain id="any">
     <General>
       <Interfaces>
-        <NetworkInterface name="enp14s0" priority="default" multicast="default" />
+        <!-- NIC + peer IPs are set from .env (CycloneDDS expands ${VAR:-default}
+             in the config), so you configure the Ethernet link there, not here:
+               CYCLONE_IFACE  = this host's Ethernet NIC (ip -br link)
+               SIM_HOST_IP    = this host on that NIC
+               ORIN_IP        = the Orin on that NIC
+             Defaults are the .101/.167 deployment values. -->
+        <NetworkInterface name="${CYCLONE_IFACE:-enp14s0}" priority="default" multicast="default" />
       </Interfaces>
       <!-- UNICAST-ONLY discovery. The host's k8s/Calico firewall drops multicast
            (even same-host loopback on enp14s0), so multicast discovery never works
@@ -59,8 +65,8 @@
            Add more <Peer> lines as hosts join. NOTE: the Orin runs its OWN copy of
            this file (casio-edge, docker/cyclonedds-sim.xml) — apply the same peers there. -->
       <Peers>
-        <Peer address="192.168.100.101" />
-        <Peer address="192.168.100.167" />
+        <Peer address="${SIM_HOST_IP:-192.168.100.101}" />
+        <Peer address="${ORIN_IP:-192.168.100.167}" />
       </Peers>
     </Discovery>
     <Internal>
@@ -72,6 +78,10 @@
            graph drops discovery/data packets. Use the current schema so the floor
            is actually enforced. Mirror this in cyclonedds.xml and the Orin's copy. -->
       <SocketReceiveBufferSize min="10MB" />
+      <!-- Send-buffer floor too: the publisher socket needs headroom for the
+           registered/lidar clouds crossing to the Orin. Needs host wmem_max>=16MB
+           (setup-host.sh, both hosts). -->
+      <SocketSendBufferSize min="10MB" />
     </Internal>
   </Domain>
 </CycloneDDS>
