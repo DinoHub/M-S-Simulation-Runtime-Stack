@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Local (same-host) CycloneDDS for the px4-safticity graph: bind to loopback,
+     discover over UNICAST to localhost. All ROS containers are network_mode:host
+     so they reach each other on lo; cross-HOST traffic to the Orin goes over
+     zenoh TCP (zenoh-bridge-ros2dds), not raw DDS, so per-host DDS stays on lo.
+
+     UNICAST (not multicast): the deployment hosts run k8s/Calico, which drops
+     multicast — including same-host loopback on a real NIC — so AllowMulticast
+     would silently break discovery on the real sim host. Unicast to 127.0.0.1
+     always works. Mirrors config/cyclonedds.xml in the bridge repo. -->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="lo" priority="default" multicast="default"/>
+      </Interfaces>
+      <AllowMulticast>false</AllowMulticast>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <!-- Default cap is 9 participants/host/domain. Host-networked = one
+           participant PER node; the px4-safticity graph (bridge + mavros +
+           registration + rviz + every ros2 CLI call) exceeds it and late
+           participants fail with "Failed to find a free participant index".
+           120 gives headroom (mirrors cyclonedds-sim.xml). -->
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      <!-- Unicast-only: localhost is the sole discovery path (AllowMulticast=false
+           above). No cross-host peers — the graph stays on this box. -->
+      <Peers>
+        <Peer address="localhost"/>
+      </Peers>
+    </Discovery>
+    <!-- NO hard socket-buffer floor on this loopback default: it must come up on
+         plain dev boxes (untuned net.core.rmem_max ~208KB). A `min="10MB"` floor
+         HARD-ABORTS Cyclone domain creation there ("failed to increase socket
+         receive buffer size to at least 10485760 bytes") and every ROS node dies.
+         Loopback same-host delivers fine on the OS-default buffer (verified: 20Hz
+         registered cloud). The cross-host cyclonedds-sim.xml keeps the 10MB floor
+         (that path needs setup-host.sh + a real link anyway). On a host that HAS
+         run setup-host.sh (rmem_max>=16MB) and wants bigger loopback buffers, add:
+           <Internal><SocketReceiveBufferSize max="10MB"/>
+                     <SocketSendBufferSize max="10MB"/></Internal>
+         Use max= (best-effort request), NOT min= (hard floor that aborts). -->
+  </Domain>
+</CycloneDDS>

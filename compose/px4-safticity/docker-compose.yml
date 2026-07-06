@@ -16,6 +16,11 @@ services:
     hostname: airsim-safti
     restart: unless-stopped
 
+    # `sim` profile: launch.sh enables it by default, drops it with --editor so
+    # AirSim runs from the Unreal editor on the host instead. Bridges depend on
+    # this service with required: false, so skipping the profile is clean.
+    profiles: ["sim"]
+
     depends_on:
       pixel-streaming-signalling:
         condition: service_healthy
@@ -51,6 +56,15 @@ services:
     networks: !reset []
     ports: !reset []
     ipc: host
+    # pid:host unifies the PID namespace across containers. Required because
+    # ipc:host + shared /dev/shm makes all ROS2 participants share FastDDS SHM
+    # segments, but FastDDS's SHM port liveliness check resolves writer PIDs in
+    # the local namespace. With per-container PID namespaces those PIDs map to
+    # wrong/dead processes -> the domain SHM port is repeatedly reset -> data is
+    # silently never delivered (discovery still works over UDP). Symptom: topics
+    # discoverable but echo/hz get zero messages; rviz TF shows ~4s (tf_static
+    # transient_local) then vanishes when dynamic /tf never arrives.
+    pid: host
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
@@ -105,7 +119,9 @@ services:
   # ============================================================================
   px4-drone-1:
     image: ${PX4_IMAGE:-dhdevspace/auto_mns:px4-airsim-px4}
-    pull_policy: always
+    # if_not_present (not always): a local-only overlay tag (PX4_IMAGE) must not
+    # be re-pulled — `always` reverts it to the registry image (no C2/14555).
+    pull_policy: if_not_present
     container_name: px4-drone-1
     hostname: px4-drone-1
     restart: "no"
@@ -117,6 +133,9 @@ services:
       # binds 4560 only once AirSim is up and retrying its connection.
       airsim-safti:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     init: true
 
@@ -173,6 +192,15 @@ services:
     networks: !reset []
     ports: !reset []
     ipc: host
+    # pid:host unifies the PID namespace across containers. Required because
+    # ipc:host + shared /dev/shm makes all ROS2 participants share FastDDS SHM
+    # segments, but FastDDS's SHM port liveliness check resolves writer PIDs in
+    # the local namespace. With per-container PID namespaces those PIDs map to
+    # wrong/dead processes -> the domain SHM port is repeatedly reset -> data is
+    # silently never delivered (discovery still works over UDP). Symptom: topics
+    # discoverable but echo/hz get zero messages; rviz TF shows ~4s (tf_static
+    # transient_local) then vanishes when dynamic /tf never arrives.
+    pid: host
 
     user: "${UID:?set UID}:${GID:?set GID}"
 
@@ -183,6 +211,9 @@ services:
       # airsim-safti healthcheck (RPC port open).
       airsim-safti:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     environment:
       # HOME must point at a writable dir: the container runs as uid 1000,
@@ -196,12 +227,34 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_1_NAME:-Copter1}
+      # DDS transport. DEFAULT = CycloneDDS bound to loopback (cyclonedds-local.xml):
+      # the whole local graph is one Cyclone domain on lo, which the Cyclone-based
+      # zenoh-bridge-ros2dds reads NATIVELY for cross-host egress to the Orin (a
+      # FastDDS local graph can't be ingested by the Cyclone zenoh bridge).
+      # The bridge's FastDDS SHM/Iceoryx path delivered to NO subscriber under
+      # ipc:host; Cyclone-on-lo avoids that AND unifies local + cross-host transport.
+      # FALLBACK to FastDDS-UDP (no SHM) — flip ONE knob:
+      #   RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      # The UDP-only profile is always mounted+defaulted below, so it auto-applies
+      # under FastDDS (and is ignored under Cyclone) — no second var to remember.
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      - CYCLONEDDS_URI=${CYCLONEDDS_URI:-file:///cfg/cyclonedds-local.xml}
+      # Ethernet NIC + peer IPs for DIRECT cross-host Cyclone to the Orin. Inert
+      # under the loopback default; consumed (via ${VAR} expansion in the config)
+      # only when CYCLONEDDS_URI points at cyclonedds-sim.xml. Set in .env.
+      - CYCLONE_IFACE=${CYCLONE_IFACE:-enp14s0}
+      - SIM_HOST_IP=${SIM_HOST_IP:-192.168.100.101}
+      - ORIN_IP=${ORIN_IP:-192.168.100.167}
+      - FASTRTPS_DEFAULT_PROFILES_FILE=${BRIDGE_FASTDDS_PROFILE:-/cfg/fastdds-udp-only.xml}
 
     volumes:
       - /dev/shm:/dev/shm:rw
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-local.xml:/cfg/cyclonedds-local.xml:ro
+      - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-sim.xml:/cfg/cyclonedds-sim.xml:ro
+      - ${CONFIG_ROOT:-./config}/fastdds/fastdds-udp-only.xml:/cfg/fastdds-udp-only.xml:ro
 
     # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
     # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
@@ -224,8 +277,9 @@ services:
   # ============================================================================
   # MAVROS toward the PX4 SITL (same image family — ships airsim_mavros_bringup
   # + mavros + mavros_msgs). The PX4 image's mavlink-router has a dedicated
-  # MAVROS UDP endpoint that sends to 127.0.0.1:14560 (per-instance: 14560+i).
-  # MAVROS binds :14560 with no fixed remote and locks onto the router's
+  # MAVROS UDP endpoint is a Server on 0.0.0.0:14555 (per-instance: 14555+i).
+  # MAVROS dials it (udp://:0@<px4-host>:14555) so it sends first and the router
+  # learns its
   # source address from the first packet. Do NOT use tcp 5760 (that's the
   # router's QGC TCP server — its sends error out under mavros) and do NOT
   # bind 14540/14550 (AirSim and QGC own those sockets respectively).
@@ -245,6 +299,15 @@ services:
     networks: !reset []
     ports: !reset []
     ipc: host
+    # pid:host unifies the PID namespace across containers. Required because
+    # ipc:host + shared /dev/shm makes all ROS2 participants share FastDDS SHM
+    # segments, but FastDDS's SHM port liveliness check resolves writer PIDs in
+    # the local namespace. With per-container PID namespaces those PIDs map to
+    # wrong/dead processes -> the domain SHM port is repeatedly reset -> data is
+    # silently never delivered (discovery still works over UDP). Symptom: topics
+    # discoverable but echo/hz get zero messages; rviz TF shows ~4s (tf_static
+    # transient_local) then vanishes when dynamic /tf never arrives.
+    pid: host
 
     user: "${UID:?set UID}:${GID:?set GID}"
 
@@ -259,9 +322,23 @@ services:
       - HOME=/tmp
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=0
+      # Match airsim_bridge_d1's DDS transport so mavros joins the same local
+      # graph (default CycloneDDS on lo). Fallback: RMW_IMPLEMENTATION=rmw_fastrtps_cpp.
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      - CYCLONEDDS_URI=${CYCLONEDDS_URI:-file:///cfg/cyclonedds-local.xml}
+      # Ethernet NIC + peer IPs for DIRECT cross-host Cyclone to the Orin. Inert
+      # under the loopback default; consumed (via ${VAR} expansion in the config)
+      # only when CYCLONEDDS_URI points at cyclonedds-sim.xml. Set in .env.
+      - CYCLONE_IFACE=${CYCLONE_IFACE:-enp14s0}
+      - SIM_HOST_IP=${SIM_HOST_IP:-192.168.100.101}
+      - ORIN_IP=${ORIN_IP:-192.168.100.167}
+      - FASTRTPS_DEFAULT_PROFILES_FILE=${BRIDGE_FASTDDS_PROFILE:-/cfg/fastdds-udp-only.xml}
 
     volumes:
       - /dev/shm:/dev/shm:rw
+      - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-local.xml:/cfg/cyclonedds-local.xml:ro
+      - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-sim.xml:/cfg/cyclonedds-sim.xml:ro
+      - ${CONFIG_ROOT:-./config}/fastdds/fastdds-udp-only.xml:/cfg/fastdds-udp-only.xml:ro
 
     command:
       - "bash"
@@ -269,10 +346,57 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_1_NAME:-Copter1}
-        fcu_url:=${MAVROS_FCU_URL:-udp://:14560@}
+        fcu_url:=${MAVROS_FCU_URL:-udp://:0@127.0.0.1:14555}
         target_system_id:=1
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:=true
+
+  # ============================================================================
+  # Registration pose-extrapolation tuner (CycloneDDS fix)
+  # ----------------------------------------------------------------------------
+  # Under CycloneDDS, ground_truth/odom is delivered ~0.25s behind the LiDAR, so
+  # the registration node's pose buffer lags past its default 0.1s extrapolation
+  # limit -> every scan is dropped (lookup_pose_at_timestamp fails) and
+  # registered_point_cloud stays empty. Widen the tolerance via a live param.
+  # The bridge image's launch does not expose this arg, so a tiny sidecar re-applies
+  # it (and re-applies after any bridge restart). Proper fix: expose
+  # max_pose_extrapolation_sec in single_vehicle.launch.py on the next image build.
+  # No-op on FastDDS (set LOCAL_OBS_MAX_EXTRAP=0.1 to disable widening).
+  # ============================================================================
+  registration_tune_d1:
+    image: ${AIRSIM_BRIDGE_IMAGE:-tevv-airsim-ros2-bridge:humble}
+    container_name: registration_tune_d1
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    pid: host
+    user: "${UID:?set UID}:${GID:?set GID}"
+    environment:
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      - CYCLONEDDS_URI=${CYCLONEDDS_URI:-file:///cfg/cyclonedds-local.xml}
+      # Ethernet NIC + peer IPs for DIRECT cross-host Cyclone to the Orin. Inert
+      # under the loopback default; consumed (via ${VAR} expansion in the config)
+      # only when CYCLONEDDS_URI points at cyclonedds-sim.xml. Set in .env.
+      - CYCLONE_IFACE=${CYCLONE_IFACE:-enp14s0}
+      - SIM_HOST_IP=${SIM_HOST_IP:-192.168.100.101}
+      - ORIN_IP=${ORIN_IP:-192.168.100.167}
+    volumes:
+      - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-local.xml:/cfg/cyclonedds-local.xml:ro
+      - ${CONFIG_ROOT:-./config}/cyclonedds/cyclonedds-sim.xml:/cfg/cyclonedds-sim.xml:ro
+    depends_on:
+      airsim_bridge_d1:
+        condition: service_started
+    entrypoint: ["bash", "-lc"]
+    command:
+      - >
+        source /opt/ros/humble/setup.bash;
+        node=/${VEHICLE_1_NAME:-Copter1}_registration;
+        while true; do
+        ros2 param set "$$node" max_pose_extrapolation_sec ${LOCAL_OBS_MAX_EXTRAP:-0.5} >/dev/null 2>&1 && echo "[tune] $$node extrap=${LOCAL_OBS_MAX_EXTRAP:-0.5}" || echo "[tune] $$node not reachable (rtabmap registration_source, or node not up yet) — skipping";
+        sleep 30;
+        done
 
   # ============================================================================
   # QGroundControl X11

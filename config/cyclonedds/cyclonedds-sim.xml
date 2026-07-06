@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Cyclone DDS config for SIM / DEV bring-up — DELIBERATELY relaxes the
+  loopback-only isolation of cyclonedds.xml so an off-Jetson simulator can feed
+  the camera into the internal graph.
+
+  Use case: a simulator running on another LAN host (ROS_DOMAIN_ID=42, Cyclone)
+  publishes /camera/image_raw + /camera/camera_info; the Jetson's detection /
+  depth_anything_v3 consume them directly — no bridge (see DEFER.md #1: the
+  bridged, domain-0 path needs the internal stack on Fast DDS first).
+
+  vs. cyclonedds.xml:
+    - Interface: auto-detected default-route NIC (not lo) so traffic leaves the
+      box. Intra-Jetson nodes still find each other because multicast on that NIC
+      loops back locally.
+    - AllowMulticast: ON, so the sim host and Jetson discover each other with no
+      IP hardcoding. If your LAN blocks multicast, set this false and list the
+      sim host under <Peers> (see the commented block below).
+
+  SCOPE: dev/sim on a trusted LAN ONLY. Do NOT use for flight — it removes the
+  isolation that keeps the airframe off other DDS hosts. Activated via
+  docker/compose.sim.yml (./scripts/up.sh in sim mode), which repoints
+  CYCLONEDDS_URI at this file. The host sysctl net.core.rmem_max>=16MB
+  (setup-host.sh) is still required, on BOTH the Jetson and the sim host.
+-->
+<CycloneDDS xmlns="https://cdds.io/config"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <!-- NIC + peer IPs are set from .env (CycloneDDS expands ${VAR:-default}
+             in the config), so you configure the Ethernet link there, not here:
+               CYCLONE_IFACE  = this host's Ethernet NIC (ip -br link)
+               SIM_HOST_IP    = this host on that NIC
+               ORIN_IP        = the Orin on that NIC
+             Defaults are the .101/.167 deployment values. -->
+        <NetworkInterface name="${CYCLONE_IFACE:-enp14s0}" priority="default" multicast="default" />
+      </Interfaces>
+      <!-- UNICAST-ONLY discovery. The host's k8s/Calico firewall drops multicast
+           (even same-host loopback on enp14s0), so multicast discovery never works
+           here — but unicast does (verified to both .101 self and .167 Orin). With
+           multicast off, both SAME-HOST and cross-host discovery run purely off the
+           <Peers> list below, so local participants (rviz, localization/registration,
+           ros2 CLI) AND the Orin all discover each other. No `lo` interface needed. -->
+      <AllowMulticast>false</AllowMulticast>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <!-- Default cap is 9 (10 participants/host/domain). Host-networked, one
+           participant PER node; perception is ~10 nodes plus the sim and every
+           `ros2` CLI call — so the default exhausts ("Failed to find a free
+           participant index for domain 42"). Raise it (mirrors cyclonedds.xml). -->
+      <!-- Unicast discovery probes participant indices 0..MaxAutoParticipantIndex at
+           each peer, so this MUST exceed the participant count (one per node; ~71
+           here). 120 gives headroom. Too low = late participants are undiscoverable. -->
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      <!-- AllowMulticast=false above, so these <Peers> are the ONLY discovery path
+           (not a fallback). .101 covers same-host; .167 the Orin. List EVERY host in the
+           sim<->Jetson graph — Cyclone ignores the entry that resolves to the local
+           box, so the same file works on both ends.
+             192.168.100.101 = sim host (AirSim + tevv bridge)
+             192.168.100.167 = Jetson Orin (casio perception stack)
+           Add more <Peer> lines as hosts join. NOTE: the Orin runs its OWN copy of
+           this file (casio-edge, docker/cyclonedds-sim.xml) — apply the same peers there. -->
+      <Peers>
+        <Peer address="${SIM_HOST_IP:-192.168.100.101}" />
+        <Peer address="${ORIN_IP:-192.168.100.167}" />
+      </Peers>
+    </Discovery>
+    <Internal>
+      <!-- Same hard 10MB floor as cyclonedds.xml; needs host rmem_max>=16MB.
+           NOTE: newer CycloneDDS renamed MinimumSocketReceiveBufferSize to the
+           `min` attribute of SocketReceiveBufferSize. The old element is SILENTLY
+           IGNORED on those builds (it only logs "config: ... setting moved ...")
+           and the receive buffer falls back to the OS default, which on a busy
+           graph drops discovery/data packets. Use the current schema so the floor
+           is actually enforced. Mirror this in cyclonedds.xml and the Orin's copy. -->
+      <SocketReceiveBufferSize min="10MB" />
+      <!-- Send-buffer floor too: the publisher socket needs headroom for the
+           registered/lidar clouds crossing to the Orin. Needs host wmem_max>=16MB
+           (setup-host.sh, both hosts). -->
+      <SocketSendBufferSize min="10MB" />
+    </Internal>
+  </Domain>
+</CycloneDDS>

@@ -12,7 +12,7 @@ fi
 
 usage() {
   cat <<EOF
-Usage: ./launch.sh [scenario] [--headless] [--with-agent-external] [--with-pixel-streaming] [--with-monitoring] [--with-metrics] [--all]
+Usage: ./launch.sh [scenario] [--editor] [--headless] [--with-agent-external] [--with-pixel-streaming] [--with-monitoring] [--with-metrics] [--all]
 
 Scenarios (compose/<scenario>/docker-compose.yml):
 $(ls compose/ | sed 's/^/  /')
@@ -21,6 +21,16 @@ By default only the simulation stack is started.
 Pass --with-monitoring and/or --with-metrics to add cross-cutting stacks,
 or --all as a shortcut for both. These can also be enabled in .env via
 START_MONITORING=true / START_METRICS=true.
+
+--editor skips the containerized AirSim entirely (the `sim` compose profile)
+so you can run AirSim from the Unreal editor on the host instead. Everything
+else (autopilot SITL, per-drone bridges, mavros, QGroundControl) still starts
+and connects to the editor's RPC on localhost:41451 (host networking). The
+launcher blocks until that RPC is listening (Play the level in the editor)
+before starting the bridges, since they query RPC once with no retry — a
+closed port would leave sensor topics with 0 publishers. Wait window is
+EDITOR_RPC_TIMEOUT seconds (default 180; set 0 to wait forever).
+Equivalent .env knob: EDITOR_MODE=true.
 
 --headless runs the containerized AirSim with -RenderOffScreen (no window,
 GPU still renders for cameras and PixelStreaming). Currently only consumed
@@ -51,9 +61,11 @@ START_METRICS="${START_METRICS:-false}"
 AIRSIM_HEADLESS="${AIRSIM_HEADLESS:-false}"
 WITH_AGENT_EXTERNAL="${WITH_AGENT_EXTERNAL:-false}"
 ENABLE_PIXEL_STREAMING="${ENABLE_PIXEL_STREAMING:-false}"
+EDITOR_MODE="${EDITOR_MODE:-false}"
 
 for arg in "$@"; do
   case "$arg" in
+    --editor)              EDITOR_MODE=true ;;
     --with-monitoring)     START_MONITORING=true ;;
     --with-metrics)        START_METRICS=true ;;
     --all)                 START_MONITORING=true; START_METRICS=true ;;
@@ -253,6 +265,18 @@ fi
 # Pick profiles for ardupilot-xfs and px4-condo. Other scenarios don't have
 # profiles wired up yet — pass through unchanged.
 COMPOSE_PROFILE_ARGS=()
+
+# The containerized AirSim sim service is gated behind the `sim` profile so
+# --editor can drop it (run AirSim from the Unreal editor on the host). Default
+# flow always enables `sim`. Every scenario's sim service carries
+# `profiles: ["sim"]` and every bridge depends_on it with `required: false`, so
+# omitting the profile cleanly skips the container without breaking startup.
+if [ "$EDITOR_MODE" = "true" ]; then
+  echo "AirSim source: Unreal editor on host (sim container skipped — launcher will wait for editor RPC before bridges)."
+else
+  COMPOSE_PROFILE_ARGS+=(--profile sim)
+fi
+
 if [ "$SCENARIO" = "ardupilot-xfs" ]; then
   ensure_agent_internal_networks
   COMPOSE_PROFILE_ARGS=(--profile per-drone-bridge)
@@ -276,6 +300,37 @@ case "$SCENARIO" in
     fi
     ;;
 esac
+
+# Editor-mode guard: the per-drone bridges query AirSim's RPC port exactly
+# once with no retry (a closed port leaves sensor topics with 0 publishers).
+# In --editor mode there's no sim container whose service_healthy we can gate
+# on, so block here until the editor's RPC (Play-in-editor) is actually
+# listening before bringing the bridges up. Skipped in default mode (the
+# containerized sim's healthcheck handles ordering).
+rpc_open() {  # $1 host $2 port — true when a TCP connect succeeds
+  if command -v nc >/dev/null 2>&1; then
+    nc -z -w1 "$1" "$2" >/dev/null 2>&1
+  else
+    timeout 1 bash -c "exec 3<>/dev/tcp/$1/$2" >/dev/null 2>&1
+  fi
+}
+if [ "$EDITOR_MODE" = "true" ]; then
+  RPC_HOST="${AIRSIM_HOST_IP:-127.0.0.1}"
+  RPC_PORT="${AIRSIM_RPC_PORT:-41451}"
+  RPC_TIMEOUT="${EDITOR_RPC_TIMEOUT:-180}"
+  echo "Editor mode: waiting for AirSim RPC at ${RPC_HOST}:${RPC_PORT} — Play the level in the Unreal editor."
+  echo "  (timeout ${RPC_TIMEOUT}s, override with EDITOR_RPC_TIMEOUT=0 to wait forever; Ctrl-C aborts)"
+  waited=0
+  until rpc_open "$RPC_HOST" "$RPC_PORT"; do
+    if [ "$RPC_TIMEOUT" -ne 0 ] && [ "$waited" -ge "$RPC_TIMEOUT" ]; then
+      echo "ERROR: AirSim RPC at ${RPC_HOST}:${RPC_PORT} not reachable after ${RPC_TIMEOUT}s."
+      echo "       Is the level playing in the Unreal editor? Aborting before bridges start."
+      exit 1
+    fi
+    sleep 2; waited=$((waited + 2))
+  done
+  echo "AirSim RPC up at ${RPC_HOST}:${RPC_PORT} — starting the rest of the stack."
+fi
 
 echo "Starting simulation stack ($SCENARIO)..."
 docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
