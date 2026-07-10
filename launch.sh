@@ -279,7 +279,7 @@ fi
 
 if [ "$SCENARIO" = "ardupilot-xfs" ]; then
   ensure_agent_internal_networks
-  COMPOSE_PROFILE_ARGS=(--profile per-drone-bridge)
+  COMPOSE_PROFILE_ARGS+=(--profile per-drone-bridge)
   if [ "$WITH_AGENT_EXTERNAL" = "true" ]; then
     COMPOSE_PROFILE_ARGS+=(--profile agent-external)
     echo "Bridge architecture: per-drone + agent_external zenoh bridges"
