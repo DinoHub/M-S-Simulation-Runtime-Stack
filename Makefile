@@ -51,13 +51,13 @@ ifeq ($(ALL),true)
 LAUNCH_FLAGS += --all
 endif
 
-SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo px4-safticity
+SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 
 .PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
-	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo | px4-safticity"
+	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo"
 	@echo "Flag vars (=true): EDITOR HEADLESS AGENT_EXTERNAL PIXEL_STREAMING MONITORING METRICS ALL"
 	@echo "  EDITOR=true skips containerized AirSim (run it from the Unreal editor on host)"
 	@echo "Utility targets:"

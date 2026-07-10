@@ -70,8 +70,8 @@ net-new code.
 ### Manual / teleop run (no planner)
 
 Any motion source works — `/run_state` is the only trigger. Validated example flying
-a live drone by teleop on the px4-safticity stack: publish `RUNNING`, fly, publish
-`COMPLETED`. Live progress is on `/mission/supervisor/{path_length,travel_time,status}`:
+a live drone by teleop on a single-drone stack (e.g. `px4-condo`): publish `RUNNING`,
+fly, publish `COMPLETED`. Live progress is on `/mission/supervisor/{path_length,travel_time,status}`:
 
 ```bash
 # watch accumulating distance/time mid-run
@@ -81,8 +81,8 @@ docker exec metrics-collector bash -lc 'source /opt/ros/*/setup.bash; \
 
 A real teleop run produced `path_length_m: 126.92, travel_time_sec: 273.95,
 odom_messages: 13698, collisions: 0` → verdict PASS → ES `run-summaries/safti-teleop-001`.
-Set `SCENARIO_ID` / `VEHICLE` env to match the stack (safticity uses `Copter1`,
-`/Copter1/ground_truth/odom`).
+Set `SCENARIO_ID` / `VEHICLE` env to match the stack (the single-drone stacks use
+`Copter1`, `/Copter1/ground_truth/odom`).
 
 ## Input / output state
 

@@ -35,8 +35,8 @@ export CONFIG_ROOT="$(cd "$CONFIG_ROOT" && pwd)"
 # Full profile superset. `docker compose down` only removes services in the
 # active profiles (+ profileless services), so every optional profile must be
 # named or its containers orphan: sim (AirSim, all scenarios), per-drone-bridge
-# / agent-external (ardupilot-xfs bridges + zenoh), pixel-streaming (condo +
-# safticity sidecar). Profiles a given scenario doesn't define are no-ops.
+# / agent-external (ardupilot-xfs bridges + zenoh), pixel-streaming (condo
+# sidecar). Profiles a given scenario doesn't define are no-ops.
 ALL_PROFILE_ARGS=(--profile sim --profile per-drone-bridge \
   --profile agent-external --profile pixel-streaming)
 

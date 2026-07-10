@@ -15,8 +15,8 @@ built into the images — `docker compose up` builds them, no separate step).
 Via the launcher (idempotent; brings up sim + the chosen overlays):
 
 ```bash
-./launch.sh px4-safticity --with-monitoring        # sim + monitoring plane
-./launch.sh px4-safticity --all                    # + metrics plane (--with-monitoring + --with-metrics)
+./launch.sh px4-condo --with-monitoring            # sim + monitoring plane
+./launch.sh px4-condo --all                        # + metrics plane (--with-monitoring + --with-metrics)
 # .env equivalents: START_MONITORING=true / START_METRICS=true
 ```
 

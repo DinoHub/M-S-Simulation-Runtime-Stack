@@ -169,7 +169,7 @@ agree or the autopilot's EKF origin jumps when AirSim GPS arrives:
 1. **AirSim `OriginGeopoint`** — maps Unreal world origin `(0,0,0)` to a real
    GPS coordinate. This is the authoritative GPS source at runtime. It is
    **hardcoded in the settings `*.json.j2` template** (e.g.
-   `config/unreal-airsim/safticity/templates/settings-px4.json.j2`), so edit
+   `config/unreal-airsim/condo/templates/settings-px4.json.j2`), so edit
    the template and regenerate (`make generate`), **not** the rendered file.
    In `--editor` / `EDITOR=true` mode the containerized sim is skipped and
    AirSim reads the **host** `~/Documents/AirSim/settings.json` instead — set
@@ -188,7 +188,7 @@ agree or the autopilot's EKF origin jumps when AirSim GPS arrives:
 | `ARDUPILOT_HOME_LAT` / `ARDUPILOT_HOME_LON` / `ARDUPILOT_HOME_ALT` | ardupilot-* scenarios | ArduPilot SITL home |
 
 ```env
-# Match the terrain's OriginGeopoint (e.g. safticity, Singapore)
+# Match the terrain's OriginGeopoint (e.g. a Singapore terrain)
 PX4_HOME_LAT=1.3738003
 PX4_HOME_LON=103.677839
 PX4_HOME_ALT=16.0
@@ -347,7 +347,6 @@ to `launch.sh` / `stop.sh`.
 | Scenario | Autopilot | Drones | Scene | Notes |
 |---|---|---|---|---|
 | `px4-condo` | PX4 SITL | 1 | AirSim Condo | Browser viewer via pixel-streaming-signalling |
-| `px4-safticity` | PX4 SITL | 1 | AirSim SAFTI City | Image `AIRSIM_SAFTI_IMAGE` (default `safti-latest`) |
 | `px4-xfs` | PX4 SITL | 4 | AirSim XFS | Multi-drone swarm |
 | `ardupilot-condo` | ArduPilot SITL | 1 | AirSim Condo | MAVROS over UDP `:14550` |
 | `ardupilot-xfs` | ArduPilot SITL | **N** | AirSim XFS | Per-drone bridges; **N from `NUM_DRONES`**. See [`compose/ardupilot-xfs/README.md`](./compose/ardupilot-xfs/README.md). |
@@ -420,7 +419,7 @@ fcu_url:=udp://:0@127.0.0.1:14555      # instance 0; port is 14555+i per drone
 
 This is the compose default. To override:
 
-- single-drone (`px4-condo`, `px4-safticity`): set `MAVROS_FCU_URL` in `.env`
+- single-drone (`px4-condo`): set `MAVROS_FCU_URL` in `.env`
 - multi-drone (`px4-xfs`): set `DRONE_<N>_FCU_URL` in `.env`
 
 Defaults are produced by `tools/generate_scenario.py` (`mavros_local = 14555+i`)
