@@ -202,6 +202,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-/run/user/1000/gdm/Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
     # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
@@ -211,6 +215,12 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_1_NAME:-Copter1}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
