@@ -687,6 +687,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -694,6 +698,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_1_NAME:-Copter1}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -789,6 +800,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -796,6 +811,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_2_NAME:-Copter2}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -891,6 +913,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -898,6 +924,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_3_NAME:-Copter3}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -993,6 +1026,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -1000,6 +1037,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_4_NAME:-Copter4}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -1095,6 +1139,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -1102,6 +1150,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_5_NAME:-Copter5}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -1197,6 +1252,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -1204,6 +1263,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_6_NAME:-Copter6}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -1299,6 +1365,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -1306,6 +1376,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_7_NAME:-Copter7}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -1401,6 +1478,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -1408,6 +1489,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_8_NAME:-Copter8}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -1503,6 +1591,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -1510,6 +1602,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_9_NAME:-Copter9}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"

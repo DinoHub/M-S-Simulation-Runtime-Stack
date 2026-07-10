@@ -73,6 +73,11 @@ x-airsim-bridge: &airsim-bridge-defaults
     - /tmp/iceoryx2:/tmp/iceoryx2:rw
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
     - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+    # topic_names.yaml: identity renames that pull settings.json sensor/camera
+    # topics into the remap set so TOPIC_PREFIX=/ flattens them too (the launch
+    # layer's RPC settings-read fails in this image, so those topics would
+    # otherwise keep the <vehicle>/ prefix). Inert with the default prefix.
+    - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
   depends_on:
     # service_healthy (NOT service_started). single_vehicle.launch.py's
     # vehicle node queries AirSim's RPC port on launch ("Loading settings
@@ -342,6 +347,23 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_{{ d.n }}_NAME:-{{ d.vehicle }}}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom etc.
+      # Set TOPIC_PREFIX=/ to flatten every topic to root (/odom, /imu,
+      # /LidarSensor1/points). Use `/`, NOT empty: this is compose exec-form
+      # (no shell), so an empty value passes the literal argv token
+      # `topic_prefix:=` and `ros2 launch` rejects it ("malformed launch
+      # argument"). `/` resolves to the same flat root ("/" + rel.lstrip("/"))
+      # and is a valid non-empty value. `:-` coerces an accidental empty back to
+      # the prefixed default rather than crash-looping the bridge. Each bridge
+      # runs ONE vehicle on its own agent_internal-N net + ROS_DOMAIN_ID, so
+      # flat names across drones don't collide (separate DDS domains).
+      # NOTE: TF frame_ids stay <vehicle>/base_link (frames aren't renamed).
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      # Explicit renames (identity) that force settings-driven sensor/camera
+      # topics into the remap set — see the mounted topic_names.yaml. Needed
+      # because the launch RPC settings-read fails here; without it TOPIC_PREFIX=/
+      # only flattens the fixed core topics.
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=host.docker.internal"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"

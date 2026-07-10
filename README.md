@@ -131,6 +131,53 @@ Topics appear as `/<vehicle>/<camera>_Scene/image`.
 > single-threaded RPC server. A sim restart is required after regenerating
 > with changed camera settings.
 
+### Topic naming — prefix, flat mode, renames
+
+Applies to **all four scenarios** (every `airsim_bridge_d*` runs
+`single_vehicle.launch.py`). By default every bridge topic is namespaced per
+vehicle: `/Copter1/odom`, `/Copter1/Imu`, `/Copter1/LidarSensor1/points`, …
+The prefix is controlled by the `topic_prefix` launch arg, exposed via the
+`TOPIC_PREFIX` env var:
+
+| `TOPIC_PREFIX` | Result | Example |
+|---|---|---|
+| _unset_ (default) | per-vehicle prefix | `/Copter1/odom` |
+| `/` | **flat** — all topics at root | `/odom`, `/Imu` |
+
+```bash
+TOPIC_PREFIX=/ make ardupilot-xfs      # or px4-xfs / px4-condo / ardupilot-condo
+```
+
+For the multi-drone scenarios (`ardupilot-xfs`, `px4-xfs`) flat names don't
+collide across the fleet because each drone runs on its own `ROS_DOMAIN_ID`
+(distinct by default) — so `/odom` on drone 1 and drone 2 live on separate DDS
+domains. Flat would only collide if you force every drone onto one domain.
+
+> **Use `/`, not empty.** Compose passes the arg in exec-form (no shell), so an
+> empty value sends the literal token `topic_prefix:=` and `ros2 launch` rejects
+> it (`malformed launch argument`). `/` resolves to the same flat root and is a
+> valid non-empty value. An accidental `TOPIC_PREFIX=` coerces back to the
+> prefixed default rather than crash-looping the bridge.
+
+**Sensor/camera topics need `config/airsim-bridge/topic_names.yaml`** (one
+shared file, mounted by every scenario's bridge). The launch layer normally
+enumerates sensor/camera topics by reading `settings.json` over RPC, but that
+read fails in this bridge image — so `TOPIC_PREFIX=/` alone would flatten only
+the fixed core topics (`odom`, `pose`, `global_gps`, …) and leave `/Copter1/Imu`,
+`/Copter1/LidarSensor1/points`, cameras, etc. prefixed. That yaml lists each such
+topic as an **identity rename**, which forces it into the remap set so
+`topic_prefix` relocates it too. It is a **superset** across scenarios (entries
+for a sensor a scenario doesn't run are harmless no-ops) — e.g. `Imu`/
+`Magnetometer` (ardupilot only), `LidarSensor1/points`+`labels` (CPU LiDAR) vs
+`gpulidar/pointsLidarSensor1` (GPU LiDAR). Keys must match the sensor/camera
+names in that scenario's `config/unreal-airsim/*/settings-*.json`; add a key if
+you introduce a new sensor/camera.
+
+The same file also **renames** topics independently of the prefix: change a
+value (e.g. `odom: odometry`) to expose `/…/odometry`. TF frame_ids are **never**
+renamed — frames stay `Copter1/base_link`, `Copter1/odom` regardless of topic
+prefix or renames.
+
 ### Fisheye cameras
 
 A calibrated fisheye rig, independent of the pinhole `CAMERA_*` block
