@@ -89,6 +89,11 @@ services:
     hostname: airsim-condo
     restart: unless-stopped
 
+    # `sim` profile: launch.sh enables it by default, drops it with --editor so
+    # AirSim runs from the Unreal editor on the host instead. Bridges depend on
+    # this service with required: false, so skipping the profile is clean.
+    profiles: ["sim"]
+
     depends_on:
       ardupilot-drone-0:
         condition: service_started
@@ -180,6 +185,9 @@ services:
       # airsim-condo healthcheck (RPC port open).
       airsim-condo:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     environment:
       # HOME must point at a writable dir: the container runs as uid 1000,

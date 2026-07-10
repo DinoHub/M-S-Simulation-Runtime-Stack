@@ -84,6 +84,9 @@ x-airsim-bridge: &airsim-bridge-defaults
     # the sim is actually safe to query.
     airsim-xfs:
       condition: service_healthy
+      # required: false so --editor (sim profile off) skips this dep instead
+      # of forcing the container up; ordering still enforced when sim runs.
+      required: false
 
 # Per-drone zenoh-bridge-N defaults. Configs at config/zenoh/zenoh_bridge_drone_{1..N}.json5.
 # Profile `agent-external` (NOT `per-drone-bridge`) so zenoh bridges only start
@@ -137,6 +140,11 @@ services:
     container_name: ardupilot-xfs-airsim
     hostname: ardupilot-xfs-airsim
     restart: unless-stopped
+
+    # `sim` profile: launch.sh enables it by default, drops it with --editor so
+    # AirSim runs from the Unreal editor on the host instead. Bridges depend on
+    # this service with required: false, so skipping the profile is clean.
+    profiles: ["sim"]
 
     depends_on:
       pixel-streaming-signalling:

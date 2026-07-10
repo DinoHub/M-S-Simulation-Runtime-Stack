@@ -161,6 +161,45 @@ FISHEYE_COUNT=1
 > resolution or use `FISHEYE_COUNT=1` if it bogs. Sim restart required
 > after regenerating.
 
+### Terrain origin / home position
+
+Two **independent** knobs set "where on Earth the sim is," and they must
+agree or the autopilot's EKF origin jumps when AirSim GPS arrives:
+
+1. **AirSim `OriginGeopoint`** — maps Unreal world origin `(0,0,0)` to a real
+   GPS coordinate. This is the authoritative GPS source at runtime. It is
+   **hardcoded in the settings `*.json.j2` template** (e.g.
+   `config/unreal-airsim/condo/templates/settings-px4.json.j2`), so edit
+   the template and regenerate (`make generate`), **not** the rendered file.
+   In `--editor` / `EDITOR=true` mode the containerized sim is skipped and
+   AirSim reads the **host** `~/Documents/AirSim/settings.json` instead — set
+   `OriginGeopoint` there for the editor level.
+
+2. **Autopilot home (`.env`)** — PX4 / ArduPilot SITL carry their own home /
+   EKF origin, separate from `OriginGeopoint`. These are **not** generator
+   inputs; they are `${VAR:-default}` interpolated by compose at launch, so a
+   change needs only a stack restart (no regen). **You must set them to match
+   the `OriginGeopoint` of the terrain you fly** — otherwise home is wrong
+   before GPS lock and the EKF origin jumps once AirSim's GPS streams in.
+
+| `.env` key | Applies to | Purpose |
+|---|---|---|
+| `PX4_HOME_LAT` / `PX4_HOME_LON` / `PX4_HOME_ALT` | px4-* scenarios | PX4 SITL home / EKF origin |
+| `ARDUPILOT_HOME_LAT` / `ARDUPILOT_HOME_LON` / `ARDUPILOT_HOME_ALT` | ardupilot-* scenarios | ArduPilot SITL home |
+
+```env
+# Match the terrain's OriginGeopoint (e.g. a Singapore terrain)
+PX4_HOME_LAT=1.3738003
+PX4_HOME_LON=103.677839
+PX4_HOME_ALT=16.0
+```
+
+> **Note:** defaults ship as an Idaho test coordinate (`42.76 / -115.57`),
+> **not** the Singapore terrains — always set the home trio when you change
+> map or run `--editor` against a relocated level. If `setup-env.sh`
+> generates a `compose/<scenario>/.env`, it shadows the root `.env`; set the
+> home trio there too.
+
 ### Worked example: 8-drone fleet, custom prefix, flat ROS_DOMAIN_ID
 
 Edit `.env`:
@@ -241,6 +280,8 @@ make ardupilot-xfs                                      # basic launch
 make ardupilot-xfs HEADLESS=true AGENT_EXTERNAL=true    # with flags
 make px4-xfs PIXEL_STREAMING=true                       # UE5 signalling sidecar
 make px4-condo ALL=true                                 # monitoring + metrics
+make dev SCENARIO=px4-xfs                               # launch + tmux dashboard
+make dev EDITOR=true                                    # run AirSim from the Unreal editor on host
 make stop                                               # ./stop.sh
 make logs                                               # ./logs.sh
 make ps                                                 # docker ps formatted
@@ -254,6 +295,7 @@ make ps                                                 # docker ps formatted
 | `--headless` / `HEADLESS=true` | UE5 runs with `-RenderOffScreen` (cameras + PixelStreaming still work) | `AIRSIM_HEADLESS=true` |
 | `--with-pixel-streaming` / `PIXEL_STREAMING=true` | Start UE5 signalling sidecar for browser streaming | `WITH_PIXEL_STREAMING=true` |
 | `--with-agent-external` / `AGENT_EXTERNAL=true` | Also start per-drone `zenoh-bridge-{1..N}` on `agent_external` for `/shared/*` mesh | `WITH_AGENT_EXTERNAL=true` |
+| `--editor` / `EDITOR=true` | Skip the containerized AirSim (`sim` profile off); run AirSim from the Unreal editor on the host instead. Launcher **waits for the editor RPC** (`localhost:41451`, i.e. Play the level) before starting bridges — they query RPC once with no retry (window: `EDITOR_RPC_TIMEOUT`, default 180s, `0` = forever). Set the editor's host `~/Documents/AirSim/settings.json` `OriginGeopoint` + matching `PX4_HOME_*`/`ARDUPILOT_HOME_*` (see Terrain origin) | `EDITOR_MODE=true` |
 
 Running benchmark metrics (goal / exploration / teleop trigger modes, the
 `/run_state` flow, and the `run_state_bridge`) → **`config/metrics-collector/README.md`**.
@@ -343,6 +385,67 @@ Planner behavior is controlled by `LOCAL_PLANNER_MODE` in `.env`.
 | `managed-compose` | This repo brings up the planner's own docker-compose | `LOCAL_PLANNER_DIR`, `LOCAL_PLANNER_COMPOSE_FILE`, optional `LOCAL_PLANNER_PROFILE` |
 
 Configuration reference: [`config/CONFIG_README.md`](./config/CONFIG_README.md).
+
+---
+
+## MAVLink ports & endpoints
+
+The PX4 image's **mavlink-router** is the single hub between PX4 SITL, AirSim,
+QGC, MAVROS, and any C2 client. Its config is generated **inside the image** at
+container start from a baked template (`mavlink-router.conf.template`); the host
+stack only has to dial the matching ports.
+
+Per PX4 instance `i` (instance 0 = drone 1), host networking:
+
+| Endpoint | Router mode | Port | Peer & direction | Configured where |
+|---|---|---|---|---|
+| `PX4_Local` | Server | `5760+i` | PX4 SITL → router | in-image |
+| `AirSim` | Normal | `14540+i` | router → AirSim `ControlPortLocal` | AirSim `settings.json` |
+| `AirSim_Inbound` | Server | `14580+i` | AirSim `ControlPortRemote` → router | AirSim `settings.json` |
+| `QGC_UDP` | Normal | `14550` | router → QGC (UDP listen) | QGC `QGroundControl.ini` |
+| `MAVROS_UDP` | **Server** | `14555+i` | **MAVROS dials in** | compose `fcu_url` / `*_FCU_URL` |
+| `C2` | Normal | `14552` | router → C2 client | external C2 / extra QGC link |
+
+`Normal` endpoints **send to** `MAVLINK_TARGET` (default `127.0.0.1`).
+`Server` endpoints **bind and wait** — the peer must initiate.
+
+### MAVROS — must dial the router
+
+`MAVROS_UDP` is a **Server**, so the sidecar connects *out* to it:
+
+```text
+fcu_url:=udp://:0@127.0.0.1:14555      # instance 0; port is 14555+i per drone
+```
+
+This is the compose default. To override:
+
+- single-drone (`px4-condo`): set `MAVROS_FCU_URL` in `.env`
+- multi-drone (`px4-xfs`): set `DRONE_<N>_FCU_URL` in `.env`
+
+Defaults are produced by `tools/generate_scenario.py` (`mavros_local = 14555+i`)
+into each `compose/<scenario>/docker-compose.yml`. **Edit the `.j2` template
+then `make generate`** — never the rendered file (`make check` fails on drift).
+
+> ⚠️ Old images used MAVROS `Normal :14560` (router pushed, MAVROS bound
+> passively). Current images use `Server :14555` (MAVROS dials). A stale
+> `MAVROS_FCU_URL=udp://:14560@` silently fails to connect.
+
+### C2 — command & control
+
+`C2` is a dedicated GCS-style endpoint, separate from QGC, so a C2 client can
+attach without sharing QGC's sink or forcing QGC closed during uploads. The
+router **emits** to `${MAVLINK_TARGET}:14552`; **nothing in the default stack
+consumes it.** To use it, point a C2 client — or an extra QGC UDP link — at
+`127.0.0.1:14552`.
+
+### Editor mode (`EDITOR=true`) caveat
+
+AirSim then runs from the Unreal editor on the host, so it reads the **host**
+`~/Documents/AirSim/settings.json` — *not* the container-mounted
+`config/unreal-airsim/<scene>/settings*.json`. The host file's
+`ControlPortLocal`/`ControlPortRemote` (14540/14580) must match the router for
+AirSim↔PX4 HIL. MAVROS and C2 are router↔client and are unaffected by where
+AirSim runs.
 
 ---
 
