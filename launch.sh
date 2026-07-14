@@ -22,7 +22,7 @@ Pass --with-monitoring and/or --with-metrics to add cross-cutting stacks,
 or --all as a shortcut for both. These can also be enabled in .env via
 START_MONITORING=true / START_METRICS=true.
 
---editor skips the containerized AirSim entirely (the `sim` compose profile)
+--editor skips the containerized AirSim entirely (the \`sim\` compose profile)
 so you can run AirSim from the Unreal editor on the host instead. Everything
 else (autopilot SITL, per-drone bridges, mavros, QGroundControl) still starts
 and connects to the editor's RPC on localhost:41451 (host networking). The
@@ -55,7 +55,12 @@ default 4); the launcher regenerates them automatically on drift.
 EOF
 }
 
-SCENARIO="${SCENARIO:-}"
+# SCENARIO from .env is the DEFAULT (used when no scenario arg is given). A
+# scenario passed on the command line (`./launch.sh px4-xfs`, `make px4-xfs`)
+# overrides it — resolved after the arg loop. Keeping them separate lets the
+# CLI win instead of erroring on "duplicate positional" when .env sets SCENARIO.
+SCENARIO_ENV="${SCENARIO:-}"
+SCENARIO_ARG=""
 START_MONITORING="${START_MONITORING:-false}"
 START_METRICS="${START_METRICS:-false}"
 AIRSIM_HEADLESS="${AIRSIM_HEADLESS:-false}"
@@ -75,10 +80,10 @@ for arg in "$@"; do
     -h|--help)             usage; exit 0 ;;
     --*)                  echo "ERROR: Unknown flag: $arg"; usage; exit 1 ;;
     *)
-      if [ -z "$SCENARIO" ]; then
-        SCENARIO="$arg"
+      if [ -z "$SCENARIO_ARG" ]; then
+        SCENARIO_ARG="$arg"
       else
-        echo "ERROR: Unexpected positional arg: $arg"
+        echo "ERROR: multiple scenarios given: '$SCENARIO_ARG' and '$arg'"
         usage
         exit 1
       fi
@@ -86,7 +91,8 @@ for arg in "$@"; do
   esac
 done
 
-SCENARIO="${SCENARIO:-${SCENARIO_DEFAULT:-${SCENARIO:-px4-condo}}}"
+# Precedence: CLI scenario arg > .env SCENARIO > px4-condo default.
+SCENARIO="${SCENARIO_ARG:-${SCENARIO_ENV:-px4-condo}}"
 SCENARIO_FILE="compose/${SCENARIO}/docker-compose.yml"
 
 if [ ! -f "$SCENARIO_FILE" ]; then
