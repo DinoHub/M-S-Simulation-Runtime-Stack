@@ -44,7 +44,9 @@ x-ardupilot-base: &ardupilot-base
   image: ${ARDUPILOT_IMAGE:-dhdevspace/auto_mns:ardupilot-slim}
   pull_policy: if_not_present
   restart: "no"
-  network_mode: host
+  # network_mode: host removed — SITL now joins sim_net (shared bridge net) with
+  # a static IP per drone (assigned in each service below). FDM to AirSim goes to
+  # its sim_net IP via ARDUPILOT_SIM_HOSTNAME instead of localhost.
   user: "0:0"
   cap_add:
     - SYS_PTRACE
@@ -117,11 +119,18 @@ services:
     container_name: ardupilot-xfs-drone-{{ d.instance }}
     hostname: ardupilot-xfs-drone-{{ d.instance }}
     environment:
-      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-localhost}
+      # AirSim reachable on sim_net at 172.30.0.10 (was localhost under host net).
+      # arducopter connects its FDM control (--sim-address) here.
+      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-172.30.0.10}
       - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
       - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
       - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
       - INSTANCE_NUM={{ d.instance }}
+    networks:
+      sim_net:
+        # Static IP per drone (.21 + instance) so AirSim's settings.json can
+        # address this SITL's FDM sensor port deterministically.
+        ipv4_address: 172.30.0.{{ 21 + d.instance }}
     volumes:
       - ./data/ardupilot-xfs/instance_{{ d.instance }}:/ardupilot_workspace/instances/instance_{{ d.instance }}
       - ./data/ardupilot-xfs/logs_{{ d.instance }}:/ardupilot_data/logs
@@ -194,8 +203,14 @@ services:
       # with: ./launch.sh ardupilot-xfs --with-pixel-streaming
       - ENABLE_PIXEL_STREAMING=${ENABLE_PIXEL_STREAMING:-false}
 
-    network_mode: host
+    # network_mode: host removed — AirSim now lives on sim_net at 172.30.0.10.
+    # RPC 41451 + per-vehicle FDM ports bind 0.0.0.0 (settings LocalHostIp) so
+    # they're reachable at the sim_net IP. ipc: host kept (shared-memory /dev/shm
+    # + iceoryx2 are IPC-namespace, independent of networking).
     ipc: host
+    networks:
+      sim_net:
+        ipv4_address: 172.30.0.10
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
@@ -331,11 +346,17 @@ services:
       - XAUTHORITY=/tmp/.Xauthority
       - ROS_DOMAIN_ID=${DRONE_{{ d.n }}_DOMAIN_ID:-{{ d.domain_id }}}
       - ROS_LOCALHOST_ONLY=0
-      - AIRSIM_HOST_IP=host.docker.internal
+      # AirSim now on sim_net at 172.30.0.10 (was host.docker.internal / host net).
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_{{ d.n }}_NAME:-{{ d.vehicle }}}
     networks:
-      - agent_internal-{{ d.n }}
+      # DDS island toward the autonomy stack (unchanged boundary).
+      agent_internal-{{ d.n }}: {}
+      # sim_net: reach AirSim RPC (172.30.0.10) container-to-container instead of
+      # via the host gateway. Static .5N keeps the bridge's address stable.
+      sim_net:
+        ipv4_address: 172.30.0.{{ 50 + d.n }}
     # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
     # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
     # single_vehicle.launch.py pins this instance to exactly one vehicle via
@@ -364,7 +385,7 @@ services:
       # because the launch RPC settings-read fails here; without it TOPIC_PREFIX=/
       # only flattens the fixed core topics.
       - "topic_names_config:=/etc/airsim/topic_names.yaml"
-      - "host_ip:=host.docker.internal"
+      - "host_ip:=${AIRSIM_HOST_IP:-172.30.0.10}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
       - "enable_coordination:=false"
@@ -491,6 +512,19 @@ services:
 # =============================================================================
 
 networks:
+  # Shared sim bridge network — AirSim, the ArduPilot SITL drones, and the
+  # per-drone bridges all attach here so FDM (900x) + RPC (41451) traverse a
+  # user-defined bridge by static IP instead of host loopback. Compose-managed
+  # (project-scoped, ipam-assigned) since it is sim-internal — distinct, non-
+  # overlapping subnet from agent_internal-N (172.28.x). Static IP plan:
+  #   AirSim .10 | drone-N .2(1+N) | airsim_bridge_dN .5N   (QGC/pixel added later)
+  sim_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${SIM_NET_SUBNET:-172.30.0.0/24}
+          gateway: ${SIM_NET_GATEWAY:-172.30.0.254}
+
   # Owned by the autonomy team. The Docker network MUST be literally named
   # `agent_external` (not `<project>_agent_external`). For solo sim testing
   # without the autonomy compose, pre-create it:

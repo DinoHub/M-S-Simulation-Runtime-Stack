@@ -42,9 +42,9 @@
       "AllowAPIAlways": true,
       "X": {{ d.x_offset }}, "Y": 0, "Z": -1, "Yaw": 0,
       "UseSerial": false,
-      "UdpIp": "127.0.0.1",
+      "UdpIp": "172.30.0.{{ 21 + d.instance }}",
       "UdpPort": {{ d.fdm_udp }},
-      "ControlIp": "127.0.0.1",
+      "ControlIp": "172.30.0.{{ 21 + d.instance }}",
       "ControlPortLocal": {{ d.fdm_tcp }},
       "ControlPortRemote": {{ d.fdm_udp }},
       "Sensors": {
