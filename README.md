@@ -456,6 +456,35 @@ Per PX4 instance `i` (instance 0 = drone 1), host networking:
 `Normal` endpoints **send to** `MAVLINK_TARGET` (default `127.0.0.1`).
 `Server` endpoints **bind and wait** — the peer must initiate.
 
+### ardupilot-xfs networking — shared bridge `sim_net`
+
+`ardupilot-xfs` runs its **whole** stack (AirSim, ArduPilot SITL, per-drone
+bridges, QGC, pixel-streaming) on one user-defined bridge network `sim_net`
+(`172.30.0.0/24`, override `SIM_NET_SUBNET`/`SIM_NET_GATEWAY`), addressed by
+static IP — **no host networking**. Foundation for multi-host (swap the bridge
+for an overlay / routable IPs later). Non-overlapping with `agent_internal-N`
+(`172.28.x`); the bridges are **multi-homed** on both (autonomy DDS boundary kept).
+
+| Service | sim_net IP |
+|---|---|
+| `airsim-xfs` | `.10` |
+| `ardupilot-drone-N` (instance N) | `.2(1+N)` (drone-0 = `.21`) |
+| `qgroundcontrol-x11` | `.30` |
+| `pixel-streaming-signalling` | `.40` |
+| `airsim_bridge_dN` | `.5N` |
+
+FDM (AirSim JSON): AirSim binds a **vehicle-level `LocalHostIp = 172.30.0.10`**
+in `settings.json` (root `LocalHostIp` is ignored by the per-vehicle ArduCopter
+connector — without this, sensors send from `127.0.0.1` and never egress). RPC
+`41451` + FDM `900x` cross the bridge fine — host networking is **not** required.
+
+**QGC connection:** the shipped `ardupilot-slim` image hardcodes its MAVLink UDP
+out to loopback, so QGC can't be reached by a push. Instead **QGC connects to
+each SITL's MAVLink TCP server**: Comm Links → Add → **TCP** → host
+`172.30.0.2N`, port `5760 + 10·instance` (drone-0 = `172.30.0.21:5760`). (A
+per-scenario seeded QGC link config is a TODO — `qgc_config` is currently
+PX4-flavoured.)
+
 ### MAVROS — must dial the router
 
 `MAVROS_UDP` is a **Server**, so the sidecar connects *out* to it:
