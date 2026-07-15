@@ -127,10 +127,12 @@ services:
       # AirSim reachable on sim_net at 172.30.0.10 (was localhost under host net).
       # arducopter connects its FDM control (--sim-address) here.
       - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-172.30.0.10}
-      # MAVLink primary out: SITL pushes to QGC at 172.30.0.30:14550 (was
-      # localhost under host net). All drones share QGC's one UDP listener;
-      # QGC separates them by MAV sysid.
-      - MAVLINK_GCS_HOST=${MAVLINK_GCS_HOST:-172.30.0.30}
+      # NOTE: the shipped ardupilot-slim image hardcodes its primary MAVLink
+      # out to `udpclient:127.0.0.1:14550` (run_ardupilot_airsim.sh) and does
+      # NOT honor a GCS-host env — so QGC can't be reached by a UDP push. QGC
+      # instead CONNECTS to this SITL's MAVLink TCP server at
+      # 172.30.0.21:5760 (--serial1 tcp:...);
+      # links seeded in config/qgroundcontrol/qgc_config/QGroundControl.ini.
       - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
       - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
       - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
@@ -154,10 +156,12 @@ services:
       # AirSim reachable on sim_net at 172.30.0.10 (was localhost under host net).
       # arducopter connects its FDM control (--sim-address) here.
       - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-172.30.0.10}
-      # MAVLink primary out: SITL pushes to QGC at 172.30.0.30:14550 (was
-      # localhost under host net). All drones share QGC's one UDP listener;
-      # QGC separates them by MAV sysid.
-      - MAVLINK_GCS_HOST=${MAVLINK_GCS_HOST:-172.30.0.30}
+      # NOTE: the shipped ardupilot-slim image hardcodes its primary MAVLink
+      # out to `udpclient:127.0.0.1:14550` (run_ardupilot_airsim.sh) and does
+      # NOT honor a GCS-host env — so QGC can't be reached by a UDP push. QGC
+      # instead CONNECTS to this SITL's MAVLink TCP server at
+      # 172.30.0.22:5770 (--serial1 tcp:...);
+      # links seeded in config/qgroundcontrol/qgc_config/QGroundControl.ini.
       - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
       - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
       - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
@@ -181,10 +185,12 @@ services:
       # AirSim reachable on sim_net at 172.30.0.10 (was localhost under host net).
       # arducopter connects its FDM control (--sim-address) here.
       - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-172.30.0.10}
-      # MAVLink primary out: SITL pushes to QGC at 172.30.0.30:14550 (was
-      # localhost under host net). All drones share QGC's one UDP listener;
-      # QGC separates them by MAV sysid.
-      - MAVLINK_GCS_HOST=${MAVLINK_GCS_HOST:-172.30.0.30}
+      # NOTE: the shipped ardupilot-slim image hardcodes its primary MAVLink
+      # out to `udpclient:127.0.0.1:14550` (run_ardupilot_airsim.sh) and does
+      # NOT honor a GCS-host env — so QGC can't be reached by a UDP push. QGC
+      # instead CONNECTS to this SITL's MAVLink TCP server at
+      # 172.30.0.23:5780 (--serial1 tcp:...);
+      # links seeded in config/qgroundcontrol/qgc_config/QGroundControl.ini.
       - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
       - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
       - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
@@ -208,10 +214,12 @@ services:
       # AirSim reachable on sim_net at 172.30.0.10 (was localhost under host net).
       # arducopter connects its FDM control (--sim-address) here.
       - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-172.30.0.10}
-      # MAVLink primary out: SITL pushes to QGC at 172.30.0.30:14550 (was
-      # localhost under host net). All drones share QGC's one UDP listener;
-      # QGC separates them by MAV sysid.
-      - MAVLINK_GCS_HOST=${MAVLINK_GCS_HOST:-172.30.0.30}
+      # NOTE: the shipped ardupilot-slim image hardcodes its primary MAVLink
+      # out to `udpclient:127.0.0.1:14550` (run_ardupilot_airsim.sh) and does
+      # NOT honor a GCS-host env — so QGC can't be reached by a UDP push. QGC
+      # instead CONNECTS to this SITL's MAVLink TCP server at
+      # 172.30.0.24:5790 (--serial1 tcp:...);
+      # links seeded in config/qgroundcontrol/qgc_config/QGroundControl.ini.
       - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
       - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
       - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
@@ -776,9 +784,10 @@ services:
     container_name: ardupilot-xfs-qgc
     hostname: ardupilot-xfs-qgc
 
-    # On sim_net at .30 — SITL pushes MAVLink here (udpclient:172.30.0.30:14550,
-    # via each drone's MAVLINK_GCS_HOST) and QGC auto-connects on UDP 14550,
-    # replying to each SITL's IP. X11/GPU below are network-independent.
+    # On sim_net at .30. The shipped ardupilot-slim image hardcodes its MAVLink
+    # UDP out to loopback, so QGC must CONNECT to each SITL's MAVLink TCP server
+    # (172.30.0.2N:576X) — add a TCP comm link in QGC (Comm Links -> Add -> TCP
+    # -> host 172.30.0.21 port 5760, +10/drone). X11/GPU below are net-independent.
     ipc: host
     networks:
       sim_net:
