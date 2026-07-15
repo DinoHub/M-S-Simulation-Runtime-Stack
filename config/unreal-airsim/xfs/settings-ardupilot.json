@@ -41,6 +41,7 @@
       "AllowAPIAlways": true,
       "X": 0.0, "Y": 0, "Z": -1, "Yaw": 0,
       "UseSerial": false,
+      "LocalHostIp": "172.30.0.10",
       "UdpIp": "172.30.0.21",
       "UdpPort": 9003,
       "ControlIp": "172.30.0.21",
