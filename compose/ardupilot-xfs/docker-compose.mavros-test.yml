@@ -14,9 +14,14 @@
 #
 #   mavros_dN  ─(agent_internal-N)─►  airsim_bridge_dN
 #       │
-#       └────(host MAVLink TCP 5760+4 drones)────►  ardupilot-drone-{N-1}
+#       └────(sim_net MAVLink TCP 172.30.0.2N:5760+10(N-1))────►  ardupilot-drone-{N-1}
 #                                                       │
 #                                                       └──►  AirSim XFS
+#
+# The SITL drones live on sim_net (no host-published MAVLink ports since the
+# feat/sim-bridge-net migration), so each mavros_dN also joins sim_net and
+# dials the drone's static IP directly. sim_net is project-scoped to the main
+# stack; referenced here as an external network via SIM_NET_NAME.
 #
 # Use via ./test-per-drone-mavros.sh (orchestrator) — that script also runs
 # the per-drone arm/takeoff/setpoint/land mission inside each mavros_dN.
@@ -72,7 +77,12 @@ services:
       - ROS_DOMAIN_ID=${DRONE_1_DOMAIN_ID:-1}
       - ROS_LOCALHOST_ONLY=0
     networks:
+      # agent_internal-N: DDS island shared with airsim_bridge_dN (+ planner).
+      # sim_net: reach the SITL's MAVLink TCP server at its static IP — the
+      # drones are NOT on the host network anymore, so host.docker.internal
+      # cannot reach 5760.
       - agent_internal-1
+      - sim_net
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -82,7 +92,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter1
-        fcu_url:=tcp://host.docker.internal:5760
+        fcu_url:=tcp://172.30.0.21:5760
         target_system_id:=1
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=true
@@ -101,7 +111,12 @@ services:
       - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
       - ROS_LOCALHOST_ONLY=0
     networks:
+      # agent_internal-N: DDS island shared with airsim_bridge_dN (+ planner).
+      # sim_net: reach the SITL's MAVLink TCP server at its static IP — the
+      # drones are NOT on the host network anymore, so host.docker.internal
+      # cannot reach 5770.
       - agent_internal-2
+      - sim_net
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -111,7 +126,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter2
-        fcu_url:=tcp://host.docker.internal:5770
+        fcu_url:=tcp://172.30.0.22:5770
         target_system_id:=2
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -130,7 +145,12 @@ services:
       - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
       - ROS_LOCALHOST_ONLY=0
     networks:
+      # agent_internal-N: DDS island shared with airsim_bridge_dN (+ planner).
+      # sim_net: reach the SITL's MAVLink TCP server at its static IP — the
+      # drones are NOT on the host network anymore, so host.docker.internal
+      # cannot reach 5780.
       - agent_internal-3
+      - sim_net
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -140,7 +160,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter3
-        fcu_url:=tcp://host.docker.internal:5780
+        fcu_url:=tcp://172.30.0.23:5780
         target_system_id:=3
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -159,7 +179,12 @@ services:
       - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
       - ROS_LOCALHOST_ONLY=0
     networks:
+      # agent_internal-N: DDS island shared with airsim_bridge_dN (+ planner).
+      # sim_net: reach the SITL's MAVLink TCP server at its static IP — the
+      # drones are NOT on the host network anymore, so host.docker.internal
+      # cannot reach 5790.
       - agent_internal-4
+      - sim_net
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -169,7 +194,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter4
-        fcu_url:=tcp://host.docker.internal:5790
+        fcu_url:=tcp://172.30.0.24:5790
         target_system_id:=4
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -179,3 +204,8 @@ networks:
   agent_internal-2: { external: true, name: agent_internal-2 }
   agent_internal-3: { external: true, name: agent_internal-3 }
   agent_internal-4: { external: true, name: agent_internal-4 }
+  # Main stack's project-scoped sim bridge net (holds the SITL MAVLink TCP
+  # servers at 172.30.0.2N). The main compose sets `name: ardupilot-xfs`, so
+  # the docker network is ardupilot-xfs_sim_net. Override with SIM_NET_NAME
+  # if the project name differs.
+  sim_net: { external: true, name: "${SIM_NET_NAME:-ardupilot-xfs_sim_net}" }

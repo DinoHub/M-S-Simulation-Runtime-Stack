@@ -79,7 +79,7 @@ run_one() {
   local outfile="${RESULTS_DIR}/d${n}.txt"
   local rc=0
   docker exec "mavros_d${n}" bash -lc \
-    "source /opt/ros/humble/setup.bash && source /airsim_ros2_ws/install/setup.bash && \
+    "source /opt/ros/humble/setup.bash && source /ws/install/setup.bash && \
      python3 /scripts/test_one_drone_mavros.py \
        --vehicle Copter${n} \
        --target-altitude ${TARGET_ALT} \

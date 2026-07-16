@@ -9,9 +9,14 @@
 #
 #   mavros_dN  ─(agent_internal-N)─►  airsim_bridge_dN
 #       │
-#       └────(host MAVLink TCP {{ mavlink_port_base }}+{{ num_drones }} drones)────►  ardupilot-drone-{N-1}
+#       └────(sim_net MAVLink TCP 172.30.0.2N:{{ mavlink_port_base }}+10(N-1))────►  ardupilot-drone-{N-1}
 #                                                       │
 #                                                       └──►  AirSim XFS
+#
+# The SITL drones live on sim_net (no host-published MAVLink ports since the
+# feat/sim-bridge-net migration), so each mavros_dN also joins sim_net and
+# dials the drone's static IP directly. sim_net is project-scoped to the main
+# stack; referenced here as an external network via SIM_NET_NAME.
 #
 # Use via ./test-per-drone-mavros.sh (orchestrator) — that script also runs
 # the per-drone arm/takeoff/setpoint/land mission inside each mavros_dN.
@@ -68,7 +73,12 @@ services:
       - ROS_DOMAIN_ID=${DRONE_{{ d.n }}_DOMAIN_ID:-{{ d.domain_id }}}
       - ROS_LOCALHOST_ONLY=0
     networks:
+      # agent_internal-N: DDS island shared with airsim_bridge_dN (+ planner).
+      # sim_net: reach the SITL's MAVLink TCP server at its static IP — the
+      # drones are NOT on the host network anymore, so host.docker.internal
+      # cannot reach {{ d.mavlink_tcp }}.
       - agent_internal-{{ d.n }}
+      - sim_net
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -78,7 +88,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:={{ d.vehicle }}
-        fcu_url:=tcp://host.docker.internal:{{ d.mavlink_tcp }}
+        fcu_url:=tcp://172.30.0.{{ 21 + d.instance }}:{{ d.mavlink_tcp }}
         target_system_id:={{ d.n }}
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:={{ "true" if d.n == 1 else "false" }}
@@ -88,3 +98,8 @@ networks:
 {% for d in drones %}
   agent_internal-{{ d.n }}: { external: true, name: agent_internal-{{ d.n }} }
 {% endfor %}
+  # Main stack's project-scoped sim bridge net (holds the SITL MAVLink TCP
+  # servers at 172.30.0.2N). The main compose sets `name: ardupilot-xfs`, so
+  # the docker network is ardupilot-xfs_sim_net. Override with SIM_NET_NAME
+  # if the project name differs.
+  sim_net: { external: true, name: "${SIM_NET_NAME:-ardupilot-xfs_sim_net}" }
