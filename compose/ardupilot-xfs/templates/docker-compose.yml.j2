@@ -156,6 +156,9 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
+        # Per-drone MAVLink system id so QGC/MAVROS see distinct vehicles
+        # (all SITL share one QGC; -I alone does NOT set SYSID). drone-N -> N+1.
+        echo "SYSID_THISMAV {{ d.n }}" > /tmp/sysid.parm
         exec /ardupilot/build/sitl/bin/arducopter \
           -M airsim-copter \
           --sim-address 172.30.0.10 \
@@ -165,7 +168,7 @@ services:
           --serial0 udpclient:172.30.0.30:14550 \
           --serial1 tcp:{{ d.mavlink_tcp }} \
           --serial2 none \
-          --defaults /ardupilot/Tools/autotest/default_params/copter.parm,/ardupilot/Tools/autotest/default_params/airsim-quadX.parm,/ardupilot_config/copter455-airsim.parm \
+          --defaults /ardupilot/Tools/autotest/default_params/copter.parm,/ardupilot/Tools/autotest/default_params/airsim-quadX.parm,/ardupilot_config/copter455-airsim.parm,/tmp/sysid.parm \
           -I {{ d.instance }} -w
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f arducopter"]

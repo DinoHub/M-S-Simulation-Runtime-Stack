@@ -27,19 +27,22 @@
 # `:-default` fallback path is never exercised on the recommended path.
 #
 # Default architecture (./launch.sh ardupilot-xfs):
-#   - 1× ArduPilot SITL                 (host net)
+#   - 4× ArduPilot SITL                 (host net)
 #   - AirSim XFS                                       (host net, GPU)
-#   - airsim_bridge_d{1..1}             (one per drone, on agent_internal-N)
+#   - airsim_bridge_d{1..4}             (one per drone, on agent_internal-N)
 #   - QGroundControl                                   (host net)
 #
 # Opt-in flags:
-#   --with-agent-external    → zenoh-bridge-{1..1} on agent_external
+#   --with-agent-external    → zenoh-bridge-{1..4} on agent_external
 #   --with-pixel-streaming   → pixel-streaming-signalling sidecar + UE5 dials it
 #                              (browser viewer at http://localhost:${PS_HTTP_PORT})
 #   --headless               → UE5 -RenderOffScreen (no native window)
 #
-# Per-drone port plan (this render, N=1):
+# Per-drone port plan (this render, N=4):
 #   Instance 0 -> Copter1 : MAVLink TCP 5760 ; FDM TCP 9002 / UDP 9003 ; agent_internal-1 (172.28.1.0/24)
+#   Instance 1 -> Copter2 : MAVLink TCP 5770 ; FDM TCP 9012 / UDP 9013 ; agent_internal-2 (172.28.2.0/24)
+#   Instance 2 -> Copter3 : MAVLink TCP 5780 ; FDM TCP 9022 / UDP 9023 ; agent_internal-3 (172.28.3.0/24)
+#   Instance 3 -> Copter4 : MAVLink TCP 5790 ; FDM TCP 9032 / UDP 9033 ; agent_internal-4 (172.28.4.0/24)
 
 name: ardupilot-xfs
 
@@ -114,7 +117,7 @@ x-zenoh-bridge: &zenoh-bridge-defaults
 services:
 
   # ---------------------------------------------------------------------------
-  # ArduPilot SITL × 1
+  # ArduPilot SITL × 4
   # ---------------------------------------------------------------------------
   ardupilot-drone-0:
     <<: *ardupilot-base
@@ -157,6 +160,9 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
+        # Per-drone MAVLink system id so QGC/MAVROS see distinct vehicles
+        # (all SITL share one QGC; -I alone does NOT set SYSID). drone-N -> N+1.
+        echo "SYSID_THISMAV 1" > /tmp/sysid.parm
         exec /ardupilot/build/sitl/bin/arducopter \
           -M airsim-copter \
           --sim-address 172.30.0.10 \
@@ -166,8 +172,194 @@ services:
           --serial0 udpclient:172.30.0.30:14550 \
           --serial1 tcp:5760 \
           --serial2 none \
-          --defaults /ardupilot/Tools/autotest/default_params/copter.parm,/ardupilot/Tools/autotest/default_params/airsim-quadX.parm,/ardupilot_config/copter455-airsim.parm \
+          --defaults /ardupilot/Tools/autotest/default_params/copter.parm,/ardupilot/Tools/autotest/default_params/airsim-quadX.parm,/ardupilot_config/copter455-airsim.parm,/tmp/sysid.parm \
           -I 0 -w
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f arducopter"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 60s
+
+  ardupilot-drone-1:
+    <<: *ardupilot-base
+    container_name: ardupilot-xfs-drone-1
+    hostname: ardupilot-xfs-drone-1
+    environment:
+      # AirSim reachable on sim_net at 172.30.0.10 (was localhost under host net).
+      # arducopter connects its FDM control (--sim-address) here.
+      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-172.30.0.10}
+      # MAVLink to QGC: the `stock` flavor pushes UDP to QGC (172.30.0.30:14550,
+      # auto-connect); the `slim` image hardcodes its UDP out to loopback, so QGC
+      # must CONNECT to the SITL's TCP server at
+      # 172.30.0.22:5770 instead. See below.
+      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
+      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
+      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
+      - INSTANCE_NUM=1
+    networks:
+      sim_net:
+        # Static IP per drone (.21 + instance) so AirSim's settings.json can
+        # address this SITL's FDM sensor port deterministically.
+        ipv4_address: 172.30.0.22
+    volumes:
+      - ./data/ardupilot-xfs/instance_1:/ardupilot_workspace/instances/instance_1
+      - ./data/ardupilot-xfs/logs_1:/ardupilot_data/logs
+      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+    # STOCK flavor: dhdevspace/ardupilot-sitl:Copter-4.5.5. Its entrypoint runs
+    # sim_vehicle.py (force-overrides --sim-address=127.0.0.1, documented-broken
+    # against this AirSim JSON backend), so we bypass it and exec `arducopter`
+    # directly with the airsim-copter backend pointed at sim_net static IPs.
+    #   --sim-address .10 | --sim-port-out 9012 (control TO AirSim)
+    #                     | --sim-port-in 9013 (sensors FROM AirSim)
+    #   --serial0 udp .30:14550  MAVLink push to QGC (auto-connect)
+    #   --serial1 tcp:5770  MAVLink TCP (QGC/MAVROS)
+    #   --defaults: copter + AirSim frame + our sim-tuned params (SCHED_LOOP_RATE
+    #     200 to match AirSim's ~220Hz + GPS_TYPE 100, so pre-arm passes honestly
+    #     with arming checks LIVE — not ARMING_CHECK 0). -w wipes EEPROM.
+    image: ${ARDUPILOT_IMAGE:-dhdevspace/ardupilot-sitl:Copter-4.5.5}
+    working_dir: /ardupilot
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        # Per-drone MAVLink system id so QGC/MAVROS see distinct vehicles
+        # (all SITL share one QGC; -I alone does NOT set SYSID). drone-N -> N+1.
+        echo "SYSID_THISMAV 2" > /tmp/sysid.parm
+        exec /ardupilot/build/sitl/bin/arducopter \
+          -M airsim-copter \
+          --sim-address 172.30.0.10 \
+          --sim-port-in 9013 \
+          --sim-port-out 9012 \
+          -O $$ARDUPILOT_HOME_LAT,$$ARDUPILOT_HOME_LON,$$ARDUPILOT_HOME_ALT,0 \
+          --serial0 udpclient:172.30.0.30:14550 \
+          --serial1 tcp:5770 \
+          --serial2 none \
+          --defaults /ardupilot/Tools/autotest/default_params/copter.parm,/ardupilot/Tools/autotest/default_params/airsim-quadX.parm,/ardupilot_config/copter455-airsim.parm,/tmp/sysid.parm \
+          -I 1 -w
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f arducopter"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 60s
+
+  ardupilot-drone-2:
+    <<: *ardupilot-base
+    container_name: ardupilot-xfs-drone-2
+    hostname: ardupilot-xfs-drone-2
+    environment:
+      # AirSim reachable on sim_net at 172.30.0.10 (was localhost under host net).
+      # arducopter connects its FDM control (--sim-address) here.
+      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-172.30.0.10}
+      # MAVLink to QGC: the `stock` flavor pushes UDP to QGC (172.30.0.30:14550,
+      # auto-connect); the `slim` image hardcodes its UDP out to loopback, so QGC
+      # must CONNECT to the SITL's TCP server at
+      # 172.30.0.23:5780 instead. See below.
+      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
+      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
+      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
+      - INSTANCE_NUM=2
+    networks:
+      sim_net:
+        # Static IP per drone (.21 + instance) so AirSim's settings.json can
+        # address this SITL's FDM sensor port deterministically.
+        ipv4_address: 172.30.0.23
+    volumes:
+      - ./data/ardupilot-xfs/instance_2:/ardupilot_workspace/instances/instance_2
+      - ./data/ardupilot-xfs/logs_2:/ardupilot_data/logs
+      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+    # STOCK flavor: dhdevspace/ardupilot-sitl:Copter-4.5.5. Its entrypoint runs
+    # sim_vehicle.py (force-overrides --sim-address=127.0.0.1, documented-broken
+    # against this AirSim JSON backend), so we bypass it and exec `arducopter`
+    # directly with the airsim-copter backend pointed at sim_net static IPs.
+    #   --sim-address .10 | --sim-port-out 9022 (control TO AirSim)
+    #                     | --sim-port-in 9023 (sensors FROM AirSim)
+    #   --serial0 udp .30:14550  MAVLink push to QGC (auto-connect)
+    #   --serial1 tcp:5780  MAVLink TCP (QGC/MAVROS)
+    #   --defaults: copter + AirSim frame + our sim-tuned params (SCHED_LOOP_RATE
+    #     200 to match AirSim's ~220Hz + GPS_TYPE 100, so pre-arm passes honestly
+    #     with arming checks LIVE — not ARMING_CHECK 0). -w wipes EEPROM.
+    image: ${ARDUPILOT_IMAGE:-dhdevspace/ardupilot-sitl:Copter-4.5.5}
+    working_dir: /ardupilot
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        # Per-drone MAVLink system id so QGC/MAVROS see distinct vehicles
+        # (all SITL share one QGC; -I alone does NOT set SYSID). drone-N -> N+1.
+        echo "SYSID_THISMAV 3" > /tmp/sysid.parm
+        exec /ardupilot/build/sitl/bin/arducopter \
+          -M airsim-copter \
+          --sim-address 172.30.0.10 \
+          --sim-port-in 9023 \
+          --sim-port-out 9022 \
+          -O $$ARDUPILOT_HOME_LAT,$$ARDUPILOT_HOME_LON,$$ARDUPILOT_HOME_ALT,0 \
+          --serial0 udpclient:172.30.0.30:14550 \
+          --serial1 tcp:5780 \
+          --serial2 none \
+          --defaults /ardupilot/Tools/autotest/default_params/copter.parm,/ardupilot/Tools/autotest/default_params/airsim-quadX.parm,/ardupilot_config/copter455-airsim.parm,/tmp/sysid.parm \
+          -I 2 -w
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f arducopter"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 60s
+
+  ardupilot-drone-3:
+    <<: *ardupilot-base
+    container_name: ardupilot-xfs-drone-3
+    hostname: ardupilot-xfs-drone-3
+    environment:
+      # AirSim reachable on sim_net at 172.30.0.10 (was localhost under host net).
+      # arducopter connects its FDM control (--sim-address) here.
+      - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-172.30.0.10}
+      # MAVLink to QGC: the `stock` flavor pushes UDP to QGC (172.30.0.30:14550,
+      # auto-connect); the `slim` image hardcodes its UDP out to loopback, so QGC
+      # must CONNECT to the SITL's TCP server at
+      # 172.30.0.24:5790 instead. See below.
+      - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
+      - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
+      - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
+      - INSTANCE_NUM=3
+    networks:
+      sim_net:
+        # Static IP per drone (.21 + instance) so AirSim's settings.json can
+        # address this SITL's FDM sensor port deterministically.
+        ipv4_address: 172.30.0.24
+    volumes:
+      - ./data/ardupilot-xfs/instance_3:/ardupilot_workspace/instances/instance_3
+      - ./data/ardupilot-xfs/logs_3:/ardupilot_data/logs
+      - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+    # STOCK flavor: dhdevspace/ardupilot-sitl:Copter-4.5.5. Its entrypoint runs
+    # sim_vehicle.py (force-overrides --sim-address=127.0.0.1, documented-broken
+    # against this AirSim JSON backend), so we bypass it and exec `arducopter`
+    # directly with the airsim-copter backend pointed at sim_net static IPs.
+    #   --sim-address .10 | --sim-port-out 9032 (control TO AirSim)
+    #                     | --sim-port-in 9033 (sensors FROM AirSim)
+    #   --serial0 udp .30:14550  MAVLink push to QGC (auto-connect)
+    #   --serial1 tcp:5790  MAVLink TCP (QGC/MAVROS)
+    #   --defaults: copter + AirSim frame + our sim-tuned params (SCHED_LOOP_RATE
+    #     200 to match AirSim's ~220Hz + GPS_TYPE 100, so pre-arm passes honestly
+    #     with arming checks LIVE — not ARMING_CHECK 0). -w wipes EEPROM.
+    image: ${ARDUPILOT_IMAGE:-dhdevspace/ardupilot-sitl:Copter-4.5.5}
+    working_dir: /ardupilot
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        # Per-drone MAVLink system id so QGC/MAVROS see distinct vehicles
+        # (all SITL share one QGC; -I alone does NOT set SYSID). drone-N -> N+1.
+        echo "SYSID_THISMAV 4" > /tmp/sysid.parm
+        exec /ardupilot/build/sitl/bin/arducopter \
+          -M airsim-copter \
+          --sim-address 172.30.0.10 \
+          --sim-port-in 9033 \
+          --sim-port-out 9032 \
+          -O $$ARDUPILOT_HOME_LAT,$$ARDUPILOT_HOME_LON,$$ARDUPILOT_HOME_ALT,0 \
+          --serial0 udpclient:172.30.0.30:14550 \
+          --serial1 tcp:5790 \
+          --serial2 none \
+          --defaults /ardupilot/Tools/autotest/default_params/copter.parm,/ardupilot/Tools/autotest/default_params/airsim-quadX.parm,/ardupilot_config/copter455-airsim.parm,/tmp/sysid.parm \
+          -I 3 -w
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f arducopter"]
       interval: 5s
@@ -354,7 +546,7 @@ services:
   # ===========================================================================
   # PER-DRONE AIRSIM ROS2 BRIDGES (default flow)
   # ===========================================================================
-  # 1 airsim_bridge_dN containers, one per vehicle, each on its
+  # 4 airsim_bridge_dN containers, one per vehicle, each on its
   # own agent_internal-N docker network.
   #
   # Each per-drone bridge is its own /clock publisher on its own
@@ -440,6 +632,192 @@ services:
       - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
+  airsim_bridge_d2:
+    <<: *airsim-bridge-defaults
+    container_name: airsim_bridge_d2
+    hostname: airsim_bridge_d2
+    environment:
+      # HOME must point at a writable dir: the container runs as uid 1000,
+      # which is absent from the image's /etc/passwd, so HOME would default
+      # to / and `ros2 launch` would fail to create its ~/.ros/log dir.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
+      - ROS_LOCALHOST_ONLY=0
+      # AirSim now on sim_net at 172.30.0.10 (was host.docker.internal / host net).
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_2_NAME:-Copter2}
+    networks:
+      # DDS island toward the autonomy stack (unchanged boundary).
+      agent_internal-2: {}
+      # sim_net: reach AirSim RPC (172.30.0.10) container-to-container instead of
+      # via the host gateway. Static .5N keeps the bridge's address stable.
+      sim_net:
+        ipv4_address: 172.30.0.52
+    # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
+    # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
+    # single_vehicle.launch.py pins this instance to exactly one vehicle via
+    # vehicle_name:= (airsim_bringup.launch.py's vehicles:= is only an
+    # RPC-discovery fallback and would otherwise bridge ALL vehicles).
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_2_NAME:-Copter2}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom etc.
+      # Set TOPIC_PREFIX=/ to flatten every topic to root (/odom, /imu,
+      # /LidarSensor1/points). Use `/`, NOT empty: this is compose exec-form
+      # (no shell), so an empty value passes the literal argv token
+      # `topic_prefix:=` and `ros2 launch` rejects it ("malformed launch
+      # argument"). `/` resolves to the same flat root ("/" + rel.lstrip("/"))
+      # and is a valid non-empty value. `:-` coerces an accidental empty back to
+      # the prefixed default rather than crash-looping the bridge. Each bridge
+      # runs ONE vehicle on its own agent_internal-N net + ROS_DOMAIN_ID, so
+      # flat names across drones don't collide (separate DDS domains).
+      # NOTE: TF frame_ids stay <vehicle>/base_link (frames aren't renamed).
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      # Explicit renames (identity) that force settings-driven sensor/camera
+      # topics into the remap set — see the mounted topic_names.yaml. Needed
+      # because the launch RPC settings-read fails here; without it TOPIC_PREFIX=/
+      # only flattens the fixed core topics.
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
+      - "host_ip:=${AIRSIM_HOST_IP:-172.30.0.10}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+
+  airsim_bridge_d3:
+    <<: *airsim-bridge-defaults
+    container_name: airsim_bridge_d3
+    hostname: airsim_bridge_d3
+    environment:
+      # HOME must point at a writable dir: the container runs as uid 1000,
+      # which is absent from the image's /etc/passwd, so HOME would default
+      # to / and `ros2 launch` would fail to create its ~/.ros/log dir.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
+      - ROS_LOCALHOST_ONLY=0
+      # AirSim now on sim_net at 172.30.0.10 (was host.docker.internal / host net).
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_3_NAME:-Copter3}
+    networks:
+      # DDS island toward the autonomy stack (unchanged boundary).
+      agent_internal-3: {}
+      # sim_net: reach AirSim RPC (172.30.0.10) container-to-container instead of
+      # via the host gateway. Static .5N keeps the bridge's address stable.
+      sim_net:
+        ipv4_address: 172.30.0.53
+    # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
+    # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
+    # single_vehicle.launch.py pins this instance to exactly one vehicle via
+    # vehicle_name:= (airsim_bringup.launch.py's vehicles:= is only an
+    # RPC-discovery fallback and would otherwise bridge ALL vehicles).
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_3_NAME:-Copter3}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom etc.
+      # Set TOPIC_PREFIX=/ to flatten every topic to root (/odom, /imu,
+      # /LidarSensor1/points). Use `/`, NOT empty: this is compose exec-form
+      # (no shell), so an empty value passes the literal argv token
+      # `topic_prefix:=` and `ros2 launch` rejects it ("malformed launch
+      # argument"). `/` resolves to the same flat root ("/" + rel.lstrip("/"))
+      # and is a valid non-empty value. `:-` coerces an accidental empty back to
+      # the prefixed default rather than crash-looping the bridge. Each bridge
+      # runs ONE vehicle on its own agent_internal-N net + ROS_DOMAIN_ID, so
+      # flat names across drones don't collide (separate DDS domains).
+      # NOTE: TF frame_ids stay <vehicle>/base_link (frames aren't renamed).
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      # Explicit renames (identity) that force settings-driven sensor/camera
+      # topics into the remap set — see the mounted topic_names.yaml. Needed
+      # because the launch RPC settings-read fails here; without it TOPIC_PREFIX=/
+      # only flattens the fixed core topics.
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
+      - "host_ip:=${AIRSIM_HOST_IP:-172.30.0.10}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+
+  airsim_bridge_d4:
+    <<: *airsim-bridge-defaults
+    container_name: airsim_bridge_d4
+    hostname: airsim_bridge_d4
+    environment:
+      # HOME must point at a writable dir: the container runs as uid 1000,
+      # which is absent from the image's /etc/passwd, so HOME would default
+      # to / and `ros2 launch` would fail to create its ~/.ros/log dir.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
+      - ROS_LOCALHOST_ONLY=0
+      # AirSim now on sim_net at 172.30.0.10 (was host.docker.internal / host net).
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_4_NAME:-Copter4}
+    networks:
+      # DDS island toward the autonomy stack (unchanged boundary).
+      agent_internal-4: {}
+      # sim_net: reach AirSim RPC (172.30.0.10) container-to-container instead of
+      # via the host gateway. Static .5N keeps the bridge's address stable.
+      sim_net:
+        ipv4_address: 172.30.0.54
+    # The image ENTRYPOINT sources ROS + the bridge workspace, then exec's
+    # this argv directly — no `bash -lc "source ... && ..."` wrapper needed.
+    # single_vehicle.launch.py pins this instance to exactly one vehicle via
+    # vehicle_name:= (airsim_bringup.launch.py's vehicles:= is only an
+    # RPC-discovery fallback and would otherwise bridge ALL vehicles).
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_4_NAME:-Copter4}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom etc.
+      # Set TOPIC_PREFIX=/ to flatten every topic to root (/odom, /imu,
+      # /LidarSensor1/points). Use `/`, NOT empty: this is compose exec-form
+      # (no shell), so an empty value passes the literal argv token
+      # `topic_prefix:=` and `ros2 launch` rejects it ("malformed launch
+      # argument"). `/` resolves to the same flat root ("/" + rel.lstrip("/"))
+      # and is a valid non-empty value. `:-` coerces an accidental empty back to
+      # the prefixed default rather than crash-looping the bridge. Each bridge
+      # runs ONE vehicle on its own agent_internal-N net + ROS_DOMAIN_ID, so
+      # flat names across drones don't collide (separate DDS domains).
+      # NOTE: TF frame_ids stay <vehicle>/base_link (frames aren't renamed).
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      # Explicit renames (identity) that force settings-driven sensor/camera
+      # topics into the remap set — see the mounted topic_names.yaml. Needed
+      # because the launch RPC settings-read fails here; without it TOPIC_PREFIX=/
+      # only flattens the fixed core topics.
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
+      - "host_ip:=${AIRSIM_HOST_IP:-172.30.0.10}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+
   # ===========================================================================
   # PER-DRONE ZENOH BRIDGES (--with-agent-external profile)
   # ===========================================================================
@@ -470,6 +848,63 @@ services:
       - ${CONFIG_ROOT:-./config}/zenoh/zenoh_bridge_drone_1.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
     depends_on:
       airsim_bridge_d1:
+        condition: service_started
+
+  zenoh-bridge-2:
+    <<: *zenoh-bridge-defaults
+    container_name: ardupilot-xfs-zenoh-bridge-2
+    hostname: zenoh-bridge-2
+    networks:
+      - agent_internal-2
+      - agent_external
+    environment:
+      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
+    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
+    volumes:
+      - ${CONFIG_ROOT:-./config}/zenoh/zenoh_bridge_drone_2.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
+    depends_on:
+      airsim_bridge_d2:
+        condition: service_started
+
+  zenoh-bridge-3:
+    <<: *zenoh-bridge-defaults
+    container_name: ardupilot-xfs-zenoh-bridge-3
+    hostname: zenoh-bridge-3
+    networks:
+      - agent_internal-3
+      - agent_external
+    environment:
+      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
+    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
+    volumes:
+      - ${CONFIG_ROOT:-./config}/zenoh/zenoh_bridge_drone_3.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
+    depends_on:
+      airsim_bridge_d3:
+        condition: service_started
+
+  zenoh-bridge-4:
+    <<: *zenoh-bridge-defaults
+    container_name: ardupilot-xfs-zenoh-bridge-4
+    hostname: zenoh-bridge-4
+    networks:
+      - agent_internal-4
+      - agent_external
+    environment:
+      - RUST_LOG=zenoh=info,zenoh_plugin_ros2dds=info
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DISTRO=${SIM_ROS_DISTRO:-humble}
+      - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
+    command: ["-c", "/etc/zenoh/zenoh_bridge_drone.json5"]
+    volumes:
+      - ${CONFIG_ROOT:-./config}/zenoh/zenoh_bridge_drone_4.json5:/etc/zenoh/zenoh_bridge_drone.json5:ro
+    depends_on:
+      airsim_bridge_d4:
         condition: service_started
 
   # ---------------------------------------------------------------------------
@@ -592,3 +1027,12 @@ networks:
   agent_internal-1:
     external: true
     name: agent_internal-1
+  agent_internal-2:
+    external: true
+    name: agent_internal-2
+  agent_internal-3:
+    external: true
+    name: agent_internal-3
+  agent_internal-4:
+    external: true
+    name: agent_internal-4
