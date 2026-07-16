@@ -646,6 +646,11 @@ services:
       - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
       - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+      # LiDAR input topic for the registration backend. Derived from
+      # LIDAR_KIND (lidar -> LidarSensor1/points, gpulidar ->
+      # gpulidar/pointsLidarSensor1) so the one toggle keeps sim + bridge in
+      # sync; LIDAR_TOPIC_SUFFIX still overrides at runtime.
+      - "lidar_topic_suffix:=${LIDAR_TOPIC_SUFFIX:-gpulidar/pointsLidarSensor1}"
 
   airsim_bridge_d2:
     <<: *airsim-bridge-defaults
@@ -708,6 +713,11 @@ services:
       - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
       - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+      # LiDAR input topic for the registration backend. Derived from
+      # LIDAR_KIND (lidar -> LidarSensor1/points, gpulidar ->
+      # gpulidar/pointsLidarSensor1) so the one toggle keeps sim + bridge in
+      # sync; LIDAR_TOPIC_SUFFIX still overrides at runtime.
+      - "lidar_topic_suffix:=${LIDAR_TOPIC_SUFFIX:-gpulidar/pointsLidarSensor1}"
 
   airsim_bridge_d3:
     <<: *airsim-bridge-defaults
@@ -770,6 +780,11 @@ services:
       - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
       - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+      # LiDAR input topic for the registration backend. Derived from
+      # LIDAR_KIND (lidar -> LidarSensor1/points, gpulidar ->
+      # gpulidar/pointsLidarSensor1) so the one toggle keeps sim + bridge in
+      # sync; LIDAR_TOPIC_SUFFIX still overrides at runtime.
+      - "lidar_topic_suffix:=${LIDAR_TOPIC_SUFFIX:-gpulidar/pointsLidarSensor1}"
 
   airsim_bridge_d4:
     <<: *airsim-bridge-defaults
@@ -832,6 +847,11 @@ services:
       - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
       - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+      # LiDAR input topic for the registration backend. Derived from
+      # LIDAR_KIND (lidar -> LidarSensor1/points, gpulidar ->
+      # gpulidar/pointsLidarSensor1) so the one toggle keeps sim + bridge in
+      # sync; LIDAR_TOPIC_SUFFIX still overrides at runtime.
+      - "lidar_topic_suffix:=${LIDAR_TOPIC_SUFFIX:-gpulidar/pointsLidarSensor1}"
 
   # ===========================================================================
   # PER-DRONE ZENOH BRIDGES (--with-agent-external profile)

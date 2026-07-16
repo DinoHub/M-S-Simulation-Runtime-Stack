@@ -216,6 +216,10 @@ def build_context_ardupilot_xfs(env: dict) -> dict:
         "sitl_flavor": env.get("SITL_FLAVOR", "stock").strip().lower(),
         "camera": _camera_context(env),
         "fisheye": _fisheye_context(env),
+        # LIDAR_KIND toggle (lidar/gpulidar) — same knob as the condo
+        # scenarios; drives the settings.json SensorType and the bridge's
+        # registration input topic together.
+        "lidar": _lidar_context(env),
     }
 
 

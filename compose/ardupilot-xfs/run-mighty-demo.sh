@@ -84,12 +84,18 @@ docker exec mavros_d1 bash -lc "
   ros2 service call /Copter1/mavros/cmd/takeoff mavros_msgs/srv/CommandTOL '{altitude: ${TAKEOFF_ALT}}' >/dev/null
   echo '  takeoff commanded'
 "
-echo "  waiting to clear 1m..."
-for i in $(seq 1 30); do
+# Gate on ~target altitude, not just "off the ground": starting MIGHTY
+# mid-climb kills the takeoff (its pre-plan zero-velocity heartbeat
+# overrides the GUIDED climb and the drone sinks back down). Window is
+# generous — GPU-lidar render load can slow the whole sim well below
+# real-time.
+MIN_ALT=$(awk -v a="$TAKEOFF_ALT" 'BEGIN{print a-0.7}')
+echo "  waiting to reach ${MIN_ALT}m..."
+for i in $(seq 1 90); do
   z=$(docker exec airsim_bridge_d1 bash -lc \
     'ros2 topic echo /Copter1/ground_truth/odom --once 2>/dev/null | sed -n "/position:/,/orientation:/p" | grep "z:" | awk "{print \$2}"' || echo 0)
-  awk -v z="$z" 'BEGIN{exit !(z>1.0)}' && { echo "  airborne (z=${z})"; break; }
-  [ "$i" -eq 30 ] && { echo "ERROR: never got airborne (z=${z})"; exit 1; }
+  awk -v z="$z" -v m="$MIN_ALT" 'BEGIN{exit !(z>m)}' && { echo "  airborne (z=${z})"; break; }
+  [ "$i" -eq 90 ] && { echo "ERROR: never reached ${MIN_ALT}m (z=${z})"; exit 1; }
   sleep 2
 done
 
