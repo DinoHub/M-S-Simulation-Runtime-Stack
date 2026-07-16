@@ -379,7 +379,10 @@ services:
   # ---------------------------------------------------------------------------
   airsim-xfs:
     image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:xfs-latest}
-    pull_policy: always
+    # if_not_present (was always): the current xfs-latest with the DLC pak +
+    # baked grass exists only locally; `always` re-pulls the stale registry tag
+    # and clobbers it. Revert to `always` once the new image is pushed.
+    pull_policy: if_not_present
     container_name: ardupilot-xfs-airsim
     hostname: ardupilot-xfs-airsim
     restart: unless-stopped
@@ -432,6 +435,13 @@ services:
       # sidecar starts. Default false — browser viewer disabled. Toggle
       # with: ./launch.sh ardupilot-xfs --with-pixel-streaming
       - ENABLE_PIXEL_STREAMING=${ENABLE_PIXEL_STREAMING:-false}
+      # Scenario JSON passed to the ScenarioRunner via -scenario=. The map's
+      # ScenarioManager carries an editor-authored ABSOLUTE host path (set via
+      # the file picker) that does not exist inside the container, so without
+      # this flag the scenario fails to load and no obstacles spawn. The
+      # command line has higher precedence than the baked path. Set empty to
+      # fall back to the baked path (host/editor runs only).
+      - SCENARIO_FILE=${SCENARIO_FILE:-/app/Xfs/Xfs/Scenarios/authored/xfs_l_main_obstacles.json}
 
     # network_mode: host removed — AirSim now lives on sim_net at 172.30.0.10.
     # RPC 41451 + per-vehicle FDM ports bind 0.0.0.0 (settings LocalHostIp) so
@@ -476,9 +486,14 @@ services:
         if [ "$$ENABLE_PIXEL_STREAMING" = "true" ]; then
           PS_FLAG="-PixelStreamingURL=$$PIXELSTREAMING_URL"
         fi
+        SCENARIO_FLAG=""
+        if [ -n "$$SCENARIO_FILE" ]; then
+          SCENARIO_FLAG="-scenario=$$SCENARIO_FILE"
+        fi
         echo "AirSim display mode: $$DISPLAY_FLAGS"
         echo "AirSim pixel-streaming: $$ENABLE_PIXEL_STREAMING"
-        exec /app/Xfs/Xfs.sh $$DISPLAY_FLAGS -ResX=1920 -ResY=1080 $$PS_FLAG
+        echo "AirSim scenario: $${SCENARIO_FILE:-<map default>}"
+        exec /app/Xfs/Xfs.sh $$DISPLAY_FLAGS -ResX=1920 -ResY=1080 $$PS_FLAG $$SCENARIO_FLAG
 
     # Health = RPC port open *and* the engine has finished bringing the level
     # up. Plain `nc -z 41451` flips healthy the instant ASimModeBase::startApiServer()
