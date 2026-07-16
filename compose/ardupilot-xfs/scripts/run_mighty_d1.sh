@@ -27,6 +27,13 @@
 #   USE_RVIZ        - true to start RViz inside the container (needs X11)
 #   MIGHTY_PARAMS   - host path to a mighty.yaml to use instead of the
 #                     image's baked config
+#   AUTOPILOT       - ardupilot (default) | px4. The adaptor's heartbeat
+#                     publish policy / start phase differ (PX4 needs an
+#                     OFFBOARD setpoint prestream; ArduCopter GUIDED does
+#                     not).
+#   MIGHTY_NETWORK  - docker network (default agent_internal-1). For the
+#                     all-host-net px4-condo scenario use:
+#                       MIGHTY_NETWORK=host ROS_DOMAIN_ID=0 AUTOPILOT=px4
 set -euo pipefail
 
 IMAGE="${MIGHTY_IMAGE:-dhdevspace/auto_mns:mighty_algo_only}"
@@ -35,6 +42,7 @@ NETWORK="${MIGHTY_NETWORK:-agent_internal-1}"
 VEHICLE="${VEHICLE:-Copter1}"
 DOMAIN="${ROS_DOMAIN_ID:-1}"
 USE_RVIZ="${USE_RVIZ:-false}"
+AUTOPILOT="${AUTOPILOT:-ardupilot}"
 
 WS=/workspace/generated/mighty
 PARAMS_IN_IMAGE="${WS}/.planner_ws/ros_ws/src/mighty/config/mighty.yaml"
@@ -82,7 +90,7 @@ docker run -d \
 
     exec ros2 launch mighty_adaptor mighty_adaptor.launch.py \
       namespace:='${NAMESPACE:-NX01}' \
-      autopilot:=ardupilot \
+      autopilot:='${AUTOPILOT}' \
       odom_external_topic:='/${VEHICLE}/ground_truth/odom' \
       occupancy_external_topic:='/${VEHICLE}/registered_point_cloud' \
       term_goal_external_topic:='${GOAL_TOPIC:-/goal}' \
@@ -91,6 +99,6 @@ docker run -d \
       use_rviz:='${USE_RVIZ}'
   "
 
-echo "Started: ${NAME} (network=${NETWORK}, domain=${DOMAIN}, vehicle=${VEHICLE}, autopilot=ardupilot)"
+echo "Started: ${NAME} (network=${NETWORK}, domain=${DOMAIN}, vehicle=${VEHICLE}, autopilot=${AUTOPILOT})"
 echo "Logs:    docker logs -f ${NAME}"
 echo "Goal:    docker exec mavros_d1 bash -lc \"ros2 topic pub --once /goal geometry_msgs/msg/PoseStamped '{header: {frame_id: map}, pose: {position: {x: 10.0, y: 0.0, z: 5.0}, orientation: {w: 1.0}}}'\""

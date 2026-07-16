@@ -98,6 +98,19 @@ stop_local_planner() {
 echo "Stopping metrics stack..."
 docker compose -f docker-compose-metrics.yml --profile metrics down --remove-orphans || true
 
+# MIGHTY demo extras (compose/ardupilot-xfs/run-mighty-demo.sh). The mavros
+# overlay is a SEPARATE compose project (ardupilot-xfs-mavros-test), so the
+# scenario down_scenario() sweep below never sees it — a leftover mavros_d1
+# then name-collides with px4 scenarios that define their own mavros_d1.
+# mighty_d1 is a bare `docker run` container, also invisible to compose.
+echo "Stopping MIGHTY demo extras (if any)..."
+docker rm -f mighty_d1 >/dev/null 2>&1 || true
+# XAUTHORITY fallback: the overlay declares it as a strict ${VAR:?} which
+# compose evaluates even for `down` — an unset value would abort the parse.
+XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" \
+  docker compose -f compose/ardupilot-xfs/docker-compose.mavros-test.yml \
+  down --remove-orphans >/dev/null 2>&1 || true
+
 stop_local_planner
 
 # Explicit scenario → stop just that one. No scenario → auto-detect and stop
