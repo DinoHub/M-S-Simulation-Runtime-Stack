@@ -46,15 +46,20 @@ AUTOPILOT="${AUTOPILOT:-ardupilot}"
 
 WS=/workspace/generated/mighty
 PARAMS_IN_IMAGE="${WS}/.planner_ws/ros_ws/src/mighty/config/mighty.yaml"
+# Default to the repo's fixed params copy. The image's baked mighty.yaml has a
+# bare `mighty_node:` header that never matches the node inside /NX01 — every
+# param silently ignored (use_free_start=0 -> "Start is not free" + segfault).
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+MIGHTY_PARAMS="${MIGHTY_PARAMS:-${REPO_ROOT}/config/experiments/mighty.yaml}"
 
-if ! docker network inspect "$NETWORK" >/dev/null 2>&1; then
+if [ "$NETWORK" != "host" ] && ! docker network inspect "$NETWORK" >/dev/null 2>&1; then
   echo "ERROR: docker network '$NETWORK' not found. Is the main stack up? (./launch.sh ardupilot-xfs)"
   exit 1
 fi
 
 PARAMS_MOUNT=()
 PARAMS_PATH="$PARAMS_IN_IMAGE"
-if [ -n "${MIGHTY_PARAMS:-}" ]; then
+if [ -n "${MIGHTY_PARAMS:-}" ] && [ "$MIGHTY_PARAMS" != "baked" ]; then
   if [ ! -f "$MIGHTY_PARAMS" ]; then
     echo "ERROR: MIGHTY_PARAMS not found: $MIGHTY_PARAMS"
     exit 1
