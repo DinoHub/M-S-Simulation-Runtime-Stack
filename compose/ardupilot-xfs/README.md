@@ -371,6 +371,64 @@ Two gotchas to know:
   displacement. If you need real position deltas, query AirSim RPC
   directly or set `SR1_POSITION` in `default_params.parm`.
 
+## MIGHTY local planner (drone 1)
+
+One command reproduces the whole verified flow (stack → MAVROS → takeoff →
+planner → mission):
+
+```bash
+./run-mighty-demo.sh                  # bring-up only, prints the goal command
+./run-mighty-demo.sh --goal 20 0 3    # + fly a single /goal
+./run-mighty-demo.sh --with-metrics   # + metrics-collector flies mission.json
+./run-mighty-demo.sh --teardown       # stop demo extras (keeps main stack)
+```
+
+Data path:
+
+```
+mission.json ─► scenario_controller (metrics-collector, host net, domain 1)
+                    │ /goal (PoseStamped, 5 Hz)
+                    ▼
+        mighty_d1 (agent_internal-1, image mighty_algo_only)
+          reads  /Copter1/ground_truth/odom
+                 /Copter1/registered_point_cloud   (MUST be map-frame!)
+          writes /Copter1/mavros/setpoint_raw/local (PositionTarget, 100 Hz)
+                    │
+                    ▼
+        mavros_d1 ─(sim_net TCP 172.30.0.21:5760)─► ArduCopter GUIDED
+```
+
+Four integration facts, learned the hard way:
+
+1. **World-frame cloud required.** MIGHTY consumes
+   `registered_point_cloud` raw (no TF transform). The repo default
+   `LOCAL_OBS_TARGET_FRAME=base_link` feeds it body-frame points → its
+   world map is garbage → `goal is not free!` + planner segfault. The
+   demo script exports `LOCAL_OBS_TARGET_FRAME=map` and recreates
+   `airsim_bridge_d1` if needed. This changes the cloud's `frame_id`
+   contract for every other consumer on drone 1 — flip `.env` only if
+   that's globally acceptable.
+2. **Params file needs a wildcard header.** The image's baked
+   `mighty.yaml` starts with `mighty_node:`, which never matches the
+   node launched inside `/NX01` — every param silently ignored
+   (compiled defaults: `use_free_start=0` → `Start is not free` +
+   segfault). Our working copy `config/experiments/mighty.yaml` uses
+   `/**/mighty_node:` and is the file `run_mighty_d1.sh` mounts by
+   default (via `run-mighty-demo.sh`).
+3. **Broken colcon chain in the image.**
+   `adaptor_ws/install/setup.bash` doesn't register `mighty_adaptor`;
+   `scripts/run_mighty_d1.sh` exports `AMENT_PREFIX_PATH`/`PYTHONPATH`
+   manually. The image runs as `appuser` with workspaces under
+   `/workspace/generated/mighty` — the old `MIGHTY-docker/run.sh`
+   sources `/root/*` paths that don't exist here.
+4. **Mission-tuned params.** `force_goal_z: false` (upstream forces
+   every goal to z=1 m), `goal_seen_radius: 1.5` (upstream 5.0 stops
+   replanning 2-3 m short of the goal — outside the metrics
+   controller's 0.5 m tolerance), `use_free_goal: true` (a waypoint
+   beyond sensor range is in unknown space; upstream refuses to plan
+   to it and the drone stalls), `v_max: 2.5` (1.0 can't beat the 120 s
+   waypoint timeout on long legs).
+
 ## ROS_DOMAIN_ID strategy
 
 | Setup | What to set |

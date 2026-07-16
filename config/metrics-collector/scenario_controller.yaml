@@ -20,7 +20,11 @@
     watchdog_period_sec: 0.2
     waypoint_timeout: 120.0
 
-    goal_tolerance: 0.5
+    # 1.0 (was 0.5): MIGHTY stops replanning inside its goal_seen_radius
+    # (1.5 m) and the committed trajectory ends ~0.8 m short of the goal, so
+    # a 0.5 m arrival check can never fire. Matches GOAL_TOLERANCE=1.0 that
+    # run-mighty-demo.sh passes to the collector.
+    goal_tolerance: 1.0
     use_2d_goal_distance: true
 
     autoload_mission_on_start: true

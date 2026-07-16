@@ -45,7 +45,10 @@
         dgp_timeout_duration_ms: 10000                          # [ms] Timeout duration for the DGP
         use_free_start: true                                    # [-] Use free start for the DGP
         free_start_factor: 1.0                                  # [-] Factor for the free start
-        use_free_goal: false                                    # [-] Use free goal for the DGP
+        # true (upstream: false): a goal in still-unknown space (e.g. a
+        # mission.json waypoint beyond sensor range) otherwise fails every
+        # replan with "goal is not free!" and the drone stalls mid-mission.
+        use_free_goal: true                                     # [-] Use free goal for the DGP
         free_goal_factor: 2.0                                   # [-] Factor for the free goal
         global_planner_huristic_weight: 2.0         # [-] Weight for the heuristic in the global planner
         max_dist_vertexes: 2.0                      # [m] Maximum distance between two consecutive vertexes
@@ -69,7 +72,9 @@
         num_N: 3                                    # [-] Number of trajectory pieces for local optimization
         horizon: 15.0                               # [m] Horizon
         dc: 0.01                                    # [s] Duration for the interpolation=Value of the timer pubGoal
-        v_max: 1.0                                  # [m/s]  max velocity
+        # 2.5 (upstream: 1.0): at 1 m/s a 50 m mission leg cannot beat the
+        # scenario_controller's 120 s waypoint_timeout with margin.
+        v_max: 2.5                                  # [m/s]  max velocity
         a_max: 50.0                                 # [m/s2] max acceleration
         j_max: 100.0                                 # [m/s3] max jerk
         dynamic_weight: 1e+3                        # [-] Weight of the obstacles and agents distance in the optimization
