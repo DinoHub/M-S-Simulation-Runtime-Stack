@@ -398,6 +398,65 @@ mission.json ─► scenario_controller (metrics-collector, host net, domain 1)
         mavros_d1 ─(sim_net TCP 172.30.0.21:5760)─► ArduCopter GUIDED
 ```
 
+### Step-by-step (manual, gated)
+
+The demo script automates exactly this. Run manually when you want control
+over each stage. Every step has a gate — do not proceed until it passes.
+
+```bash
+# 1. Main stack — world-frame cloud is MANDATORY for MIGHTY
+export LOCAL_OBS_TARGET_FRAME=map        # BEFORE launch
+./launch.sh ardupilot-xfs
+# GATE: docker ps | grep ardupilot-xfs-airsim  -> (healthy)
+# GATE: docker exec airsim_bridge_d1 bash -lc \
+#   'ros2 topic echo /Copter1/registered_point_cloud --once --field header' \
+#   -> frame_id: map
+
+# 2. MAVROS (drone 1)
+cd compose/ardupilot-xfs
+docker compose -f docker-compose.mavros-test.yml up -d mavros_d1
+# GATE (the "wait for FCU" step, ~10-25 s — repeat until true):
+# docker exec mavros_d1 bash -lc \
+#   'ros2 topic echo /Copter1/mavros/state --once' | grep connected
+
+# 3. GUIDED + arm + takeoff — MIGHTY refuses to plan from the ground
+docker exec mavros_d1 bash -lc "
+ros2 service call /Copter1/mavros/set_mode mavros_msgs/srv/SetMode '{custom_mode: GUIDED}'
+sleep 2
+ros2 service call /Copter1/mavros/cmd/arming mavros_msgs/srv/CommandBool '{value: true}'
+sleep 2
+ros2 service call /Copter1/mavros/cmd/takeoff mavros_msgs/srv/CommandTOL '{altitude: 3.0}'"
+# GATE: ground_truth/odom position z > 1.0
+
+# 4. MIGHTY (params default to config/experiments/mighty.yaml)
+./scripts/run_mighty_d1.sh
+# GATE: docker logs mighty_d1 | grep "Adaptor ready"
+
+# 5a. Single goal
+docker exec mavros_d1 bash -lc "ros2 topic pub --once /goal geometry_msgs/msg/PoseStamped \
+  '{header: {frame_id: map}, pose: {position: {x: 20.0, y: 0.0, z: 3.0}, orientation: {w: 1.0}}}'"
+
+# 5b. OR metrics mission (mission.json waypoints; edit the file first if needed)
+cd ../..
+CONFIG_ROOT=$PWD/config ROS_DOMAIN_ID=1 LOCAL_PLANNER=mighty \
+  USE_RUN_STATE_TRIGGER=false GOAL_TOLERANCE=1.0 \
+  docker compose -f docker-compose-metrics.yml --profile metrics \
+  up -d --force-recreate metrics-collector
+# GATE: docker logs metrics-collector | grep "Scenario controller running"
+docker exec metrics-collector bash -lc \
+  'source /opt/ros/*/setup.bash; ros2 service call /scenario/start_mission std_srvs/srv/Trigger'
+# ("Mission already active" = auto-started because the drone was already armed — fine.)
+# Verdict: docker logs -f metrics-collector ; results in ./metrics_outputs/
+
+# 6. Monitoring (optional): ./launch.sh ardupilot-xfs --with-monitoring  (Grafana :3000)
+
+# Teardown: compose/ardupilot-xfs/run-mighty-demo.sh --teardown, then ./stop.sh
+```
+
+Steps 2–4 must be re-run after every `./launch.sh`. Recreate the
+metrics-collector (5b) after every `mission.json` edit — it's a single-file
+bind mount, a live container keeps the old inode.
+
 Four integration facts, learned the hard way:
 
 1. **World-frame cloud required.** MIGHTY consumes
