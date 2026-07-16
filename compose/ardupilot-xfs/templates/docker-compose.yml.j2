@@ -122,12 +122,10 @@ services:
       # AirSim reachable on sim_net at 172.30.0.10 (was localhost under host net).
       # arducopter connects its FDM control (--sim-address) here.
       - ARDUPILOT_SIM_HOSTNAME=${ARDUPILOT_SIM_HOSTNAME:-172.30.0.10}
-      # NOTE: the shipped ardupilot-slim image hardcodes its primary MAVLink
-      # out to `udpclient:127.0.0.1:14550` (run_ardupilot_airsim.sh) and does
-      # NOT honor a GCS-host env — so QGC can't be reached by a UDP push. QGC
-      # instead CONNECTS to this SITL's MAVLink TCP server at
-      # 172.30.0.{{ 21 + d.instance }}:{{ d.mavlink_tcp }} (--serial1 tcp:...);
-      # links seeded in config/qgroundcontrol/qgc_config/QGroundControl.ini.
+      # MAVLink to QGC: the `stock` flavor pushes UDP to QGC (172.30.0.30:14550,
+      # auto-connect); the `slim` image hardcodes its UDP out to loopback, so QGC
+      # must CONNECT to the SITL's TCP server at
+      # 172.30.0.{{ 21 + d.instance }}:{{ d.mavlink_tcp }} instead. See below.
       - ARDUPILOT_HOME_LAT=${ARDUPILOT_HOME_LAT:-42.764970}
       - ARDUPILOT_HOME_LON=${ARDUPILOT_HOME_LON:--115.579139}
       - ARDUPILOT_HOME_ALT=${ARDUPILOT_HOME_ALT:-1130}
@@ -141,7 +139,46 @@ services:
       - ./data/ardupilot-xfs/instance_{{ d.instance }}:/ardupilot_workspace/instances/instance_{{ d.instance }}
       - ./data/ardupilot-xfs/logs_{{ d.instance }}:/ardupilot_data/logs
       - ${CONFIG_ROOT}/ardupilot/config:/ardupilot_config:ro
+{% if sitl_flavor == 'stock' %}
+    # STOCK flavor: dhdevspace/ardupilot-sitl:Copter-4.5.5. Its entrypoint runs
+    # sim_vehicle.py (force-overrides --sim-address=127.0.0.1, documented-broken
+    # against this AirSim JSON backend), so we bypass it and exec `arducopter`
+    # directly with the airsim-copter backend pointed at sim_net static IPs.
+    #   --sim-address .10 | --sim-port-out {{ d.fdm_tcp }} (control TO AirSim)
+    #                     | --sim-port-in {{ d.fdm_udp }} (sensors FROM AirSim)
+    #   --serial0 udp .30:14550  MAVLink push to QGC (auto-connect)
+    #   --serial1 tcp:{{ d.mavlink_tcp }}  MAVLink TCP (QGC/MAVROS)
+    #   --defaults: copter + AirSim frame + our sim-tuned params (SCHED_LOOP_RATE
+    #     200 to match AirSim's ~220Hz + GPS_TYPE 100, so pre-arm passes honestly
+    #     with arming checks LIVE — not ARMING_CHECK 0). -w wipes EEPROM.
+    image: ${ARDUPILOT_IMAGE:-dhdevspace/ardupilot-sitl:Copter-4.5.5}
+    working_dir: /ardupilot
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        exec /ardupilot/build/sitl/bin/arducopter \
+          -M airsim-copter \
+          --sim-address 172.30.0.10 \
+          --sim-port-in {{ d.fdm_udp }} \
+          --sim-port-out {{ d.fdm_tcp }} \
+          -O $$ARDUPILOT_HOME_LAT,$$ARDUPILOT_HOME_LON,$$ARDUPILOT_HOME_ALT,0 \
+          --serial0 udpclient:172.30.0.30:14550 \
+          --serial1 tcp:{{ d.mavlink_tcp }} \
+          --serial2 none \
+          --defaults /ardupilot/Tools/autotest/default_params/copter.parm,/ardupilot/Tools/autotest/default_params/airsim-quadX.parm,/ardupilot_config/copter455-airsim.parm \
+          -I {{ d.instance }} -w
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f arducopter"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 60s
+{% else %}
+    # SLIM flavor: dhdevspace/auto_mns:ardupilot-slim, its own entrypoint wraps
+    # arducopter (airsim-copter) — command is just the instance number.
+    image: ${ARDUPILOT_IMAGE:-dhdevspace/auto_mns:ardupilot-slim}
     command: ["{{ d.instance }}"]
+{% endif %}
 
 {% endfor %}
   # ---------------------------------------------------------------------------

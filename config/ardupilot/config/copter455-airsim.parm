@@ -1,0 +1,26 @@
+# Copter-4.5.5 (stock ArduPilot image) on AirSim SITL — "live checks" variant.
+# Loaded LAST in --defaults so these override the image's copter.parm /
+# airsim-quadX.parm. Goal: pass pre-arm HONESTLY instead of masking with
+# ARMING_CHECK 0, so real GPS/EKF/INS checks stay active.
+
+# --- loop rate ---
+# The airsim-copter FDM is lockstepped to AirSim's real-time physics, which
+# sustains ~220Hz on one GPU box (300 is unreachable while rendering). Set the
+# expected loop rate to 200 so the "Main loop slow" pre-arm passes legitimately
+# (220 > 200*0.9) rather than being disabled.
+SCHED_LOOP_RATE 200
+
+# --- GPS ---
+# AP_GPS_SITL backend: GPS read straight from the sim state (AirSim), healthy
+# and low-latency, so the GPS + EKF arming checks can pass on their own.
+GPS_TYPE 100
+SIM_GPS_NUMSATS 15
+
+# --- EKF ---
+EK3_ENABLE 1
+EK3_IMU_MASK 3
+
+# NOTE: ARMING_CHECK is deliberately NOT set here — it stays at the Copter
+# default (all checks live). This is the whole point of option B: observe what
+# remains gating and disable only sim-irrelevant bits (e.g. RC) via a bitmask,
+# never 0.

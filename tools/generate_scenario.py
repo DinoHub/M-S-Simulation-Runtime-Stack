@@ -209,6 +209,11 @@ def build_context_ardupilot_xfs(env: dict) -> dict:
         "x_spacing": x_spacing,
         "mavlink_port_base": mavlink_base,
         "fdm_tcp_port_base": fdm_tcp_base,
+        # SITL image flavor: "stock" = dhdevspace/ardupilot-sitl:Copter-4.5.5
+        # driven by a direct `arducopter -M airsim-copter` command (bypasses the
+        # image's broken sim_vehicle.py); "slim" = the bespoke ardupilot-slim
+        # image with its own entrypoint (command: ["<instance>"]).
+        "sitl_flavor": env.get("SITL_FLAVOR", "stock").strip().lower(),
         "camera": _camera_context(env),
         "fisheye": _fisheye_context(env),
     }

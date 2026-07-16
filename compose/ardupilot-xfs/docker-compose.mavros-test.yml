@@ -10,11 +10,11 @@
 # `down --remove-orphans` here doesn't sweep up the main `ardupilot-xfs`
 # project's airsim_bridge_dN / SITL / etc.
 #
-# Brings up 4 mavros_dN containers, one per drone:
+# Brings up 1 mavros_dN containers, one per drone:
 #
 #   mavros_dN  ─(agent_internal-N)─►  airsim_bridge_dN
 #       │
-#       └────(host MAVLink TCP 5760+4 drones)────►  ardupilot-drone-{N-1}
+#       └────(host MAVLink TCP 5760+1 drones)────►  ardupilot-drone-{N-1}
 #                                                       │
 #                                                       └──►  AirSim XFS
 #
@@ -87,95 +87,5 @@ services:
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=true
 
-  mavros_d2:
-    <<: *mavros-defaults
-    container_name: mavros_d2
-    hostname: mavros_d2
-    environment:
-      # HOME must point at a writable dir — uid 1000 is absent from the
-      # image's /etc/passwd, so HOME defaults to / and `ros2 launch` cannot
-      # create its ~/.ros/log dir (same fix as airsim_bridge_dN).
-      - HOME=/tmp
-      - DISPLAY=${DISPLAY:-:0}
-      - XAUTHORITY=/tmp/.Xauthority
-      - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
-      - ROS_LOCALHOST_ONLY=0
-    networks:
-      - agent_internal-2
-    # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
-    # `init: false` note above). The image ENTRYPOINT already sources ROS +
-    # the workspace, so no explicit `source` line is needed.
-    command:
-      - "bash"
-      - "-lc"
-      - >
-        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
-        vehicle:=Copter2
-        fcu_url:=tcp://host.docker.internal:5770
-        target_system_id:=2
-        mavros_config:=mavros_ardupilot.yaml
-        enable_dds_cleanup:=false
-
-  mavros_d3:
-    <<: *mavros-defaults
-    container_name: mavros_d3
-    hostname: mavros_d3
-    environment:
-      # HOME must point at a writable dir — uid 1000 is absent from the
-      # image's /etc/passwd, so HOME defaults to / and `ros2 launch` cannot
-      # create its ~/.ros/log dir (same fix as airsim_bridge_dN).
-      - HOME=/tmp
-      - DISPLAY=${DISPLAY:-:0}
-      - XAUTHORITY=/tmp/.Xauthority
-      - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
-      - ROS_LOCALHOST_ONLY=0
-    networks:
-      - agent_internal-3
-    # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
-    # `init: false` note above). The image ENTRYPOINT already sources ROS +
-    # the workspace, so no explicit `source` line is needed.
-    command:
-      - "bash"
-      - "-lc"
-      - >
-        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
-        vehicle:=Copter3
-        fcu_url:=tcp://host.docker.internal:5780
-        target_system_id:=3
-        mavros_config:=mavros_ardupilot.yaml
-        enable_dds_cleanup:=false
-
-  mavros_d4:
-    <<: *mavros-defaults
-    container_name: mavros_d4
-    hostname: mavros_d4
-    environment:
-      # HOME must point at a writable dir — uid 1000 is absent from the
-      # image's /etc/passwd, so HOME defaults to / and `ros2 launch` cannot
-      # create its ~/.ros/log dir (same fix as airsim_bridge_dN).
-      - HOME=/tmp
-      - DISPLAY=${DISPLAY:-:0}
-      - XAUTHORITY=/tmp/.Xauthority
-      - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
-      - ROS_LOCALHOST_ONLY=0
-    networks:
-      - agent_internal-4
-    # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
-    # `init: false` note above). The image ENTRYPOINT already sources ROS +
-    # the workspace, so no explicit `source` line is needed.
-    command:
-      - "bash"
-      - "-lc"
-      - >
-        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
-        vehicle:=Copter4
-        fcu_url:=tcp://host.docker.internal:5790
-        target_system_id:=4
-        mavros_config:=mavros_ardupilot.yaml
-        enable_dds_cleanup:=false
-
 networks:
   agent_internal-1: { external: true, name: agent_internal-1 }
-  agent_internal-2: { external: true, name: agent_internal-2 }
-  agent_internal-3: { external: true, name: agent_internal-3 }
-  agent_internal-4: { external: true, name: agent_internal-4 }
