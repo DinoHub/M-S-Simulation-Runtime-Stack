@@ -10,6 +10,16 @@ if [ -f ".env" ]; then
   set +a
 fi
 
+if [[ "${1:-}" == "--stack" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    echo "ERROR: --stack requires a generated stack directory"
+    exit 1
+  fi
+  stack="$2"
+  shift 2
+  exec "$SCRIPT_DIR/tools/mns-runtime-tool/stacks/scripts/mns_runtime_tool.sh" stop --stack "$stack" "$@"
+fi
+
 SCENARIO="${1:-${SCENARIO:-}}"
 
 # If no scenario was explicitly passed, auto-detect the running one by

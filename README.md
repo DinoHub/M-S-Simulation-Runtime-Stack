@@ -28,6 +28,32 @@ make help                             # full flag/target reference
 The first launch pulls Docker images, which can take several minutes.
 Subsequent launches are warm.
 
+### ScenarioSpec Runtime
+
+For authored scenarios, launch the ScenarioSpec directly. This path uses the
+vendored runtime tool under `tools/mns-runtime-tool`, validates the pinned
+ScenarioSpec contract, generates an image-only stack under `generated/`, and
+runs that stack. No Integration Platform service source checkout is required.
+
+```bash
+./launch.sh --scenario-spec /path/to/ScenarioSpec-folder --stack-output generated/my_scenario
+./logs.sh stack generated/my_scenario -f
+./stop.sh --stack generated/my_scenario --remove-orphans
+```
+
+Equivalent Make targets:
+
+```bash
+make scenariospec SCENARIO_SPEC=/path/to/ScenarioSpec-folder STACK=generated/my_scenario
+make scenariospec-logs STACK=generated/my_scenario
+make scenariospec-stop STACK=generated/my_scenario
+```
+
+Use `--generate-only` or `make scenariospec-generate` to inspect the generated
+compose/config before starting containers. A generated stack may include a
+`source/` folder; that is only a ScenarioSpec snapshot for provenance and metrics
+logs, not a Docker build context.
+
 ---
 
 ## How a launch works

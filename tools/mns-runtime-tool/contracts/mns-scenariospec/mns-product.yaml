@@ -1,0 +1,10 @@
+schema: mns.product.v1
+id: mns-scenariospec
+name: MnS-ScenarioSpec
+version: 0.1.0
+
+provides:
+  scenariospec:
+    schema_id: mns.scenario.v1
+    schema_version: 1
+    schema_path: schema/ScenarioSpecSchema.yaml

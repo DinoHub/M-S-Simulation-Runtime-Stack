@@ -1,0 +1,150 @@
+# ArduPilot SITL Parameter File for AirSim Integration
+# This file contains default parameters optimized for AirSim simulation
+# Parameters can be overridden via QGroundControl or MAVProxy
+
+# Flight Mode Configuration
+FLTMODE1    0       # Stabilize
+FLTMODE2    2       # AltHold
+FLTMODE3    4       # Guided (for API control)
+FLTMODE4    5       # Loiter
+FLTMODE5    6       # RTL (Return to Launch)
+FLTMODE6    9       # Land
+
+# Arming Configuration for Simulation
+# ARMING_CHECK bitmask: disable GPS (8) and INS (16) checks
+# These checks fail in simulation due to:
+# - GPS: Simulated GPS doesn't pass all hardware health checks
+# - INS: SITL can't achieve 300Hz loop rate with AirSim, gyros/accels have timing issues
+# Value 231 = 255 - 8 - 16 (all checks except GPS and INS)
+ARMING_CHECK    0       # Disable all arming checks for simulation
+ARMING_ACCTHRESH    0.75    # Accelerometer threshold
+
+# Safety Switch Configuration for Simulation
+# In SITL there is no physical safety switch, so we must disable it
+BRD_SAFETYENABLE    0       # Disable safety switch requirement
+
+# GPS Configuration (important for AirSim)
+# GPS_TYPE=100 uses AP_GPS_SITL which reads directly from sitl->state
+# This bypasses the simulated serial GPS for more reliable AirSim integration
+# Data flow: AirSim JSON/UDP → SIM_AirSim → sitl->state → AP_GPS_SITL → EKF3
+GPS_TYPE    100     # SITL direct GPS backend (reads from sitl->state)
+GPS_HDOP_GOOD   4.0     # Accept HDOP up to 4.0 (default 1.4, more lenient for sim)
+SIM_GPS_DELAY   0.1     # GPS delay (seconds, reduced for sim)
+
+# Additional GPS-related safety overrides for simulation
+# These ensure GPS health checks pass even if timing is imperfect
+SIM_GPS_NUMSATS     15      # Simulated number of satellites (default is 10)
+SIM_GPS_HDG_ACC     0.1     # Simulated heading accuracy (very good)
+
+# Battery Configuration (adjust for your simulation)
+BATT_CAPACITY   5200    # Battery capacity (mAh)
+BATT_MONITOR    4       # Analog voltage and current
+
+# Telemetry Rates (optimize for real-time monitoring)
+SR0_EXTRA1      10      # Attitude (10 Hz)
+SR0_EXTRA2      10      # VFR_HUD (10 Hz)
+SR0_EXTRA3      2       # AHRS, HWSTATUS (2 Hz)
+SR0_POSITION    10      # Global position (10 Hz)
+SR0_RAW_SENS    2       # Raw IMU (2 Hz)
+SR0_RC_CHAN     2       # RC channels (2 Hz)
+
+# Failsafe Configuration
+FS_GCS_ENABLE   0       # Disable GCS failsafe for SITL
+FS_THR_ENABLE   0       # Disable throttle failsafe for SITL
+
+# Logging Configuration - Enable for GPS diagnostics
+LOG_BACKEND_TYPE    1       # Enable logging (DataFlash)
+LOG_DISARMED    1       # Log while disarmed to capture GPS data for diagnostics
+
+# Simulation-specific Parameters
+SIM_SPEEDUP     1.0     # Real-time simulation (1.0 = no speedup)
+SIM_DRIFT_SPEED 0.05    # GPS drift speed (m/s)
+SIM_DRIFT_TIME  5       # GPS drift time constant
+
+# Disable floating point exception abort for AirSim
+# The strict FPE checking catches benign numerical issues in simulation
+SIM_FLOAT_EXCEPT    0
+
+# ========================================
+# Disable ALL lidar / proximity / avoidance
+# ========================================
+# ArduPilot has 3 subsystems that request lidar-like data:
+# 1. Rangefinder (RNGFND) - altitude/terrain
+# 2. Proximity (PRX) - obstacle detection
+# 3. Avoidance stack (AVOID/OA) - path planning
+# All must be disabled to prevent AirSim lidar JSON parse errors.
+# This makes ArduPilot a pure GPS+IMU flight controller.
+
+# Stop SITL from creating simulated sensors
+SIM_SONAR_SCALE     0
+SIM_PROXIMITY_TYPE  0
+
+# Disable all rangefinders
+RNGFND1_TYPE    0
+RNGFND2_TYPE    0
+RNGFND3_TYPE    0
+RNGFND4_TYPE    0
+
+# Disable proximity sensors
+PRX_TYPE    0
+PRX1_TYPE   0
+
+# Disable avoidance stack (these internally request proximity)
+AVOID_ENABLE    0
+OA_TYPE         0
+
+# Disable terrain/range usage in navigation
+TERRAIN_ENABLE  0
+WPNAV_RFND_USE  0
+
+# EKF (Extended Kalman Filter) Configuration
+EK3_ENABLE      1       # Enable EKF3
+EK3_IMU_MASK    3       # Use first 2 IMUs
+EK3_GPS_TYPE    0       # 3D velocity and position
+EK3_GPS_CHECK   0       # Disable GPS consistency checks (for simulation)
+
+# EKF3 Source Configuration - GPS-only mode for AirSim
+# AirSim sends sensor data via JSON/UDP but does NOT send:
+# - Barometer via MAVLink HIL_SENSOR
+# - Magnetometer via MAVLink HIL_SENSOR
+# Therefore we configure EKF3 to use GPS for everything
+EK3_SRC1_POSXY  3       # GPS position XY
+EK3_SRC1_VELXY  3       # GPS velocity XY
+EK3_SRC1_POSZ   3       # GPS altitude (changed from 1=baro to 3=GPS)
+EK3_SRC1_VELZ   3       # GPS velocity Z
+EK3_SRC1_YAW    1       # Use compass for yaw (SITL simulated compass)
+
+# Enable SITL simulated compass
+# Note: SITL generates its own magnetometer data internally - doesn't need AirSim HIL_SENSOR
+# This provides yaw to EKF3 allowing GPS position fusion while stationary
+COMPASS_ENABLE  1       # Enable SITL simulated compass
+COMPASS_USE     1       # Use first compass for EKF
+COMPASS_USE2    0       # Disable secondary compass
+COMPASS_USE3    0       # Disable tertiary compass
+
+# EKF Noise Parameters - More lenient for GPS-only operation
+EK3_ALT_M_NSE   5.0     # Increase altitude noise tolerance (default 2.0)
+EK3_POSNE_M_NSE 1.0     # Position noise (default 0.5)
+EK3_VELD_M_NSE  0.7     # Vertical velocity noise (default 0.3)
+
+# Compass calibration configuration for SITL
+# EK3_MAG_CAL=0 uses default calibration - SITL compass is perfect (no interference)
+# EK3_MAG_CAL=3 = never learn calibrations (also works well for SITL)
+EK3_MAG_CAL         3       # Never learn calibrations (SITL compass is pre-calibrated)
+EK3_GSF_RUN_MASK    1       # Enable GSF for EKF3 core 0 (explicit)
+EK3_GSF_USE_MASK    1       # Use GSF yaw output for core 0
+
+# INS (Inertial Navigation) Configuration for Simulation
+INS_FAST_SAMPLE 1       # Enable fast sampling (REQUIRED for EKF3 GPS-only mode stability)
+
+# Fence Configuration (optional safety boundaries)
+FENCE_ENABLE    0       # Disabled by default
+FENCE_TYPE      3       # Altitude and circle fence
+FENCE_ALT_MAX   100     # Maximum altitude (meters)
+FENCE_RADIUS    300     # Maximum horizontal distance (meters)
+
+# Notes:
+# - These parameters are loaded at startup via --add-param-file
+# - Modify as needed for specific mission requirements
+# - Use QGroundControl or MAVProxy to change parameters at runtime
+# - Parameters persist in eeprom.bin in each instance's working directory

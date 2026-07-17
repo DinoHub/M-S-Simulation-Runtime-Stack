@@ -25,6 +25,8 @@ ALL             ?= false
 # `make generate SCENARIO=px4-xfs` limits the generator; empty = all scenarios.
 # Also forwarded to `make stop` (stop.sh auto-detects when empty).
 SCENARIO        ?=
+SCENARIO_SPEC   ?=
+STACK           ?= generated/scenariospec
 
 LAUNCH_FLAGS :=
 ifeq ($(HEADLESS),true)
@@ -48,7 +50,7 @@ endif
 
 SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo px4-safticity
 
-.PHONY: help $(SCENARIOS) attach teleop stop logs ps generate check self-test
+.PHONY: help $(SCENARIOS) scenariospec scenariospec-generate scenariospec-stop scenariospec-logs attach teleop stop logs ps generate check self-test
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
@@ -57,8 +59,12 @@ help:
 	@echo "Utility targets:"
 	@echo "  attach     tmux dev session: rviz2|teleop side by side + sim/per-drone log windows"
 	@echo "  teleop     WASD keyboard flight via mavros_dN [DRONE=1 AUTOPILOT=px4|ardupilot]"
-	@echo "  stop       ./stop.sh [SCENARIO=name]"
-	@echo "  logs       ./logs.sh"
+	@echo "  scenariospec          generate + run ScenarioSpec [SCENARIO_SPEC=/path STACK=generated/name]"
+	@echo "  scenariospec-generate generate image-only ScenarioSpec stack only"
+	@echo "  scenariospec-stop     ./stop.sh --stack $(STACK)"
+	@echo "  scenariospec-logs     ./logs.sh stack $(STACK) -f"
+	@echo "  stop                  ./stop.sh [SCENARIO=name]"
+	@echo "  logs                  ./logs.sh"
 	@echo "  ps         running containers (name/status/image)"
 	@echo "  generate   render compose files from templates [SCENARIO=name]"
 	@echo "  check      exit nonzero when rendered files drift from .env+templates"
@@ -67,6 +73,20 @@ help:
 
 $(SCENARIOS):
 	./launch.sh $@ $(LAUNCH_FLAGS)
+
+scenariospec:
+	@if [ -z "$(SCENARIO_SPEC)" ]; then echo "SCENARIO_SPEC=/path/to/ScenarioSpec is required"; exit 1; fi
+	./launch.sh --scenario-spec "$(SCENARIO_SPEC)" --stack-output "$(STACK)" -d
+
+scenariospec-generate:
+	@if [ -z "$(SCENARIO_SPEC)" ]; then echo "SCENARIO_SPEC=/path/to/ScenarioSpec is required"; exit 1; fi
+	./launch.sh --scenario-spec "$(SCENARIO_SPEC)" --stack-output "$(STACK)" --generate-only
+
+scenariospec-stop:
+	./stop.sh --stack "$(STACK)" --remove-orphans
+
+scenariospec-logs:
+	./logs.sh stack "$(STACK)" -f
 
 # tmux dev-session UX on top of the detached stack (bridge-repo `make dev`
 # style). Focus window "dev": rviz2 (left, GUI on $DISPLAY) | teleop (right),

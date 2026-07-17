@@ -1,0 +1,78 @@
+{
+  "SeeDocsAt": "https://cosys-lab.github.io/settings/",
+  "SettingsVersion": 2.0,
+  "SimMode": "Multirotor",
+  "ClockType": "ScalableClock",
+  "ViewMode": "FlyWithMe",
+  "ApiServerEndpoint": "0.0.0.0:41451",
+  "OriginGeopoint": {
+    "Latitude": 42.764938,
+    "Longitude": -115.579201,
+    "Altitude": 1183
+  },
+  "Vehicles": {
+    "Copter1": {
+      "VehicleType": "ArduCopter",
+      "DefaultVehicleState": "Armed",
+      "AutoCreate": true,
+      "EnableCollisions": true,
+      "AllowAPIAlways": true,
+      "X": 0,
+      "Y": 0,
+      "Z": 0,
+      "Yaw": 0,
+      "Sensors": {
+        "Barometer": {
+          "SensorType": 1,
+          "Enabled": true,
+          "PressureFactorSigma": 0.0001825
+        },
+        "Imu": {
+          "SensorType": 2,
+          "Enabled": true
+        },
+        "Gps": {
+          "SensorType": 3,
+          "Enabled": true,
+          "EphTimeConstant": 0.3,
+          "EpvTimeConstant": 0.3,
+          "EphInitial": 2.0,
+          "EpvInitial": 3.0,
+          "EphFinal": 0.1,
+          "EpvFinal": 0.1,
+          "EphMin3d": 3.0,
+          "EphMin2d": 4.0,
+          "UpdateLatency": 0.1,
+          "UpdateFrequency": 50,
+          "StartupDelay": 0
+        },
+        "Magnetometer": {
+          "SensorType": 4,
+          "Enabled": true
+        }
+      },
+      "UseSerial": false,
+      "LocalHostIp": "0.0.0.0",
+      "UdpIp": "ardupilot-drone-0",
+      "UdpPort": 9003,
+      "ControlPort": 9002,
+      "LockStep": false
+    }
+  },
+  "CameraDefaults": {
+    "CaptureSettings": [
+      {
+        "ImageType": 0,
+        "Width": 1280,
+        "Height": 720,
+        "FOV_Degrees": 90,
+        "AutoExposureSpeed": 100,
+        "MotionBlurAmount": 0
+      }
+    ]
+  },
+  "Recording": {
+    "RecordOnMove": false,
+    "RecordInterval": 0.05
+  }
+}

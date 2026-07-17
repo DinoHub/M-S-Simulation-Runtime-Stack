@@ -1,0 +1,70 @@
+schema: mns.asset_packs.v1
+
+asset_packs:
+  editor_static_mesh_preview:
+    display_name: Editor Static Mesh Preview
+    version: local
+    pak_id: editor-static-mesh-preview
+    description: Preview pack used by the Unreal authoring plugin until runtime asset packs are connected.
+    assets:
+      blocking_box:
+        name: blocking_box
+        class: /Script/ScenarioRuntime.BlockingBoxActor
+      static_mesh_actor:
+        name: static_mesh_actor
+        class: /Script/Engine.StaticMeshActor
+
+  mns_preview_primitives:
+    display_name: MnS Preview Primitives
+    version: local
+    pak_id: mns-preview-primitives
+    description: Simple editor/runtime preview meshes used to validate the asset-pack placement flow.
+    assets:
+      clutter_cube:
+        name: clutter_cube
+        display_name: Clutter Cube
+        type: static_mesh
+        class: /Script/Engine.StaticMeshActor
+        unreal_static_mesh: /Game/Robotics/Procedural/Meshes/SM_Clutter.SM_Clutter
+      wall_panel:
+        name: wall_panel
+        display_name: Wall Panel
+        type: static_mesh
+        class: /Script/Engine.StaticMeshActor
+        unreal_static_mesh: /Game/Robotics/Procedural/Meshes/SM_Wall.SM_Wall
+      floor_slab:
+        name: floor_slab
+        display_name: Floor Slab
+        type: static_mesh
+        class: /Script/Engine.StaticMeshActor
+        unreal_static_mesh: /Game/Robotics/Procedural/Meshes/SM_Floor.SM_Floor
+
+  mns_preview_obstacles:
+    display_name: MnS Preview Obstacles
+    version: local
+    pak_id: mns-preview-obstacles
+    description: Simple ScenarioLab blueprint obstacle pack for validating future behavior-scripted asset packs.
+    assets:
+      blocking_box_table:
+        name: blocking_box_table
+        display_name: Blocking Box Table
+        type: actor_class
+        class: /Game/Scenario/Blueprints/BP_BlockingBox_Table.BP_BlockingBox_Table_C
+      blocking_box_counter:
+        name: blocking_box_counter
+        display_name: Blocking Box Counter
+        type: actor_class
+        class: /Game/Scenario/Blueprints/BP_BlockingBox_Counter.BP_BlockingBox_Counter_C
+
+  scenario_runtime_basic:
+    display_name: Scenario Runtime Basic
+    version: local
+    pak_id: scenario-runtime-basic
+    description: Runtime primitives available in the ScenarioRuntime plugin.
+    assets:
+      blocking_box:
+        name: blocking_box
+        class: /Script/ScenarioRuntime.BlockingBoxActor
+      dynamic_obstacle:
+        name: dynamic_obstacle
+        class: /Script/ScenarioRuntime.DynamicObstacleActor

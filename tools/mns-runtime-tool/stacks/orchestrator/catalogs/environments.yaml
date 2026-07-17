@@ -1,0 +1,82 @@
+schema: mns.environments.v1
+
+environments:
+  xfs:
+    name: xfs
+    image: local/auto_mns:tevv-airsim-xfs-latest
+    executable_path: /app/Xfs/Xfs.sh
+    origin:
+      latitude: 42.764938
+      longitude: -115.579201
+      altitude: 1183
+      north_angle_degrees: 270
+    time_of_day:
+      enabled: true
+      start: "2024-06-21 12:00:00"
+      move_sun: true
+    scenario_runtime:
+      enabled: true
+      world:
+        mode: procedural
+      pcg:
+        graph: /Game/Robotics/PCG/Graphs/PCG_RoomClutter
+
+  safti_city:
+    name: safti
+    image: local/auto_mns:safti-runtime-metrics
+    executable_path: /app/safti/safti.sh
+    runtime_artifact:
+      level_id: safti_city
+      display_name: SAFTI City
+      map: /Game/safticitymain_subset_unclassed
+      pak_id: tevv-airsim-safti
+      pak_name: safticity_UE55_unclassed
+    origin:
+      latitude: 42.764938
+      longitude: -115.579201
+      altitude: 1183
+      north_angle_degrees: 270
+    time_of_day:
+      enabled: true
+      start: "2024-06-21 12:00:00"
+      move_sun: true
+    scenario_runtime:
+      enabled: true
+      world:
+        mode: authored
+        map: /Game/safticitymain_subset_unclassed
+
+  condo:
+    name: condo
+    image: dhdevspace/auto_mns:tevv-airsim-condo-latest-ceilingless
+    executable_path: /app/Condo/Condo.sh
+    runtime_artifact:
+      level_id: condo
+      display_name: Condo
+      map: /Game/Condo/Levels/L_Main
+      pak_id: tevv-airsim-condo
+      pak_name: Condo-Linux.pak
+    origin:
+      latitude: 42.764938
+      longitude: -115.579201
+      altitude: 1183
+      north_angle_degrees: 270
+    scenario_runtime:
+      enabled: true
+      world:
+        mode: authored
+        map: /Game/Condo/Levels/L_Main
+
+  unreal_authored:
+    name: authored
+    image: local/auto_mns:tevv-airsim-authored-latest
+    executable_path: /app/Unreal/UnrealScenario.sh
+    origin:
+      latitude: 42.764938
+      longitude: -115.579201
+      altitude: 1183
+      north_angle_degrees: 270
+    scenario_runtime:
+      enabled: true
+      world:
+        mode: authored

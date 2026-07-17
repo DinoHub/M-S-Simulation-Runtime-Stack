@@ -1,0 +1,15 @@
+schema: mns.product.v1
+id: mns-runtime-tool
+name: MnS Runtime Tool
+version: 0.1.0
+
+provides:
+  stack_generator:
+    id: mns-runtime-tool.stackgen
+    entrypoint: stacks/orchestrator/generate_stack.py
+    stack_schema: mns.generated_stack.v1
+
+requires:
+  scenariospec:
+    schema_id: mns.scenario.v1
+    schema_version: ">=1,<2"

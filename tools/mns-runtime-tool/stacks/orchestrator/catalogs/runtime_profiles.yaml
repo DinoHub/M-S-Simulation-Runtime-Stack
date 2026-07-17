@@ -1,0 +1,74 @@
+schema: mns.runtime_profiles.v1
+
+runtime_profiles:
+  airsim_unreal_ardupilot_docker:
+    simulator: unreal
+    autopilot:
+      type: ardupilot
+      managed: true
+      endpoint: docker
+      hostname_prefix: ardupilot-drone
+    features:
+      qgroundcontrol: true
+      ros2_bridge: true
+      mavros: true
+
+  airsim_unreal_ardupilot_docker_client:
+    simulator: unreal
+    autopilot:
+      type: ardupilot
+      managed: true
+      endpoint: docker
+      hostname_prefix: ardupilot-drone
+    features:
+      qgroundcontrol: false
+      ros2_bridge: false
+      mavros: false
+
+  airsim_unreal_ardupilot_host:
+    simulator: unreal
+    autopilot:
+      type: ardupilot
+      managed: true
+      endpoint: host
+      hostname_prefix: ardupilot-drone
+    features:
+      qgroundcontrol: true
+      ros2_bridge: true
+      mavros: true
+
+  airsim_unreal_px4_docker:
+    simulator: unreal
+    autopilot:
+      type: px4
+      managed: true
+      endpoint: docker
+      hostname_prefix: px4-drone
+    features:
+      qgroundcontrol: true
+      ros2_bridge: true
+      mavros: true
+
+  airsim_unreal_px4_docker_client:
+    simulator: unreal
+    autopilot:
+      type: px4
+      managed: true
+      endpoint: docker
+      hostname_prefix: px4-drone
+    features:
+      qgroundcontrol: false
+      ros2_bridge: false
+      mavros: false
+
+  airsim_unreal_px4_host:
+    simulator: unreal
+    autopilot:
+      type: px4
+      managed: true
+      endpoint: host
+      hostname_prefix: px4-drone
+    features:
+      qgroundcontrol: true
+      ros2_bridge: true
+      mavros: true

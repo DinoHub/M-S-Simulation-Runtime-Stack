@@ -1,0 +1,64 @@
+schema: mns.vehicle_models.v1
+
+vehicle_models:
+  quadrotor_small:
+    display_name: AirSim Quadrotor
+    aliases:
+      - quadrotor
+      - default
+    category: multirotor
+    description: Default AirSim multirotor pawn. No custom PawnPath is emitted.
+    runtime:
+      vehicle_type: ArduCopter
+
+  quadrotor_heavy:
+    display_name: AirSim Quadrotor Heavy
+    category: multirotor
+    description: Heavier authoring preview that uses the default AirSim multirotor runtime pawn.
+    runtime:
+      vehicle_type: ArduCopter
+
+  hexacopter:
+    display_name: Hexacopter
+    aliases:
+      - dji
+      - s900
+    category: multirotor
+    runtime:
+      vehicle_type: ArduCopter
+      airsim:
+        pawn_path: DjiPawn
+        pawn_bp: "Class'/Game/Meshes/BP_MyPawn.BP_MyPawn_C'"
+
+  dji_s900:
+    display_name: DJI S900
+    aliases:
+      - dji
+      - s900
+      - dji-s900
+    category: multirotor
+    runtime:
+      vehicle_type: ArduCopter
+      airsim:
+        pawn_path: DjiPawn
+        pawn_bp: "Class'/Game/Meshes/BP_MyPawn.BP_MyPawn_C'"
+
+  spirit_ascend:
+    display_name: Spirit Ascend
+    aliases:
+      - spirit
+      - ascend
+      - spirit-ascend
+    category: multirotor
+    runtime:
+      vehicle_type: ArduCopter
+      airsim:
+        pawn_path: SpiritPawn
+        pawn_bp: "Class'/Game/Meshes/BP_SpiritPawn.BP_SpiritPawn_C'"
+
+  fixed_wing:
+    display_name: Fixed Wing
+    category: fixed_wing
+    description: Human-facing placeholder for future fixed-wing runtime support.
+    runtime:
+      vehicle_type: FixedWing
