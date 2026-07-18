@@ -259,6 +259,10 @@ services:
       # command line has higher precedence than the baked path. Set empty to
       # fall back to the baked path (host/editor runs only).
       - SCENARIO_FILE=${SCENARIO_FILE:-/app/Xfs/Xfs/Scenarios/authored/xfs_l_main_obstacles.json}
+      # NOTE: static-mesh LOD distance scale (grass billboard fix) is baked
+      # into the image via DefaultEngine.ini [SystemSettings]
+      # r.StaticMeshLODDistanceScale=0.25 — a -ExecCmds boot flag wedges UE's
+      # command-line parsing (space in the value), do not reintroduce it.
 
     # network_mode: host removed — AirSim now lives on sim_net at 172.30.0.10.
     # RPC 41451 + per-vehicle FDM ports bind 0.0.0.0 (settings LocalHostIp) so
