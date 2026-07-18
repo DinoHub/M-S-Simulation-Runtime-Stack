@@ -196,10 +196,7 @@ services:
   # ---------------------------------------------------------------------------
   airsim-xfs:
     image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:xfs-latest}
-    # if_not_present (was always): the current xfs-latest with the DLC pak +
-    # baked grass exists only locally; `always` re-pulls the stale registry tag
-    # and clobbers it. Revert to `always` once the new image is pushed.
-    pull_policy: if_not_present
+    pull_policy: always
     container_name: ardupilot-xfs-airsim
     hostname: ardupilot-xfs-airsim
     restart: unless-stopped
