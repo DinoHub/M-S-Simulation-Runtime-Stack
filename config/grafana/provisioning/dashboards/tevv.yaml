@@ -1,0 +1,16 @@
+# Dashboard provider for TEVV dashboards mounted by docker-compose-logs.yml.
+# Grafana scans the path below and loads any dashboard JSON found there, so the
+# TEVV Exploration dashboard appears without rebuilding the baked grafana image.
+apiVersion: 1
+
+providers:
+  - name: tevv
+    type: file
+    folder: TEVV
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      # Outside /etc/grafana/provisioning/dashboards so the baked "AirSim
+      # Dashboards" provider does not also scan this file (double-load => dup uid).
+      path: /etc/grafana/tevv
+      foldersFromFilesStructure: false

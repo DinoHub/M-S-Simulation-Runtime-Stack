@@ -1,0 +1,51 @@
+# ──────────────────────────────────────────────────────────────────────────
+# topic_names.yaml — force settings.json-driven sensor/camera topics into the
+# bridge's remap set so `topic_prefix:=/` (TOPIC_PREFIX=/) flattens them too.
+# SHARED by every scenario's airsim_bridge_d* (mounted read-only).
+# ──────────────────────────────────────────────────────────────────────────
+#
+# WHY THIS FILE EXISTS
+#   The launch layer enumerates sensor/camera topics by reading settings.json
+#   over RPC (getSettingsString). In this stack that read fails ("Unpack failed:
+#   incomplete input" + no python AirSim client in the bridge image), so ONLY
+#   _FIXED_VEHICLE_TOPICS get relocated by topic_prefix — sensor/camera topics
+#   keep their <vehicle>/ prefix. Listing them here as IDENTITY renames adds
+#   them to the remap set explicitly (rename_map keys are always included),
+#   regardless of the RPC read, so topic_prefix relocates them.
+#
+# KEYS = topic path RELATIVE to <vehicle>/ (the part after "/Copter1/"), using
+# the ACTUAL published names (capitalised per settings.json sensor/camera names).
+# Values are IDENTITY (same name): with the DEFAULT prefix these remaps are
+# no-ops (old==new, dropped), so this file is inert until TOPIC_PREFIX=/ is set,
+# at which point each becomes /Imu, /LidarSensor1/points, etc.
+#
+# SUPERSET across scenarios — entries for a sensor a given scenario does NOT run
+# are harmless (a remap rule for a topic with no publisher does nothing):
+#   ardupilot-* settings declare Imu + Magnetometer; px4-* do not (PX4 owns them).
+#   CPU LiDAR (SensorType 6, xfs + condo-ardupilot) -> LidarSensor1/points+labels.
+#   GPU LiDAR (SensorType 8, px4-condo)             -> gpulidar/pointsLidarSensor1.
+# If a scenario's settings.json renames/adds a sensor or camera, add its key here.
+# TF frames are NOT renamed (frames stay <vehicle>/base_link) — topics only.
+# ──────────────────────────────────────────────────────────────────────────
+
+topic_renames:
+  # --- scalar sensors (published under the settings.json sensor NAME) ---
+  Barometer:                    Barometer
+  Imu:                          Imu            # ardupilot-* only (harmless elsewhere)
+  Magnetometer:                 Magnetometer   # ardupilot-* only (harmless elsewhere)
+
+  # --- CPU LiDAR (SensorType 6: xfs, condo-ardupilot) ---
+  LidarSensor1/points:          LidarSensor1/points
+  LidarSensor1/labels:          LidarSensor1/labels
+
+  # --- GPU LiDAR (SensorType 8: px4-condo) ---
+  gpulidar/pointsLidarSensor1:  gpulidar/pointsLidarSensor1
+
+  # --- camera (Camera1, Scene) ---
+  Camera1_Scene/image:          Camera1_Scene/image
+  Camera1_Scene/camera_info:    Camera1_Scene/camera_info
+  Camera1/gimbal_pose:          Camera1/gimbal_pose
+
+  # --- gimbal command subscriptions ---
+  gimbal_angle_euler_cmd:       gimbal_angle_euler_cmd
+  gimbal_angle_quat_cmd:        gimbal_angle_quat_cmd

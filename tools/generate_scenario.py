@@ -17,13 +17,26 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from dotenv import dotenv_values
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+try:
+    from dotenv import dotenv_values as _dotenv_values
+except ModuleNotFoundError:
+    _dotenv_values = None
+
+try:
+    from jinja2 import Environment, FileSystemLoader, StrictUndefined
+except ModuleNotFoundError as e:
+    print(
+        "Missing Python dependency: "
+        f"{e.name}. Install with: python3 -m pip install -r tools/requirements.txt",
+        file=sys.stderr,
+    )
+    raise SystemExit(2) from e
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -67,16 +80,6 @@ SCENARIOS: dict[str, list[tuple[str, str]]] = {
             "config/unreal-airsim/condo/settings-px4.json",
         ),
     ],
-    "px4-safticity": [
-        (
-            "compose/px4-safticity/templates/docker-compose.yml.j2",
-            "compose/px4-safticity/docker-compose.yml",
-        ),
-        (
-            "config/unreal-airsim/safticity/templates/settings-px4.json.j2",
-            "config/unreal-airsim/safticity/settings-px4.json",
-        ),
-    ],
     "ardupilot-condo": [
         (
             "compose/ardupilot-condo/templates/docker-compose.yml.j2",
@@ -110,9 +113,9 @@ class Px4Drone:
     cpuset: int            # dedicated host cpu core
     stagger_s: int         # startup sleep before SITL launch (s)
     domain_id: int         # ROS_DOMAIN_ID default (Phase 2 bridges)
-    mavros_local: int      # MAVROS bind port (14560 + instance, the px4 image's
-                           # mavlink-router MAVROS endpoint; AirSim owns 14540+i,
-                           # QGC owns 14550+i)
+    mavros_local: int      # router MAVROS_UDP server port (14555 + instance, the
+                           # px4 image's mavlink-router MAVROS endpoint; sidecar
+                           # dials it. AirSim owns 14540+i, QGC owns 14550+i)
     tcp_port: int          # AirSim <-> PX4 SITL lockstep TCP (4560 + instance)
     control_local: int     # AirSim ControlPortLocal (14540 + instance, mavlink-router's AirSim endpoint)
     control_remote: int    # AirSim ControlPortRemote (14580 + instance, router's AirSim_Inbound)
@@ -139,6 +142,36 @@ def _float(env: dict, key: str, default: float) -> float:
         raise SystemExit(f"{key} must be a number, got {v!r}") from e
 
 
+def _fallback_dotenv_values(path: Path) -> dict:
+    """Parse simple shell-style .env files when python-dotenv is unavailable."""
+    values = {}
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[7:].lstrip()
+        if "=" not in stripped:
+            raise SystemExit(f"{path}:{lineno}: expected KEY=VALUE")
+
+        key, raw_value = stripped.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise SystemExit(f"{path}:{lineno}: empty environment key")
+
+        lexer = shlex.shlex(raw_value, posix=True)
+        lexer.whitespace_split = True
+        lexer.commenters = "#"
+        values[key] = " ".join(lexer)
+    return values
+
+
+def _read_dotenv(path: Path) -> dict:
+    if _dotenv_values is not None:
+        return dict(_dotenv_values(path))
+    return _fallback_dotenv_values(path)
+
+
 def load_env(repo_root: Path) -> dict:
     """Read .env (single source of truth) into a dict.
 
@@ -146,7 +179,7 @@ def load_env(repo_root: Path) -> dict:
     the file — same precedence as docker compose's own .env loading.
     """
     path = repo_root / ".env"
-    base = dict(dotenv_values(path)) if path.is_file() else {}
+    base = _read_dotenv(path) if path.is_file() else {}
     # Shell overrides file (matches `docker compose --env-file` semantics).
     for k in (
         "NUM_DRONES",
@@ -298,10 +331,10 @@ def build_context_px4_xfs(env: dict) -> dict:
             stagger_s=20 + 5 * max(0, k - 2),
             domain_id=_int(env, f"DRONE_{k}_DOMAIN_ID", k),
             # The px4 image's mavlink-router opens a dedicated MAVROS UDP
-            # endpoint per instance, sending to 127.0.0.1:14560+i. NOT the
-            # 14540/14580 pair (AirSim binds ControlPortLocal/Remote) and
-            # NOT 14550+i (QGC's listener).
-            mavros_local=14560 + k - 1,
+            # endpoint per instance: a Server on 0.0.0.0:14555+i that the
+            # sidecar dials. NOT the 14540/14580 pair (AirSim binds
+            # ControlPortLocal/Remote) and NOT 14550+i (QGC's listener).
+            mavros_local=14555 + k - 1,
             tcp_port=4560 + k - 1,
             control_local=14540 + k - 1,
             control_remote=14580 + k - 1,
@@ -321,7 +354,27 @@ def build_context_px4_xfs(env: dict) -> dict:
 def build_context_condo(env: dict) -> dict:
     """Condo scenarios are single-drone by design; pinned, not NUM_DRONES-driven."""
     return {"num_drones": 1, "camera": _camera_context(env),
-            "fisheye": _fisheye_context(env)}
+            "fisheye": _fisheye_context(env),
+            "lidar": _lidar_context(env)}
+
+
+def _lidar_context(env: dict) -> dict:
+    """LiDAR generation toggle (LIDAR_KIND in .env: 'lidar' (CPU, default) or
+    'gpulidar' (GPU)). Drives the settings.json SensorType AND the default
+    registration-backend input topic, so one knob keeps sim + bridge in sync.
+
+    NOTE: GPU LiDAR (SensorType 8) currently segfaults the condo-latest AirSim
+    build (RealtimeGPUProfiler IsInGameThread assertion); usable only on a
+    GPU-lidar-capable sim. The CPU default is the safe path."""
+    kind = (env.get("LIDAR_KIND") or "lidar").strip().lower()
+    if kind not in ("lidar", "gpulidar"):
+        raise ValueError(f"LIDAR_KIND must be 'lidar' or 'gpulidar', got {kind!r}")
+    if kind == "gpulidar":
+        # Bridge publishes '<vehicle>/gpulidar/points<sensor>' for SensorType 8.
+        return {"kind": kind, "sensor_type": 8,
+                "topic_suffix": "gpulidar/pointsLidarSensor1"}
+    return {"kind": kind, "sensor_type": 6,
+            "topic_suffix": "LidarSensor1/points"}
 
 
 # scenario -> context builder. Tasks registering new scenarios add entries.
@@ -329,7 +382,6 @@ CONTEXT_BUILDERS: dict[str, Callable[[dict], dict]] = {
     "ardupilot-xfs": build_context_ardupilot_xfs,
     "px4-xfs": build_context_px4_xfs,
     "px4-condo": build_context_condo,
-    "px4-safticity": build_context_condo,
     "ardupilot-condo": build_context_condo,
 }
 
@@ -522,10 +574,10 @@ def _self_test_px4_xfs() -> None:
                 f"missing bridge for drone {d.n}, N={n}"
             assert f"mavros_d{d.n}:" in compose_yaml, \
                 f"missing mavros for drone {d.n}, N={n}"
-            assert f"udp://:{d.mavros_local}@}}" in compose_yaml, \
-                f"bad mavros bind port for drone {d.n}, N={n}"
-            assert d.mavros_local == 14560 + d.instance, \
-                f"mavros endpoint must be 14560+i (router conf), drone {d.n}"
+            assert f"udp://:0@127.0.0.1:{d.mavros_local}}}" in compose_yaml, \
+                f"bad mavros fcu_url for drone {d.n}, N={n}"
+            assert d.mavros_local == 14555 + d.instance, \
+                f"mavros endpoint must be 14555+i (router conf), drone {d.n}"
         assert f"airsim_bridge_d{n + 1}:" not in compose_yaml, \
             f"unexpected bridge {n + 1} for N={n}"
         assert "ros2-x11-node:" not in compose_yaml, "legacy monolith still present in px4-xfs"
@@ -602,41 +654,11 @@ def _self_test_px4_condo() -> None:
     json.loads(body)
 
 
-def _self_test_px4_safticity() -> None:
-    j_env = make_env()
-    ctx = build_context_condo({})
-    pairs = SCENARIOS["px4-safticity"]
-    a = [render(j_env, t, ctx) for t, _ in pairs]
-    b = [render(j_env, t, ctx) for t, _ in pairs]
-    assert a == b, "px4-safticity render not idempotent"
-    compose_yaml, settings_json = a
-    for svc in ("airsim-safti:", "px4-drone-1:", "airsim_bridge_d1:",
-                "mavros_d1:", "qgroundcontrol-x11:", "pixel-streaming-signalling:"):
-        assert svc in compose_yaml, f"missing service {svc} in px4-safticity"
-    assert "airsim-condo:" not in compose_yaml, "stale condo service name in px4-safticity"
-    assert "/app/safti/safti.sh" in compose_yaml, "safti exec path missing"
-    assert "safti-latest" in compose_yaml, "safti image missing"
-    assert "ros2-x11-node:" not in compose_yaml, "legacy monolith still present in px4-safticity"
-    assert "enable_coordination:=false" in compose_yaml
-    assert "enable_coordination:=true" not in compose_yaml
-    assert "{{" not in compose_yaml and "{%" not in compose_yaml
-    # Settings checks
-    json.loads(settings_json)
-    assert '"PX4Multirotor"' in settings_json, "VehicleType PX4Multirotor missing"
-    assert '"Cameras": {}' in settings_json, "cameras must default to empty"
-    # Camera-enabled render
-    ctx_cam = build_context_condo({"CAMERA_ENABLE": "true"})
-    _, body = [render(j_env, t, ctx_cam) for t, _ in pairs]
-    assert '"Camera1":' in body, "camera block missing when enabled"
-    json.loads(body)
-
-
 # scenario -> self-test function. Tasks registering new scenarios add entries.
 SELF_TESTS: dict[str, Callable[[], None]] = {
     "ardupilot-xfs": _self_test_ardupilot_xfs,
     "px4-xfs": _self_test_px4_xfs,
     "px4-condo": _self_test_px4_condo,
-    "px4-safticity": _self_test_px4_safticity,
     "ardupilot-condo": _self_test_ardupilot_condo,
 }
 

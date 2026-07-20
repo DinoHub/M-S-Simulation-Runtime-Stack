@@ -4,6 +4,7 @@
 #   make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo
 #
 # Flag vars -> launch.sh flags (set to `true` to enable):
+#   EDITOR=true            -> --editor                (skip sim container; run AirSim in UE editor)
 #   HEADLESS=true          -> --headless              (AirSim -RenderOffScreen)
 #   AGENT_EXTERNAL=true    -> --with-agent-external   (per-drone zenoh bridges)
 #   PIXEL_STREAMING=true   -> --with-pixel-streaming  (UE5 signalling sidecar)
@@ -16,6 +17,7 @@
 # Generated compose files are regenerated automatically on drift by launch.sh;
 # `make generate` / `make check` / `make self-test` drive the generator directly.
 
+EDITOR          ?= false
 HEADLESS        ?= false
 AGENT_EXTERNAL  ?= false
 PIXEL_STREAMING ?= false
@@ -29,6 +31,9 @@ SCENARIO_SPEC   ?=
 STACK           ?= generated/scenariospec
 
 LAUNCH_FLAGS :=
+ifeq ($(EDITOR),true)
+LAUNCH_FLAGS += --editor
+endif
 ifeq ($(HEADLESS),true)
 LAUNCH_FLAGS += --headless
 endif
@@ -48,15 +53,17 @@ ifeq ($(ALL),true)
 LAUNCH_FLAGS += --all
 endif
 
-SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo px4-safticity
+SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) scenariospec scenariospec-generate scenariospec-stop scenariospec-logs attach teleop stop logs ps generate check self-test
+.PHONY: help $(SCENARIOS) dev scenariospec scenariospec-generate scenariospec-stop scenariospec-logs attach teleop stop logs ps generate check self-test
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
-	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo | px4-safticity"
-	@echo "Flag vars (=true): HEADLESS AGENT_EXTERNAL PIXEL_STREAMING MONITORING METRICS ALL"
+	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo"
+	@echo "Flag vars (=true): EDITOR HEADLESS AGENT_EXTERNAL PIXEL_STREAMING MONITORING METRICS ALL"
+	@echo "  EDITOR=true skips containerized AirSim (run it from the Unreal editor on host)"
 	@echo "Utility targets:"
+	@echo "  dev        launch scenario (SCENARIO=name, default px4-xfs) + flags, then attach tmux"
 	@echo "  attach     tmux dev session: rviz2|teleop side by side + sim/per-drone log windows"
 	@echo "  teleop     WASD keyboard flight via mavros_dN [DRONE=1 AUTOPILOT=px4|ardupilot]"
 	@echo "  scenariospec          generate + run ScenarioSpec [SCENARIO_SPEC=/path STACK=generated/name]"
@@ -87,6 +94,19 @@ scenariospec-stop:
 
 scenariospec-logs:
 	./logs.sh stack "$(STACK)" -f
+
+# One-shot dev UX: bring a scenario up (autopilot SITL + AirSim + per-drone
+# bridges + QGroundControl) with the usual flag vars, then attach the tmux
+# dashboard. QGC is part of every scenario's compose, so it comes up here too.
+# launch.sh uses `up -d`, so this returns before attaching; detaching the tmux
+# session (Ctrl-b d) leaves the whole stack running.
+#   make dev                                 # default scenario px4-xfs
+#   make dev SCENARIO=ardupilot-xfs HEADLESS=true AGENT_EXTERNAL=true
+#   make dev EDITOR=true                      # AirSim from the Unreal editor on host
+DEV_SCENARIO ?= $(if $(SCENARIO),$(SCENARIO),px4-xfs)
+dev:
+	./launch.sh $(DEV_SCENARIO) $(LAUNCH_FLAGS)
+	./tools/attach-session.sh
 
 # tmux dev-session UX on top of the detached stack (bridge-repo `make dev`
 # style). Focus window "dev": rviz2 (left, GUI on $DISPLAY) | teleop (right),

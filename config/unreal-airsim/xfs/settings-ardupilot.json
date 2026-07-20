@@ -41,9 +41,10 @@
       "AllowAPIAlways": true,
       "X": 0.0, "Y": 0, "Z": -1, "Yaw": 0,
       "UseSerial": false,
-      "UdpIp": "127.0.0.1",
+      "LocalHostIp": "172.30.0.10",
+      "UdpIp": "172.30.0.21",
       "UdpPort": 9003,
-      "ControlIp": "127.0.0.1",
+      "ControlIp": "172.30.0.21",
       "ControlPortLocal": 9002,
       "ControlPortRemote": 9003,
       "Sensors": {
@@ -66,50 +67,16 @@
                          "DrawDebugPoints": false, "ExternalController": false }
       },
       "Cameras": {
-        "Camera_0": {
+        "Camera1": {
           "CaptureSettings": [
             { "ImageType": 0,
-              "Width": 618, "Height": 516,
-              "FovDegrees": 220.0,
-              "SceneType": "outdoor",
-
-              "FisheyeModel": 3,
-              "FisheyeEnableBarrelDistortion": false,
-              "FisheyeFx": 117.898602594,
-              "FisheyeFy": 117.898602594,
-              "FisheyeCx": 305.025644077,
-              "FisheyeCy": 243.933321625,
-              "FisheyeK1": -0.133546,
-              "FisheyeK2": 0.107245,
-              "FisheyeK3": -0.051197,
-              "FisheyeK4": 0.008939,
-
-              "EnableOpticalEffects": true,
-              "LensMaskEnabled": true,
-              "LensMaskRingStart": 0.92,
-              "LensMaskRingEnd": 0.98,
-              "LensMaskRingDarkness": 0.02,
-              "FisheyeCircularMask": true,
-
-              "NoiseAmount": 0.03,
-              "FisheyeChromaticAberrationEnabled": false,
-              "FisheyeChromaticAberrationStrength": 3.0,
-              "FisheyeChromaticAberrationFalloff": 0.3,
-              "SeamBlendingEnabled": true,
-              "SeamBlendWidth": 0.1,
-
-              "VignetteStrength": 0.0,
-              "OpticalVignetteStrength": 0.0,
-              "ISPCenterLift": 0.0,
-              "ContrastCompression": 0.0,
-              "BloomStrength": 0.0,
-              "TonemapMode": 1,
-              "HDRBloomEnabled": false,
-              "bVeilingGlareEnabled": false,
-              "ExposureCompensation": 0.0 }
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
           ],
-          "X": 0.3, "Y": 0.0, "Z": 0.2,
-          "Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
         }      }
     },
     "Copter2": {
@@ -121,9 +88,10 @@
       "AllowAPIAlways": true,
       "X": 8.0, "Y": 0, "Z": -1, "Yaw": 0,
       "UseSerial": false,
-      "UdpIp": "127.0.0.1",
+      "LocalHostIp": "172.30.0.10",
+      "UdpIp": "172.30.0.22",
       "UdpPort": 9013,
-      "ControlIp": "127.0.0.1",
+      "ControlIp": "172.30.0.22",
       "ControlPortLocal": 9012,
       "ControlPortRemote": 9013,
       "Sensors": {
@@ -146,50 +114,16 @@
                          "DrawDebugPoints": false, "ExternalController": false }
       },
       "Cameras": {
-        "Camera_0": {
+        "Camera1": {
           "CaptureSettings": [
             { "ImageType": 0,
-              "Width": 618, "Height": 516,
-              "FovDegrees": 220.0,
-              "SceneType": "outdoor",
-
-              "FisheyeModel": 3,
-              "FisheyeEnableBarrelDistortion": false,
-              "FisheyeFx": 117.898602594,
-              "FisheyeFy": 117.898602594,
-              "FisheyeCx": 305.025644077,
-              "FisheyeCy": 243.933321625,
-              "FisheyeK1": -0.133546,
-              "FisheyeK2": 0.107245,
-              "FisheyeK3": -0.051197,
-              "FisheyeK4": 0.008939,
-
-              "EnableOpticalEffects": true,
-              "LensMaskEnabled": true,
-              "LensMaskRingStart": 0.92,
-              "LensMaskRingEnd": 0.98,
-              "LensMaskRingDarkness": 0.02,
-              "FisheyeCircularMask": true,
-
-              "NoiseAmount": 0.03,
-              "FisheyeChromaticAberrationEnabled": false,
-              "FisheyeChromaticAberrationStrength": 3.0,
-              "FisheyeChromaticAberrationFalloff": 0.3,
-              "SeamBlendingEnabled": true,
-              "SeamBlendWidth": 0.1,
-
-              "VignetteStrength": 0.0,
-              "OpticalVignetteStrength": 0.0,
-              "ISPCenterLift": 0.0,
-              "ContrastCompression": 0.0,
-              "BloomStrength": 0.0,
-              "TonemapMode": 1,
-              "HDRBloomEnabled": false,
-              "bVeilingGlareEnabled": false,
-              "ExposureCompensation": 0.0 }
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
           ],
-          "X": 0.3, "Y": 0.0, "Z": 0.2,
-          "Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
         }      }
     },
     "Copter3": {
@@ -201,9 +135,10 @@
       "AllowAPIAlways": true,
       "X": 16.0, "Y": 0, "Z": -1, "Yaw": 0,
       "UseSerial": false,
-      "UdpIp": "127.0.0.1",
+      "LocalHostIp": "172.30.0.10",
+      "UdpIp": "172.30.0.23",
       "UdpPort": 9023,
-      "ControlIp": "127.0.0.1",
+      "ControlIp": "172.30.0.23",
       "ControlPortLocal": 9022,
       "ControlPortRemote": 9023,
       "Sensors": {
@@ -226,50 +161,16 @@
                          "DrawDebugPoints": false, "ExternalController": false }
       },
       "Cameras": {
-        "Camera_0": {
+        "Camera1": {
           "CaptureSettings": [
             { "ImageType": 0,
-              "Width": 618, "Height": 516,
-              "FovDegrees": 220.0,
-              "SceneType": "outdoor",
-
-              "FisheyeModel": 3,
-              "FisheyeEnableBarrelDistortion": false,
-              "FisheyeFx": 117.898602594,
-              "FisheyeFy": 117.898602594,
-              "FisheyeCx": 305.025644077,
-              "FisheyeCy": 243.933321625,
-              "FisheyeK1": -0.133546,
-              "FisheyeK2": 0.107245,
-              "FisheyeK3": -0.051197,
-              "FisheyeK4": 0.008939,
-
-              "EnableOpticalEffects": true,
-              "LensMaskEnabled": true,
-              "LensMaskRingStart": 0.92,
-              "LensMaskRingEnd": 0.98,
-              "LensMaskRingDarkness": 0.02,
-              "FisheyeCircularMask": true,
-
-              "NoiseAmount": 0.03,
-              "FisheyeChromaticAberrationEnabled": false,
-              "FisheyeChromaticAberrationStrength": 3.0,
-              "FisheyeChromaticAberrationFalloff": 0.3,
-              "SeamBlendingEnabled": true,
-              "SeamBlendWidth": 0.1,
-
-              "VignetteStrength": 0.0,
-              "OpticalVignetteStrength": 0.0,
-              "ISPCenterLift": 0.0,
-              "ContrastCompression": 0.0,
-              "BloomStrength": 0.0,
-              "TonemapMode": 1,
-              "HDRBloomEnabled": false,
-              "bVeilingGlareEnabled": false,
-              "ExposureCompensation": 0.0 }
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
           ],
-          "X": 0.3, "Y": 0.0, "Z": 0.2,
-          "Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
         }      }
     },
     "Copter4": {
@@ -281,9 +182,10 @@
       "AllowAPIAlways": true,
       "X": 24.0, "Y": 0, "Z": -1, "Yaw": 0,
       "UseSerial": false,
-      "UdpIp": "127.0.0.1",
+      "LocalHostIp": "172.30.0.10",
+      "UdpIp": "172.30.0.24",
       "UdpPort": 9033,
-      "ControlIp": "127.0.0.1",
+      "ControlIp": "172.30.0.24",
       "ControlPortLocal": 9032,
       "ControlPortRemote": 9033,
       "Sensors": {
@@ -306,50 +208,16 @@
                          "DrawDebugPoints": false, "ExternalController": false }
       },
       "Cameras": {
-        "Camera_0": {
+        "Camera1": {
           "CaptureSettings": [
             { "ImageType": 0,
-              "Width": 618, "Height": 516,
-              "FovDegrees": 220.0,
-              "SceneType": "outdoor",
-
-              "FisheyeModel": 3,
-              "FisheyeEnableBarrelDistortion": false,
-              "FisheyeFx": 117.898602594,
-              "FisheyeFy": 117.898602594,
-              "FisheyeCx": 305.025644077,
-              "FisheyeCy": 243.933321625,
-              "FisheyeK1": -0.133546,
-              "FisheyeK2": 0.107245,
-              "FisheyeK3": -0.051197,
-              "FisheyeK4": 0.008939,
-
-              "EnableOpticalEffects": true,
-              "LensMaskEnabled": true,
-              "LensMaskRingStart": 0.92,
-              "LensMaskRingEnd": 0.98,
-              "LensMaskRingDarkness": 0.02,
-              "FisheyeCircularMask": true,
-
-              "NoiseAmount": 0.03,
-              "FisheyeChromaticAberrationEnabled": false,
-              "FisheyeChromaticAberrationStrength": 3.0,
-              "FisheyeChromaticAberrationFalloff": 0.3,
-              "SeamBlendingEnabled": true,
-              "SeamBlendWidth": 0.1,
-
-              "VignetteStrength": 0.0,
-              "OpticalVignetteStrength": 0.0,
-              "ISPCenterLift": 0.0,
-              "ContrastCompression": 0.0,
-              "BloomStrength": 0.0,
-              "TonemapMode": 1,
-              "HDRBloomEnabled": false,
-              "bVeilingGlareEnabled": false,
-              "ExposureCompensation": 0.0 }
+              "Width": 1280, "Height": 720,
+              "FovDegrees": 81.0,
+              "AutoExposureSpeed": 100, "AutoExposureBias": 0,
+              "MotionBlurAmount": 0, "TargetGamma": 1.0 }
           ],
-          "X": 0.3, "Y": 0.0, "Z": 0.2,
-          "Pitch": 0.0, "Roll": 0.0, "Yaw": 0.0
+          "X": 0.155, "Y": 0.0, "Z": -0.35,
+          "Pitch": -25.0, "Roll": 0.0, "Yaw": 0.0
         }      }
     }
   },

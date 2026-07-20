@@ -20,23 +20,16 @@ if [[ "${1:-}" == "--stack" ]]; then
   exec "$SCRIPT_DIR/tools/mns-runtime-tool/stacks/scripts/mns_runtime_tool.sh" stop --stack "$stack" "$@"
 fi
 
-SCENARIO="${1:-${SCENARIO:-}}"
+# Explicit target comes ONLY from the CLI arg ($1, e.g. `make stop SCENARIO=x`).
+# We deliberately do NOT fall back to $SCENARIO from the sourced .env: .env pins
+# the scenario to *launch*, but `make stop` with no arg must stop EVERY running
+# scenario (below), not just the one .env happens to name.
+SCENARIO="${1:-}"
 
-# If no scenario was explicitly passed, auto-detect the running one by
-# probing each compose/*/docker-compose.yml. Falls back to px4-condo.
-if [ -z "$SCENARIO" ]; then
-  for candidate in compose/*/docker-compose.yml; do
-    if docker compose --project-directory "$SCRIPT_DIR" -f "$candidate" ps -q 2>/dev/null | grep -q .; then
-      SCENARIO="$(basename "$(dirname "$candidate")")"
-      break
-    fi
-  done
-  SCENARIO="${SCENARIO:-px4-condo}"
-fi
-
-SCENARIO_FILE="compose/${SCENARIO}/docker-compose.yml"
-
-if [ ! -f "$SCENARIO_FILE" ]; then
+# When a scenario IS passed explicitly, validate it up front. When it isn't,
+# teardown auto-detects and stops EVERY running scenario below (no default
+# fallback — nothing running means nothing to stop).
+if [ -n "$SCENARIO" ] && [ ! -f "compose/${SCENARIO}/docker-compose.yml" ]; then
   echo "ERROR: Unknown scenario: $SCENARIO"
   echo "Available scenarios:"
   ls compose/ | sed 's/^/  /'
@@ -48,6 +41,23 @@ export GID="$(id -g)"
 
 CONFIG_ROOT="${CONFIG_ROOT:-./config}"
 export CONFIG_ROOT="$(cd "$CONFIG_ROOT" && pwd)"
+
+# Full profile superset. `docker compose down` only removes services in the
+# active profiles (+ profileless services), so every optional profile must be
+# named or its containers orphan: sim (AirSim, all scenarios), per-drone-bridge
+# / agent-external (ardupilot-xfs bridges + zenoh), pixel-streaming (condo
+# sidecar). Profiles a given scenario doesn't define are no-ops.
+ALL_PROFILE_ARGS=(--profile sim --profile per-drone-bridge \
+  --profile agent-external --profile pixel-streaming)
+
+# Tear down one scenario's compose project with every optional profile active.
+down_scenario() {
+  local scenario_file="compose/$1/docker-compose.yml"
+  [ -f "$scenario_file" ] || return 0
+  echo "Stopping simulation stack ($1)..."
+  docker compose --project-directory "$SCRIPT_DIR" -f "$scenario_file" \
+    "${ALL_PROFILE_ARGS[@]}" down --remove-orphans || true
+}
 
 stop_local_planner() {
   local mode="${LOCAL_PLANNER_MODE:-disabled}"
@@ -100,21 +110,31 @@ docker compose -f docker-compose-metrics.yml --profile metrics down --remove-orp
 
 stop_local_planner
 
-echo "Stopping simulation stack ($SCENARIO)..."
-# For ardupilot-xfs, activate both bridge-architecture profiles on `down`
-# so containers from default per-drone or --with-agent-external get
-# cleaned up regardless of which one was running.
-if [ "$SCENARIO" = "ardupilot-xfs" ]; then
-  docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
-    --profile per-drone-bridge --profile agent-external \
-    down --remove-orphans || true
+# Explicit scenario → stop just that one. No scenario → auto-detect and stop
+# EVERY running scenario (probe with the full profile set so a scenario running
+# only its profiled sim container is still seen; do NOT break on first match).
+if [ -n "$SCENARIO" ]; then
+  down_scenario "$SCENARIO"
 else
-  docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
-    down --remove-orphans || true
+  stopped_any=false
+  for candidate in compose/*/docker-compose.yml; do
+    name="$(basename "$(dirname "$candidate")")"
+    if docker compose --project-directory "$SCRIPT_DIR" -f "$candidate" \
+         "${ALL_PROFILE_ARGS[@]}" ps -q 2>/dev/null | grep -q .; then
+      down_scenario "$name"
+      stopped_any=true
+    fi
+  done
+  [ "$stopped_any" = true ] || echo "No running simulation scenario detected."
 fi
 
-echo "Stopping monitoring stack..."
-docker compose -f docker-compose-monitoring.yml --profile monitoring down --remove-orphans || true
+echo "Stopping monitoring + logs stack..."
+# Mirror launch.sh: tear down the logs overlay (Loki + Alloy, profile logs)
+# alongside monitoring so they don't orphan.
+docker compose \
+  -f docker-compose-monitoring.yml \
+  -f docker-compose-logs.yml \
+  --profile monitoring --profile logs down --remove-orphans || true
 
 echo
 echo "All stacks stopped."

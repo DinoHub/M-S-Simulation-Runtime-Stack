@@ -29,6 +29,6 @@
     airborne_min_height: 0.5
     use_ground_truth_for_readiness: true
 
-    auto_start_when_ready: true
+    auto_start_when_ready: false
     shutdown_on_terminal_state: true
     terminal_state_grace_sec: 2.0

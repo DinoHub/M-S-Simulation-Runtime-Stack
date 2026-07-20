@@ -16,3 +16,6 @@ __pycache__/
 xfs-container-crashes/
 # ScenarioSpec-generated runtime stacks
 generated/
+
+# python
+.venv

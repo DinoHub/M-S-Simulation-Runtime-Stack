@@ -61,6 +61,11 @@ services:
     container_name: airsim-xfs
     hostname: airsim-xfs
 
+    # `sim` profile: launch.sh enables it by default, drops it with --editor so
+    # AirSim runs from the Unreal editor on the host instead. Bridges depend on
+    # this service with required: false, so skipping the profile is clean.
+    profiles: ["sim"]
+
     # Host networking — all ports exposed directly on the host
     network_mode: "host"
     ipc: host
@@ -117,6 +122,9 @@ services:
       # secondary stagger.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     network_mode: "host"
     ipc: host
@@ -192,6 +200,9 @@ services:
       # publishers and no retry.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     environment:
       # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
@@ -210,6 +221,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -217,6 +232,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_{{ d.n }}_NAME:-{{ vehicle_prefix }}{{ d.n }}}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -257,9 +279,9 @@ services:
       - /dev/shm:/dev/shm:rw
 
     # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
-    # endpoint sending to 127.0.0.1:14560+i (router conf: AirSim 14540+i,
-    # QGC 14550+i, MAVROS 14560+i). MAVROS binds :14560+i with no fixed
-    # remote and locks onto the router from the first packet. Do NOT bind
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
     # 14540+i / 14550+i — AirSim and QGC own those sockets.
     command:
       - "bash"
@@ -267,7 +289,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_{{ d.n }}_NAME:-{{ vehicle_prefix }}{{ d.n }}}
-        fcu_url:=${DRONE_{{ d.n }}_FCU_URL:-udp://:{{ d.mavros_local }}@}
+        fcu_url:=${DRONE_{{ d.n }}_FCU_URL:-udp://:0@127.0.0.1:{{ d.mavros_local }}}
         target_system_id:={{ d.n }}
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:={{ "true" if d.n == 1 else "false" }}

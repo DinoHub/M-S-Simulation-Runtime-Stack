@@ -1,0 +1,97 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "title": "TEVV Exploration Metrics",
+  "uid": "tevv-exploration",
+  "tags": ["tevv", "exploration"],
+  "timezone": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-30d", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Coverage % (latest)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "_exists_:coverage_pct",
+          "metrics": [{ "id": "1", "type": "max", "field": "coverage_pct" }],
+          "bucketAggs": [
+            { "id": "2", "type": "date_histogram", "field": "timestamp",
+              "settings": { "interval": "auto" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Coverage % over runs",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 0 },
+      "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "_exists_:coverage_pct",
+          "metrics": [{ "id": "1", "type": "max", "field": "coverage_pct" }],
+          "bucketAggs": [
+            { "id": "3", "type": "terms", "field": "local_planner.keyword",
+              "settings": { "size": "10", "min_doc_count": "1" } },
+            { "id": "2", "type": "date_histogram", "field": "timestamp",
+              "settings": { "interval": "auto" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Explored volume (m³)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+      "fieldConfig": { "defaults": { "unit": "m3" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "_exists_:explored_volume_m3",
+          "metrics": [{ "id": "1", "type": "max", "field": "explored_volume_m3" }],
+          "bucketAggs": [
+            { "id": "2", "type": "date_histogram", "field": "timestamp",
+              "settings": { "interval": "auto" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Planning latency p50 / p95 (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "_exists_:planning_latency_p95_ms",
+          "metrics": [
+            { "id": "1", "type": "avg", "field": "planning_latency_p50_ms" },
+            { "id": "2", "type": "avg", "field": "planning_latency_p95_ms" }
+          ],
+          "bucketAggs": [
+            { "id": "3", "type": "date_histogram", "field": "timestamp",
+              "settings": { "interval": "auto" } }
+          ]
+        }
+      ]
+    }
+  ]
+}

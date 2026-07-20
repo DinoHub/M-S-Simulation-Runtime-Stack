@@ -19,10 +19,20 @@
 #   - px4-bridge-drone-2  : PX4 SITL instance 1  (cpu core 9)
 #   - px4-bridge-drone-3  : PX4 SITL instance 2  (cpu core 10)
 #   - px4-bridge-drone-4  : PX4 SITL instance 3  (cpu core 11)
+#   - px4-bridge-drone-5  : PX4 SITL instance 4  (cpu core 12)
+#   - px4-bridge-drone-6  : PX4 SITL instance 5  (cpu core 13)
+#   - px4-bridge-drone-7  : PX4 SITL instance 6  (cpu core 14)
+#   - px4-bridge-drone-8  : PX4 SITL instance 7  (cpu core 15)
+#   - px4-bridge-drone-9  : PX4 SITL instance 8  (cpu core 16)
 #   - airsim_bridge_d1 + mavros_d1   (ROS_DOMAIN_ID 1)
 #   - airsim_bridge_d2 + mavros_d2   (ROS_DOMAIN_ID 2)
 #   - airsim_bridge_d3 + mavros_d3   (ROS_DOMAIN_ID 3)
 #   - airsim_bridge_d4 + mavros_d4   (ROS_DOMAIN_ID 4)
+#   - airsim_bridge_d5 + mavros_d5   (ROS_DOMAIN_ID 5)
+#   - airsim_bridge_d6 + mavros_d6   (ROS_DOMAIN_ID 6)
+#   - airsim_bridge_d7 + mavros_d7   (ROS_DOMAIN_ID 7)
+#   - airsim_bridge_d8 + mavros_d8   (ROS_DOMAIN_ID 8)
+#   - airsim_bridge_d9 + mavros_d9   (ROS_DOMAIN_ID 9)
 #   - qgroundcontrol-x11  : QGroundControl with X11 forwarding + GPU acceleration
 #
 # Prerequisites:
@@ -67,6 +77,11 @@ services:
     pull_policy: if_not_present
     container_name: airsim-xfs
     hostname: airsim-xfs
+
+    # `sim` profile: launch.sh enables it by default, drops it with --editor so
+    # AirSim runs from the Unreal editor on the host instead. Bridges depend on
+    # this service with required: false, so skipping the profile is clean.
+    profiles: ["sim"]
 
     # Host networking — all ports exposed directly on the host
     network_mode: "host"
@@ -123,6 +138,9 @@ services:
       # secondary stagger.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     network_mode: "host"
     ipc: host
@@ -153,7 +171,7 @@ services:
       MAV_1_BROADCAST: 1
       MAV_2_BROADCAST: 1
       SWARM_ID: ${SWARM_ID:-1}
-      SWARM_SIZE: ${SWARM_SIZE:-4}
+      SWARM_SIZE: ${SWARM_SIZE:-9}
       # MAVLink router — use 'router' for optimised multi-drone routing
       MAVLINK_MODE: ${MAVLINK_MODE:-router}
       MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
@@ -179,6 +197,9 @@ services:
       # secondary stagger.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     network_mode: "host"
     ipc: host
@@ -208,7 +229,7 @@ services:
       MAV_1_BROADCAST: 1
       MAV_2_BROADCAST: 1
       SWARM_ID: ${SWARM_ID:-1}
-      SWARM_SIZE: ${SWARM_SIZE:-4}
+      SWARM_SIZE: ${SWARM_SIZE:-9}
       MAVLINK_MODE: ${MAVLINK_MODE:-router}
       MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
       ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
@@ -233,6 +254,9 @@ services:
       # secondary stagger.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     network_mode: "host"
     ipc: host
@@ -262,7 +286,7 @@ services:
       MAV_1_BROADCAST: 1
       MAV_2_BROADCAST: 1
       SWARM_ID: ${SWARM_ID:-1}
-      SWARM_SIZE: ${SWARM_SIZE:-4}
+      SWARM_SIZE: ${SWARM_SIZE:-9}
       MAVLINK_MODE: ${MAVLINK_MODE:-router}
       MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
       ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
@@ -287,6 +311,9 @@ services:
       # secondary stagger.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     network_mode: "host"
     ipc: host
@@ -316,7 +343,292 @@ services:
       MAV_1_BROADCAST: 1
       MAV_2_BROADCAST: 1
       SWARM_ID: ${SWARM_ID:-1}
-      SWARM_SIZE: ${SWARM_SIZE:-4}
+      SWARM_SIZE: ${SWARM_SIZE:-9}
+      MAVLINK_MODE: ${MAVLINK_MODE:-router}
+      MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
+      ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
+      ROUTER_DEDUPE_PERIOD: ${ROUTER_DEDUPE_PERIOD:-500}
+      HOST_NETWORK_MODE: "true"
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # PX4 SITL — Drone 5  (instance 4, cpu core 12)
+  # ===========================================================================
+  px4-bridge-drone-5:
+    image: ${PX4_IMAGE:-dhdevspace/auto_mns:px4-airsim-px4}
+    pull_policy: if_not_present
+    container_name: px4-drone-5
+    hostname: px4-drone-5
+
+    depends_on:
+      # service_healthy: PX4's lockstep handshake wedges if it starts while
+      # the sim is still initializing (cold start needed a manual SITL
+      # restart). Gate on the sim healthcheck; the sleep below stays as a
+      # secondary stagger.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    network_mode: "host"
+    ipc: host
+
+    cpuset: "12"
+
+    command: >
+      bash -c "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim simulation to fully initialize (staggered)...' &&
+        sleep 35 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 5 (instance 4) on HOST NETWORK...' &&
+        exec ./Scripts/run_airsim_sitl.sh 4
+      "
+
+    environment:
+      PX4_SIM_HOSTNAME: ${PX4_SIM_HOSTNAME:-localhost}
+      PX4_SIM_MODEL: ${PX4_SIM_MODEL:-none_iris}
+      PX4_SIMULATOR: none
+      PX4_HOME_LAT: ${PX4_HOME_LAT:-42.76919401}
+      PX4_HOME_LON: ${PX4_HOME_LON:--115.59330958}
+      PX4_HOME_ALT: ${PX4_HOME_ALT:-0.0}
+      PX4_SYS_AUTOSTART: ${PX4_SYS_AUTOSTART:-10016}
+      PX4_INSTANCE: 4
+      MAV_0_BROADCAST: 1
+      MAV_1_BROADCAST: 1
+      MAV_2_BROADCAST: 1
+      SWARM_ID: ${SWARM_ID:-1}
+      SWARM_SIZE: ${SWARM_SIZE:-9}
+      MAVLINK_MODE: ${MAVLINK_MODE:-router}
+      MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
+      ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
+      ROUTER_DEDUPE_PERIOD: ${ROUTER_DEDUPE_PERIOD:-500}
+      HOST_NETWORK_MODE: "true"
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # PX4 SITL — Drone 6  (instance 5, cpu core 13)
+  # ===========================================================================
+  px4-bridge-drone-6:
+    image: ${PX4_IMAGE:-dhdevspace/auto_mns:px4-airsim-px4}
+    pull_policy: if_not_present
+    container_name: px4-drone-6
+    hostname: px4-drone-6
+
+    depends_on:
+      # service_healthy: PX4's lockstep handshake wedges if it starts while
+      # the sim is still initializing (cold start needed a manual SITL
+      # restart). Gate on the sim healthcheck; the sleep below stays as a
+      # secondary stagger.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    network_mode: "host"
+    ipc: host
+
+    cpuset: "13"
+
+    command: >
+      bash -c "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim simulation to fully initialize (staggered)...' &&
+        sleep 40 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 6 (instance 5) on HOST NETWORK...' &&
+        exec ./Scripts/run_airsim_sitl.sh 5
+      "
+
+    environment:
+      PX4_SIM_HOSTNAME: ${PX4_SIM_HOSTNAME:-localhost}
+      PX4_SIM_MODEL: ${PX4_SIM_MODEL:-none_iris}
+      PX4_SIMULATOR: none
+      PX4_HOME_LAT: ${PX4_HOME_LAT:-42.76919401}
+      PX4_HOME_LON: ${PX4_HOME_LON:--115.59330958}
+      PX4_HOME_ALT: ${PX4_HOME_ALT:-0.0}
+      PX4_SYS_AUTOSTART: ${PX4_SYS_AUTOSTART:-10016}
+      PX4_INSTANCE: 5
+      MAV_0_BROADCAST: 1
+      MAV_1_BROADCAST: 1
+      MAV_2_BROADCAST: 1
+      SWARM_ID: ${SWARM_ID:-1}
+      SWARM_SIZE: ${SWARM_SIZE:-9}
+      MAVLINK_MODE: ${MAVLINK_MODE:-router}
+      MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
+      ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
+      ROUTER_DEDUPE_PERIOD: ${ROUTER_DEDUPE_PERIOD:-500}
+      HOST_NETWORK_MODE: "true"
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # PX4 SITL — Drone 7  (instance 6, cpu core 14)
+  # ===========================================================================
+  px4-bridge-drone-7:
+    image: ${PX4_IMAGE:-dhdevspace/auto_mns:px4-airsim-px4}
+    pull_policy: if_not_present
+    container_name: px4-drone-7
+    hostname: px4-drone-7
+
+    depends_on:
+      # service_healthy: PX4's lockstep handshake wedges if it starts while
+      # the sim is still initializing (cold start needed a manual SITL
+      # restart). Gate on the sim healthcheck; the sleep below stays as a
+      # secondary stagger.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    network_mode: "host"
+    ipc: host
+
+    cpuset: "14"
+
+    command: >
+      bash -c "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim simulation to fully initialize (staggered)...' &&
+        sleep 45 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 7 (instance 6) on HOST NETWORK...' &&
+        exec ./Scripts/run_airsim_sitl.sh 6
+      "
+
+    environment:
+      PX4_SIM_HOSTNAME: ${PX4_SIM_HOSTNAME:-localhost}
+      PX4_SIM_MODEL: ${PX4_SIM_MODEL:-none_iris}
+      PX4_SIMULATOR: none
+      PX4_HOME_LAT: ${PX4_HOME_LAT:-42.76919401}
+      PX4_HOME_LON: ${PX4_HOME_LON:--115.59330958}
+      PX4_HOME_ALT: ${PX4_HOME_ALT:-0.0}
+      PX4_SYS_AUTOSTART: ${PX4_SYS_AUTOSTART:-10016}
+      PX4_INSTANCE: 6
+      MAV_0_BROADCAST: 1
+      MAV_1_BROADCAST: 1
+      MAV_2_BROADCAST: 1
+      SWARM_ID: ${SWARM_ID:-1}
+      SWARM_SIZE: ${SWARM_SIZE:-9}
+      MAVLINK_MODE: ${MAVLINK_MODE:-router}
+      MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
+      ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
+      ROUTER_DEDUPE_PERIOD: ${ROUTER_DEDUPE_PERIOD:-500}
+      HOST_NETWORK_MODE: "true"
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # PX4 SITL — Drone 8  (instance 7, cpu core 15)
+  # ===========================================================================
+  px4-bridge-drone-8:
+    image: ${PX4_IMAGE:-dhdevspace/auto_mns:px4-airsim-px4}
+    pull_policy: if_not_present
+    container_name: px4-drone-8
+    hostname: px4-drone-8
+
+    depends_on:
+      # service_healthy: PX4's lockstep handshake wedges if it starts while
+      # the sim is still initializing (cold start needed a manual SITL
+      # restart). Gate on the sim healthcheck; the sleep below stays as a
+      # secondary stagger.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    network_mode: "host"
+    ipc: host
+
+    cpuset: "15"
+
+    command: >
+      bash -c "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim simulation to fully initialize (staggered)...' &&
+        sleep 50 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 8 (instance 7) on HOST NETWORK...' &&
+        exec ./Scripts/run_airsim_sitl.sh 7
+      "
+
+    environment:
+      PX4_SIM_HOSTNAME: ${PX4_SIM_HOSTNAME:-localhost}
+      PX4_SIM_MODEL: ${PX4_SIM_MODEL:-none_iris}
+      PX4_SIMULATOR: none
+      PX4_HOME_LAT: ${PX4_HOME_LAT:-42.76919401}
+      PX4_HOME_LON: ${PX4_HOME_LON:--115.59330958}
+      PX4_HOME_ALT: ${PX4_HOME_ALT:-0.0}
+      PX4_SYS_AUTOSTART: ${PX4_SYS_AUTOSTART:-10016}
+      PX4_INSTANCE: 7
+      MAV_0_BROADCAST: 1
+      MAV_1_BROADCAST: 1
+      MAV_2_BROADCAST: 1
+      SWARM_ID: ${SWARM_ID:-1}
+      SWARM_SIZE: ${SWARM_SIZE:-9}
+      MAVLINK_MODE: ${MAVLINK_MODE:-router}
+      MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
+      ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
+      ROUTER_DEDUPE_PERIOD: ${ROUTER_DEDUPE_PERIOD:-500}
+      HOST_NETWORK_MODE: "true"
+
+    restart: unless-stopped
+
+  # ===========================================================================
+  # PX4 SITL — Drone 9  (instance 8, cpu core 16)
+  # ===========================================================================
+  px4-bridge-drone-9:
+    image: ${PX4_IMAGE:-dhdevspace/auto_mns:px4-airsim-px4}
+    pull_policy: if_not_present
+    container_name: px4-drone-9
+    hostname: px4-drone-9
+
+    depends_on:
+      # service_healthy: PX4's lockstep handshake wedges if it starts while
+      # the sim is still initializing (cold start needed a manual SITL
+      # restart). Gate on the sim healthcheck; the sleep below stays as a
+      # secondary stagger.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    network_mode: "host"
+    ipc: host
+
+    cpuset: "16"
+
+    command: >
+      bash -c "
+        echo 'Using PX4_SIM_HOSTNAME: '$$PX4_SIM_HOSTNAME' (host network mode)' &&
+        echo 'Waiting for AirSim simulation to fully initialize (staggered)...' &&
+        sleep 55 &&
+        cd /px4_workspace/PX4-Autopilot &&
+        echo 'Starting PX4 SITL for drone 9 (instance 8) on HOST NETWORK...' &&
+        exec ./Scripts/run_airsim_sitl.sh 8
+      "
+
+    environment:
+      PX4_SIM_HOSTNAME: ${PX4_SIM_HOSTNAME:-localhost}
+      PX4_SIM_MODEL: ${PX4_SIM_MODEL:-none_iris}
+      PX4_SIMULATOR: none
+      PX4_HOME_LAT: ${PX4_HOME_LAT:-42.76919401}
+      PX4_HOME_LON: ${PX4_HOME_LON:--115.59330958}
+      PX4_HOME_ALT: ${PX4_HOME_ALT:-0.0}
+      PX4_SYS_AUTOSTART: ${PX4_SYS_AUTOSTART:-10016}
+      PX4_INSTANCE: 8
+      MAV_0_BROADCAST: 1
+      MAV_1_BROADCAST: 1
+      MAV_2_BROADCAST: 1
+      SWARM_ID: ${SWARM_ID:-1}
+      SWARM_SIZE: ${SWARM_SIZE:-9}
       MAVLINK_MODE: ${MAVLINK_MODE:-router}
       MAVLINK_TARGET: ${MAVLINK_TARGET:-localhost}
       ROUTER_LOG_LEVEL: ${ROUTER_LOG_LEVEL:-info}
@@ -354,6 +666,9 @@ services:
       # publishers and no retry.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     environment:
       # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
@@ -372,6 +687,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -379,6 +698,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_1_NAME:-Copter1}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -419,9 +745,9 @@ services:
       - /dev/shm:/dev/shm:rw
 
     # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
-    # endpoint sending to 127.0.0.1:14560+i (router conf: AirSim 14540+i,
-    # QGC 14550+i, MAVROS 14560+i). MAVROS binds :14560+i with no fixed
-    # remote and locks onto the router from the first packet. Do NOT bind
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
     # 14540+i / 14550+i — AirSim and QGC own those sockets.
     command:
       - "bash"
@@ -429,7 +755,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_1_NAME:-Copter1}
-        fcu_url:=${DRONE_1_FCU_URL:-udp://:14560@}
+        fcu_url:=${DRONE_1_FCU_URL:-udp://:0@127.0.0.1:14555}
         target_system_id:=1
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:=true
@@ -453,6 +779,9 @@ services:
       # publishers and no retry.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     environment:
       # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
@@ -471,6 +800,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -478,6 +811,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_2_NAME:-Copter2}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -518,9 +858,9 @@ services:
       - /dev/shm:/dev/shm:rw
 
     # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
-    # endpoint sending to 127.0.0.1:14560+i (router conf: AirSim 14540+i,
-    # QGC 14550+i, MAVROS 14560+i). MAVROS binds :14560+i with no fixed
-    # remote and locks onto the router from the first packet. Do NOT bind
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
     # 14540+i / 14550+i — AirSim and QGC own those sockets.
     command:
       - "bash"
@@ -528,7 +868,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_2_NAME:-Copter2}
-        fcu_url:=${DRONE_2_FCU_URL:-udp://:14561@}
+        fcu_url:=${DRONE_2_FCU_URL:-udp://:0@127.0.0.1:14556}
         target_system_id:=2
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:=false
@@ -552,6 +892,9 @@ services:
       # publishers and no retry.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     environment:
       # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
@@ -570,6 +913,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -577,6 +924,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_3_NAME:-Copter3}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -617,9 +971,9 @@ services:
       - /dev/shm:/dev/shm:rw
 
     # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
-    # endpoint sending to 127.0.0.1:14560+i (router conf: AirSim 14540+i,
-    # QGC 14550+i, MAVROS 14560+i). MAVROS binds :14560+i with no fixed
-    # remote and locks onto the router from the first packet. Do NOT bind
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
     # 14540+i / 14550+i — AirSim and QGC own those sockets.
     command:
       - "bash"
@@ -627,7 +981,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_3_NAME:-Copter3}
-        fcu_url:=${DRONE_3_FCU_URL:-udp://:14562@}
+        fcu_url:=${DRONE_3_FCU_URL:-udp://:0@127.0.0.1:14557}
         target_system_id:=3
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:=false
@@ -651,6 +1005,9 @@ services:
       # publishers and no retry.
       airsim-xfs:
         condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
 
     environment:
       # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
@@ -669,6 +1026,10 @@ services:
       - /tmp/iceoryx2:/tmp/iceoryx2:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
 
     command:
       - "ros2"
@@ -676,6 +1037,13 @@ services:
       - "airsim_ros2_bridge"
       - "single_vehicle.launch.py"
       - "vehicle_name:=${VEHICLE_4_NAME:-Copter4}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
       - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
       - "host_port:=${AIRSIM_HOST_PORT:-41451}"
       - "enable_localization:=true"
@@ -716,9 +1084,9 @@ services:
       - /dev/shm:/dev/shm:rw
 
     # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
-    # endpoint sending to 127.0.0.1:14560+i (router conf: AirSim 14540+i,
-    # QGC 14550+i, MAVROS 14560+i). MAVROS binds :14560+i with no fixed
-    # remote and locks onto the router from the first packet. Do NOT bind
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
     # 14540+i / 14550+i — AirSim and QGC own those sockets.
     command:
       - "bash"
@@ -726,8 +1094,573 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=${VEHICLE_4_NAME:-Copter4}
-        fcu_url:=${DRONE_4_FCU_URL:-udp://:14563@}
+        fcu_url:=${DRONE_4_FCU_URL:-udp://:0@127.0.0.1:14558}
         target_system_id:=4
+        mavros_config:=mavros_px4.yaml
+        enable_dds_cleanup:=false
+
+  airsim_bridge_d5:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: airsim_bridge_d5
+    hostname: airsim_bridge_d5
+    init: true
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      # service_healthy: the bridge's first RPC mid engine-init can crash
+      # the sim, and a closed RPC port leaves sensor topics with 0
+      # publishers and no retry.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    environment:
+      # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
+      # HOME would default to / and `ros2 launch` couldn't create ~/.ros/log.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_5_DOMAIN_ID:-5}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_5_NAME:-Copter5}
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
+
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_5_NAME:-Copter5}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
+      - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+
+  mavros_d5:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: mavros_d5
+    hostname: mavros_d5
+    # init: false: mavros_bringup's DDS-cleanup forks children that tini
+    # would orphan; the bash -lc wrapper keeps bash as PID 1 to reap them.
+    init: false
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      airsim_bridge_d5:
+        condition: service_started
+      px4-bridge-drone-5:
+        condition: service_started
+
+    environment:
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${DRONE_5_DOMAIN_ID:-5}
+      - ROS_LOCALHOST_ONLY=0
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+
+    # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
+    # 14540+i / 14550+i — AirSim and QGC own those sockets.
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
+        vehicle:=${VEHICLE_5_NAME:-Copter5}
+        fcu_url:=${DRONE_5_FCU_URL:-udp://:0@127.0.0.1:14559}
+        target_system_id:=5
+        mavros_config:=mavros_px4.yaml
+        enable_dds_cleanup:=false
+
+  airsim_bridge_d6:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: airsim_bridge_d6
+    hostname: airsim_bridge_d6
+    init: true
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      # service_healthy: the bridge's first RPC mid engine-init can crash
+      # the sim, and a closed RPC port leaves sensor topics with 0
+      # publishers and no retry.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    environment:
+      # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
+      # HOME would default to / and `ros2 launch` couldn't create ~/.ros/log.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_6_DOMAIN_ID:-6}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_6_NAME:-Copter6}
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
+
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_6_NAME:-Copter6}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
+      - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+
+  mavros_d6:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: mavros_d6
+    hostname: mavros_d6
+    # init: false: mavros_bringup's DDS-cleanup forks children that tini
+    # would orphan; the bash -lc wrapper keeps bash as PID 1 to reap them.
+    init: false
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      airsim_bridge_d6:
+        condition: service_started
+      px4-bridge-drone-6:
+        condition: service_started
+
+    environment:
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${DRONE_6_DOMAIN_ID:-6}
+      - ROS_LOCALHOST_ONLY=0
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+
+    # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
+    # 14540+i / 14550+i — AirSim and QGC own those sockets.
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
+        vehicle:=${VEHICLE_6_NAME:-Copter6}
+        fcu_url:=${DRONE_6_FCU_URL:-udp://:0@127.0.0.1:14560}
+        target_system_id:=6
+        mavros_config:=mavros_px4.yaml
+        enable_dds_cleanup:=false
+
+  airsim_bridge_d7:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: airsim_bridge_d7
+    hostname: airsim_bridge_d7
+    init: true
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      # service_healthy: the bridge's first RPC mid engine-init can crash
+      # the sim, and a closed RPC port leaves sensor topics with 0
+      # publishers and no retry.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    environment:
+      # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
+      # HOME would default to / and `ros2 launch` couldn't create ~/.ros/log.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_7_DOMAIN_ID:-7}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_7_NAME:-Copter7}
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
+
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_7_NAME:-Copter7}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
+      - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+
+  mavros_d7:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: mavros_d7
+    hostname: mavros_d7
+    # init: false: mavros_bringup's DDS-cleanup forks children that tini
+    # would orphan; the bash -lc wrapper keeps bash as PID 1 to reap them.
+    init: false
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      airsim_bridge_d7:
+        condition: service_started
+      px4-bridge-drone-7:
+        condition: service_started
+
+    environment:
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${DRONE_7_DOMAIN_ID:-7}
+      - ROS_LOCALHOST_ONLY=0
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+
+    # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
+    # 14540+i / 14550+i — AirSim and QGC own those sockets.
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
+        vehicle:=${VEHICLE_7_NAME:-Copter7}
+        fcu_url:=${DRONE_7_FCU_URL:-udp://:0@127.0.0.1:14561}
+        target_system_id:=7
+        mavros_config:=mavros_px4.yaml
+        enable_dds_cleanup:=false
+
+  airsim_bridge_d8:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: airsim_bridge_d8
+    hostname: airsim_bridge_d8
+    init: true
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      # service_healthy: the bridge's first RPC mid engine-init can crash
+      # the sim, and a closed RPC port leaves sensor topics with 0
+      # publishers and no retry.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    environment:
+      # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
+      # HOME would default to / and `ros2 launch` couldn't create ~/.ros/log.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_8_DOMAIN_ID:-8}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_8_NAME:-Copter8}
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
+
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_8_NAME:-Copter8}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
+      - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+
+  mavros_d8:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: mavros_d8
+    hostname: mavros_d8
+    # init: false: mavros_bringup's DDS-cleanup forks children that tini
+    # would orphan; the bash -lc wrapper keeps bash as PID 1 to reap them.
+    init: false
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      airsim_bridge_d8:
+        condition: service_started
+      px4-bridge-drone-8:
+        condition: service_started
+
+    environment:
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${DRONE_8_DOMAIN_ID:-8}
+      - ROS_LOCALHOST_ONLY=0
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+
+    # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
+    # 14540+i / 14550+i — AirSim and QGC own those sockets.
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
+        vehicle:=${VEHICLE_8_NAME:-Copter8}
+        fcu_url:=${DRONE_8_FCU_URL:-udp://:0@127.0.0.1:14562}
+        target_system_id:=8
+        mavros_config:=mavros_px4.yaml
+        enable_dds_cleanup:=false
+
+  airsim_bridge_d9:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: airsim_bridge_d9
+    hostname: airsim_bridge_d9
+    init: true
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      # service_healthy: the bridge's first RPC mid engine-init can crash
+      # the sim, and a closed RPC port leaves sensor topics with 0
+      # publishers and no retry.
+      airsim-xfs:
+        condition: service_healthy
+        # required: false so --editor (sim profile off) skips this dep instead
+        # of forcing the container up; ordering still enforced when sim runs.
+        required: false
+
+    environment:
+      # Writable HOME: uid 1000 is absent from the image's /etc/passwd, so
+      # HOME would default to / and `ros2 launch` couldn't create ~/.ros/log.
+      - HOME=/tmp
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/tmp/.Xauthority
+      - ROS_DOMAIN_ID=${DRONE_9_DOMAIN_ID:-9}
+      - ROS_LOCALHOST_ONLY=0
+      - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-127.0.0.1}
+      - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
+      - VEHICLE_NAME=${VEHICLE_9_NAME:-Copter9}
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+      - /tmp/iceoryx2:/tmp/iceoryx2:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:ro
+      # Identity renames that pull settings.json sensor/camera topics into the
+      # remap set so TOPIC_PREFIX=/ flattens them too (launch RPC settings-read
+      # fails in this image). Inert with the default prefix. See the yaml.
+      - ${CONFIG_ROOT:-./config}/airsim-bridge/topic_names.yaml:/etc/airsim/topic_names.yaml:ro
+
+    command:
+      - "ros2"
+      - "launch"
+      - "airsim_ros2_bridge"
+      - "single_vehicle.launch.py"
+      - "vehicle_name:=${VEHICLE_9_NAME:-Copter9}"
+      # Per-vehicle topic prefix. Default `{vehicle}/` -> /<vehicle>/odom; set
+      # TOPIC_PREFIX=/ to flatten every topic to root. Use `/`, NOT empty:
+      # exec-form (no shell) would pass `topic_prefix:=` and ros2 rejects it.
+      # `:-` coerces an accidental empty back to the prefixed default. Each
+      # drone has its own ROS_DOMAIN_ID, so flat names don't collide.
+      - "topic_prefix:=${TOPIC_PREFIX:-{vehicle}/}"
+      - "topic_names_config:=/etc/airsim/topic_names.yaml"
+      - "host_ip:=${AIRSIM_HOST_IP:-127.0.0.1}"
+      - "host_port:=${AIRSIM_HOST_PORT:-41451}"
+      - "enable_localization:=true"
+      - "enable_coordination:=false"
+      - "enable_local_obs:=${ENABLE_LOCAL_OBS:-true}"
+      - "local_obs_target_frame:=${LOCAL_OBS_TARGET_FRAME:-map}"
+      - "local_obs_buffer_sec:=${LOCAL_OBS_BUFFER_SEC:-5.0}"
+      - "local_obs_voxel_size:=${LOCAL_OBS_VOXEL_SIZE:-0.15}"
+      - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
+
+  mavros_d9:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    pull_policy: if_not_present
+    container_name: mavros_d9
+    hostname: mavros_d9
+    # init: false: mavros_bringup's DDS-cleanup forks children that tini
+    # would orphan; the bash -lc wrapper keeps bash as PID 1 to reap them.
+    init: false
+    restart: unless-stopped
+
+    network_mode: "host"
+    ipc: host
+
+    user: "${UID:?set UID}:${GID:?set GID}"
+
+    depends_on:
+      airsim_bridge_d9:
+        condition: service_started
+      px4-bridge-drone-9:
+        condition: service_started
+
+    environment:
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${DRONE_9_DOMAIN_ID:-9}
+      - ROS_LOCALHOST_ONLY=0
+
+    volumes:
+      - /dev/shm:/dev/shm:rw
+
+    # The PX4 image's mavlink-router has a dedicated per-instance MAVROS UDP
+    # endpoint: a Server on 0.0.0.0:14555+i (router conf: AirSim 14540+i,
+    # QGC 14550+i, MAVROS 14555+i). MAVROS dials it (udp://:0@host:14555+i)
+    # so it sends first and the router learns its source. Do NOT bind
+    # 14540+i / 14550+i — AirSim and QGC own those sockets.
+    command:
+      - "bash"
+      - "-lc"
+      - >
+        ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
+        vehicle:=${VEHICLE_9_NAME:-Copter9}
+        fcu_url:=${DRONE_9_FCU_URL:-udp://:0@127.0.0.1:14563}
+        target_system_id:=9
         mavros_config:=mavros_px4.yaml
         enable_dds_cleanup:=false
 
