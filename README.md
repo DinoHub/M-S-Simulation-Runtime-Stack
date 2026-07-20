@@ -30,7 +30,20 @@ Subsequent launches are warm.
 
 ### ScenarioSpec Runtime
 
-For authored scenarios, launch the ScenarioSpec directly. This path uses the
+For authored scenarios, ScenarioSpec remains the source of truth. The upstream
+product flow is:
+
+```text
+MnSPackaging
+  -> MnSLevelPack (*.mnslevelpack) and MnSAssetPack (*.mnsassetpack)
+  -> ScenarioLab authoring/export
+  -> ScenarioSpec folder + ScenarioBundle support data
+  -> runtime generation
+  -> generated stack
+  -> runtime
+```
+
+This repo can launch the exported ScenarioSpec directly. The path uses the
 vendored runtime tool under `tools/mns-runtime-tool`, validates the pinned
 ScenarioSpec contract, generates an image-only stack under `generated/`, and
 runs that stack. No Integration Platform service source checkout is required.

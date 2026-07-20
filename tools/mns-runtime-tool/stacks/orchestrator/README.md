@@ -60,6 +60,9 @@ artifacts/asset_packs/<pack_id>/...
 vehicles, sensors, authored object placements, and extension blocks for fields that are
 still evolving. Engine-specific map, mesh, class, image, executable, and pak
 bindings are resolved through built-in catalogs or bundle-local catalog overlays.
+When the scenario came from ScenarioLab, those overlays normally point at
+staged `MnSLevelPack` (`*.mnslevelpack`) and `MnSAssetPack` (`*.mnsassetpack`)
+artifacts copied into `ScenarioBundle/artifacts/` during authoring export.
 
 For field-level configuration, see:
 
