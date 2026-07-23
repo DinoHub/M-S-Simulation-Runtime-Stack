@@ -17,7 +17,7 @@ if [[ "${1:-}" == "--stack" ]]; then
   fi
   stack="$2"
   shift 2
-  exec "$SCRIPT_DIR/tools/mns-runtime-tool/stacks/scripts/mns_runtime_tool.sh" stop --stack "$stack" "$@"
+  exec "$SCRIPT_DIR/tools/mns-runtime-tool/run_image.sh" stop --stack "$stack" "$@"
 fi
 
 # Explicit target comes ONLY from the CLI arg ($1, e.g. `make stop SCENARIO=x`).

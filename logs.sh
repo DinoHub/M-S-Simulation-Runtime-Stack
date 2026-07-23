@@ -69,7 +69,7 @@ if [ -z "$SERVICE" ]; then
     exit 1
 fi
 shift 2 || true
-exec "$SCRIPT_DIR/tools/mns-runtime-tool/stacks/scripts/log_stack.sh" "$SERVICE" "$@"
+exec "$SCRIPT_DIR/tools/mns-runtime-tool/run_image.sh" logs --stack "$SERVICE" "$@"
 ;;
 
 all)

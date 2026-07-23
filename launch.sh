@@ -55,9 +55,9 @@ Scenarios with a compose/<scenario>/templates/ dir are generated from Jinja
 templates via tools/generate_scenario.py (drone count via NUM_DRONES in .env,
 default 4); the launcher regenerates them automatically on drift.
 
-ScenarioSpec mode generates an image-only stack with the vendored runtime tool
-under tools/mns-runtime-tool, then runs that generated stack. If no docker
-compose up args are passed, it runs detached (-d).
+ScenarioSpec mode pulls the MnS runtime-tool image, generates an image-only
+stack, then runs that generated stack. If no docker compose up args are passed,
+it runs detached (-d).
 EOF
 }
 
@@ -143,9 +143,9 @@ run_scenariospec_mode() {
     stack_output="$SCRIPT_DIR/generated/${base}"
   fi
 
-  local tool="$SCRIPT_DIR/tools/mns-runtime-tool/stacks/scripts/mns_runtime_tool.sh"
+  local tool="$SCRIPT_DIR/tools/mns-runtime-tool/run_image.sh"
   if [[ ! -x "$tool" ]]; then
-    echo "ERROR: ScenarioSpec runtime tool is missing or not executable: $tool"
+    echo "ERROR: ScenarioSpec runtime image helper is missing or not executable: $tool"
     exit 1
   fi
 
@@ -382,8 +382,7 @@ if [ -d "compose/${SCENARIO}/templates" ] && [ -f "$SCRIPT_DIR/tools/generate_sc
   else
     check_status=$?
     if [ "$check_status" -ne 1 ]; then
-      printf '%s
-' "$check_output" >&2
+      printf '%s\n' "$check_output" >&2
       exit "$check_status"
     fi
     echo "Regenerating ${SCENARIO} scenario files (drift detected)..."
