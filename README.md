@@ -44,21 +44,21 @@ MnSPackaging
 ```
 
 This repo can launch the exported ScenarioSpec directly. The path pulls the
-published runtime-tool image, validates the pinned ScenarioSpec contract,
+published stack-generator image, validates the pinned ScenarioSpec contract,
 generates an image-only stack under `generated/`, and runs that stack through
 Docker Compose. No Integration Platform service checkout or host-side generator
 scripts are required.
 
 ```bash
-# Optional: pin a tested runtime-tool image instead of latest.
-export MNS_RUNTIME_TOOL_IMAGE=dhdevspace/auto_mns:mns-runtime-tool-latest
+# Optional: pin a tested stack-generator image instead of latest.
+export MNS_STACK_GENERATOR_IMAGE=dhdevspace/auto_mns:mns-runtime-tool-latest
 
 ./launch.sh --scenario-spec /path/to/ScenarioSpec-folder --stack-output generated/my_scenario
 ./logs.sh stack generated/my_scenario -f
 ./stop.sh --stack generated/my_scenario --remove-orphans
 ```
 
-The runtime-tool image is pulled with `MNS_RUNTIME_TOOL_PULL_POLICY=always` by
+The stack-generator image is pulled with `MNS_STACK_GENERATOR_PULL_POLICY=always` by
 default. Runtime-stack ScenarioSpec launches always use `MNS_IMAGE_SET=published`;
 non-published image sets and `--image-set-file` overrides are rejected so runtime
 users run `dhdevspace` images only. Override image names in the generated stack

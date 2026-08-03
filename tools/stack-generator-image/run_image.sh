@@ -3,16 +3,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-IMAGE="${MNS_RUNTIME_TOOL_IMAGE:-dhdevspace/auto_mns:mns-runtime-tool-latest}"
-PULL_POLICY="${MNS_RUNTIME_TOOL_PULL_POLICY:-always}"
+IMAGE="${MNS_STACK_GENERATOR_IMAGE:-${MNS_RUNTIME_TOOL_IMAGE:-dhdevspace/auto_mns:mns-runtime-tool-latest}}"
+PULL_POLICY="${MNS_STACK_GENERATOR_PULL_POLICY:-${MNS_RUNTIME_TOOL_PULL_POLICY:-always}}"
 IMAGE_SET="${MNS_IMAGE_SET:-published}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  tools/mns-runtime-tool/run_image.sh <mns-runtime-tool args...>
+  tools/stack-generator-image/run_image.sh <stack-generator args...>
 
-Runs the published MnS runtime tool image with path-preserving mounts and the
+Runs the published MnS stack-generator image with path-preserving mounts and the
 host Docker socket. This is an internal helper used by launch.sh, logs.sh, and
 stop.sh; users should prefer those top-level wrappers.
 EOF

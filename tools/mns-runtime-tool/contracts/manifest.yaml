@@ -1,8 +1,0 @@
-version: 1
-
-services:
-  - id: MnS-ScenarioSpec
-    repo: "git@github.com:DinoHub/MnS-ScenarioSpec.git"
-    ref: "9b8682d18b664606f9d33601f5262a83286fce85"
-    path: "contracts/mns-scenariospec"
-    required: true

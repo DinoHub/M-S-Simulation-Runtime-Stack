@@ -1,1 +1,0 @@
-"""Generated stack file renderers."""
