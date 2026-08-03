@@ -27,7 +27,7 @@ Stop the browser shell with:
 ./product.sh stop
 ```
 
-`product-images.env` pins one coordinated review image channel. Customer setup only pulls images; it never builds source.
+`product-images.env` pins the four-image review channel: product shell, ScenarioLab authoring, stack generator, and Blocks runtime. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this E2E image set.
 
 ## Headless CLI
 

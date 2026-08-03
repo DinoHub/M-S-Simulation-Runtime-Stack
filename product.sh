@@ -7,7 +7,7 @@ DATA_ROOT="$ROOT/.mns/authoring-data"
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
 PORT="${MNS_SCENARIO_LAUNCHER_PORT:-8765}"
-images=("$MNS_PRODUCT_SHELL_IMAGE" "$MNS_AUTHORING_IMAGE" "$MNS_STACK_GENERATOR_IMAGE" "$MNS_PACKAGING_IMAGE" "$MNS_BLOCKS_IMAGE")
+images=("$MNS_PRODUCT_SHELL_IMAGE" "$MNS_AUTHORING_IMAGE" "$MNS_STACK_GENERATOR_IMAGE" "$MNS_BLOCKS_IMAGE")
 
 usage() { echo "Usage: ./product.sh setup|doctor|start|stop|cli [launcher args...]"; }
 prepare_dirs() { mkdir -p "$DATA_ROOT/PackLibrary/level_packs" "$DATA_ROOT/PackLibrary/asset_packs" "$EXPORT_ROOT" "$GENERATED_ROOT"; }
@@ -33,7 +33,6 @@ run_shell() {
     -e "MNS_AUTHORING_DATA_ROOT=$DATA_ROOT" \
     -e "MNS_AUTHORING_IMAGE=$MNS_AUTHORING_IMAGE" \
     -e "MNS_STACK_GENERATOR_IMAGE=$MNS_STACK_GENERATOR_IMAGE" \
-    -e "MNS_PACKAGING_IMAGE=$MNS_PACKAGING_IMAGE" \
     -e MNS_IMAGE_SET=published \
     -e "DISPLAY=${DISPLAY:-:0}" \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
