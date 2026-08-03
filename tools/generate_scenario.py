@@ -17,13 +17,26 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from dotenv import dotenv_values
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+try:
+    from dotenv import dotenv_values as _dotenv_values
+except ModuleNotFoundError:
+    _dotenv_values = None
+
+try:
+    from jinja2 import Environment, FileSystemLoader, StrictUndefined
+except ModuleNotFoundError as e:
+    print(
+        "Missing Python dependency: "
+        f"{e.name}. Install with: python3 -m pip install -r tools/requirements.txt",
+        file=sys.stderr,
+    )
+    raise SystemExit(2) from e
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -129,6 +142,36 @@ def _float(env: dict, key: str, default: float) -> float:
         raise SystemExit(f"{key} must be a number, got {v!r}") from e
 
 
+def _fallback_dotenv_values(path: Path) -> dict:
+    """Parse simple shell-style .env files when python-dotenv is unavailable."""
+    values = {}
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[7:].lstrip()
+        if "=" not in stripped:
+            raise SystemExit(f"{path}:{lineno}: expected KEY=VALUE")
+
+        key, raw_value = stripped.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise SystemExit(f"{path}:{lineno}: empty environment key")
+
+        lexer = shlex.shlex(raw_value, posix=True)
+        lexer.whitespace_split = True
+        lexer.commenters = "#"
+        values[key] = " ".join(lexer)
+    return values
+
+
+def _read_dotenv(path: Path) -> dict:
+    if _dotenv_values is not None:
+        return dict(_dotenv_values(path))
+    return _fallback_dotenv_values(path)
+
+
 def load_env(repo_root: Path) -> dict:
     """Read .env (single source of truth) into a dict.
 
@@ -136,7 +179,7 @@ def load_env(repo_root: Path) -> dict:
     the file — same precedence as docker compose's own .env loading.
     """
     path = repo_root / ".env"
-    base = dict(dotenv_values(path)) if path.is_file() else {}
+    base = _read_dotenv(path) if path.is_file() else {}
     # Shell overrides file (matches `docker compose --env-file` semantics).
     for k in (
         "NUM_DRONES",

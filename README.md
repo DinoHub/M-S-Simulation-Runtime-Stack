@@ -28,6 +28,55 @@ make help                             # full flag/target reference
 The first launch pulls Docker images, which can take several minutes.
 Subsequent launches are warm.
 
+### ScenarioSpec Runtime
+
+For authored scenarios, ScenarioSpec remains the source of truth. The upstream
+product flow is:
+
+```text
+MnSPackaging
+  -> MnSLevelPack (*.mnslevelpack) and MnSAssetPack (*.mnsassetpack)
+  -> ScenarioLab authoring/export
+  -> ScenarioSpec folder + ScenarioBundle support data
+  -> runtime generation
+  -> generated stack
+  -> runtime
+```
+
+This repo can launch the exported ScenarioSpec directly. The path pulls the
+published stack-generator image, validates the pinned ScenarioSpec contract,
+generates an image-only stack under `generated/`, and runs that stack through
+Docker Compose. No Integration Platform service checkout or host-side generator
+scripts are required.
+
+```bash
+# Optional: pin a tested stack-generator image instead of latest.
+export MNS_STACK_GENERATOR_IMAGE=dhdevspace/auto_mns:mns-runtime-tool-latest
+
+./launch.sh --scenario-spec /path/to/ScenarioSpec-folder --stack-output generated/my_scenario
+./logs.sh stack generated/my_scenario -f
+./stop.sh --stack generated/my_scenario --remove-orphans
+```
+
+The stack-generator image is pulled with `MNS_STACK_GENERATOR_PULL_POLICY=always` by
+default. Runtime-stack ScenarioSpec launches always use `MNS_IMAGE_SET=published`;
+non-published image sets and `--image-set-file` overrides are rejected so runtime
+users run `dhdevspace` images only. Override image names in the generated stack
+`.env` only when pinning a specific published `dhdevspace` tag.
+
+Equivalent Make targets:
+
+```bash
+make scenariospec SCENARIO_SPEC=/path/to/ScenarioSpec-folder STACK=generated/my_scenario
+make scenariospec-logs STACK=generated/my_scenario
+make scenariospec-stop STACK=generated/my_scenario
+```
+
+Use `--generate-only` or `make scenariospec-generate` to inspect the generated
+compose/config before starting containers. A generated stack may include a
+`source/` folder; that is only a ScenarioSpec snapshot for provenance and metrics
+logs, not a Docker build context.
+
 ---
 
 ## How a launch works
