@@ -10,15 +10,6 @@ if [ -f ".env" ]; then
   set +a
 fi
 
-if [[ "${1:-}" == "--stack" ]]; then
-  if [[ -z "${2:-}" ]]; then
-    echo "ERROR: --stack requires a generated stack directory"
-    exit 1
-  fi
-  stack="$2"
-  shift 2
-  exec "$SCRIPT_DIR/tools/stack-generator-image/run_image.sh" stop --stack "$stack" "$@"
-fi
 
 # Explicit target comes ONLY from the CLI arg ($1, e.g. `make stop SCENARIO=x`).
 # We deliberately do NOT fall back to $SCENARIO from the sourced .env: .env pins

@@ -27,8 +27,6 @@ ALL             ?= false
 # `make generate SCENARIO=px4-xfs` limits the generator; empty = all scenarios.
 # Also forwarded to `make stop` (stop.sh auto-detects when empty).
 SCENARIO        ?=
-SCENARIO_SPEC   ?=
-STACK           ?= generated/scenariospec
 
 LAUNCH_FLAGS :=
 ifeq ($(EDITOR),true)
@@ -55,7 +53,7 @@ endif
 
 SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev scenariospec scenariospec-generate scenariospec-stop scenariospec-logs attach teleop stop logs ps generate check self-test
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
@@ -68,8 +66,6 @@ help:
 	@echo "  teleop     WASD keyboard flight via mavros_dN [DRONE=1 AUTOPILOT=px4|ardupilot]"
 	@echo "  scenariospec          generate + run ScenarioSpec [SCENARIO_SPEC=/path STACK=generated/name]"
 	@echo "  scenariospec-generate generate image-only ScenarioSpec stack only"
-	@echo "  scenariospec-stop     ./stop.sh --stack $(STACK)"
-	@echo "  scenariospec-logs     ./logs.sh stack $(STACK) -f"
 	@echo "  stop                  ./stop.sh [SCENARIO=name]"
 	@echo "  logs                  ./logs.sh"
 	@echo "  ps         running containers (name/status/image)"
@@ -80,20 +76,6 @@ help:
 
 $(SCENARIOS):
 	./launch.sh $@ $(LAUNCH_FLAGS)
-
-scenariospec:
-	@if [ -z "$(SCENARIO_SPEC)" ]; then echo "SCENARIO_SPEC=/path/to/ScenarioSpec is required"; exit 1; fi
-	./launch.sh --scenario-spec "$(SCENARIO_SPEC)" --stack-output "$(STACK)" -d
-
-scenariospec-generate:
-	@if [ -z "$(SCENARIO_SPEC)" ]; then echo "SCENARIO_SPEC=/path/to/ScenarioSpec is required"; exit 1; fi
-	./launch.sh --scenario-spec "$(SCENARIO_SPEC)" --stack-output "$(STACK)" --generate-only
-
-scenariospec-stop:
-	./stop.sh --stack "$(STACK)" --remove-orphans
-
-scenariospec-logs:
-	./logs.sh stack "$(STACK)" -f
 
 # One-shot dev UX: bring a scenario up (autopilot SITL + AirSim + per-drone
 # bridges + QGroundControl) with the usual flag vars, then attach the tmux

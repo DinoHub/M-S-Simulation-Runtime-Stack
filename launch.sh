@@ -14,7 +14,6 @@ usage() {
   cat <<EOF
 Usage:
   ./launch.sh [scenario] [--editor] [--headless] [--with-agent-external] [--with-pixel-streaming] [--with-monitoring] [--with-metrics] [--all]
-  ./launch.sh --scenario-spec <ScenarioSpec folder/file> [--stack-output <dir>] [--generate-only] [docker compose up args...]
 
 Scenarios (compose/<scenario>/docker-compose.yml):
 $(ls compose/ | sed 's/^/  /')
@@ -54,10 +53,6 @@ Equivalent .env knob: ENABLE_PIXEL_STREAMING=true.
 Scenarios with a compose/<scenario>/templates/ dir are generated from Jinja
 templates via tools/generate_scenario.py (drone count via NUM_DRONES in .env,
 default 4); the launcher regenerates them automatically on drift.
-
-ScenarioSpec mode pulls the MnS stack-generator image, generates an image-only
-stack, then runs that generated stack. If no docker compose up args are passed,
-it runs detached (-d).
 EOF
 }
 
@@ -73,115 +68,6 @@ AIRSIM_HEADLESS="${AIRSIM_HEADLESS:-false}"
 WITH_AGENT_EXTERNAL="${WITH_AGENT_EXTERNAL:-false}"
 ENABLE_PIXEL_STREAMING="${ENABLE_PIXEL_STREAMING:-false}"
 EDITOR_MODE="${EDITOR_MODE:-false}"
-
-run_scenariospec_mode() {
-  local scenario_spec=""
-  local stack_output="${SCENARIOSPEC_STACK_OUTPUT:-}"
-  local generate_only=false
-  local run_args=()
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --scenario-spec)
-        if [[ -z "${2:-}" ]]; then
-          echo "ERROR: --scenario-spec requires a value"
-          usage
-          exit 1
-        fi
-        scenario_spec="$2"
-        shift 2
-        ;;
-      --scenario-spec=*)
-        scenario_spec="${1#*=}"
-        shift
-        ;;
-      --stack-output|--out)
-        if [[ -z "${2:-}" ]]; then
-          echo "ERROR: $1 requires a value"
-          usage
-          exit 1
-        fi
-        stack_output="$2"
-        shift 2
-        ;;
-      --stack-output=*|--out=*)
-        stack_output="${1#*=}"
-        shift
-        ;;
-      --generate-only)
-        generate_only=true
-        shift
-        ;;
-      -h|--help)
-        usage
-        exit 0
-        ;;
-      *)
-        run_args+=("$1")
-        shift
-        ;;
-    esac
-  done
-
-  if [[ -z "$scenario_spec" ]]; then
-    echo "ERROR: ScenarioSpec mode requires --scenario-spec"
-    usage
-    exit 1
-  fi
-  if [[ ! -e "$scenario_spec" ]]; then
-    echo "ERROR: ScenarioSpec path does not exist: $scenario_spec"
-    exit 1
-  fi
-
-  if [[ -z "$stack_output" ]]; then
-    local base
-    if [[ -f "$scenario_spec" ]]; then
-      base="$(basename "$(dirname "$scenario_spec")")"
-    else
-      base="$(basename "$scenario_spec")"
-    fi
-    stack_output="$SCRIPT_DIR/generated/${base}"
-  fi
-
-  local tool="$SCRIPT_DIR/tools/stack-generator-image/run_image.sh"
-  if [[ ! -x "$tool" ]]; then
-    echo "ERROR: ScenarioSpec stack-generator image helper is missing or not executable: $tool"
-    exit 1
-  fi
-
-  echo "========================================"
-  echo " ScenarioSpec Runtime Stack"
-  echo "========================================"
-  echo "ScenarioSpec=$scenario_spec"
-  echo "Stack output=$stack_output"
-  echo
-
-  if [[ "$generate_only" == true ]]; then
-    "$tool" generate --scenario "$scenario_spec" --out "$stack_output"
-    echo "Generated image-only stack: $stack_output"
-    return 0
-  fi
-
-  if [[ "${#run_args[@]}" -eq 0 ]]; then
-    run_args=(-d)
-  fi
-
-  local cmd=("$tool" generate-run --scenario "$scenario_spec" --out "$stack_output")
-  local arg
-  for arg in "${run_args[@]}"; do
-    cmd+=(--run-arg "$arg")
-  done
-  "${cmd[@]}"
-}
-
-if [[ $# -gt 0 ]]; then
-  case "$1" in
-    --scenario-spec|--scenario-spec=*)
-      run_scenariospec_mode "$@"
-      exit $?
-      ;;
-  esac
-fi
 
 for arg in "$@"; do
   case "$arg" in

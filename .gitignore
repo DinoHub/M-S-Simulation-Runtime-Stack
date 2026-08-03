@@ -19,3 +19,9 @@ generated/
 
 # python
 .venv
+
+/.mns/
+/generated/
+/scenarios/*
+!/scenarios/blocks-quickstart/
+!/scenarios/blocks-quickstart/ScenarioSpec.yaml
