@@ -51,7 +51,7 @@ scripts are required.
 
 ```bash
 # Optional: pin a tested stack-generator image instead of latest.
-export MNS_STACK_GENERATOR_IMAGE=dhdevspace/auto_mns:mns-runtime-tool-latest
+export MNS_STACK_GENERATOR_IMAGE=dhdevspace/auto_mns:mns-stack-generator-latest
 
 ./launch.sh --scenario-spec /path/to/ScenarioSpec-folder --stack-output generated/my_scenario
 ./logs.sh stack generated/my_scenario -f

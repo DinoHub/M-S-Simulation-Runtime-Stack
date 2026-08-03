@@ -13,7 +13,7 @@ checkouts. The top-level wrappers call `run_image.sh`, which runs
 Default image:
 
 ```bash
-dhdevspace/auto_mns:mns-runtime-tool-latest
+dhdevspace/auto_mns:mns-stack-generator-latest
 ```
 
 Typical user commands stay at the repo root:

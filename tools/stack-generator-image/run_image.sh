@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-IMAGE="${MNS_STACK_GENERATOR_IMAGE:-${MNS_RUNTIME_TOOL_IMAGE:-dhdevspace/auto_mns:mns-runtime-tool-latest}}"
-PULL_POLICY="${MNS_STACK_GENERATOR_PULL_POLICY:-${MNS_RUNTIME_TOOL_PULL_POLICY:-always}}"
+IMAGE="${MNS_STACK_GENERATOR_IMAGE:-dhdevspace/auto_mns:mns-stack-generator-latest}"
+PULL_POLICY="${MNS_STACK_GENERATOR_PULL_POLICY:-always}"
 IMAGE_SET="${MNS_IMAGE_SET:-published}"
 
 usage() {
