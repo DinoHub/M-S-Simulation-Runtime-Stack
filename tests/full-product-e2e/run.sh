@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/product-images.env"
 FIXTURE="$ROOT/tests/full-product-e2e/fixture"
 AUTHORED="$ROOT/scenarios/full-product-e2e-export"
+AUTHORING_DATA="$ROOT/.mns/full-product-e2e/authoring-data"
 STACK="$ROOT/generated/full-product-e2e-export"
 EVIDENCE="$STACK/e2e-evidence"
 AUTHORING_CONTAINER="mns-full-product-e2e-authoring"
@@ -101,7 +102,7 @@ wait_for_airsim() {
 wait_for_sensor_topics() {
   local service="$1"
   local runtime_name="$2"
-  local camera_topic="/$runtime_name/front_rgb/image_raw"
+  local camera_topic="/$runtime_name/front_rgb_Scene/image"
   local lidar_topic="/$runtime_name/LidarSensor1/points"
   local container attempt
   container="$(compose ps -q "$service")"
@@ -144,6 +145,9 @@ capture_rate() {
   }
 }
 
+export MNS_AUTHORING_DATA_ROOT="$AUTHORING_DATA"
+rm -rf "$AUTHORING_DATA/PackLibrary/asset_packs/scenario_runtime_basic.mnsassetpack"
+
 log "checking the four pinned product images"
 "$ROOT/product.sh" doctor
 
@@ -171,10 +175,7 @@ log "validating and generating the runtime stack through the generator image"
 verify generated "$STACK"
 
 mkdir -p "$EVIDENCE"
-STACK_NAME="$(sed -n 's/^stack_name: //p' "$STACK/generated-manifest.yaml" 2>/dev/null | head -1)"
-if [[ -z "$STACK_NAME" ]]; then
-  STACK_NAME="$(sed -n 's/^name: //p' "$STACK/docker-compose.yml" | head -1)"
-fi
+STACK_NAME="$(sed -n 's/^name: //p' "$STACK/docker-compose.yml" | head -1)"
 STACK_NAME="${STACK_NAME//\"/}"
 
 log "starting the generated Blocks runtime"
@@ -186,9 +187,9 @@ wait_for_sensor_topics airsim_bridge_c1 Copter1
 wait_for_sensor_topics airsim_bridge_c2 Copter2
 
 log "sampling live camera and lidar output"
-capture_rate airsim_bridge_c1 Copter1 camera /Copter1/front_rgb/image_raw
+capture_rate airsim_bridge_c1 Copter1 camera /Copter1/front_rgb_Scene/image
 capture_rate airsim_bridge_c1 Copter1 lidar /Copter1/LidarSensor1/points
-capture_rate airsim_bridge_c2 Copter2 camera /Copter2/front_rgb/image_raw
+capture_rate airsim_bridge_c2 Copter2 camera /Copter2/front_rgb_Scene/image
 capture_rate airsim_bridge_c2 Copter2 lidar /Copter2/LidarSensor1/points
 compose logs --no-color unreal-airsim >"$EVIDENCE/unreal.log" 2>&1
 verify live "$EVIDENCE"

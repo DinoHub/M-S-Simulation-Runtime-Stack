@@ -4,7 +4,7 @@ This is the reviewer acceptance test for the customer distribution. It uses only
 
 ## Automated Run
 
-Requirements are the same as the product quick start: Docker Compose, NVIDIA Container Toolkit/GPU access, X11, and access to the pinned `dhdevspace/auto_mns` images.
+Requirements are the same as the product quick start: Docker Compose, NVIDIA Container Toolkit/GPU access, X11, and an authenticated Docker config with access to the pinned `dhdevspace/auto_mns` images.
 
 ```bash
 ./product.sh setup
@@ -20,7 +20,7 @@ The runner performs these gates:
 5. Starts the generated stack, verifies runtime condition/spawn logs, and samples camera and lidar topics for both drones.
 6. Stops and removes every container created by the test, including on failure.
 
-Evidence from a successful or failed live run is retained under `generated/full-product-e2e-export/e2e-evidence/`. The authored round trip is retained under `scenarios/full-product-e2e-export/`.
+The runner uses `.mns/full-product-e2e/authoring-data/` instead of the normal persistent ScenarioLab data directory, so it cannot overwrite a developer's Pack Library. Evidence from a successful or failed live run is retained under `generated/full-product-e2e-export/e2e-evidence/`. The authored round trip is retained under `scenarios/full-product-e2e-export/`.
 
 ## Manual UI Review
 

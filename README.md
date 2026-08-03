@@ -6,7 +6,7 @@ The first screen is the browser product shell. It launches ScenarioLab in a sepa
 
 ## Quick Start
 
-Requirements: Docker Engine with Compose, an NVIDIA-capable runtime for Unreal images, and X11 when opening ScenarioLab.
+Requirements: Docker Engine with Compose, an NVIDIA-capable runtime for Unreal images, X11 when opening ScenarioLab, and a Docker login that can pull the private `dhdevspace/auto_mns` images. The product wrapper mounts the active Docker config read-only so generated stacks can pull their pinned runtime dependencies.
 
 ```bash
 ./product.sh setup

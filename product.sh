@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT/product-images.env"
-DATA_ROOT="$ROOT/.mns/authoring-data"
+DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$ROOT/.mns/authoring-data}"
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
 PORT="${MNS_SCENARIO_LAUNCHER_PORT:-8765}"
@@ -15,13 +15,19 @@ run_shell() {
   local mode=(--rm -d --name mns-product-shell)
   local port_args=(-p "$PORT:8765")
   local xauth_args=()
+  local docker_config_args=()
+  local docker_config="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
   if [[ -n "${XAUTHORITY:-}" && -e "${XAUTHORITY:-}" ]]; then
     xauth_args=(-v "$XAUTHORITY:$XAUTHORITY:ro" -e "XAUTHORITY=$XAUTHORITY" -e "MNS_HOST_XAUTHORITY=$XAUTHORITY")
+  fi
+  if [[ -f "$docker_config" ]]; then
+    docker_config_args=(-v "$docker_config:/root/.docker/config.json:ro")
   fi
   if [[ "${1:-}" == "cli" ]]; then mode=(--rm); port_args=(); shift; fi
   docker run "${mode[@]}" \
     "${port_args[@]}" \
     -v /var/run/docker.sock:/var/run/docker.sock \
+    "${docker_config_args[@]}" \
     -v "$ROOT:/workspace:rw" \
     -e MNS_LAUNCH_BACKEND=docker \
     -e MNS_WORKSPACE_ROOT=/workspace \

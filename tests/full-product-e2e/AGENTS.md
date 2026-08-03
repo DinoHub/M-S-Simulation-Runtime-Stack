@@ -18,4 +18,4 @@ Do not replace semantic checks with file-existence checks. Do not weaken exact r
 
 `run.sh` must retain trap-based cleanup. Every authoring, product-shell, and generated Compose container started by the test must be stopped and removed on success, failure, or interruption. Cleanup must stay scoped to test-owned names and Compose labels; never stop unrelated developer containers.
 
-Generated exports, stacks, and evidence belong under ignored `scenarios/` and `generated/` paths. Only the deterministic fixture, verifier, runner, and reviewer documentation are committed.
+Generated exports, stacks, and evidence belong under ignored `scenarios/` and `generated/` paths. Packaged-authoring state belongs under the isolated `.mns/full-product-e2e/authoring-data/` path, never the normal `.mns/authoring-data/` directory. Only the deterministic fixture, verifier, runner, and reviewer documentation are committed.

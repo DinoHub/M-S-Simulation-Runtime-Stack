@@ -11,7 +11,7 @@ from typing import Any
 import yaml
 
 EXPECTED_BLOCKS_IMAGE = "dhdevspace/auto_mns:blocks-v0.2.0-review.2"
-EXPECTED_CLASS = "/Script/ScenarioRuntime.BlockingBoxActor"
+EXPECTED_CLASS = "/Script/ScenarioContracts.BlockingBoxActor"
 EXPECTED_STARTS = {
     "Copter1": {"x": 2.0, "y": 3.0, "z": 1.0, "yaw": 15.0, "domain": 1},
     "Copter2": {"x": 8.0, "y": -4.0, "z": 1.5, "yaw": -30.0, "domain": 2},
@@ -87,6 +87,10 @@ def verify_authored(root: Path) -> None:
     check(runtime.get("profile") == "airsim_unreal_ardupilot_docker", "runtime profile changed")
     check(features.get("ros2_bridge") is True, "ROS 2 bridge was disabled")
     check(features.get("qgroundcontrol") is False and features.get("mavros") is False, "optional runtime services changed")
+
+    clutter = load_yaml(root / "ObjectClutter.yaml").get("object_clutter", {})
+    check(clutter.get("seed") == 4242, "authored random seed changed")
+    check(clutter.get("placement") == "scenario_spec", "authored object placement mode changed")
 
     verify_sensor_profile(root)
 
@@ -164,6 +168,7 @@ def verify_generated(root: Path) -> None:
     check(plugin_summary.get("random_spawn_requested_count") == 3, "generated random spawn count changed")
     conditions_summary = manifest.get("scenario_conditions", {})
     check(conditions_summary.get("enabled") is True, "scenario conditions were not enabled")
+    check(manifest.get("object_clutter", {}).get("seed") == 4242, "generator did not preserve the authored random seed")
 
     settings = load_json(root / "config" / "unreal-airsim" / "settings.json")
     vehicles = settings.get("Vehicles", {})
@@ -191,6 +196,24 @@ def verify_generated(root: Path) -> None:
     check(plugin["objects"][0].get("class") == EXPECTED_CLASS, "static object runtime class changed")
     check(plugin["random_spawns"][0].get("class") == EXPECTED_CLASS, "spawn runtime class changed")
     check(plugin["random_spawns"][0].get("count") == 3, "runtime spawn count changed")
+    check(plugin.get("runtime", {}).get("seed") == 4242, "runtime plugin random seed changed")
+
+    runtime_object = plugin["objects"][0]
+    object_transform = runtime_object.get("transform", {})
+    check(object_transform.get("frame") == "ros2_flu", "runtime object frame changed")
+    for field, expected in (("x", 12), ("y", 5), ("z", 0.5)):
+        close(object_transform.get("position", {}).get(field), expected, f"runtime object position.{field}")
+    close(object_transform.get("rotation", {}).get("yaw"), 35, "runtime object yaw")
+    for field, expected in (("x", 1.5), ("y", 0.75), ("z", 2)):
+        close(object_transform.get("scale", {}).get(field), expected, f"runtime object scale.{field}")
+
+    runtime_spawn = plugin["random_spawns"][0]
+    runtime_bounds = runtime_spawn.get("bounds", {})
+    check(runtime_bounds.get("frame") == "ros2_flu", "runtime spawn volume frame changed")
+    for field, expected in (("x", 20), ("y", -6), ("z", 4)):
+        close(runtime_bounds.get("center", {}).get(field), expected, f"runtime spawn center.{field}")
+    for field, expected in (("x", 8), ("y", 6), ("z", 8)):
+        close(runtime_bounds.get("size", {}).get(field), expected, f"runtime spawn size.{field}")
 
     conditions = load_json(root / "config" / "scenario" / "scenario_conditions.json").get("conditions", {})
     check(conditions.get("weather", {}).get("preset") == "rain", "generated weather is not rain")
@@ -209,11 +232,27 @@ def verify_generated(root: Path) -> None:
 
 def verify_live(root: Path) -> None:
     unreal_log = (root / "unreal.log").read_text(encoding="utf-8")
-    check("Applied scenario conditions to sky/weather" in unreal_log, "runtime did not report applying weather/time conditions")
+    check(
+        "Applied standalone scenario conditions from /simrunner/scenario_conditions.json" in unreal_log,
+        "runtime did not report applying the generated conditions file",
+    )
+    check(
+        "built-in sun start=2026-08-03T09:30:00 latitude=1.3521 longitude=103.8198" in unreal_log,
+        "runtime sun did not reflect the authored time and geographic coordinates",
+    )
+    check(
+        "AirSim weather preset=rain rain=0.70 snow=0.00 dust=0.00 fog=0.25 wind=0.45 readback=ok" in unreal_log,
+        "runtime AirSim weather state did not read back as the authored rain preset",
+    )
+    check("-SimObjectClutterSeed=4242" in unreal_log, "runtime command line did not use the authored random seed")
+    check(
+        "center_cm=X=2000.000 Y=600.000" in unreal_log,
+        "runtime random spawn center did not convert ROS FLU coordinates into Unreal coordinates",
+    )
     check(re.search(r"spawned\s+4/4\s+authored object\(s\)", unreal_log) is not None, "runtime did not spawn the static object plus three random objects")
     for runtime_name in EXPECTED_STARTS:
         topics = (root / f"topics-{runtime_name}.txt").read_text(encoding="utf-8")
-        camera_topic = f"/{runtime_name}/front_rgb/image_raw"
+        camera_topic = f"/{runtime_name}/front_rgb_Scene/image"
         lidar_topic = f"/{runtime_name}/LidarSensor1/points"
         check(camera_topic in topics, f"live camera topic missing: {camera_topic}")
         check(lidar_topic in topics, f"live lidar topic missing: {lidar_topic}")
