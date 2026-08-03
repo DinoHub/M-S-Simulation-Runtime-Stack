@@ -1,0 +1,21 @@
+sensor_profiles:
+  e2e_multirotor:
+    sensors:
+      defaults: true
+      lidar:
+        enabled: true
+        channels: 24
+        rotations_per_second: 12
+        points_per_second: 120000
+        range: 55
+        position: {x: 0.15, y: 0.0, z: 0.35}
+        rotation: {pitch: -3, roll: 0, yaw: 5}
+    cameras:
+      front_rgb:
+        enabled: true
+        image_type: 0
+        width: 640
+        height: 360
+        fov_degrees: 82
+        position: {x: 0.3, y: 0.0, z: -0.2}
+        rotation: {pitch: -5, roll: 0, yaw: 0}

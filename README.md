@@ -18,7 +18,7 @@ Open <http://127.0.0.1:8765>.
 
 1. The Runtime form is prefilled with `scenarios/blocks-quickstart`. Click **Generate and Run** for the shortest end-to-end check.
 2. Use **Show Status**, **Show Logs**, and **Stop Runtime** for `generated/blocks-quickstart`.
-3. Click **Open Editor** to load the same scenario in ScenarioLab. The authoring image seeds the curated Blocks level and vehicle packs into the persistent Pack Library on first launch.
+3. Click **Open Editor** to load the same scenario in ScenarioLab. The authoring image seeds the curated Blocks level, vehicle pack, and built-in placeable primitive pack into the persistent Pack Library on first launch.
 4. Edit and export into `scenarios/`, then run the exported ScenarioSpec from the Runtime form.
 
 Stop the browser shell with:
@@ -28,6 +28,16 @@ Stop the browser shell with:
 ```
 
 `product-images.env` pins the four-image review channel: product shell, ScenarioLab authoring, stack generator, and Blocks runtime. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this E2E image set.
+
+## Full Acceptance Test
+
+Reviewers can run the deterministic packaged-authoring-to-live-runtime acceptance path with:
+
+```bash
+./tests/full-product-e2e/run.sh
+```
+
+It checks authored drones, static and random-spawned objects, ROS FLU to AirSim NED conversion, rain/time conditions, generated sensor settings, live RGB/lidar topics for both drones, and test-container cleanup. See [Full Product E2E](tests/full-product-e2e/README.md).
 
 ## Headless CLI
 

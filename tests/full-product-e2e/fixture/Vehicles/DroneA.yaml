@@ -1,0 +1,12 @@
+id: drone_a
+name: DroneA
+runtime_name: Copter1
+vehicle_type: quadrotor_small
+ros_domain_id: 1
+sensor_profile: e2e_multirotor
+start:
+  frame: ros2_flu
+  x: 2
+  y: 3
+  z: 1
+  yaw: 15

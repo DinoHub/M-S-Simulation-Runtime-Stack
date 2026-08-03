@@ -1,0 +1,11 @@
+runtime:
+  profile: airsim_unreal_ardupilot_docker
+  autopilot:
+    type: ardupilot
+    managed: true
+    endpoint: docker
+    hostname_prefix: ardupilot-drone
+  features:
+    qgroundcontrol: false
+    ros2_bridge: true
+    mavros: false
