@@ -55,10 +55,10 @@ SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 
 .PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test
 
-dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001
+dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
 	@set -a; . ./product-images.env; set +a; \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
-	docker compose -f docker-compose-dashboard.yml up -d
+	docker compose -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :8082)"
 
 dashboard-down:
