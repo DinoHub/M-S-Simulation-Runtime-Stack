@@ -4,6 +4,31 @@ This repository is the customer distribution of the MnS product. Its historical 
 
 The first screen is the browser product shell. It launches ScenarioLab in a separate Unreal window for authoring, runs the stack generator image for validation and generation, and owns generated-stack run, status, logs, and stop actions.
 
+## Dashboard Entry Point (full loop in the browser)
+
+For teams that want configuration → run → evaluation in one UI instead of
+the CLI wrappers:
+
+```bash
+make dashboard          # pulls published images; UI at http://localhost:3001
+make dashboard-down
+```
+
+The dashboard's **Scenario Configuration** tab authors a ScenarioSpec and
+generates + launches stacks through the pinned `MNS_STACK_GENERATOR_IMAGE`
+(no source checkouts — same distribution contract as `./launch.sh`).
+**Runtime Config** edits the evaluation files in the shared runs directory
+(`TEVV_RUNS_DIR`, default `~/tevv-runs`; hot-reloaded). **Calibration**
+shows the sim-to-real verdicts the `sim-real-eval` worker writes there
+automatically after each recorded run (enable with
+`runtime.features: { sim_real_eval: true }` in the scenario).
+
+The browser product shell (`./product.sh start`, port 8765) remains the
+visual ScenarioLab authoring surface; the dashboard links to it. Grafana
+monitoring stays on :3000 — the dashboard uses :3001.
+
+---
+
 ## Quick Start
 
 Requirements: Docker Engine with Compose, an NVIDIA-capable runtime for Unreal images, X11 when opening ScenarioLab, and a Docker login that can pull the private `dhdevspace/auto_mns` images. The product wrapper mounts the active Docker config read-only so generated stacks can pull their pinned runtime dependencies.

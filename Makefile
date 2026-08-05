@@ -55,6 +55,16 @@ SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 
 .PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test
 
+dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001
+	@set -a; . ./product-images.env; set +a; \
+	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
+	docker compose -f docker-compose-dashboard.yml up -d
+	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :8082)"
+
+dashboard-down:
+	@set -a; . ./product-images.env; set +a; \
+	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml down
+
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
 	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo"

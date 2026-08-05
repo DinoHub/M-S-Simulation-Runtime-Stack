@@ -1,0 +1,66 @@
+# TEVV Web Dashboard — the browser entry point for the full loop:
+# Scenario Configuration (generate + launch stacks via the pinned generator
+# image) → Runtime Config (hot-reload evaluation files) → Calibration
+# (sim-to-real verdicts) → bag replay/monitoring.
+#
+#   docker compose -f docker-compose-dashboard.yml --env-file .env up -d
+#   # or: make dashboard / make dashboard-down
+#
+# Frontend: http://localhost:3001  (3000 belongs to the monitoring Grafana)
+# Backend:  http://localhost:8001
+#
+# The backend generates stacks in DISTRIBUTION MODE: no platform checkout —
+# it runs ${MNS_STACK_GENERATOR_IMAGE} (from product-images.env) against
+# this repository's directory, mounted at its identical host path so the
+# generated stacks' bind mounts resolve on the host. Scenario specs land in
+# ./scenarios/<name>/, generated stacks in ./generated/<name>/ — the same
+# places ./product.sh and ./launch.sh use.
+#
+# TEVV_RUNS_DIR is the shared runs directory: the run director / bridge
+# record bags into it, the sim-real-eval worker (part of generated stacks
+# when the scenario enables sim_real_eval) writes verdicts, the dashboard
+# reads both.
+
+services:
+  dashboard-backend:
+    image: ${DASHBOARD_BACKEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-backend-latest}
+    container_name: airsim-dashboard-api
+    ports:
+      - "8001:8001"
+    environment:
+      - AIRSIM_HOST=host.docker.internal
+      - POSTGRES_HOST=postgres-telemetry
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
+      - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
+      - SIM2REAL_RUNS_DIR=/data/runs
+      # distribution mode: generate through the pinned generator image
+      - MNS_WORKSPACE_ROOT=${MSRS_ROOT:?set MSRS_ROOT to this repository's absolute path}
+      - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:?source product-images.env}
+      - MNS_HOST_UID=${HOST_UID:-1000}
+      - MNS_HOST_GID=${HOST_GID:-1000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # this repo at its identical host path (generator + stack lifecycle)
+      - ${MSRS_ROOT:?set MSRS_ROOT}:${MSRS_ROOT}
+      - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
+    restart: unless-stopped
+
+  dashboard-frontend:
+    image: ${DASHBOARD_FRONTEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-frontend-latest}
+    container_name: airsim-dashboard-frontend
+    ports:
+      - "3001:3000"
+    environment:
+      - NEXT_PUBLIC_LICHTBLICK_URL=${NEXT_PUBLIC_LICHTBLICK_URL:-http://localhost:8082}
+    restart: unless-stopped
+
+  dashboard-lichtblick:
+    image: ghcr.io/lichtblick-suite/lichtblick:latest
+    container_name: dashboard-lichtblick
+    ports:
+      - "8082:8080"
+    restart: unless-stopped
