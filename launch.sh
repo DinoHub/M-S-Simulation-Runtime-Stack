@@ -102,8 +102,17 @@ if [ ! -f "$SCENARIO_FILE" ]; then
   exit 1
 fi
 
+# Everything below is docker compose; bail out now with a diagnosis rather than
+# letting the first `up` fail on an image pull it never had permission to try.
+. "$SCRIPT_DIR/tools/check_docker.sh"
+check_docker || exit 1
+check_nvidia_runtime || true   # advisory — see the function's comment
+
 export UID
-export GID="$(id -g)"
+# The user's passwd primary group, NOT `id -g`: under `newgrp docker` the shell's
+# primary group is the docker group, which would hand containers 1000:973 and
+# leave host-side logs/ and metrics_outputs/ owned by group docker.
+export GID="$(id -g "$(id -un)")"
 
 # X11 setup (needed for AirSim / GUI containers)
 export DISPLAY="${DISPLAY:-:0}"
