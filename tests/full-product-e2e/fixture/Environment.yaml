@@ -1,0 +1,15 @@
+environment:
+  id: blocks
+  time_of_day:
+    enabled: true
+    start: "2026-08-03T09:30:00"
+    latitude: 1.3521
+    longitude: 103.8198
+  weather:
+    enabled: true
+    preset: rain
+
+coordinate_frame:
+  convention: ros2_flu
+  unit: meter
+  origin: player_start_marker

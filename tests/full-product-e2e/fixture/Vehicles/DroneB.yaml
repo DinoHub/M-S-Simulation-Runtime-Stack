@@ -1,0 +1,12 @@
+id: drone_b
+name: DroneB
+runtime_name: Copter2
+vehicle_type: quadrotor_small
+ros_domain_id: 2
+sensor_profile: e2e_multirotor
+start:
+  frame: ros2_flu
+  x: 8
+  y: -4
+  z: 1.5
+  yaw: -30

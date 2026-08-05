@@ -1,0 +1,13 @@
+schema: mns.scenario.v1
+id: full-product-e2e
+name: Full Product E2E
+
+includes:
+  environment: Environment.yaml
+  runtime: Runtime.yaml
+  object_clutter: ObjectClutter.yaml
+  sensor_profiles: SensorProfiles.yaml
+  vehicles: Vehicles/
+  objects: Objects.yaml
+  random_spawns: RandomSpawns.yaml
+  extensions: Extensions.yaml

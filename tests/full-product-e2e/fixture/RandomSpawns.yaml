@@ -1,0 +1,15 @@
+random_spawns:
+  - id: blocking_box_zone
+    name: Blocking Box Spawn Zone
+    asset_pack: scenario_runtime_basic
+    asset: blocking_box
+    count: 3
+    random_yaw: true
+    min_clearance_m: 0.8
+    spawn_inset_m: 0.5
+    spawn_scale: {x: 0.5, y: 0.5, z: 0.5}
+    bounds:
+      frame: ros2_flu
+      center: {x: 20, y: -6, z: 4}
+      yaw: 20
+      size: {x: 8, y: 6, z: 8}

@@ -1,0 +1,5 @@
+object_clutter:
+  enabled: true
+  seed: 4242
+  density: none
+  placement: scenario_spec

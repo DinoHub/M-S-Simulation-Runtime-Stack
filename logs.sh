@@ -62,15 +62,6 @@ run_logs() {
 
 case "$STACK" in
 
-stack)
-if [ -z "$SERVICE" ]; then
-    echo "ERROR: stack logs require a generated stack directory"
-    echo "Usage: ./logs.sh stack <generated-stack-dir> [docker compose logs args...]"
-    exit 1
-fi
-shift 2 || true
-exec "$SCRIPT_DIR/tools/stack-generator-image/run_image.sh" logs --stack "$SERVICE" "$@"
-;;
 
 all)
 
@@ -126,7 +117,6 @@ echo "Unknown stack: $STACK"
 echo
 echo "Usage:"
 echo "./logs.sh [all|sim|monitoring|metrics] [service] [filter]"
-echo "./logs.sh stack <generated-stack-dir> [docker compose logs args...]"
 echo
 echo "The 'sim' stack uses SCENARIO from .env (currently: $SCENARIO)."
 echo "'all' tails only stacks that currently have running containers."
