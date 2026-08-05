@@ -34,6 +34,9 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
       - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
+      # With the db profile up, the backend applies its telemetry schema
+      # itself (idempotent) — no SQL files needed on this machine.
+      - INIT_DB_SCHEMA=${INIT_DB_SCHEMA:-true}
       - SIM2REAL_RUNS_DIR=/data/runs
       # distribution mode: generate through the pinned generator image
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:?set MSRS_ROOT to this repository's absolute path}
@@ -64,3 +67,20 @@ services:
     ports:
       - "8082:8080"
     restart: unless-stopped
+
+  # Telemetry DB — opt-in: docker compose --profile db (or make dashboard DB=true).
+  # Without it every tab works except telemetry history.
+  postgres-telemetry:
+    profiles: ["db"]
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: postgres-telemetry
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
+      - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
+    volumes:
+      - dashboard-telemetry-db:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  dashboard-telemetry-db:
