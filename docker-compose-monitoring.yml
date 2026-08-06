@@ -470,7 +470,12 @@ services:
     image: sid220/lichtblick:latest
     container_name: lichtblick
     ports:
-      - '8082:8080'
+      # 8084, moved off 8082: the TEVV dashboard runs its own lichtblick and is
+      # PINNED to 8082 — its Next.js frontend inlined that URL at build time, so
+      # it cannot move. Both here meant whichever started second died with
+      # "Bind for 0.0.0.0:8082 failed: port is already allocated", which broke
+      # `./launch.sh --with-monitoring` whenever `make dashboard` was up.
+      - '${MONITORING_LICHTBLICK_PORT:-8084}:8080'
     networks:
       - monitoring-internal
       - airsim-ecosystem

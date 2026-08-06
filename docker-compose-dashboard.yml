@@ -24,13 +24,23 @@
 services:
   dashboard-backend:
     image: ${DASHBOARD_BACKEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-backend-latest}
+    # All three images in this stack ride MUTABLE tags, and Compose's default
+    # pull policy ("missing") only ever pulls when the tag is absent locally —
+    # so a re-published -latest would never arrive. Pull every `up` instead.
+    # Costs a manifest check per service and needs the registry reachable;
+    # override with DASHBOARD_PULL_POLICY=missing to work offline.
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
     container_name: airsim-dashboard-api
     ports:
       - "8001:8001"
     environment:
       - AIRSIM_HOST=host.docker.internal
-      - POSTGRES_HOST=postgres-telemetry
-      - POSTGRES_PORT=5432
+      # postgres-telemetry lives on the monitoring stack's own networks, which
+      # this stack does not join (it has to come up with monitoring absent).
+      # Reach it over its published host port, the same way this backend
+      # already reaches elasticsearch and lichtblick.
+      - POSTGRES_HOST=${DASHBOARD_POSTGRES_HOST:-host.docker.internal}
+      - POSTGRES_PORT=${POSTGRES_HOST_PORT:-5432}
       - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
       - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
@@ -43,6 +53,11 @@ services:
       # is fed by metrics-kafka-bridge — enable the live stream in the wizard's
       # Metrics step or the dashboard renders empty.
       - GRAFANA_URL=${GRAFANA_URL:-http://localhost:3000/d/metrics-robotics/robotics-telemetry?kiosk}
+      # /api/services/viz-health probes lichtblick here. Tracks the published
+      # port above, so overriding DASHBOARD_LICHTBLICK_PORT cannot leave the
+      # dashboard reporting "Visualization stack unavailable" for a service
+      # that is actually running.
+      - LICHTBLICK_PROBE_PORT=${DASHBOARD_LICHTBLICK_PORT:-8082}
       # distribution mode: generate through the pinned generator image
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:?set MSRS_ROOT to this repository's absolute path}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:?source product-images.env}
@@ -55,10 +70,13 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # Host registry credentials, so the backend's docker client can pull the
-      # generator and authoring images on a machine that does not have them
-      # yet — which is every fresh clone.
-      - ${HOME}/.docker/config.json:/root/.docker/config.json:ro
+      # Registry credentials for the generator image. The socket alone is not
+      # enough: `docker run <generator>` from in here pulls with THIS
+      # container's config, so without it the pull of the private
+      # dhdevspace/auto_mns generator is anonymous and /api/scenario/generate
+      # fails with 422 "generation failed". Same read-only mount product.sh
+      # already does (product.sh:24).
+      - ${DOCKER_CONFIG:-${HOME}/.docker}:/root/.docker:ro
       # this repo at its identical host path (generator + stack lifecycle)
       - ${MSRS_ROOT:?set MSRS_ROOT}:${MSRS_ROOT}
       - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
@@ -66,23 +84,33 @@ services:
 
   dashboard-frontend:
     image: ${DASHBOARD_FRONTEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-frontend-latest}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
     container_name: airsim-dashboard-frontend
     ports:
-      # The image sets ENV PORT 3001 and EXPOSEs 3001, so the container side
-      # must be 3001. Mapping to 3000 publishes a port nothing listens on:
-      # docker-proxy accepts the connection and then fails upstream, which the
-      # browser reports as ERR_CONNECTION_RESET — indistinguishable from the
-      # container being down, while `docker ps` shows it happily Up.
+      # The image bakes PORT=3001, so Next.js listens on 3001 inside the
+      # container, not the standalone default of 3000. Mapping 3001:3000 hit a
+      # dead port; the browser reported an empty response / connection reset
+      # while `docker ps` showed the container happily Up.
       - "3001:3001"
     environment:
-      - NEXT_PUBLIC_LICHTBLICK_URL=${NEXT_PUBLIC_LICHTBLICK_URL:-http://localhost:8082}
+      # Pinned so the port mapping above cannot drift from an image default.
+      - PORT=3001
+      - NEXT_PUBLIC_LICHTBLICK_URL=${NEXT_PUBLIC_LICHTBLICK_URL:-http://localhost:${DASHBOARD_LICHTBLICK_PORT:-8083}}
     restart: unless-stopped
 
   dashboard-lichtblick:
     image: ghcr.io/lichtblick-suite/lichtblick:latest
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
     container_name: dashboard-lichtblick
     ports:
-      - "8082:8080"
+      # This one is stuck on 8082: the frontend is a Next.js production build,
+      # so NEXT_PUBLIC_LICHTBLICK_URL was inlined into the client bundle at
+      # BUILD time (localhost:8082 appears ~15x under /app/.next) and cannot be
+      # moved from here. The monitoring stack's own lichtblick used to claim
+      # 8082 too, which is why `./launch.sh --with-monitoring` died with
+      # "Bind for 0.0.0.0:8082 failed: port is already allocated" whenever the
+      # dashboard was up; that one moved to MONITORING_LICHTBLICK_PORT (8084).
+      - "${DASHBOARD_LICHTBLICK_PORT:-8082}:8080"
     restart: unless-stopped
 
   # Telemetry DB — opt-in: docker compose --profile db (or make dashboard DB=true).

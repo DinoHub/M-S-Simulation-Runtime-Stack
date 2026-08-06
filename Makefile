@@ -56,10 +56,16 @@ SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 .PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test
 
 dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
+	# Create these as the HOST user first, the way product.sh does. The backend
+	# container runs as root, so if it mkdir's generated/ itself the directory
+	# lands root-owned — and the generator image runs --user $$(id -u):$$(id -g),
+	# so it then fails with "PermissionError: [Errno 13] ... generated/<name>"
+	# surfacing as a 422 from /api/scenario/generate.
+	@mkdir -p generated scenarios
 	@set -a; . ./product-images.env; set +a; \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
 	docker compose -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
-	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :8082)"
+	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082))"
 
 dashboard-down:
 	@set -a; . ./product-images.env; set +a; \

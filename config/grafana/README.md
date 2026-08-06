@@ -47,7 +47,7 @@ CONFIG_ROOT=$PWD/config docker compose -f docker-compose-logs.yml up -d
 | Pushgateway | http://localhost:9091 | batch/job metrics sink |
 | node / dcgm / cadvisor | :9100 / :9400 / :8085 | host CPU / GPU / container metrics |
 | ros2 / airsim / px4 exporters | :9200 / :9201 / :9202 | sim-side telemetry → Prometheus |
-| Lichtblick | http://localhost:8082 | web visualizer (foxglove-bridge feeds it) |
+| Lichtblick | http://localhost:8084 | web visualizer (foxglove-bridge feeds it) — `MONITORING_LICHTBLICK_PORT`; 8082 belongs to the TEVV dashboard's own lichtblick |
 
 ## Data flow
 
