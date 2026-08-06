@@ -64,6 +64,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	@mkdir -p generated scenarios
 	@set -a; . ./product-images.env; set +a; \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
+	INIT_DB_SCHEMA=$(if $(filter true,$(DB)),true,false) \
 	docker compose -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082))"
 

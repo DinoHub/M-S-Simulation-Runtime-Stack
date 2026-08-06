@@ -35,18 +35,25 @@ services:
       - "8001:8001"
     environment:
       - AIRSIM_HOST=host.docker.internal
-      # postgres-telemetry lives on the monitoring stack's own networks, which
-      # this stack does not join (it has to come up with monitoring absent).
-      # Reach it over its published host port, the same way this backend
-      # already reaches elasticsearch and lichtblick.
-      - POSTGRES_HOST=${DASHBOARD_POSTGRES_HOST:-host.docker.internal}
-      - POSTGRES_PORT=${POSTGRES_HOST_PORT:-5432}
+      # postgres-telemetry is a service in THIS compose file (db profile), so
+      # reach it by service name on the default network. It publishes no host
+      # port, so the host.docker.internal form this used to carry — from when
+      # postgres lived on the monitoring stack — resolved to nothing.
+      - POSTGRES_HOST=${DASHBOARD_POSTGRES_HOST:-postgres-telemetry}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
       - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
       - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
-      # With the db profile up, the backend applies its telemetry schema
-      # itself (idempotent) — no SQL files needed on this machine.
-      - INIT_DB_SCHEMA=${INIT_DB_SCHEMA:-true}
+      # Applies the telemetry schema (idempotent) before uvicorn starts — no
+      # SQL files needed on this machine. Defaults OFF, and `make dashboard
+      # DB=true` turns it on with the profile: the image's entrypoint retries
+      # psycopg2.connect 60x2s BEFORE exec'ing uvicorn, so with the db profile
+      # absent it blocked the API for a full 120s on every `up`. The browser
+      # got "Failed to fetch" on /api/scenario/* for those two minutes, which
+      # the frontend reports as "Scenario generation unavailable ... set
+      # PLATFORM_HOST_DIR" — a misleading message for a backend that simply
+      # was not listening yet.
+      - INIT_DB_SCHEMA=${INIT_DB_SCHEMA:-false}
       - SIM2REAL_RUNS_DIR=/data/runs
       # Embedded in the Monitor's Grafana tab. The browser resolves it, so it
       # is a host URL, not a container one. Its panels read ClickHouse, which
@@ -97,8 +104,9 @@ services:
   # domain N; condo scenarios: 0).
   ros2-node:
     image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
-    # Local image family; "missing" avoids a registry roundtrip per `up`.
-    pull_policy: missing
+    # Same mutable-tag reasoning as the services above. Point AIRSIM_BRIDGE_IMAGE
+    # at a locally built tag and set DASHBOARD_PULL_POLICY=missing to keep it.
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
     container_name: ros2-node
     network_mode: host
     ipc: host
@@ -123,10 +131,12 @@ services:
       - ${TEVV_RUNS_DIR:-~/tevv-runs}:/shared_volume
     # Foxglove websocket for Lichtblick + keeps the container alive for the
     # backend's docker-exec record/replay calls. 8765 is the Foxglove
-    # standard (Lichtblick's default URL + the backend's FOXGLOVE_PROBE_PORT);
-    # the product shell moved to 8760 to free it. Known clash: the monitoring
-    # profile's foxglove-bridge also binds host 8765 — running both means
-    # setting FOXGLOVE_BRIDGE_PORT here.
+    # standard (Lichtblick's default URL + the backend's FOXGLOVE_PROBE_PORT),
+    # so this side keeps it and everything else moved off: the product shell to
+    # 8760, and the monitoring profile's foxglove-bridge to
+    # MONITORING_FOXGLOVE_PORT (8766). Both are host-net, so a clash here is a
+    # silent "address already in use" inside whichever started second, not a
+    # compose bind error.
     command:
       - "bash"
       - "-lc"
@@ -146,7 +156,7 @@ services:
     environment:
       # Pinned so the port mapping above cannot drift from an image default.
       - PORT=3001
-      - NEXT_PUBLIC_LICHTBLICK_URL=${NEXT_PUBLIC_LICHTBLICK_URL:-http://localhost:${DASHBOARD_LICHTBLICK_PORT:-8083}}
+      - NEXT_PUBLIC_LICHTBLICK_URL=${NEXT_PUBLIC_LICHTBLICK_URL:-http://localhost:${DASHBOARD_LICHTBLICK_PORT:-8082}}
     restart: unless-stopped
 
   dashboard-lichtblick:
@@ -169,6 +179,7 @@ services:
   postgres-telemetry:
     profiles: ["db"]
     image: timescale/timescaledb:2.17.2-pg16
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
     container_name: postgres-telemetry
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
