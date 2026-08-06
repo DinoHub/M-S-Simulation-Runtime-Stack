@@ -87,6 +87,25 @@ services:
       # this repo at its identical host path (generator + stack lifecycle)
       - ${MSRS_ROOT:?set MSRS_ROOT}:${MSRS_ROOT}
       - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
+    # required: false is what keeps the db opt-in. Without it, depends_on drags
+    # postgres-telemetry's "db" profile in on every `up` — with it, this is a
+    # no-op when the profile is absent and a real gate when it is present, so
+    # the entrypoint's connect-retry loop becomes a backstop instead of the
+    # mechanism.
+    depends_on:
+      postgres-telemetry:
+        condition: service_healthy
+        required: false
+    # Marks the ~4s of import + startup where the API is up but not listening.
+    # /api/scenario/catalog rather than a bare TCP probe: it is a plain read of
+    # the generator's environment/profile lists, so it answers 200 only once
+    # routing is actually live.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/api/scenario/catalog >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
 
   # ROS2 sidecar the backend drives over the docker socket for bag
@@ -187,6 +206,15 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
     volumes:
       - dashboard-telemetry-db:/var/lib/postgresql/data
+    # What the backend's depends_on gates on. pg_isready, not a TCP probe:
+    # timescaledb's entrypoint starts postgres once on a throwaway socket to
+    # run initdb, so the port answers before the database is really there.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airsim_user} -d ${POSTGRES_DB:-drone_telemetry}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     restart: unless-stopped
 
 volumes:

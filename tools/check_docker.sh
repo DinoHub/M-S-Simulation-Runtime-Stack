@@ -67,6 +67,105 @@ EOF
   return 1
 }
 
+# Host-port preflight.
+#
+# This repo has lost hours to port collisions twice, and they present very
+# differently depending on how the service reaches the host:
+#
+#   - Published (`ports:`) — compose refuses to start: "Bind for 0.0.0.0:8082
+#     failed: port is already allocated". Loud, but only names the port, not
+#     what is holding it.
+#   - Host-net (`network_mode: host`) — nothing fails. The second listener logs
+#     "address already in use" inside the container and serves nothing, so the
+#     stack looks healthy and the visualizer is just dead. This is what the
+#     dashboard ros2-node vs monitoring foxglove-bridge clash on 8765 did.
+#
+# So: check before `up`, and name the occupant. Ports already held by the
+# container we are about to (re)create are not conflicts — compose replaces
+# those — which keeps `make dashboard` idempotent.
+#
+# Usage:  check_ports 3001:airsim-dashboard-frontend:frontend \
+#                     8765:ros2-node:"Foxglove websocket"
+#         check_ports ... || true        # advisory
+# 0 = all clear, 1 = at least one real conflict (details printed to stderr).
+check_ports() {
+  local spec port owner label rest holder conflicts=0
+
+  for spec in "$@"; do
+    port="${spec%%:*}"; rest="${spec#*:}"
+    owner="${rest%%:*}"; label="${rest#*:}"
+
+    _port_listener "$port" || continue          # free — nothing to report
+    holder="$(_port_holder "$port")"
+
+    # Ours already: `up` recreates it in place.
+    [ "$holder" = "$owner" ] && continue
+
+    if [ "$conflicts" -eq 0 ]; then
+      echo "ERROR: host ports needed by this stack are already in use:" >&2
+      conflicts=1
+    fi
+    printf '  %-6s %-28s wanted by %s (%s)\n' \
+      "$port" "held by ${holder:-an unidentified process}" "$owner" "$label" >&2
+  done
+
+  [ "$conflicts" -eq 0 ] && return 0
+
+  cat >&2 <<'EOF'
+
+  Stop the holder, or point this stack elsewhere with the matching *_PORT
+  variable (see the comments beside each `ports:` entry). Note that host-net
+  services do NOT fail loudly on a clash — they start and serve nothing.
+
+EOF
+  return 1
+}
+
+# 0 = something is listening on $1. `ss` covers host-net containers, which
+# publish nothing and so are invisible to `docker ps`.
+_port_listener() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn "sport = :$1" 2>/dev/null | grep -q LISTEN
+  else
+    # bash /dev/tcp: connect succeeds only if something accepts.
+    (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && exec 3>&-
+  fi
+}
+
+# Best-effort name for whoever holds $1, preferring a container name so it can
+# be compared against the service that wants the port.
+#
+# Three attempts, because the easy one covers only half the cases:
+#   1. `docker ps` published ports — misses host-net containers entirely, since
+#      they publish nothing. That is exactly the 8765 case.
+#   2. the listener's cgroup — /proc/<pid>/cgroup carries the container id for
+#      host-net containers, which is what closes that gap.
+#   3. the bare process name from ss.
+# Empty when none work: ss hides other users' pids unless we are root, so an
+# unattributed port is normal, not an error.
+_port_holder() {
+  local name pid cid
+
+  name="$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null \
+          | awk -v p=":$1->" 'index($0, p) { print $1; exit }')"
+  [ -n "$name" ] && { echo "$name"; return; }
+
+  command -v ss >/dev/null 2>&1 || return
+
+  pid="$(ss -ltnp "sport = :$1" 2>/dev/null \
+         | sed -n 's/.*pid=\([0-9]\{1,\}\).*/\1/p' | head -1)"
+  if [ -n "$pid" ] && [ -r "/proc/$pid/cgroup" ]; then
+    cid="$(sed -n 's/.*docker-\([0-9a-f]\{64\}\)\.scope.*/\1/p' "/proc/$pid/cgroup" | head -1)"
+    if [ -n "$cid" ]; then
+      name="$(docker inspect -f '{{.Name}}' "$cid" 2>/dev/null | sed 's|^/||')"
+      [ -n "$name" ] && { echo "$name"; return; }
+    fi
+  fi
+
+  ss -ltnp "sport = :$1" 2>/dev/null \
+    | sed -n 's/.*users:((\"\([^"]*\)\".*/\1/p' | head -1
+}
+
 # GPU passthrough preflight. dcgm-exporter (docker-compose-monitoring.yml),
 # airsim-xfs and the display container all carry a `driver: nvidia` device
 # reservation; without the NVIDIA Container Toolkit those fail deep inside the
