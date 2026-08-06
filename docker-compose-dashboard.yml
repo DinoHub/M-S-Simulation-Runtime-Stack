@@ -122,13 +122,15 @@ services:
       # the runs dir so recordings surface as replayable runs.
       - ${TEVV_RUNS_DIR:-~/tevv-runs}:/shared_volume
     # Foxglove websocket for Lichtblick + keeps the container alive for the
-    # backend's docker-exec record/replay calls. Default 8766: the Foxglove
-    # standard 8765 is host-net and mns-product-shell already binds it — in
-    # Lichtblick, connect to ws://localhost:8766.
+    # backend's docker-exec record/replay calls. 8765 is the Foxglove
+    # standard (Lichtblick's default URL + the backend's FOXGLOVE_PROBE_PORT);
+    # the product shell moved to 8760 to free it. Known clash: the monitoring
+    # profile's foxglove-bridge also binds host 8765 — running both means
+    # setting FOXGLOVE_BRIDGE_PORT here.
     command:
       - "bash"
       - "-lc"
-      - "ros2 run foxglove_bridge foxglove_bridge --ros-args -p port:=${FOXGLOVE_BRIDGE_PORT:-8766}"
+      - "ros2 run foxglove_bridge foxglove_bridge --ros-args -p port:=${FOXGLOVE_BRIDGE_PORT:-8765}"
     restart: unless-stopped
 
   dashboard-frontend:

@@ -6,7 +6,10 @@ source "$ROOT/product-images.env"
 DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$ROOT/.mns/authoring-data}"
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
-PORT="${MNS_SCENARIO_LAUNCHER_PORT:-8765}"
+# 8760 (was 8765): 8765 is the Foxglove websocket standard — Lichtblick's
+# default connection URL and the dashboard backend's FOXGLOVE_PROBE_PORT both
+# assume it, so the dashboard's ros2-node foxglove_bridge owns it now.
+PORT="${MNS_SCENARIO_LAUNCHER_PORT:-8760}"
 images=("$MNS_PRODUCT_SHELL_IMAGE" "$MNS_AUTHORING_IMAGE" "$MNS_STACK_GENERATOR_IMAGE" "$MNS_BLOCKS_IMAGE")
 
 usage() { echo "Usage: ./product.sh setup|doctor|start|stop|cli [launcher args...]"; }
