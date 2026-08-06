@@ -23,7 +23,7 @@ shows the sim-to-real verdicts the `sim-real-eval` worker writes there
 automatically after each recorded run (enable with
 `runtime.features: { sim_real_eval: true }` in the scenario).
 
-The browser product shell (`./product.sh start`, port 8765) remains the
+The browser product shell (`./product.sh start`, port 8760) remains the
 visual ScenarioLab authoring surface; the dashboard links to it. Grafana
 monitoring stays on :3000 — the dashboard uses :3001.
 
@@ -39,7 +39,8 @@ Requirements: Docker Engine with Compose, an NVIDIA-capable runtime for Unreal i
 ./product.sh start
 ```
 
-Open <http://127.0.0.1:8765>.
+Open <http://127.0.0.1:8760> (`MNS_SCENARIO_LAUNCHER_PORT`; it was 8765 until
+the Foxglove websocket claimed that port).
 
 1. The Runtime form is prefilled with `scenarios/blocks-quickstart`. Click **Generate and Run** for the shortest end-to-end check.
 2. Use **Show Status**, **Show Logs**, and **Stop Runtime** for `generated/blocks-quickstart`.

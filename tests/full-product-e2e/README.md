@@ -24,6 +24,6 @@ The runner uses `.mns/full-product-e2e/authoring-data/` instead of the normal pe
 
 ## Manual UI Review
 
-For an interaction-focused review, run `./product.sh start`, open <http://127.0.0.1:8765>, and open ScenarioLab. Create or load a Blocks scenario and use the editor controls to add drones, place `scenario_runtime_basic/blocking_box`, add a random spawn volume, select rain/time conditions, and edit a sensor profile. Export under `scenarios/`, then use the browser Runtime form to generate and run it.
+For an interaction-focused review, run `./product.sh start`, open <http://127.0.0.1:8760>, and open ScenarioLab. Create or load a Blocks scenario and use the editor controls to add drones, place `scenario_runtime_basic/blocking_box`, add a random spawn volume, select rain/time conditions, and edit a sensor profile. Export under `scenarios/`, then use the browser Runtime form to generate and run it.
 
 Use the automated run as the acceptance gate because its positions, frames, sensor settings, output rates, and cleanup are deterministic.

@@ -454,11 +454,27 @@ services:
   #
   # Uses host networking because foxglove_bridge advertises topics via DDS
   # discovery, which bridge-network containers do not cross. When host net
-  # is active, port 8765 is reachable on the host directly (no ports: map).
+  # is active, the port is reachable on the host directly (no ports: map).
+  #
+  # 8766, moved off 8765: the TEVV dashboard's ros2-node sidecar serves its own
+  # Foxglove websocket and is effectively pinned to 8765 — that is Lichtblick's
+  # default connection URL and the dashboard backend's FOXGLOVE_PROBE_PORT.
+  # Both containers are host-net, so sharing 8765 does NOT fail at bind time
+  # the way the 8082 lichtblick clash did; the loser just logs "address already
+  # in use" and serves nothing, which reads as a dead visualizer.
+  #
+  # The image's /entrypoint_foxglove.sh hardcodes `port:=8765` and exec's
+  # without "$@", so an appended command cannot reach the launch file — the
+  # entrypoint has to be replaced outright. Keep both `source` lines: the ROS
+  # overlay is what puts foxglove_bridge and the AirSim-custom msgs on the path.
   foxglove-bridge:
     image: dhdevspace/auto_mns:tevv-foxglove-bridge-humble-3.2
     container_name: foxglove-bridge
     network_mode: host
+    entrypoint:
+      - bash
+      - -lc
+      - "source /opt/ros/humble/setup.bash && source /custom_ws/install/setup.bash && exec ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=${MONITORING_FOXGLOVE_PORT:-8766} address:=0.0.0.0"
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
