@@ -605,6 +605,19 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_1_NAME:-Copter1}
+      # GPU-lidar transport, read by the image ENTRYPOINT (which we keep — see
+      # the command: comment below) and folded into the `ros2 launch` argv:
+      #   auto  probe /tmp/iceoryx2, SHM if the sim is publishing there else RPC
+      #   shm   force zero-copy iceoryx2 (enable_shm_lidar:=true,
+      #         gpulidar_timer_freq:=0 so the RPC poll can't double-publish)
+      #   rpc   RPC poll only (the launch file's own default)
+      # `auto` is safe as a default: it falls back to RPC when the sim side
+      # isn't publishing, so a stack without the SHM publisher still gets lidar.
+      # Needs ipc: host + the /dev/shm and /tmp/iceoryx2 mounts on the anchor,
+      # and /tmp/iceoryx2 world-writable on the host (launch.sh ensures that).
+      - TRANSPORT=${TRANSPORT:-auto}
+      - SHM_LIDAR_SENSOR=${SHM_LIDAR_SENSOR:-GPULidarSensor1}
+      - BRIDGE_LAUNCH_ARGS=${BRIDGE_LAUNCH_ARGS:-}
     networks:
       # DDS island toward the autonomy stack (unchanged boundary).
       agent_internal-1: {}
@@ -667,6 +680,19 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_2_NAME:-Copter2}
+      # GPU-lidar transport, read by the image ENTRYPOINT (which we keep — see
+      # the command: comment below) and folded into the `ros2 launch` argv:
+      #   auto  probe /tmp/iceoryx2, SHM if the sim is publishing there else RPC
+      #   shm   force zero-copy iceoryx2 (enable_shm_lidar:=true,
+      #         gpulidar_timer_freq:=0 so the RPC poll can't double-publish)
+      #   rpc   RPC poll only (the launch file's own default)
+      # `auto` is safe as a default: it falls back to RPC when the sim side
+      # isn't publishing, so a stack without the SHM publisher still gets lidar.
+      # Needs ipc: host + the /dev/shm and /tmp/iceoryx2 mounts on the anchor,
+      # and /tmp/iceoryx2 world-writable on the host (launch.sh ensures that).
+      - TRANSPORT=${TRANSPORT:-auto}
+      - SHM_LIDAR_SENSOR=${SHM_LIDAR_SENSOR:-GPULidarSensor1}
+      - BRIDGE_LAUNCH_ARGS=${BRIDGE_LAUNCH_ARGS:-}
     networks:
       # DDS island toward the autonomy stack (unchanged boundary).
       agent_internal-2: {}
@@ -729,6 +755,19 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_3_NAME:-Copter3}
+      # GPU-lidar transport, read by the image ENTRYPOINT (which we keep — see
+      # the command: comment below) and folded into the `ros2 launch` argv:
+      #   auto  probe /tmp/iceoryx2, SHM if the sim is publishing there else RPC
+      #   shm   force zero-copy iceoryx2 (enable_shm_lidar:=true,
+      #         gpulidar_timer_freq:=0 so the RPC poll can't double-publish)
+      #   rpc   RPC poll only (the launch file's own default)
+      # `auto` is safe as a default: it falls back to RPC when the sim side
+      # isn't publishing, so a stack without the SHM publisher still gets lidar.
+      # Needs ipc: host + the /dev/shm and /tmp/iceoryx2 mounts on the anchor,
+      # and /tmp/iceoryx2 world-writable on the host (launch.sh ensures that).
+      - TRANSPORT=${TRANSPORT:-auto}
+      - SHM_LIDAR_SENSOR=${SHM_LIDAR_SENSOR:-GPULidarSensor1}
+      - BRIDGE_LAUNCH_ARGS=${BRIDGE_LAUNCH_ARGS:-}
     networks:
       # DDS island toward the autonomy stack (unchanged boundary).
       agent_internal-3: {}
@@ -791,6 +830,19 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_4_NAME:-Copter4}
+      # GPU-lidar transport, read by the image ENTRYPOINT (which we keep — see
+      # the command: comment below) and folded into the `ros2 launch` argv:
+      #   auto  probe /tmp/iceoryx2, SHM if the sim is publishing there else RPC
+      #   shm   force zero-copy iceoryx2 (enable_shm_lidar:=true,
+      #         gpulidar_timer_freq:=0 so the RPC poll can't double-publish)
+      #   rpc   RPC poll only (the launch file's own default)
+      # `auto` is safe as a default: it falls back to RPC when the sim side
+      # isn't publishing, so a stack without the SHM publisher still gets lidar.
+      # Needs ipc: host + the /dev/shm and /tmp/iceoryx2 mounts on the anchor,
+      # and /tmp/iceoryx2 world-writable on the host (launch.sh ensures that).
+      - TRANSPORT=${TRANSPORT:-auto}
+      - SHM_LIDAR_SENSOR=${SHM_LIDAR_SENSOR:-GPULidarSensor1}
+      - BRIDGE_LAUNCH_ARGS=${BRIDGE_LAUNCH_ARGS:-}
     networks:
       # DDS island toward the autonomy stack (unchanged boundary).
       agent_internal-4: {}
@@ -853,6 +905,19 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_5_NAME:-Copter5}
+      # GPU-lidar transport, read by the image ENTRYPOINT (which we keep — see
+      # the command: comment below) and folded into the `ros2 launch` argv:
+      #   auto  probe /tmp/iceoryx2, SHM if the sim is publishing there else RPC
+      #   shm   force zero-copy iceoryx2 (enable_shm_lidar:=true,
+      #         gpulidar_timer_freq:=0 so the RPC poll can't double-publish)
+      #   rpc   RPC poll only (the launch file's own default)
+      # `auto` is safe as a default: it falls back to RPC when the sim side
+      # isn't publishing, so a stack without the SHM publisher still gets lidar.
+      # Needs ipc: host + the /dev/shm and /tmp/iceoryx2 mounts on the anchor,
+      # and /tmp/iceoryx2 world-writable on the host (launch.sh ensures that).
+      - TRANSPORT=${TRANSPORT:-auto}
+      - SHM_LIDAR_SENSOR=${SHM_LIDAR_SENSOR:-GPULidarSensor1}
+      - BRIDGE_LAUNCH_ARGS=${BRIDGE_LAUNCH_ARGS:-}
     networks:
       # DDS island toward the autonomy stack (unchanged boundary).
       agent_internal-5: {}
@@ -915,6 +980,19 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_6_NAME:-Copter6}
+      # GPU-lidar transport, read by the image ENTRYPOINT (which we keep — see
+      # the command: comment below) and folded into the `ros2 launch` argv:
+      #   auto  probe /tmp/iceoryx2, SHM if the sim is publishing there else RPC
+      #   shm   force zero-copy iceoryx2 (enable_shm_lidar:=true,
+      #         gpulidar_timer_freq:=0 so the RPC poll can't double-publish)
+      #   rpc   RPC poll only (the launch file's own default)
+      # `auto` is safe as a default: it falls back to RPC when the sim side
+      # isn't publishing, so a stack without the SHM publisher still gets lidar.
+      # Needs ipc: host + the /dev/shm and /tmp/iceoryx2 mounts on the anchor,
+      # and /tmp/iceoryx2 world-writable on the host (launch.sh ensures that).
+      - TRANSPORT=${TRANSPORT:-auto}
+      - SHM_LIDAR_SENSOR=${SHM_LIDAR_SENSOR:-GPULidarSensor1}
+      - BRIDGE_LAUNCH_ARGS=${BRIDGE_LAUNCH_ARGS:-}
     networks:
       # DDS island toward the autonomy stack (unchanged boundary).
       agent_internal-6: {}
@@ -977,6 +1055,19 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_7_NAME:-Copter7}
+      # GPU-lidar transport, read by the image ENTRYPOINT (which we keep — see
+      # the command: comment below) and folded into the `ros2 launch` argv:
+      #   auto  probe /tmp/iceoryx2, SHM if the sim is publishing there else RPC
+      #   shm   force zero-copy iceoryx2 (enable_shm_lidar:=true,
+      #         gpulidar_timer_freq:=0 so the RPC poll can't double-publish)
+      #   rpc   RPC poll only (the launch file's own default)
+      # `auto` is safe as a default: it falls back to RPC when the sim side
+      # isn't publishing, so a stack without the SHM publisher still gets lidar.
+      # Needs ipc: host + the /dev/shm and /tmp/iceoryx2 mounts on the anchor,
+      # and /tmp/iceoryx2 world-writable on the host (launch.sh ensures that).
+      - TRANSPORT=${TRANSPORT:-auto}
+      - SHM_LIDAR_SENSOR=${SHM_LIDAR_SENSOR:-GPULidarSensor1}
+      - BRIDGE_LAUNCH_ARGS=${BRIDGE_LAUNCH_ARGS:-}
     networks:
       # DDS island toward the autonomy stack (unchanged boundary).
       agent_internal-7: {}
@@ -1039,6 +1130,19 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_8_NAME:-Copter8}
+      # GPU-lidar transport, read by the image ENTRYPOINT (which we keep — see
+      # the command: comment below) and folded into the `ros2 launch` argv:
+      #   auto  probe /tmp/iceoryx2, SHM if the sim is publishing there else RPC
+      #   shm   force zero-copy iceoryx2 (enable_shm_lidar:=true,
+      #         gpulidar_timer_freq:=0 so the RPC poll can't double-publish)
+      #   rpc   RPC poll only (the launch file's own default)
+      # `auto` is safe as a default: it falls back to RPC when the sim side
+      # isn't publishing, so a stack without the SHM publisher still gets lidar.
+      # Needs ipc: host + the /dev/shm and /tmp/iceoryx2 mounts on the anchor,
+      # and /tmp/iceoryx2 world-writable on the host (launch.sh ensures that).
+      - TRANSPORT=${TRANSPORT:-auto}
+      - SHM_LIDAR_SENSOR=${SHM_LIDAR_SENSOR:-GPULidarSensor1}
+      - BRIDGE_LAUNCH_ARGS=${BRIDGE_LAUNCH_ARGS:-}
     networks:
       # DDS island toward the autonomy stack (unchanged boundary).
       agent_internal-8: {}
@@ -1101,6 +1205,19 @@ services:
       - AIRSIM_HOST_IP=${AIRSIM_HOST_IP:-172.30.0.10}
       - AIRSIM_HOST_PORT=${AIRSIM_HOST_PORT:-41451}
       - VEHICLE_NAME=${VEHICLE_9_NAME:-Copter9}
+      # GPU-lidar transport, read by the image ENTRYPOINT (which we keep — see
+      # the command: comment below) and folded into the `ros2 launch` argv:
+      #   auto  probe /tmp/iceoryx2, SHM if the sim is publishing there else RPC
+      #   shm   force zero-copy iceoryx2 (enable_shm_lidar:=true,
+      #         gpulidar_timer_freq:=0 so the RPC poll can't double-publish)
+      #   rpc   RPC poll only (the launch file's own default)
+      # `auto` is safe as a default: it falls back to RPC when the sim side
+      # isn't publishing, so a stack without the SHM publisher still gets lidar.
+      # Needs ipc: host + the /dev/shm and /tmp/iceoryx2 mounts on the anchor,
+      # and /tmp/iceoryx2 world-writable on the host (launch.sh ensures that).
+      - TRANSPORT=${TRANSPORT:-auto}
+      - SHM_LIDAR_SENSOR=${SHM_LIDAR_SENSOR:-GPULidarSensor1}
+      - BRIDGE_LAUNCH_ARGS=${BRIDGE_LAUNCH_ARGS:-}
     networks:
       # DDS island toward the autonomy stack (unchanged boundary).
       agent_internal-9: {}

@@ -114,6 +114,16 @@ export UID
 # leave host-side logs/ and metrics_outputs/ owned by group docker.
 export GID="$(id -g "$(id -un)")"
 
+# iceoryx2 shared-memory rendezvous for the zero-copy GPU-lidar / fisheye
+# transports. Both the sim and the bridges bind-mount this; the sim container
+# runs as root and would otherwise create it 0755 root:root, after which the
+# bridge (uid 1000) cannot create its iceoryx2 node and falls back with
+# "Cannot fix permissions on /tmp/iceoryx2". Create it first, sticky+world-
+# writable like /tmp itself. Lives under /tmp, so it is gone after a reboot —
+# hence every launch, not setup.sh.
+mkdir -p /tmp/iceoryx2 2>/dev/null && chmod 1777 /tmp/iceoryx2 2>/dev/null || \
+  echo "WARNING: could not prepare /tmp/iceoryx2 — SHM lidar/fisheye will fall back to RPC." >&2
+
 # X11 setup (needed for AirSim / GUI containers)
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
