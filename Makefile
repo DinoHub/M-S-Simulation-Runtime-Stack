@@ -53,7 +53,7 @@ endif
 
 SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics
 
 dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
 	# Create these as the HOST user first, the way product.sh does. The backend
@@ -102,6 +102,8 @@ help:
 	@echo "  stop                  ./stop.sh [SCENARIO=name]"
 	@echo "  logs                  ./logs.sh"
 	@echo "  ps         running containers (name/status/image)"
+	@echo "  topics     ROS 2 topics a stack will publish, before starting it"
+	@echo "             [SCENARIO=name | STACK=generated/name]"
 	@echo "  generate   render compose files from templates [SCENARIO=name]"
 	@echo "  check      exit nonzero when rendered files drift from .env+templates"
 	@echo "  self-test  generator invariant checks"
@@ -153,6 +155,15 @@ logs:
 
 ps:
 	@docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+
+# What a stack will publish, without starting it. Resolves settings.json
+# sensors/cameras + topic_names.yaml renames + topic_prefix using the bridge
+# image's own launch code, so it cannot drift from what the bridge really does.
+#   make topics                          # default scenario
+#   make topics SCENARIO=ardupilot-xfs
+#   make topics STACK=generated/xfs-fisheye
+topics:
+	@python3 tools/preview_topics.py $(or $(STACK),$(SCENARIO),$(DEV_SCENARIO))
 
 generate:
 	python3 tools/generate_scenario.py $(if $(SCENARIO),--scenario $(SCENARIO))

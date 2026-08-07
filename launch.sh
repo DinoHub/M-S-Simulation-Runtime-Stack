@@ -375,6 +375,17 @@ if [ "$EDITOR_MODE" = "true" ]; then
   echo "AirSim RPC up at ${RPC_HOST}:${RPC_PORT} — starting the rest of the stack."
 fi
 
+# What the bridges will publish, resolved from settings.json + topic_names.yaml
+# + topic_prefix BEFORE anything starts — otherwise the only way to find out is
+# to boot the stack, wait for Unreal, and run `ros2 topic list`. Best-effort:
+# needs the bridge image locally and costs ~2s, so a failure here must never
+# block a launch. PREVIEW_TOPICS=false skips it.
+if [ "${PREVIEW_TOPICS:-true}" = "true" ]; then
+  echo "Resolving the topics this stack will publish..."
+  python3 "$SCRIPT_DIR/tools/preview_topics.py" "$SCENARIO" --brief 2>/dev/null || \
+    echo "  (preview unavailable — continuing)"
+fi
+
 echo "Starting simulation stack ($SCENARIO)..."
 compose_retry --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
   "${COMPOSE_PROFILE_ARGS[@]}" up -d

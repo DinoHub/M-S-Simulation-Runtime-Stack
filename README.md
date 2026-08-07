@@ -87,6 +87,30 @@ is cached with `docker images | grep auto_mns`; `./product.sh doctor` reports an
 of the four pinned product images that are missing. `launch.sh` and
 `make dashboard` warn up front when the registry does not answer.
 
+## What will this stack publish?
+
+The bridges' topic names are the product of four inputs that only meet at
+runtime — `settings.json` sensors/cameras, `topic_names.yaml` renames,
+`topic_prefix`/`TOPIC_PREFIX`, and the bridge's fixed topic list. Resolve them
+before starting anything:
+
+```bash
+make topics                                # default scenario
+make topics SCENARIO=ardupilot-xfs
+make topics STACK=generated/xfs-fisheye
+./tools/preview_topics.py ardupilot-xfs --json
+TOPIC_PREFIX=/ make topics SCENARIO=ardupilot-xfs   # preview the flattened names
+```
+
+`./launch.sh` prints a short version of this before every `up`; set
+`PREVIEW_TOPICS=false` to skip it.
+
+The names come from the bridge image's own launch code (`_final_topic`,
+`_canonical_vehicle_topics`, `load_topic_renames`), not a second copy of the
+rules here, so a new bridge image changes this output with it. The listing also
+flags `topic_names.yaml` keys that match no topic on a vehicle — harmless for a
+sensor the scenario does not run, and identical to what a typo'd key looks like.
+
 ## Full Acceptance Test
 
 Reviewers can run the deterministic packaged-authoring-to-live-runtime acceptance path with:
