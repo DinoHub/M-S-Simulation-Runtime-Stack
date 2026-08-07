@@ -34,12 +34,12 @@ bridge image locally, which any run of the stack needs anyway.
 """
 
 import argparse
+import base64
 import json
 import os
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -321,26 +321,35 @@ def collect_bridges(model: dict, settings_path):
 
 
 def run_in_bridge_image(image: str, bridges, mounts) -> list:
-    with tempfile.TemporaryDirectory() as tmp:
-        driver = Path(tmp) / "driver.py"
-        driver.write_text(DRIVER.replace("LAUNCH_FILE_PATH", repr(LAUNCH_FILE))
-                        .replace("LAUNCH_DIR_PATH", repr(LAUNCH_DIR)))
-        cmd = ["docker", "run", "--rm", "-i", "--entrypoint", "bash",
-               "-v", f"{driver}:/driver.py:ro"]
-        for m in mounts:
-            cmd += ["-v", f"{m}:{m}:ro"]
-        cmd += [image, "-lc",
-                "source /opt/ros/humble/setup.bash >/dev/null 2>&1; "
-                "source /ws/install/setup.bash >/dev/null 2>&1; "
-                "python3 /driver.py"]
-        p = subprocess.run(cmd, input=json.dumps({"bridges": bridges}),
-                           capture_output=True, text=True)
-        if p.returncode != 0:
-            die(f"topic resolution failed inside {image}:\n{p.stderr.strip()}")
-        try:
-            return json.loads(p.stdout)
-        except json.JSONDecodeError:
-            die(f"unexpected output from {image}:\n{p.stdout[-2000:]}\n{p.stderr[-2000:]}")
+    # The driver travels as an environment variable, NOT a bind mount. Bind
+    # sources are resolved by the DAEMON, so mounting a file this process wrote
+    # breaks the moment the caller is itself a container talking to the host
+    # socket — the dashboard backend, for one. The host daemon cannot see the
+    # caller's filesystem, silently creates the missing source as an empty
+    # DIRECTORY, and the run dies with "can't find '__main__' module in
+    # '/driver.py'". Base64 so no quoting or newline survives to bite us.
+    #
+    # The settings.json / topic_names.yaml mounts below are fine: those paths
+    # come out of `docker compose config`, so they are already host paths.
+    code = DRIVER.replace("LAUNCH_FILE_PATH", repr(LAUNCH_FILE)) \
+                 .replace("LAUNCH_DIR_PATH", repr(LAUNCH_DIR))
+    cmd = ["docker", "run", "--rm", "-i", "--entrypoint", "bash",
+           "-e", "PREVIEW_DRIVER_B64=" + base64.b64encode(code.encode()).decode()]
+    for m in mounts:
+        cmd += ["-v", f"{m}:{m}:ro"]
+    cmd += [image, "-lc",
+            "source /opt/ros/humble/setup.bash >/dev/null 2>&1; "
+            "source /ws/install/setup.bash >/dev/null 2>&1; "
+            'python3 -c "import base64,os;'
+            "exec(base64.b64decode(os.environ['PREVIEW_DRIVER_B64']).decode())\""]
+    p = subprocess.run(cmd, input=json.dumps({"bridges": bridges}),
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        die(f"topic resolution failed inside {image}:\n{p.stderr.strip()}")
+    try:
+        return json.loads(p.stdout)
+    except json.JSONDecodeError:
+        die(f"unexpected output from {image}:\n{p.stdout[-2000:]}\n{p.stderr[-2000:]}")
 
 
 def report(results, settings_path, brief=False):
@@ -430,7 +439,13 @@ def main():
     args = ap.parse_args()
 
     target = Path(args.target)
-    if (REPO / "compose" / args.target / "docker-compose.yml").is_file():
+    # `REPO / "compose" / target` COLLAPSES to target when target is absolute —
+    # pathlib drops the left side. An absolute stack path therefore matched the
+    # scenario branch and ran with project_dir=REPO, loading the repo's .env
+    # instead of the stack's: wrong ROS2_IMAGE, wrong CONFIG_ROOT, no
+    # settings.json, and a listing that looked plausible and was wrong. Only a
+    # bare name can name a scenario.
+    if not target.is_absolute() and (REPO / "compose" / args.target / "docker-compose.yml").is_file():
         compose_file = REPO / "compose" / args.target / "docker-compose.yml"
         project_dir = REPO                       # scenario stacks bind ./config
     elif (target / "docker-compose.yml").is_file():
