@@ -106,10 +106,21 @@ TOPIC_PREFIX=/ make topics SCENARIO=ardupilot-xfs   # preview the flattened name
 `PREVIEW_TOPICS=false` to skip it.
 
 The names come from the bridge image's own launch code (`_final_topic`,
-`_canonical_vehicle_topics`, `load_topic_renames`), not a second copy of the
-rules here, so a new bridge image changes this output with it. The listing also
-flags `topic_names.yaml` keys that match no topic on a vehicle — harmless for a
+`_canonical_vehicle_topics`, `load_topic_renames`) and each entry launch file's
+declared argument defaults — not a second copy of the rules here — so a new
+bridge image changes this output with it. That matters because the two bridge
+images in use disagree: `airsim-ros2-bridge` defaults `topic_prefix` to
+`{vehicle}/` while `tevv-airsim-ros2-bridge-humble` defaults it to `/` and adds a
+canonical `lidar/points` alias.
+
+The output separates published topics from services and command inputs, and
+flags `topic_names.yaml` keys matching no topic on a vehicle — harmless for a
 sensor the scenario does not run, and identical to what a typo'd key looks like.
+
+Scope: the vehicle node's own namespace. Checked against a live
+`generated/xfs-fisheye` stack, 14 of 16 names matched `ros2 topic list` exactly.
+It does not model topics from nodes outside the vehicle node (gimbal commands,
+`target_detection`), nor camera images carried over iceoryx SHM rather than ROS.
 
 ## Full Acceptance Test
 

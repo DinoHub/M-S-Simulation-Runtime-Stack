@@ -43,8 +43,10 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-LAUNCH_FILE = ("/ws/install/airsim_ros2_bridge/share/airsim_ros2_bridge"
-               "/launch/rpc_dynamic_vehicles.launch.py")
+DEFAULT_IMAGE = "dhdevspace/auto_mns:airsim-ros2-bridge"   # only when a service names none
+LAUNCH_DIR = "/ws/install/airsim_ros2_bridge/share/airsim_ros2_bridge/launch"
+LAUNCH_FILE = LAUNCH_DIR + "/rpc_dynamic_vehicles.launch.py"
+ENTRY_LAUNCH = re.compile(r"ros2\s+launch\s+\S+\s+(\S+\.launch\.py)")
 
 # Runs INSIDE the bridge image. Reads a request on stdin, writes results on
 # stdout. Deliberately thin: every naming decision is delegated to the launch
@@ -52,6 +54,7 @@ LAUNCH_FILE = ("/ws/install/airsim_ros2_bridge/share/airsim_ros2_bridge"
 DRIVER = r'''
 import importlib.util, json, sys
 
+LAUNCH_DIR = LAUNCH_DIR_PATH
 spec = importlib.util.spec_from_file_location("bridge_launch", LAUNCH_FILE_PATH)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
@@ -69,15 +72,62 @@ for b in req["bridges"]:
             b["settings_error"] = str(e)
 
     rename_map = mod.load_topic_renames(b.get("topic_names_path") or "")
-    prefix = b.get("topic_prefix") or mod._DEFAULT_TOPIC_PREFIX
+
+    # topic_prefix, when the compose command does not pass one, is whatever the
+    # ENTRY launch file declares — NOT rpc_dynamic_vehicles' _DEFAULT_TOPIC_PREFIX.
+    # The two disagree and the difference is the whole listing:
+    #   airsim-ros2-bridge            single_vehicle.launch.py -> '{vehicle}/'
+    #   tevv-airsim-ros2-bridge-humble                         -> '/'
+    # Read it from the file the command actually launches.
+    entry = LAUNCH_DIR + "/" + (b.get("launch_file") or "single_vehicle.launch.py")
+    declared = {}
+    try:
+        import re as _re
+        src = open(entry).read()
+        for m in _re.finditer(r"'(\w+)',\s*default_value='([^']*)'", src):
+            declared.setdefault(m.group(1), m.group(2))
+    except OSError:
+        pass
+
+    prefix = b.get("topic_prefix") or declared.get("topic_prefix") or mod._DEFAULT_TOPIC_PREFIX
     active = bool(rename_map) or prefix != mod._DEFAULT_TOPIC_PREFIX
 
     rels = mod._canonical_vehicle_topics(settings or None)
     fixed = set(mod._FIXED_VEHICLE_TOPICS)
 
+    # The fixed list is "topics AND services every vehicle node exposes"
+    # (rpc_dynamic_vehicles.launch.py:78). Splitting them matters: the service
+    # and command names never appear in `ros2 topic list`, so folding them in
+    # with the publishers makes a correct listing look wrong when compared
+    # against a running stack.
+    SERVICES = {"reset", "takeoff", "land", "gps_waypoint",
+                "search_target", "track_target"}
+    COMMANDS = {"vel_cmd_body_frame", "vel_cmd_world_frame",
+                "gimbal_angle_euler_cmd", "gimbal_angle_quat_cmd"}
+
+    def kind(r):
+        if r in SERVICES:
+            return "service"
+        if r in COMMANDS:
+            return "command"
+        return "fixed" if r in fixed else "settings.json"
+
+    # The lowercase imu/magnetometer/barometer in the fixed list are the DEFAULT
+    # sensor publishers (setup_default_sensor_publishers), used only when
+    # settings.json declares no sensor of that type. When it does, the vehicle
+    # publishes under the settings.json NAME instead (/Imu, not /imu) and the
+    # default is never created — verified against a running stack.
+    declared_types = {
+        mod._SENSOR_TYPE.get(int((cfg or {}).get("SensorType", -1)), "")
+        for cfg in (settings.get("Sensors") or {}).values()
+        if (cfg or {}).get("Enabled", True) is not False
+    }
+    superseded_defaults = {d.lower() for d in ("Imu", "Magnetometer", "Barometer")
+                           if d in declared_types}
+
     topics = [{"rel": r,
                "topic": mod._final_topic(b["vehicle"], r, active, rename_map, prefix),
-               "source": "fixed" if r in fixed else "settings.json",
+               "source": "superseded" if r in superseded_defaults else kind(r),
                "renamed": r in rename_map and rename_map[r] != r}
               for r in rels]
 
@@ -89,6 +139,25 @@ for b in req["bridges"]:
             topics.append({"rel": rel,
                            "topic": mod._final_topic(b["vehicle"], rel, active, rename_map, prefix),
                            "source": "derived",
+                           "renamed": False})
+
+    # Newer bridges also publish a canonical lidar alias whose name does not
+    # depend on the sensor's settings.json name (lidar_topic_suffix:=auto
+    # resolves the physical suffix onto it). Absent from images that do not
+    # declare the argument.
+    canonical = (b.get("canonical_lidar_topic")
+                 or declared.get("canonical_lidar_topic") or "").strip().strip("/")
+    if canonical:
+        physical = [t for t in topics if t["rel"].endswith("/points")
+                    or t["rel"].startswith("gpulidar/points")]
+        if physical:
+            # lidar_topic_suffix:=auto REMAPS the physical name onto the
+            # canonical one, so the physical name is not separately published.
+            for t in physical:
+                t["source"] = "superseded"
+            topics.append({"rel": canonical,
+                           "topic": mod._final_topic(b["vehicle"], canonical, active, rename_map, prefix),
+                           "source": "canonical alias",
                            "renamed": False})
 
     # Rename rules for topics this vehicle never publishes: harmless, but a
@@ -224,6 +293,19 @@ def collect_bridges(model: dict, settings_path):
         cfg = args.get("topic_names_config")
         bridges.append({
             "service": name,
+            # The bridge image is per-service and stacks do NOT agree on it:
+            # the scenario stacks run AIRSIM_BRIDGE_IMAGE (airsim-ros2-bridge)
+            # while the generated ones run ROS2_IMAGE
+            # (tevv-airsim-ros2-bridge-humble), and the two carry different
+            # launch code and so different topic names. Resolving both against
+            # one default image produced a confidently wrong listing —
+            # /Drone1/gpulidar/pointsGPULidarSensor1 for a stack that actually
+            # publishes /lidar/points.
+            "image": svc.get("image"),
+            # Which launch file the command invokes decides the argument
+            # defaults, so it has to be carried through rather than assumed.
+            "launch_file": next((m.group(1) for t in cmd if isinstance(t, str)
+                                 for m in [ENTRY_LAUNCH.search(t)] if m), None),
             "container": svc.get("container_name") or name,
             "vehicle": args.get("vehicle_name", ""),
             "topic_prefix": args.get("topic_prefix"),
@@ -233,6 +315,7 @@ def collect_bridges(model: dict, settings_path):
             "settings_path": settings_path,
             "enable_local_obs": args.get("enable_local_obs", "false") == "true",
             "enable_laserscan": args.get("enable_laserscan", "false") == "true",
+            "canonical_lidar_topic": args.get("canonical_lidar_topic"),
         })
     return bridges
 
@@ -240,7 +323,8 @@ def collect_bridges(model: dict, settings_path):
 def run_in_bridge_image(image: str, bridges, mounts) -> list:
     with tempfile.TemporaryDirectory() as tmp:
         driver = Path(tmp) / "driver.py"
-        driver.write_text(DRIVER.replace("LAUNCH_FILE_PATH", repr(LAUNCH_FILE)))
+        driver.write_text(DRIVER.replace("LAUNCH_FILE_PATH", repr(LAUNCH_FILE))
+                        .replace("LAUNCH_DIR_PATH", repr(LAUNCH_DIR)))
         cmd = ["docker", "run", "--rm", "-i", "--entrypoint", "bash",
                "-v", f"{driver}:/driver.py:ro"]
         for m in mounts:
@@ -277,6 +361,7 @@ def report(results, settings_path, brief=False):
         print(head)
         print("  " + "-" * (len(head) - 2))
         shown = b['topic_prefix'] if b['topic_prefix'] else "{vehicle}/ (bridge default)"
+        print(f"  resolved by:  {b.get('image') or DEFAULT_IMAGE}")
         print(f"  topic_prefix: {shown} -> {b['resolved_prefix']!r}"
               f"{'' if b['rename_active'] else '   (no remapping in effect)'}")
         if not b["settings_found"]:
@@ -287,9 +372,17 @@ def report(results, settings_path, brief=False):
         by_source = {}
         for t in b["topics"]:
             by_source.setdefault(t["source"], []).append(t)
-        labels = {"fixed": "always published", "settings.json": "from settings.json sensors/cameras",
-                  "derived": "derived nodes (enabled by launch args)"}
-        for src in ("settings.json", "derived", "fixed"):
+        labels = {
+            "settings.json": "published, from settings.json sensors/cameras",
+            "canonical alias": "published, canonical alias (independent of the sensor's name)",
+            "derived": "published by derived nodes (enabled by launch args)",
+            "fixed": "published always",
+            "command": "subscribed by the bridge (command inputs; still listed by `ros2 topic list`)",
+            "service": "SERVICES, not topics (never in `ros2 topic list`)",
+            "superseded": "NOT created — superseded by a name above",
+        }
+        for src in ("settings.json", "canonical alias", "derived", "fixed",
+                    "command", "service", "superseded"):
             group = by_source.get(src)
             if not group:
                 continue
@@ -306,6 +399,17 @@ def report(results, settings_path, brief=False):
                 print(f"    {k}")
             print()
 
+    if not brief:
+        print("  Scope: the vehicle node's own topic namespace. Verified against a live")
+        print("  ardupilot-xfs/xfs-fisheye stack — 14 of 16 names matched `ros2 topic list`")
+        print("  exactly. What it does NOT model:")
+        print("    - topics from nodes outside the vehicle node (gimbal commands,")
+        print("      target_detection); they keep their own naming.")
+        print("    - camera images carried over iceoryx SHM rather than ROS. With")
+        print("      \"Iceoryx fisheye: true\" in the bridge log, the camera topics listed")
+        print("      here are not published by the vehicle node at all.")
+        print()
+
     if brief and len(results) > 1:
         rest = ", ".join(f"{b['vehicle']} (domain {b['ros_domain_id']})" for b in results[1:])
         print(f"  Same set under each remaining vehicle's own prefix: {rest}")
@@ -320,9 +424,9 @@ def main():
     ap.add_argument("--json", action="store_true", help="emit the raw result")
     ap.add_argument("--brief", action="store_true",
                     help="first vehicle in full, the rest summarised (pre-launch display)")
-    ap.add_argument("--image", default=os.environ.get("AIRSIM_BRIDGE_IMAGE",
-                    "dhdevspace/auto_mns:airsim-ros2-bridge"),
-                    help="bridge image whose launch code resolves the names")
+    ap.add_argument("--image", default=None,
+                    help="override the bridge image whose launch code resolves the "
+                         "names (default: each service's own image)")
     args = ap.parse_args()
 
     target = Path(args.target)
@@ -348,7 +452,16 @@ def main():
     # Mount only what the driver reads, read-only.
     mounts = sorted({p for p in [settings_path] + [b["topic_names_path"] for b in bridges]
                      if p and Path(p).is_file()})
-    results = run_in_bridge_image(args.image, bridges, mounts)
+
+    # Group by image so each bridge is resolved by the launch code it will
+    # actually run. --image overrides, for previewing an upgrade.
+    results = []
+    by_image = {}
+    for b in bridges:
+        by_image.setdefault(args.image or b.get("image") or DEFAULT_IMAGE, []).append(b)
+    for image, group in by_image.items():
+        results += run_in_bridge_image(image, group, mounts)
+    results.sort(key=lambda b: b["service"])
 
     if args.json:
         json.dump(results, sys.stdout, indent=2)
