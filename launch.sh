@@ -106,7 +106,8 @@ fi
 # letting the first `up` fail on an image pull it never had permission to try.
 . "$SCRIPT_DIR/tools/check_docker.sh"
 check_docker || exit 1
-check_nvidia_runtime || true   # advisory — see the function's comment
+check_registry MNS_IMAGE_PULL_POLICY || true   # advisory — see the function's comment
+check_nvidia_runtime || true                   # advisory — see the function's comment
 
 export UID
 # The user's passwd primary group, NOT `id -g`: under `newgrp docker` the shell's

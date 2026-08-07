@@ -57,6 +57,36 @@ Stop the browser shell with:
 
 Pins are `repo:tag@sha256:…` — the digest is the contract, the tag is there so the file is readable. `tools/check-image-pins.sh` reports staleness and `--bump` rewrites both parts. Why it works this way, and what it costs: [ADR 0001](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md).
 
+### When the registry is unreachable
+
+Services on mutable tags pull on every start, so a Docker Hub outage aborts the
+whole `up` — even when the image is already cached locally:
+
+```
+failed to resolve reference "docker.io/dhdevspace/auto_mns:tevv-airsim-xfs-latest":
+failed to do request: Head "https://registry-1.docker.io/v2/...": net/http: TLS handshake timeout
+```
+
+These blips are usually brief, so retry first (`./product.sh setup` now retries
+each pull three times with backoff). To start from the local cache instead, set
+the pull policy for the stack you are launching:
+
+| Stack | Variable |
+|-------|----------|
+| Generated stacks (`generated/<name>/`), scenario stacks, metrics | `MNS_IMAGE_PULL_POLICY=missing` |
+| TEVV dashboard (`make dashboard`) | `DASHBOARD_PULL_POLICY=missing` |
+
+```bash
+MNS_IMAGE_PULL_POLICY=missing ./launch.sh ardupilot-xfs
+DASHBOARD_PULL_POLICY=missing make dashboard
+```
+
+Generated stacks also carry the variable in their own `generated/<name>/.env`,
+which the launcher reads — edit it there to make the setting stick. Confirm what
+is cached with `docker images | grep auto_mns`; `./product.sh doctor` reports any
+of the four pinned product images that are missing. `launch.sh` and
+`make dashboard` warn up front when the registry does not answer.
+
 ## Full Acceptance Test
 
 Reviewers can run the deterministic packaged-authoring-to-live-runtime acceptance path with:

@@ -65,6 +65,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	# Fail on an unreachable daemon or an occupied port here, with the occupant
 	# named, instead of mid-`up` — or, for the host-net ros2-node, not at all.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
+	check_registry DASHBOARD_PULL_POLICY || true; \
 	check_ports 3001:airsim-dashboard-frontend:frontend \
 	            8001:airsim-dashboard-api:backend \
 	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):dashboard-lichtblick:Lichtblick \

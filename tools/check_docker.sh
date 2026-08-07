@@ -166,6 +166,56 @@ _port_holder() {
     | sed -n 's/.*users:((\"\([^"]*\)\".*/\1/p' | head -1
 }
 
+# Registry-reachability preflight.
+#
+# Every mutable-tag service in this repo carries `pull_policy: always`, which
+# makes each `up` contact the registry — and a pull failure aborts the whole
+# `up` even when the image is already on disk. A Docker Hub blip therefore
+# reads as a hard startup failure:
+#
+#   failed to resolve reference "docker.io/dhdevspace/auto_mns:...": failed to
+#   do request: Head "https://registry-1.docker.io/v2/...": net/http: TLS
+#   handshake timeout
+#
+# Nothing is wrong with the machine in that case; the fix is to retry, or to
+# start from the local cache. Naming that up front beats decoding the message.
+#
+# Advisory by design (callers use `|| true`): the probe is a plain HTTPS GET
+# and can fail where the daemon itself would succeed — a proxy configured only
+# in /etc/systemd/system/docker.service.d, say. A false warning must not block
+# a stack that would have started.
+#
+# Usage:  check_registry [OVERRIDE_VAR]     # e.g. check_registry MNS_IMAGE_PULL_POLICY
+# 0 = registry answered, 1 = it did not (guidance printed to stderr).
+check_registry() {
+  local var="${1:-MNS_IMAGE_PULL_POLICY}"
+  local url="${MSRS_REGISTRY_PROBE_URL:-https://registry-1.docker.io/v2/}"
+
+  command -v curl >/dev/null 2>&1 || return 0   # cannot probe; do not guess
+
+  # No -f: /v2/ answers 401 to an anonymous client, and 401 means reachable.
+  # Only a transport-level failure (DNS, TCP, TLS, timeout) is a real miss.
+  curl -sS -o /dev/null --max-time "${MSRS_REGISTRY_PROBE_TIMEOUT:-10}" "$url" 2>/dev/null \
+    && return 0
+
+  cat >&2 <<EOF
+WARNING: cannot reach the container registry ($url).
+
+  Services on mutable tags pull on every start, so this \`up\` will likely fail
+  with "TLS handshake timeout" or "failed to resolve reference" — even for
+  images already cached locally. These outages are usually brief; retrying is
+  the first thing to try.
+
+  To start from the local cache instead:
+
+      $var=missing <the same command>       # or set it in the stack's .env
+
+  Check what is cached first: docker images | grep auto_mns
+
+EOF
+  return 1
+}
+
 # GPU passthrough preflight. dcgm-exporter (docker-compose-monitoring.yml),
 # airsim-xfs and the display container all carry a `driver: nvidia` device
 # reservation; without the NVIDIA Container Toolkit those fail deep inside the

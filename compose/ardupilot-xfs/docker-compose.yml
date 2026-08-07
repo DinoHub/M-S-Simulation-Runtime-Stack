@@ -397,7 +397,11 @@ services:
   # ---------------------------------------------------------------------------
   airsim-xfs:
     image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:xfs-latest}
-    pull_policy: always
+    # Mutable tag, so pull every start. MNS_IMAGE_PULL_POLICY is the offline
+    # escape hatch — the same variable the generated stacks emit — because a
+    # registry outage otherwise aborts the whole `up` even when this image is
+    # already cached. Set it to `missing` to start from the local cache.
+    pull_policy: ${MNS_IMAGE_PULL_POLICY:-always}
     container_name: ardupilot-xfs-airsim
     hostname: ardupilot-xfs-airsim
     restart: unless-stopped
