@@ -65,13 +65,21 @@ services:
       # dashboard reporting "Visualization stack unavailable" for a service
       # that is actually running.
       - LICHTBLICK_PROBE_PORT=${DASHBOARD_LICHTBLICK_PORT:-8082}
-      # distribution mode: generate through the pinned generator image
+      # distribution mode: generate through the pinned generator image.
+      # Generator/authoring pins are BAKED into the backend image as defaults
+      # (MNS_*_IMAGE_DEFAULT), so the env lines below are overrides — empty is
+      # fine on an image-only deploy; product-images.env keeps them explicit.
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:?set MSRS_ROOT to this repository's absolute path}
-      - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:?source product-images.env}
+      - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
+      - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}
-      # Host Xauthority for the authoring container's X11 session. GDM keeps it
-      # under /run/user/<uid>/gdm; ~/.Xauthority is usually stale.
+      # ScenarioLab editor (X11): the backend only forwards these VALUES to
+      # the editor container it launches on the host daemon — this container
+      # needs no X socket or GPU itself. DISPLAY also has a baked :0 default.
+      - DISPLAY=${DISPLAY:-:0}
+      # Host Xauthority for that same session. GDM keeps it under
+      # /run/user/<uid>/gdm; ~/.Xauthority is usually stale.
       - MNS_HOST_XAUTHORITY=${XAUTHORITY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
