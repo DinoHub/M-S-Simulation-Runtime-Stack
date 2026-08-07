@@ -216,6 +216,147 @@ EOF
   return 1
 }
 
+# Pinned-image presence preflight.
+#
+# product-images.env moves in git; the images do not move with it. A pin bump
+# leaves the newly pinned tag absent locally, and nothing notices until the
+# thing that needs it runs — for the stack generator that is
+# /api/scenario/generate, which reports a bare 422 "generation failed" with no
+# hint that the cause is a pin from a commit you pulled an hour ago.
+# `./product.sh doctor` catches this, but nothing forces you to run it.
+#
+# Advisory: these images are needed at generate/authoring time, not at `up`
+# time, so a miss must not block a dashboard that is otherwise fine.
+#
+# Usage:  check_images "$MNS_STACK_GENERATOR_IMAGE" "$MNS_AUTHORING_IMAGE"
+# 0 = all present (or none named), 1 = at least one missing.
+#
+# Note: no arrays anywhere in this file — `make` runs recipes under /bin/sh
+# (dash on Debian/Ubuntu), which parses `missing=()` as a syntax error and
+# aborts the whole recipe before any check runs.
+check_images() {
+  local image missing=""
+
+  for image in "$@"; do
+    [ -n "$image" ] || continue
+    docker image inspect "$image" >/dev/null 2>&1 || missing="$missing  $image
+"
+  done
+
+  [ -z "$missing" ] && return 0
+
+  {
+    echo "WARNING: images pinned in product-images.env are not on this machine:"
+    printf '%s' "$missing"
+    cat <<'EOF'
+
+  Pulled a commit that bumped the pins? The images do not come with it. Until
+  they are here, scenario generation fails with a bare 422 "generation failed".
+
+      ./product.sh setup        # pulls the pinned set (retries on registry blips)
+      ./product.sh doctor       # lists exactly what is still missing
+
+EOF
+  } >&2
+  return 1
+}
+
+# Print the best X11 cookie path on this host, or nothing if there is none.
+#
+# The historical fallbacks — $HOME/.Xauthority (launch.sh) and
+# /run/user/<uid>/gdm/Xauthority (the generated stacks) — are both wrong on a
+# GNOME/Wayland desktop, where the cookie is a per-session
+# /run/user/<uid>/.mutter-Xwaylandauth.XXXXXX. Naming a path that does not
+# exist is worse than naming none: Docker creates the missing bind source as an
+# empty DIRECTORY, and the container gets a directory where a cookie belongs.
+#
+# Only ever returns a readable regular file, so callers can export the result
+# without recreating that failure. Newest mutter cookie wins — the name changes
+# per session and stale ones linger.
+resolve_xauthority() {
+  local candidate
+
+  [ -n "${XAUTHORITY:-}" ] && [ -f "$XAUTHORITY" ] && [ -r "$XAUTHORITY" ] && {
+    echo "$XAUTHORITY"; return 0; }
+
+  candidate="$(ls -t /run/user/"$(id -u)"/.mutter-Xwaylandauth.* 2>/dev/null | head -1)"
+  [ -n "$candidate" ] && [ -r "$candidate" ] && { echo "$candidate"; return 0; }
+
+  for candidate in "$HOME/.Xauthority" "/run/user/$(id -u)/gdm/Xauthority"; do
+    [ -f "$candidate" ] && [ -r "$candidate" ] && { echo "$candidate"; return 0; }
+  done
+
+  return 1
+}
+
+# X11 preflight for the GPU/Unreal containers.
+#
+# The sim mounts the host's X cookie and talks to /tmp/.X11-unix. Two ways that
+# breaks, both of which surface far from the cause:
+#
+#   - XAUTHORITY unset. Generated stacks bind
+#     `${XAUTHORITY:-/run/user/1000/gdm/Xauthority}`, and that gdm path does not
+#     exist on a GNOME/Wayland host (the cookie is
+#     /run/user/<uid>/.mutter-Xwaylandauth.XXXXXX). Docker then CREATES the
+#     missing source as an empty directory and bind-mounts it over
+#     /tmp/.Xauthority.
+#   - XAUTHORITY set to something that is not a readable regular file — same
+#     end state.
+#
+# Either way Unreal logs "Authorization required, but no authorization protocol
+# specified", then "Could not initialize SDL: x11 not available", exits 0, and
+# `restart: unless-stopped` loops it. The healthcheck never passes, so what the
+# user sees is "dependency failed to start: container ...-unreal-airsim is
+# unhealthy" — nothing about X11 at all.
+#
+# Advisory: headless flows (--headless, -RenderOffScreen) need none of this.
+# 0 = X11 pass-through looks sound, 1 = it does not.
+check_x11() {
+  local fallback="/run/user/$(id -u)/gdm/Xauthority"
+  local problem=""
+
+  if [ -z "${DISPLAY:-}" ]; then
+    problem="DISPLAY is not set"
+  elif [ -z "${XAUTHORITY:-}" ]; then
+    problem="XAUTHORITY is not set, so stacks fall back to $fallback"
+  elif [ ! -f "$XAUTHORITY" ]; then
+    problem="XAUTHORITY=$XAUTHORITY is not a regular file"
+  elif [ ! -r "$XAUTHORITY" ]; then
+    problem="XAUTHORITY=$XAUTHORITY is not readable"
+  else
+    # Sound, but clean up after an earlier bad run if we still can: a leftover
+    # empty directory at the fallback path is what a previous launch created,
+    # and it will be reused the moment XAUTHORITY goes missing again.
+    [ -d "$fallback" ] && rmdir "$fallback" 2>/dev/null
+    return 0
+  fi
+
+  {
+    echo "WARNING: X11 pass-through looks broken — $problem."
+    echo
+    echo "  GPU/Unreal containers will start, fail to open a display, exit 0, and"
+    echo "  restart in a loop. The visible error is \"dependency failed to start:"
+    echo "  container ...-unreal-airsim is unhealthy\", which says nothing about X11."
+    echo
+    if [ -d "$fallback" ]; then
+      echo "  A previous run already left an empty DIRECTORY at the fallback path:"
+      echo "      $fallback"
+      echo "  Docker created it when the bind source was missing. Remove it:"
+      echo "      rmdir $fallback      # sudo if it is root-owned"
+      echo
+    fi
+    cat <<'EOF'
+  Point XAUTHORITY at the real cookie before launching (GNOME/Wayland hosts):
+
+      export XAUTHORITY=$(ls -t /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -1)
+
+  Or skip the display entirely: ./launch.sh <scenario> --headless
+
+EOF
+  } >&2
+  return 1
+}
+
 # GPU passthrough preflight. dcgm-exporter (docker-compose-monitoring.yml),
 # airsim-xfs and the display container all carry a `driver: nvidia` device
 # reservation; without the NVIDIA Container Toolkit those fail deep inside the

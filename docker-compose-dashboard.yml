@@ -81,6 +81,19 @@ services:
       # Host Xauthority for that same session. GDM keeps it under
       # /run/user/<uid>/gdm; ~/.Xauthority is usually stale.
       - MNS_HOST_XAUTHORITY=${XAUTHORITY:-}
+      # XAUTHORITY as well, same host path, because generated stacks bind-mount
+      # `${XAUTHORITY:-/run/user/1000/gdm/Xauthority}` and interpolate it from
+      # WHOEVER runs `docker compose up` — which is this container. With only
+      # MNS_HOST_XAUTHORITY set, the sim fell through to that gdm fallback,
+      # which does not exist on a GNOME/Wayland host, so Docker created it as an
+      # empty DIRECTORY and bind-mounted that over /tmp/.Xauthority. Unreal then
+      # logged "Authorization required, but no authorization protocol specified"
+      # -> "Could not initialize SDL: x11 not available", exited 0, and
+      # restart: unless-stopped looped it until every dependent service failed
+      # with "dependency failed to start ... is unhealthy".
+      # The value is a HOST path used only for interpolation against the host
+      # daemon; this container never opens it, so no mount is needed here.
+      - XAUTHORITY=${XAUTHORITY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

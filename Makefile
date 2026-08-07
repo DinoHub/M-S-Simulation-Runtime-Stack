@@ -66,14 +66,19 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	# named, instead of mid-`up` — or, for the host-net ros2-node, not at all.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
 	check_registry DASHBOARD_PULL_POLICY || true; \
+	set -a; . ./product-images.env; set +a; \
+	check_images "$$MNS_STACK_GENERATOR_IMAGE" "$$MNS_AUTHORING_IMAGE" || true; \
+	check_x11 || true; \
 	check_ports 3001:airsim-dashboard-frontend:frontend \
 	            8001:airsim-dashboard-api:backend \
 	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):dashboard-lichtblick:Lichtblick \
 	            $(or $(FOXGLOVE_BRIDGE_PORT),8765):ros2-node:"Foxglove websocket" || exit 1
-	@set -a; . ./product-images.env; set +a; \
+	# compose_retry, not a bare `up`: one transient registry timeout otherwise
+	# aborts the whole start even though every image is already cached.
+	@. ./tools/compose_retry.sh; set -a; . ./product-images.env; set +a; \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
 	INIT_DB_SCHEMA=$(if $(filter true,$(DB)),true,false) \
-	docker compose -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
+	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082))"
 
 dashboard-down:

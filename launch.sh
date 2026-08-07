@@ -105,9 +105,22 @@ fi
 # Everything below is docker compose; bail out now with a diagnosis rather than
 # letting the first `up` fail on an image pull it never had permission to try.
 . "$SCRIPT_DIR/tools/check_docker.sh"
+# Retries an `up` that died on a transient registry timeout — see the file.
+. "$SCRIPT_DIR/tools/compose_retry.sh"
 check_docker || exit 1
 check_registry MNS_IMAGE_PULL_POLICY || true   # advisory — see the function's comment
 check_nvidia_runtime || true                   # advisory — see the function's comment
+# X11 for AirSim / GUI containers. Resolve BEFORE checking: the old
+# `${XAUTHORITY:-$HOME/.Xauthority}` default names a file that does not exist on
+# a GNOME/Wayland host, and Docker turns a missing bind source into an empty
+# directory rather than an error — see resolve_xauthority.
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="$(resolve_xauthority || echo "${XAUTHORITY:-}")"
+# --editor and --headless both skip the containerized sim's display, so an X11
+# problem only matters when the sim is actually rendering here.
+if [ "$EDITOR_MODE" != "true" ] && [ "$AIRSIM_HEADLESS" != "true" ]; then
+  check_x11 || true                            # advisory — see the function's comment
+fi
 
 export UID
 # The user's passwd primary group, NOT `id -g`: under `newgrp docker` the shell's
@@ -124,10 +137,6 @@ export GID="$(id -g "$(id -un)")"
 # hence every launch, not setup.sh.
 mkdir -p /tmp/iceoryx2 2>/dev/null && chmod 1777 /tmp/iceoryx2 2>/dev/null || \
   echo "WARNING: could not prepare /tmp/iceoryx2 — SHM lidar/fisheye will fall back to RPC." >&2
-
-# X11 setup (needed for AirSim / GUI containers)
-export DISPLAY="${DISPLAY:-:0}"
-export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
 
 # Resolve CONFIG_ROOT to an absolute path so subdirectory compose files
 # resolve mounts correctly regardless of working directory.
@@ -271,7 +280,7 @@ if [ "$START_MONITORING" = "true" ]; then
   # and merges a Loki datasource onto monitoring's grafana. It must be passed
   # alongside the monitoring file with both profiles, or grafana's depends_on
   # loki resolves to an undefined service.
-  docker compose \
+  compose_retry \
     -f docker-compose-monitoring.yml \
     -f docker-compose-logs.yml \
     --profile monitoring --profile logs up -d
@@ -367,14 +376,14 @@ if [ "$EDITOR_MODE" = "true" ]; then
 fi
 
 echo "Starting simulation stack ($SCENARIO)..."
-docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
+compose_retry --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
   "${COMPOSE_PROFILE_ARGS[@]}" up -d
 
 start_local_planner
 
 if [ "$START_METRICS" = "true" ]; then
   echo "Starting metrics stack..."
-  docker compose -f docker-compose-metrics.yml --profile metrics up -d
+  compose_retry -f docker-compose-metrics.yml --profile metrics up -d
 fi
 
 echo
