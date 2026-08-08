@@ -92,6 +92,7 @@ for b in req["bridges"]:
     prefix = b.get("topic_prefix") or declared.get("topic_prefix") or mod._DEFAULT_TOPIC_PREFIX
     active = bool(rename_map) or prefix != mod._DEFAULT_TOPIC_PREFIX
 
+    b["cameras"] = sorted((settings.get("Cameras") or {}))
     rels = mod._canonical_vehicle_topics(settings or None)
     fixed = set(mod._FIXED_VEHICLE_TOPICS)
 
@@ -171,6 +172,18 @@ for b in req["bridges"]:
                            "topic": mod._final_topic(b["vehicle"], canonical, active, rename_map, prefix),
                            "source": "canonical alias",
                            "renamed": False})
+
+    # Each RPC camera also gets a gimbal-pose publisher, named from the camera
+    # and — like the gimbal command inputs — never remapped, so it keeps the
+    # vehicle namespace whatever topic_prefix says. Gone with the RPC cameras
+    # when the SHM fisheye path is on. Observed as /Drone1/front/gimbal_pose.
+    if not (b.get("enable_shm_fisheye") or b.get("enable_vio")):
+        for cam in sorted((b.get("cameras") or [])):
+            rel = "%s/gimbal_pose" % cam
+            if not any(t["rel"] == rel for t in topics):
+                topics.append({"rel": rel,
+                               "topic": "/%s/%s" % (b["vehicle"], rel),
+                               "source": "fixed", "renamed": False})
 
     # Command inputs the vehicle node SUBSCRIBES to. They are absent from
     # _FIXED_VEHICLE_TOPICS, so nothing above enumerates them, yet they show up
