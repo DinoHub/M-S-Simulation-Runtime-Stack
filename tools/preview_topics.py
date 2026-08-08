@@ -141,6 +141,18 @@ for b in req["bridges"]:
                            "source": "derived",
                            "renamed": False})
 
+    # RPC camera publishers are DISABLED when the zero-copy fisheye path is on:
+    # single_vehicle.launch.py wires disable_rpc_cameras := enable_shm_fisheye,
+    # and the VIO branch turns that on too. Confirmed on a live stack launched
+    # with enable_vio:=true — `ros2 node info /Drone1` lists no camera publisher
+    # at all, and the settings.json camera therefore produces nothing on ROS.
+    # The fisheye nodes publish <cam>/image_raw instead, but only while the sim
+    # is actually writing to shared memory, so they are not promised here.
+    if b.get("enable_shm_fisheye") or b.get("enable_vio"):
+        for t in topics:
+            if t["rel"].endswith("/image") or t["rel"].endswith("/camera_info"):
+                t["source"] = "shm-camera"
+
     # Newer bridges also publish a canonical lidar alias whose name does not
     # depend on the sensor's settings.json name (lidar_topic_suffix:=auto
     # resolves the physical suffix onto it). Absent from images that do not
@@ -159,6 +171,25 @@ for b in req["bridges"]:
                            "topic": mod._final_topic(b["vehicle"], canonical, active, rename_map, prefix),
                            "source": "canonical alias",
                            "renamed": False})
+
+    # Command inputs the vehicle node SUBSCRIBES to. They are absent from
+    # _FIXED_VEHICLE_TOPICS, so nothing above enumerates them, yet they show up
+    # in `ros2 topic list` (which lists a topic with only a subscriber). Unless
+    # topic_names.yaml names them — rename_map keys ARE added to the remap set —
+    # they ignore topic_prefix entirely: gimbal sits under the node's own
+    # namespace, target detection at the root. Taken from `ros2 node info`.
+    for rel, native in (("gimbal_angle_euler_cmd", "/%s/gimbal_angle_euler_cmd" % b["vehicle"]),
+                        ("gimbal_angle_quat_cmd", "/%s/gimbal_angle_quat_cmd" % b["vehicle"]),
+                        ("target_detection", "/target_detection")):
+        if any(t["rel"] == rel for t in topics):
+            continue
+        remapped = rel in rename_map and active
+        topics.append({
+            "rel": rel,
+            "topic": mod._final_topic(b["vehicle"], rel, active, rename_map, prefix)
+                     if remapped else native,
+            "source": "command",
+            "renamed": remapped and rename_map[rel] != rel})
 
     # Rename rules for topics this vehicle never publishes: harmless, but a
     # typo'd key in topic_names.yaml looks exactly like this, so say so.
@@ -316,6 +347,10 @@ def collect_bridges(model: dict, settings_path):
             "enable_local_obs": args.get("enable_local_obs", "false") == "true",
             "enable_laserscan": args.get("enable_laserscan", "false") == "true",
             "canonical_lidar_topic": args.get("canonical_lidar_topic"),
+            # Either one routes cameras through iceoryx shared memory and
+            # disables the vehicle node's RPC camera publishers.
+            "enable_shm_fisheye": args.get("enable_shm_fisheye", "false") == "true",
+            "enable_vio": args.get("enable_vio", "false") == "true",
         })
     return bridges
 
@@ -389,9 +424,10 @@ def report(results, settings_path, brief=False):
             "command": "subscribed by the bridge (command inputs; still listed by `ros2 topic list`)",
             "service": "SERVICES, not topics (never in `ros2 topic list`)",
             "superseded": "NOT created — superseded by a name above",
+            "shm-camera": "NOT on ROS — camera rides the iceoryx SHM fisheye path",
         }
         for src in ("settings.json", "canonical alias", "derived", "fixed",
-                    "command", "service", "superseded"):
+                    "command", "service", "superseded", "shm-camera"):
             group = by_source.get(src)
             if not group:
                 continue
@@ -409,14 +445,11 @@ def report(results, settings_path, brief=False):
             print()
 
     if not brief:
-        print("  Scope: the vehicle node's own topic namespace. Verified against a live")
-        print("  ardupilot-xfs/xfs-fisheye stack — 14 of 16 names matched `ros2 topic list`")
-        print("  exactly. What it does NOT model:")
-        print("    - topics from nodes outside the vehicle node (gimbal commands,")
-        print("      target_detection); they keep their own naming.")
-        print("    - camera images carried over iceoryx SHM rather than ROS. With")
-        print("      \"Iceoryx fisheye: true\" in the bridge log, the camera topics listed")
-        print("      here are not published by the vehicle node at all.")
+        print("  Scope: the vehicle node's own graph. Verified against a live")
+        print("  ardupilot-xfs/xfs-fisheye stack — every name matched `ros2 topic list`,")
+        print("  which also lists ROS's own /clock, /rosout, /parameter_events, /tf and")
+        print("  /tf_static. Nodes outside the bridge launch (an autonomy stack of your")
+        print("  own, say) publish whatever they publish and are not visible here.")
         print()
 
     if brief and len(results) > 1:

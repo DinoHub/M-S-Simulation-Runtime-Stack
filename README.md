@@ -117,10 +117,14 @@ The output separates published topics from services and command inputs, and
 flags `topic_names.yaml` keys matching no topic on a vehicle — harmless for a
 sensor the scenario does not run, and identical to what a typo'd key looks like.
 
-Scope: the vehicle node's own namespace. Checked against a live
-`generated/xfs-fisheye` stack, 14 of 16 names matched `ros2 topic list` exactly.
-It does not model topics from nodes outside the vehicle node (gimbal commands,
-`target_detection`), nor camera images carried over iceoryx SHM rather than ROS.
+Scope: the vehicle node's own graph. Checked against a live
+`generated/xfs-fisheye` stack, every name matched `ros2 topic list` — which also
+lists ROS's own `/clock`, `/rosout`, `/parameter_events`, `/tf`, `/tf_static`.
+Two cases the listing calls out rather than hides: with `enable_vio` or
+`enable_shm_fisheye` the camera rides iceoryx shared memory and the vehicle node
+publishes no camera topic at all, and the settings.json-named lidar is
+superseded by the canonical `lidar/points` alias. Nodes outside the bridge
+launch are not visible here.
 
 ## Full Acceptance Test
 
