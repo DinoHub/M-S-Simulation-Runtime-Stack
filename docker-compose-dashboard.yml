@@ -74,6 +74,10 @@ services:
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}
+      # Grafana embed in the Launch phase's Observe area — served to the
+      # frontend at runtime via /api/services/ui-config, so enabling it is an
+      # env change here, never a frontend image rebuild. Empty = hidden.
+      - GRAFANA_URL=${GRAFANA_URL:-}
       # ScenarioLab editor (X11): the backend only forwards these VALUES to
       # the editor container it launches on the host daemon — this container
       # needs no X socket or GPU itself. DISPLAY also has a baked :0 default.
