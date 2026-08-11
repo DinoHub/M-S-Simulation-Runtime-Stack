@@ -25,3 +25,7 @@ generated/
 /scenarios/*
 !/scenarios/blocks-quickstart/
 !/scenarios/blocks-quickstart/ScenarioSpec.yaml
+!/scenarios/condo-ardupilot/
+!/scenarios/condo-ardupilot/ScenarioSpec.yaml
+!/scenarios/condo-px4/
+!/scenarios/condo-px4/ScenarioSpec.yaml
