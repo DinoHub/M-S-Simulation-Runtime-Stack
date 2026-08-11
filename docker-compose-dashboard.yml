@@ -23,13 +23,13 @@
 
 services:
   dashboard-backend:
-    image: ${DASHBOARD_BACKEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-backend-latest}
+    image: ${DASHBOARD_BACKEND_IMAGE:?source product-images.env}
     # All three images in this stack ride MUTABLE tags, and Compose's default
     # pull policy ("missing") only ever pulls when the tag is absent locally —
     # so a re-published -latest would never arrive. Pull every `up` instead.
     # Costs a manifest check per service and needs the registry reachable;
     # override with DASHBOARD_PULL_POLICY=missing to work offline.
-    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: airsim-dashboard-api
     ports:
       - "8001:8001"
@@ -150,7 +150,7 @@ services:
     image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
     # Same mutable-tag reasoning as the services above. Point AIRSIM_BRIDGE_IMAGE
     # at a locally built tag and set DASHBOARD_PULL_POLICY=missing to keep it.
-    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: ros2-node
     network_mode: host
     ipc: host
@@ -188,8 +188,8 @@ services:
     restart: unless-stopped
 
   dashboard-frontend:
-    image: ${DASHBOARD_FRONTEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-frontend-latest}
-    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
+    image: ${DASHBOARD_FRONTEND_IMAGE:?source product-images.env}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: airsim-dashboard-frontend
     ports:
       # The image bakes PORT=3001, so Next.js listens on 3001 inside the
@@ -205,7 +205,7 @@ services:
 
   dashboard-lichtblick:
     image: ghcr.io/lichtblick-suite/lichtblick:latest
-    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: dashboard-lichtblick
     ports:
       # This one is stuck on 8082: the frontend is a Next.js production build,
@@ -223,7 +223,7 @@ services:
   postgres-telemetry:
     profiles: ["db"]
     image: timescale/timescaledb:2.17.2-pg16
-    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: postgres-telemetry
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}

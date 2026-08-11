@@ -82,7 +82,19 @@ for var, (repo, tag, pinned_digest) in sorted(pins.items()):
     latest = max(candidates)[1] if candidates else tag
 
     if not family:
-        status = 'UNVERSIONED'
+        # A mutable tag (…-latest) never gets a newer *tag* — it is republished
+        # in place. So "stale" for these means the digest moved, which is only
+        # answerable because the pin carries one. Reporting UNVERSIONED and
+        # stopping, as this did, left exactly the images that change most often
+        # as the ones nothing could check.
+        if not pinned_digest:
+            status = 'NO_DIGEST'
+        elif live and live != pinned_digest:
+            status = 'TAG_MOVED'
+        elif not live:
+            status = 'NO_TAGS_FOUND'
+        else:
+            status = 'OK'
     elif not candidates:
         status = 'NO_TAGS_FOUND'
     elif not pinned_digest:
@@ -127,6 +139,7 @@ report) exit 0 ;;
     while IFS=$'\t' read -r var repo pinned latest status digest; do
         # Rewrite for anything that leaves the pin weaker than "one exact
         # image": behind (STALE), retagged (TAG_MOVED), or tag-only (NO_DIGEST).
+        # For a mutable tag, TAG_MOVED is the normal path — same tag, new digest.
         case "$status" in STALE|TAG_MOVED|NO_DIGEST) ;; *) continue ;; esac
         if [[ -z "$digest" ]]; then
             echo "skipped: $var — could not resolve a digest for ${repo}:${latest}" >&2
