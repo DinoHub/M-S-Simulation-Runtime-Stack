@@ -1,7 +1,7 @@
 # M&S Simulation Runtime Stack — dev convenience wrapper around ./launch.sh.
 #
 # Scenario targets (each wraps `./launch.sh <scenario> <flags>`):
-#   make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo
+#   make ardupilot-xfs | ardupilot-urbansim | px4-xfs | px4-condo | ardupilot-condo
 #
 # Flag vars -> launch.sh flags (set to `true` to enable):
 #   EDITOR=true            -> --editor                (skip sim container; run AirSim in UE editor)
@@ -51,7 +51,7 @@ ifeq ($(ALL),true)
 LAUNCH_FLAGS += --all
 endif
 
-SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
+SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
 .PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test
 
@@ -67,7 +67,7 @@ dashboard-down:
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
-	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo"
+	@echo "  make ardupilot-xfs | ardupilot-urbansim | px4-xfs | px4-condo | ardupilot-condo"
 	@echo "Flag vars (=true): EDITOR HEADLESS AGENT_EXTERNAL PIXEL_STREAMING MONITORING METRICS ALL"
 	@echo "  EDITOR=true skips containerized AirSim (run it from the Unreal editor on host)"
 	@echo "Utility targets:"
