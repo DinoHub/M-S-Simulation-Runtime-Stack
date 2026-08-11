@@ -77,14 +77,21 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	# aborts the whole start even though every image is already cached.
 	@. ./tools/compose_retry.sh; set -a; . ./product-images.env; set +a; \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
-	INIT_DB_SCHEMA=$(if $(filter true,$(DB)),true,false) \
 	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
+	# DB=true only: bounce the backend once postgres is healthy. Its telemetry
+	# pool is built at startup and never retried, so a backend that came up
+	# first — or that was already running when the database appeared — serves
+	# every telemetry endpoint off a dead pool until something restarts it. The
+	# API itself no longer waits on postgres (see the compose file), which is
+	# what makes this safe: worst case the bounce costs ~5s, and it cannot hang.
+	@$(if $(filter true,$(DB)),set -a; . ./product-images.env; set +a; 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db 	  restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082))"
 
 dashboard-down:
 	# --profile db unconditionally: without it `down` skips profiled services and
-	# leaves postgres-telemetry running as an orphan after a `DB=true` session.
-	# Naming a profile that was never up is a no-op, so this is safe either way.
+	# leaves postgres-telemetry (and the db-init one-shot) behind as orphans after
+	# a DB=true session. Naming a profile that was never up is a no-op, so this is
+	# safe either way.
 	@set -a; . ./product-images.env; set +a; \
 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db down
 
