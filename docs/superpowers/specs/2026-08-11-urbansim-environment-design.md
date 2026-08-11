@@ -70,10 +70,10 @@ MAVROS, bridges, QGC, zenoh, and the pixel-streaming signalling sidecar are
 copied unchanged (names aside).
 
 1. `image: ${AIRSIM_IMAGE:-dhdevspace/auto_mns:urbansimdemo-latest}`.
-2. **Keep the image entrypoint** (it owns the settings bootstrap). The
-   compose `command:` carries UE flags only. xfs invokes the binary path
-   directly because its image lacks an entrypoint wrapper; urbansim must
-   not do that.
+2. **Entrypoint overridden** (same pattern as xfs): the headless /
+   pixel-streaming toggles need shell conditionals, and the image's own
+   entrypoint only bootstraps settings.json — a no-op under our bind
+   mount. The compose command execs `/app/UrbanSimDemo/UrbanSimDemo.sh`.
 3. Settings mount: single target
    `.../urbansim/settings-ardupilot.json:/home/ue4/Documents/AirSim/settings.json:ro`
    (drop xfs's dual `/app/Xfs/settings.json` mount).
@@ -86,6 +86,11 @@ copied unchanged (names aside).
    same profiles (`sim`, `per-drone-bridge`, `agent-external`,
    `pixel-streaming`), same `user: ${UID}:${GID}` (maps onto ue4's
    1000:1000) and `group_add: video`.
+7. Healthcheck greps UE's generic `LogLoad: (Engine Initialization)` log
+   line instead of xfs's TEVV-specific "Display Control listening" line;
+   log path `/app/UrbanSimDemo/UrbanSimDemo/Saved/Logs/UrbanSimDemo.log`.
+8. Settings drop `PawnPaths`/`PawnPath` (xfs blueprint paths aren't in
+   this package); the Cosys-AirSim default multirotor pawn is used.
 
 ## Generator registration (`tools/generate_scenario.py`)
 
