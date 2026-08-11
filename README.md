@@ -54,6 +54,8 @@ Stop the browser shell with:
 
 `product-images.env` pins the four-image review channel: product shell, ScenarioLab authoring, stack generator, and Blocks runtime. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this E2E image set.
 
+Pins are `repo:tag@sha256:…` — the digest is the contract, the tag is there so the file is readable. `tools/check-image-pins.sh` reports staleness and `--bump` rewrites both parts. Why it works this way, and what it costs: [ADR 0001](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md).
+
 ## Full Acceptance Test
 
 Reviewers can run the deterministic packaged-authoring-to-live-runtime acceptance path with:
