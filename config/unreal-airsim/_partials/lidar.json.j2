@@ -1,0 +1,44 @@
+{# LIDAR_KIND toggle (shared by all four scenarios). The Cosys GPU lidar
+   (SensorType 8) uses a NESTED schema (BeamPattern/Range/Photometric/Timing)
+   + PublishToShm — the flat CPU-lidar keys are silently ignored by it.
+   Emits the LidarSensor1 entry only (no trailing comma): every template
+   includes it as the LAST key inside "Sensors". #}
+{% if lidar.kind == 'gpulidar' %}
+        "LidarSensor1": {
+          "SensorType": 8,
+          "Enabled": true,
+          "PublishToShm": true,
+          "DrawDebugPoints": false,
+          "Resolution": 512,
+          "_comment": "GPU LiDAR (SensorType 8): GPU-raytraced depth render, so a wide vertical FOV stays cheap (~10Hz) where the single-threaded CPU LiDAR (SensorType 6) collapsed to <1Hz. Nadir-hole radius = altitude / tan(|VerticalFOVLower|); -65deg = ~0.47*alt (tune the lower bound for the gap). Trade-offs vs CPU: single-return only, uniform FOV (no non-uniform VerticalAngles table), render-resolution-limited. Publishes /<veh>/gpulidar/pointsLidarSensor1 (NOT LidarSensor1/points) -> registration reads it via lidar_topic_suffix:=gpulidar/pointsLidarSensor1.",
+          "BeamPattern": {
+            "Channels": 64,
+            "HorizontalFOVStart": 0,
+            "HorizontalFOVEnd": 360,
+            "VerticalFOVUpper": 15,
+            "VerticalFOVLower": -45,
+            "MeasurementsPerCycle": 1024
+          },
+          "Range": {
+            "MinRangeMeters": 0.5,
+            "MaxRangeMeters": 100
+          },
+          "Photometric": { "GenerateIntensity": true },
+          "Timing": { "RotationsPerSecond": 10, "UpdateFrequency": 10 },
+          "X": 0,
+          "Y": 0,
+          "Z": -1.0,
+          "Yaw": 0,
+          "Pitch": 0,
+          "Roll": 0
+        }
+{% else %}
+        "LidarSensor1":{ "SensorType": 6, "Enabled": true,
+                         "NumberOfChannels": 16, "RotationsPerSecond": 30,
+                         "PointsPerSecond": 200000,
+                         "X": 0, "Y": 0, "Z": 0.5,
+                         "Roll": 0, "Pitch": 0, "Yaw": 0,
+                         "VerticalFOVUpper": 15, "VerticalFOVLower": -25,
+                         "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180,
+                         "DrawDebugPoints": false, "ExternalController": false }
+{% endif %}

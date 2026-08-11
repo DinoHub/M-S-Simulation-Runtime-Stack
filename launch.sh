@@ -35,16 +35,16 @@ Equivalent .env knob: EDITOR_MODE=true.
 
 --headless runs the containerized AirSim with -RenderOffScreen (no window,
 GPU still renders for cameras and PixelStreaming). Currently only consumed
-by the ardupilot-xfs scenario; ignored by others. Equivalent .env knob:
-AIRSIM_HEADLESS=true.
+by the ardupilot-xfs and ardupilot-urbansim scenarios; ignored by others.
+Equivalent .env knob: AIRSIM_HEADLESS=true.
 
---with-agent-external (ardupilot-xfs default flow only) also starts the
+--with-agent-external (ardupilot-xfs / ardupilot-urbansim default flow only) also starts the
 per-drone zenoh bridges (zenoh-bridge-{1..N}) onto agent_external for
 /shared/* topic routing. Without this flag, the per-drone airsim_bridge_dN
 containers run DDS-only on agent_internal-N.
 Equivalent .env knob: WITH_AGENT_EXTERNAL=true.
 
---with-pixel-streaming (ardupilot-xfs, px4-condo) starts the
+--with-pixel-streaming (ardupilot-xfs, ardupilot-urbansim, px4-condo) starts the
 pixel-streaming-signalling sidecar AND tells UE5 to dial it
 (-PixelStreamingURL). Default off — browser viewer disabled. View at
 http://localhost:\${PS_HTTP_PORT:-80} when enabled.
@@ -305,8 +305,8 @@ if [ -d "compose/${SCENARIO}/templates" ] && [ -f "$SCRIPT_DIR/tools/generate_sc
   fi
 fi
 
-# Pick profiles for ardupilot-xfs and px4-condo. Other scenarios don't have
-# profiles wired up yet — pass through unchanged.
+# Pick profiles for ardupilot-xfs, ardupilot-urbansim, and px4-condo. Other
+# scenarios don't have profiles wired up yet — pass through unchanged.
 COMPOSE_PROFILE_ARGS=()
 
 # The containerized AirSim sim service is gated behind the `sim` profile so
@@ -320,7 +320,7 @@ else
   COMPOSE_PROFILE_ARGS+=(--profile sim)
 fi
 
-if [ "$SCENARIO" = "ardupilot-xfs" ]; then
+if [ "$SCENARIO" = "ardupilot-xfs" ] || [ "$SCENARIO" = "ardupilot-urbansim" ]; then
   ensure_agent_internal_networks
   COMPOSE_PROFILE_ARGS+=(--profile per-drone-bridge)
   if [ "$WITH_AGENT_EXTERNAL" = "true" ]; then
@@ -332,9 +332,9 @@ if [ "$SCENARIO" = "ardupilot-xfs" ]; then
 fi
 
 # Pixel-streaming profile applies to scenarios that ship the
-# pixel-streaming-signalling sidecar (ardupilot-xfs, px4-condo).
+# pixel-streaming-signalling sidecar (ardupilot-xfs, ardupilot-urbansim, px4-condo).
 case "$SCENARIO" in
-  ardupilot-xfs|px4-condo)
+  ardupilot-xfs|ardupilot-urbansim|px4-condo)
     if [ "$ENABLE_PIXEL_STREAMING" = "true" ]; then
       COMPOSE_PROFILE_ARGS+=(--profile pixel-streaming)
       echo "Pixel streaming: enabled (signalling sidecar + UE5 dials it)"

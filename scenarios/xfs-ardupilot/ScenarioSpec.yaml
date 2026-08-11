@@ -1,0 +1,49 @@
+schema: mns.scenario.v1
+id: xfs-ardupilot
+name: xfs-ardupilot
+environment:
+  id: xfs
+runtime:
+  profile: airsim_unreal_ardupilot_docker
+  features:
+    sim_real_eval: true
+    ros2_bridge: true
+    qgroundcontrol: false
+    mavros: false
+vehicles:
+  - id: drone_1
+    name: Drone1
+    runtime_name: Drone1
+    ros_domain_id: 1
+    start:
+      x: 0
+      'y': 0
+      z: 0
+      yaw: 0
+    cameras:
+      front:
+        capture_settings:
+          - image_type: 0
+            fov_degrees: 220
+            # explicit: generator <= v0.2.0-review.16 drops Width/Height when
+            # capture_settings is authored (falls back to AirSim's 256x144)
+            width: 1280
+            height: 720
+    sensors:
+      imu: true
+      gps: true
+      barometer: true
+      magnetometer: true
+      gpu_lidars:
+        - name: GPUlidar1
+          # explicit: generator <= v0.2.0-review.16 leaves collection-form
+          # lidars Enabled=false unless stated
+          enabled: true
+          position:
+            x: 0
+            'y': 0
+            z: 0
+          rotation:
+            roll: 0
+            pitch: 0
+            yaw: 0

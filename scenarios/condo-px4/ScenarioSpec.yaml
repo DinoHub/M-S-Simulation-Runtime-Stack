@@ -1,0 +1,53 @@
+schema: mns.scenario.v1
+id: condo-px4
+name: condo-px4
+environment:
+  id: condo
+runtime:
+  profile: airsim_unreal_px4_docker
+  features:
+    sim_real_eval: false
+    ros2_bridge: true
+    qgroundcontrol: true
+    mavros: true
+vehicles:
+  - id: drone_1
+    name: Drone1
+    runtime_name: Copter1
+    ros_domain_id: 1
+    start:
+      x: 0
+      'y': -20
+      z: 1.3
+      yaw: 0
+    cameras:
+      front:
+        width: 1280
+        height: 720
+        fov_degrees: 81
+        position:
+          x: 0.155
+          'y': 0
+          z: -0.35
+        rotation:
+          pitch: -25
+          roll: 0
+          yaw: 0
+    sensors:
+      imu: true
+      gps: true
+      barometer: true
+      magnetometer: true
+      lidar:
+        enabled: true
+        channels: 16
+        rotations_per_second: 30
+        points_per_second: 200000
+        position:
+          x: 0
+          'y': 0
+          z: 0.5
+        rotation:
+          roll: 0
+          pitch: 0
+          yaw: 0
