@@ -38,6 +38,11 @@ services:
       # itself (idempotent) — no SQL files needed on this machine.
       - INIT_DB_SCHEMA=${INIT_DB_SCHEMA:-true}
       - SIM2REAL_RUNS_DIR=/data/runs
+      # Embedded in the Monitor's Grafana tab. The browser resolves it, so it
+      # is a host URL, not a container one. Its panels read ClickHouse, which
+      # is fed by metrics-kafka-bridge — enable the live stream in the wizard's
+      # Metrics step or the dashboard renders empty.
+      - GRAFANA_URL=${GRAFANA_URL:-http://localhost:3000/d/metrics-robotics/robotics-telemetry?kiosk}
       # distribution mode: generate through the pinned generator image
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:?set MSRS_ROOT to this repository's absolute path}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:?source product-images.env}
