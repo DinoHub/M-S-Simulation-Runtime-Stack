@@ -48,10 +48,17 @@ services:
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:?source product-images.env}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}
+      # Host Xauthority for the authoring container's X11 session. GDM keeps it
+      # under /run/user/<uid>/gdm; ~/.Xauthority is usually stale.
+      - MNS_HOST_XAUTHORITY=${XAUTHORITY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Host registry credentials, so the backend's docker client can pull the
+      # generator and authoring images on a machine that does not have them
+      # yet — which is every fresh clone.
+      - ${HOME}/.docker/config.json:/root/.docker/config.json:ro
       # this repo at its identical host path (generator + stack lifecycle)
       - ${MSRS_ROOT:?set MSRS_ROOT}:${MSRS_ROOT}
       - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
@@ -61,7 +68,12 @@ services:
     image: ${DASHBOARD_FRONTEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-frontend-latest}
     container_name: airsim-dashboard-frontend
     ports:
-      - "3001:3000"
+      # The image sets ENV PORT 3001 and EXPOSEs 3001, so the container side
+      # must be 3001. Mapping to 3000 publishes a port nothing listens on:
+      # docker-proxy accepts the connection and then fails upstream, which the
+      # browser reports as ERR_CONNECTION_RESET — indistinguishable from the
+      # container being down, while `docker ps` shows it happily Up.
+      - "3001:3001"
     environment:
       - NEXT_PUBLIC_LICHTBLICK_URL=${NEXT_PUBLIC_LICHTBLICK_URL:-http://localhost:8082}
     restart: unless-stopped
