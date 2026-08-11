@@ -146,46 +146,19 @@ services:
   # and receives /CopterN/* data). One domain at a time —
   # DASHBOARD_ROS_DOMAIN_ID picks the drone (ardupilot-xfs: drone N =
   # domain N; condo scenarios: 0).
-  ros2-node:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
-    # Same mutable-tag reasoning as the services above. Point AIRSIM_BRIDGE_IMAGE
-    # at a locally built tag and set DASHBOARD_PULL_POLICY=missing to keep it.
-    pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
-    container_name: ros2-node
-    network_mode: host
-    ipc: host
-    # uid 1000 (not the image's root->user entrypoint switch); docker exec
-    # from the backend then runs as the same uid, and bags land on the host
-    # runs dir owned by the login user instead of root.
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-    environment:
-      # HOME must be writable: uid 1000 is absent from the image's
-      # /etc/passwd, so HOME defaults to / and ros2/rosbag2 cannot write
-      # their state dirs (same fix as the scenario bridges).
-      - HOME=/tmp
-      - ROS_DOMAIN_ID=${DASHBOARD_ROS_DOMAIN_ID:-1}
-      - ROS_LOCALHOST_ONLY=0
-    volumes:
-      - /dev/shm:/dev/shm:rw
-      # Replay fast path: bags.py symlinks bags under /data/runs instead of
-      # multi-GB docker cp — same runs dir the backend mounts.
-      - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
-      # Recorder writes /shared_volume/rosbags/<mission>_<ts>; point it at
-      # the runs dir so recordings surface as replayable runs.
-      - ${TEVV_RUNS_DIR:-~/tevv-runs}:/shared_volume
-    # Foxglove websocket for Lichtblick + keeps the container alive for the
-    # backend's docker-exec record/replay calls. 8765 is the Foxglove
-    # standard (Lichtblick's default URL + the backend's FOXGLOVE_PROBE_PORT),
-    # so this side keeps it and everything else moved off: the product shell to
-    # 8760, and the monitoring profile's foxglove-bridge to
-    # MONITORING_FOXGLOVE_PORT (8766). Both are host-net, so a clash here is a
-    # silent "address already in use" inside whichever started second, not a
-    # compose bind error.
-    command:
-      - "bash"
-      - "-lc"
-      - "ros2 run foxglove_bridge foxglove_bridge --ros-args -p port:=${FOXGLOVE_BRIDGE_PORT:-8765}"
-    restart: unless-stopped
+  # ros2-node is NOT declared here on purpose. The dashboard backend owns it:
+  # it is the only thing that knows which ROS domain the viewer should watch —
+  # the domain follows whichever stack is running — and changing that means
+  # recreating the container. While both sides declared it, whichever started
+  # second failed with `container name "/ros2-node" is already in use`, so
+  # `make dashboard` broke on any machine that had launched a stack.
+  #
+  # The backend creates it at startup and re-creates it on domain changes, with
+  # the same knobs this file used to parameterise: AIRSIM_BRIDGE_IMAGE,
+  # FOXGLOVE_BRIDGE_PORT, DASHBOARD_ROS_DOMAIN_ID, TEVV_RUNS_DIR, HOST_UID/GID.
+  # 8765 is still the Foxglove standard port and still arbitrated the same way:
+  # the product shell moved to 8760 and the monitoring profile's bridge to
+  # MONITORING_FOXGLOVE_PORT (8766).
 
   dashboard-frontend:
     image: ${DASHBOARD_FRONTEND_IMAGE:?source product-images.env}
