@@ -23,7 +23,7 @@ shows the sim-to-real verdicts the `sim-real-eval` worker writes there
 automatically after each recorded run (enable with
 `runtime.features: { sim_real_eval: true }` in the scenario).
 
-The browser product shell (`./product.sh start`, port 8765) remains the
+The browser product shell (`./product.sh start`, port 8760) remains the
 visual ScenarioLab authoring surface; the dashboard links to it. Grafana
 monitoring stays on :3000 — the dashboard uses :3001.
 
@@ -39,7 +39,8 @@ Requirements: Docker Engine with Compose, an NVIDIA-capable runtime for Unreal i
 ./product.sh start
 ```
 
-Open <http://127.0.0.1:8765>.
+Open <http://127.0.0.1:8760> (`MNS_SCENARIO_LAUNCHER_PORT`; it was 8765 until
+the Foxglove websocket claimed that port).
 
 1. The Runtime form is prefilled with `scenarios/blocks-quickstart`. Click **Generate and Run** for the shortest end-to-end check.
 2. Use **Show Status**, **Show Logs**, and **Stop Runtime** for `generated/blocks-quickstart`.
@@ -55,6 +56,75 @@ Stop the browser shell with:
 `product-images.env` pins the four-image review channel: product shell, ScenarioLab authoring, stack generator, and Blocks runtime. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this E2E image set.
 
 Pins are `repo:tag@sha256:…` — the digest is the contract, the tag is there so the file is readable. `tools/check-image-pins.sh` reports staleness and `--bump` rewrites both parts. Why it works this way, and what it costs: [ADR 0001](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md).
+
+### When the registry is unreachable
+
+Services on mutable tags pull on every start, so a Docker Hub outage aborts the
+whole `up` — even when the image is already cached locally:
+
+```
+failed to resolve reference "docker.io/dhdevspace/auto_mns:tevv-airsim-xfs-latest":
+failed to do request: Head "https://registry-1.docker.io/v2/...": net/http: TLS handshake timeout
+```
+
+These blips are usually brief, so retry first (`./product.sh setup` now retries
+each pull three times with backoff). To start from the local cache instead, set
+the pull policy for the stack you are launching:
+
+| Stack | Variable |
+|-------|----------|
+| Generated stacks (`generated/<name>/`), scenario stacks, metrics | `MNS_IMAGE_PULL_POLICY=missing` |
+| TEVV dashboard (`make dashboard`) | `DASHBOARD_PULL_POLICY=missing` |
+
+```bash
+MNS_IMAGE_PULL_POLICY=missing ./launch.sh ardupilot-xfs
+DASHBOARD_PULL_POLICY=missing make dashboard
+```
+
+Generated stacks also carry the variable in their own `generated/<name>/.env`,
+which the launcher reads — edit it there to make the setting stick. Confirm what
+is cached with `docker images | grep auto_mns`; `./product.sh doctor` reports any
+of the four pinned product images that are missing. `launch.sh` and
+`make dashboard` warn up front when the registry does not answer.
+
+## What will this stack publish?
+
+The bridges' topic names are the product of four inputs that only meet at
+runtime — `settings.json` sensors/cameras, `topic_names.yaml` renames,
+`topic_prefix`/`TOPIC_PREFIX`, and the bridge's fixed topic list. Resolve them
+before starting anything:
+
+```bash
+make topics                                # default scenario
+make topics SCENARIO=ardupilot-xfs
+make topics STACK=generated/xfs-fisheye
+./tools/preview_topics.py ardupilot-xfs --json
+TOPIC_PREFIX=/ make topics SCENARIO=ardupilot-xfs   # preview the flattened names
+```
+
+`./launch.sh` prints a short version of this before every `up`; set
+`PREVIEW_TOPICS=false` to skip it.
+
+The names come from the bridge image's own launch code (`_final_topic`,
+`_canonical_vehicle_topics`, `load_topic_renames`) and each entry launch file's
+declared argument defaults — not a second copy of the rules here — so a new
+bridge image changes this output with it. That matters because the two bridge
+images in use disagree: `airsim-ros2-bridge` defaults `topic_prefix` to
+`{vehicle}/` while `tevv-airsim-ros2-bridge-humble` defaults it to `/` and adds a
+canonical `lidar/points` alias.
+
+The output separates published topics from services and command inputs, and
+flags `topic_names.yaml` keys matching no topic on a vehicle — harmless for a
+sensor the scenario does not run, and identical to what a typo'd key looks like.
+
+Scope: the vehicle node's own graph. Checked against a live
+`generated/xfs-fisheye` stack, every name matched `ros2 topic list` — which also
+lists ROS's own `/clock`, `/rosout`, `/parameter_events`, `/tf`, `/tf_static`.
+Two cases the listing calls out rather than hides: with `enable_vio` or
+`enable_shm_fisheye` the camera rides iceoryx shared memory and the vehicle node
+publishes no camera topic at all, and the settings.json-named lidar is
+superseded by the canonical `lidar/points` alias. Nodes outside the bridge
+launch are not visible here.
 
 ## Full Acceptance Test
 
