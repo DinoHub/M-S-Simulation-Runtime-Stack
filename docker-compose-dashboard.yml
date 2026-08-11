@@ -59,10 +59,17 @@ services:
       # whatever the database is doing.
       - INIT_DB_SCHEMA=false
       - SIM2REAL_RUNS_DIR=/data/runs
-      # Embedded in the Monitor's Grafana tab. The browser resolves it, so it
-      # is a host URL, not a container one. Its panels read ClickHouse, which
-      # is fed by metrics-kafka-bridge — enable the live stream in the wizard's
-      # Metrics step or the dashboard renders empty.
+      # ONE entry, read by two consumers: the Monitor tab's Grafana panel and
+      # the Launch phase's Observe embed (served to the frontend at runtime via
+      # /api/services/ui-config, so enabling it is an env change here, never a
+      # frontend rebuild). It was declared twice, once per feature — and since
+      # a later duplicate wins in compose, the second one's empty default
+      # silently overrode this URL and switched the Monitor panel off.
+      #
+      # A host URL, not a container one: the browser resolves it. Its panels
+      # read ClickHouse, fed by metrics-kafka-bridge — enable the live stream in
+      # the wizard's Metrics step or the dashboard renders empty. Set
+      # GRAFANA_URL= (empty) to hide both embeds.
       - GRAFANA_URL=${GRAFANA_URL:-http://localhost:3000/d/metrics-robotics/robotics-telemetry?kiosk}
       # /api/services/viz-health probes lichtblick here. Tracks the published
       # port above, so overriding DASHBOARD_LICHTBLICK_PORT cannot leave the
@@ -78,10 +85,6 @@ services:
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}
-      # Grafana embed in the Launch phase's Observe area — served to the
-      # frontend at runtime via /api/services/ui-config, so enabling it is an
-      # env change here, never a frontend image rebuild. Empty = hidden.
-      - GRAFANA_URL=${GRAFANA_URL:-}
       # ScenarioLab editor (X11): the backend only forwards these VALUES to
       # the editor container it launches on the host daemon — this container
       # needs no X socket or GPU itself. DISPLAY also has a baked :0 default.
