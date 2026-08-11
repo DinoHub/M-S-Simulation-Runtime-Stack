@@ -24,65 +24,203 @@
 services:
   dashboard-backend:
     image: ${DASHBOARD_BACKEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-backend-latest}
+    # All three images in this stack ride MUTABLE tags, and Compose's default
+    # pull policy ("missing") only ever pulls when the tag is absent locally —
+    # so a re-published -latest would never arrive. Pull every `up` instead.
+    # Costs a manifest check per service and needs the registry reachable;
+    # override with DASHBOARD_PULL_POLICY=missing to work offline.
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
     container_name: airsim-dashboard-api
     ports:
       - "8001:8001"
     environment:
       - AIRSIM_HOST=host.docker.internal
-      - POSTGRES_HOST=postgres-telemetry
-      - POSTGRES_PORT=5432
+      # postgres-telemetry is a service in THIS compose file (db profile), so
+      # reach it by service name on the default network. It publishes no host
+      # port, so the host.docker.internal form this used to carry — from when
+      # postgres lived on the monitoring stack — resolved to nothing.
+      - POSTGRES_HOST=${DASHBOARD_POSTGRES_HOST:-postgres-telemetry}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
       - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
       - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
-      # With the db profile up, the backend applies its telemetry schema
-      # itself (idempotent) — no SQL files needed on this machine.
-      - INIT_DB_SCHEMA=${INIT_DB_SCHEMA:-true}
+      # Deliberately never true here, and not overridable to true by accident.
+      #
+      # The image's /docker-entrypoint.sh applies the schema BEFORE `exec
+      # uvicorn`, retrying psycopg2.connect 60x2s. So INIT_DB_SCHEMA=true means
+      # the API cannot listen until postgres answers or 120s elapse — the
+      # browser gets "Cannot reach the dashboard API: Failed to fetch" from a
+      # container that looks perfectly Up, and restarting it restarts the wait.
+      # Defaulting it to false fixed the common case but left the coupling in
+      # place: anything that removed postgres while the flag was on brought the
+      # whole dashboard down with it.
+      #
+      # The db-init one-shot below owns that work now, so the API starts in ~4s
+      # whatever the database is doing.
+      - INIT_DB_SCHEMA=false
       - SIM2REAL_RUNS_DIR=/data/runs
-      # Embedded in the Monitor's Grafana tab. The browser resolves it, so it
-      # is a host URL, not a container one. Its panels read ClickHouse, which
-      # is fed by metrics-kafka-bridge — enable the live stream in the wizard's
-      # Metrics step or the dashboard renders empty.
+      # ONE entry, read by two consumers: the Monitor tab's Grafana panel and
+      # the Launch phase's Observe embed (served to the frontend at runtime via
+      # /api/services/ui-config, so enabling it is an env change here, never a
+      # frontend rebuild). It was declared twice, once per feature — and since
+      # a later duplicate wins in compose, the second one's empty default
+      # silently overrode this URL and switched the Monitor panel off.
+      #
+      # A host URL, not a container one: the browser resolves it. Its panels
+      # read ClickHouse, fed by metrics-kafka-bridge — enable the live stream in
+      # the wizard's Metrics step or the dashboard renders empty. Set
+      # GRAFANA_URL= (empty) to hide both embeds.
       - GRAFANA_URL=${GRAFANA_URL:-http://localhost:3000/d/metrics-robotics/robotics-telemetry?kiosk}
-      # distribution mode: generate through the pinned generator image
+      # /api/services/viz-health probes lichtblick here. Tracks the published
+      # port above, so overriding DASHBOARD_LICHTBLICK_PORT cannot leave the
+      # dashboard reporting "Visualization stack unavailable" for a service
+      # that is actually running.
+      - LICHTBLICK_PROBE_PORT=${DASHBOARD_LICHTBLICK_PORT:-8082}
+      # distribution mode: generate through the pinned generator image.
+      # Generator/authoring pins are BAKED into the backend image as defaults
+      # (MNS_*_IMAGE_DEFAULT), so the env lines below are overrides — empty is
+      # fine on an image-only deploy; product-images.env keeps them explicit.
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:?set MSRS_ROOT to this repository's absolute path}
-      - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:?source product-images.env}
+      - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
+      - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}
-      # Host Xauthority for the authoring container's X11 session. GDM keeps it
-      # under /run/user/<uid>/gdm; ~/.Xauthority is usually stale.
+      # ScenarioLab editor (X11): the backend only forwards these VALUES to
+      # the editor container it launches on the host daemon — this container
+      # needs no X socket or GPU itself. DISPLAY also has a baked :0 default.
+      - DISPLAY=${DISPLAY:-:0}
+      # Host Xauthority for that same session. GDM keeps it under
+      # /run/user/<uid>/gdm; ~/.Xauthority is usually stale.
       - MNS_HOST_XAUTHORITY=${XAUTHORITY:-}
+      # XAUTHORITY as well, same host path, because generated stacks bind-mount
+      # `${XAUTHORITY:-/run/user/1000/gdm/Xauthority}` and interpolate it from
+      # WHOEVER runs `docker compose up` — which is this container. With only
+      # MNS_HOST_XAUTHORITY set, the sim fell through to that gdm fallback,
+      # which does not exist on a GNOME/Wayland host, so Docker created it as an
+      # empty DIRECTORY and bind-mounted that over /tmp/.Xauthority. Unreal then
+      # logged "Authorization required, but no authorization protocol specified"
+      # -> "Could not initialize SDL: x11 not available", exited 0, and
+      # restart: unless-stopped looped it until every dependent service failed
+      # with "dependency failed to start ... is unhealthy".
+      # The value is a HOST path used only for interpolation against the host
+      # daemon; this container never opens it, so no mount is needed here.
+      - XAUTHORITY=${XAUTHORITY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # Host registry credentials, so the backend's docker client can pull the
-      # generator and authoring images on a machine that does not have them
-      # yet — which is every fresh clone.
-      - ${HOME}/.docker/config.json:/root/.docker/config.json:ro
+      # Registry credentials for the generator image. The socket alone is not
+      # enough: `docker run <generator>` from in here pulls with THIS
+      # container's config, so without it the pull of the private
+      # dhdevspace/auto_mns generator is anonymous and /api/scenario/generate
+      # fails with 422 "generation failed". Same read-only mount product.sh
+      # already does (product.sh:24).
+      - ${DOCKER_CONFIG:-${HOME}/.docker}:/root/.docker:ro
       # this repo at its identical host path (generator + stack lifecycle)
       - ${MSRS_ROOT:?set MSRS_ROOT}:${MSRS_ROOT}
       - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
+    # No depends_on the database, deliberately. It used to gate on
+    # postgres-telemetry being healthy (required: false, so the db stayed
+    # opt-in), which was right while this container ran the schema init. Now
+    # that db-init owns that, gating here would only reintroduce a smaller
+    # version of the same failure: a sick database would keep the API from
+    # starting at all. Telemetry endpoints failing is a far better outcome than
+    # an unreachable dashboard.
+    # Marks the ~4s of import + startup where the API is up but not listening.
+    # /api/scenario/catalog rather than a bare TCP probe: it is a plain read of
+    # the generator's environment/profile lists, so it answers 200 only once
+    # routing is actually live.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/api/scenario/catalog >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  # ROS2 sidecar the backend drives over the docker socket for bag
+  # record/replay (services/ros2_recorder.py + ros2_player.py exec into it;
+  # container name must match ROS2_CONTAINER_NAME, default "ros2-node").
+  # The bridge image ships ros2 + rosbag2 + foxglove_bridge, so the same
+  # container also serves the Foxglove websocket (:8765) that Lichtblick
+  # connects to for rendering replayed/live topics.
+  #
+  # host net + ipc host + /dev/shm: DDS reaches the per-drone bridge islands
+  # via shared memory even though they sit on agent_internal-N docker
+  # networks (verified: host-net container on the right ROS_DOMAIN_ID sees
+  # and receives /CopterN/* data). One domain at a time —
+  # DASHBOARD_ROS_DOMAIN_ID picks the drone (ardupilot-xfs: drone N =
+  # domain N; condo scenarios: 0).
+  ros2-node:
+    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    # Same mutable-tag reasoning as the services above. Point AIRSIM_BRIDGE_IMAGE
+    # at a locally built tag and set DASHBOARD_PULL_POLICY=missing to keep it.
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
+    container_name: ros2-node
+    network_mode: host
+    ipc: host
+    # uid 1000 (not the image's root->user entrypoint switch); docker exec
+    # from the backend then runs as the same uid, and bags land on the host
+    # runs dir owned by the login user instead of root.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      # HOME must be writable: uid 1000 is absent from the image's
+      # /etc/passwd, so HOME defaults to / and ros2/rosbag2 cannot write
+      # their state dirs (same fix as the scenario bridges).
+      - HOME=/tmp
+      - ROS_DOMAIN_ID=${DASHBOARD_ROS_DOMAIN_ID:-1}
+      - ROS_LOCALHOST_ONLY=0
+    volumes:
+      - /dev/shm:/dev/shm:rw
+      # Replay fast path: bags.py symlinks bags under /data/runs instead of
+      # multi-GB docker cp — same runs dir the backend mounts.
+      - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
+      # Recorder writes /shared_volume/rosbags/<mission>_<ts>; point it at
+      # the runs dir so recordings surface as replayable runs.
+      - ${TEVV_RUNS_DIR:-~/tevv-runs}:/shared_volume
+    # Foxglove websocket for Lichtblick + keeps the container alive for the
+    # backend's docker-exec record/replay calls. 8765 is the Foxglove
+    # standard (Lichtblick's default URL + the backend's FOXGLOVE_PROBE_PORT),
+    # so this side keeps it and everything else moved off: the product shell to
+    # 8760, and the monitoring profile's foxglove-bridge to
+    # MONITORING_FOXGLOVE_PORT (8766). Both are host-net, so a clash here is a
+    # silent "address already in use" inside whichever started second, not a
+    # compose bind error.
+    command:
+      - "bash"
+      - "-lc"
+      - "ros2 run foxglove_bridge foxglove_bridge --ros-args -p port:=${FOXGLOVE_BRIDGE_PORT:-8765}"
     restart: unless-stopped
 
   dashboard-frontend:
     image: ${DASHBOARD_FRONTEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-frontend-latest}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
     container_name: airsim-dashboard-frontend
     ports:
-      # The image sets ENV PORT 3001 and EXPOSEs 3001, so the container side
-      # must be 3001. Mapping to 3000 publishes a port nothing listens on:
-      # docker-proxy accepts the connection and then fails upstream, which the
-      # browser reports as ERR_CONNECTION_RESET — indistinguishable from the
-      # container being down, while `docker ps` shows it happily Up.
+      # The image bakes PORT=3001, so Next.js listens on 3001 inside the
+      # container, not the standalone default of 3000. Mapping 3001:3000 hit a
+      # dead port; the browser reported an empty response / connection reset
+      # while `docker ps` showed the container happily Up.
       - "3001:3001"
     environment:
-      - NEXT_PUBLIC_LICHTBLICK_URL=${NEXT_PUBLIC_LICHTBLICK_URL:-http://localhost:8082}
+      # Pinned so the port mapping above cannot drift from an image default.
+      - PORT=3001
+      - NEXT_PUBLIC_LICHTBLICK_URL=${NEXT_PUBLIC_LICHTBLICK_URL:-http://localhost:${DASHBOARD_LICHTBLICK_PORT:-8082}}
     restart: unless-stopped
 
   dashboard-lichtblick:
     image: ghcr.io/lichtblick-suite/lichtblick:latest
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
     container_name: dashboard-lichtblick
     ports:
-      - "8082:8080"
+      # This one is stuck on 8082: the frontend is a Next.js production build,
+      # so NEXT_PUBLIC_LICHTBLICK_URL was inlined into the client bundle at
+      # BUILD time (localhost:8082 appears ~15x under /app/.next) and cannot be
+      # moved from here. The monitoring stack's own lichtblick used to claim
+      # 8082 too, which is why `./launch.sh --with-monitoring` died with
+      # "Bind for 0.0.0.0:8082 failed: port is already allocated" whenever the
+      # dashboard was up; that one moved to MONITORING_LICHTBLICK_PORT (8084).
+      - "${DASHBOARD_LICHTBLICK_PORT:-8082}:8080"
     restart: unless-stopped
 
   # Telemetry DB — opt-in: docker compose --profile db (or make dashboard DB=true).
@@ -90,6 +228,7 @@ services:
   postgres-telemetry:
     profiles: ["db"]
     image: timescale/timescaledb:2.17.2-pg16
+    pull_policy: ${DASHBOARD_PULL_POLICY:-always}
     container_name: postgres-telemetry
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
@@ -97,7 +236,45 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
     volumes:
       - dashboard-telemetry-db:/var/lib/postgresql/data
+    # What db-init gates on. pg_isready, not a TCP probe: timescaledb's
+    # entrypoint starts postgres once on a throwaway socket to run initdb, so
+    # the port answers before the database is really there.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airsim_user} -d ${POSTGRES_DB:-drone_telemetry}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     restart: unless-stopped
+
+  # Schema init, moved out of the API container so it cannot delay serving.
+  #
+  # Same image and the same entrypoint code path, but with INIT_DB_SCHEMA=true
+  # and `true` as the command: the entrypoint applies db/schema.sql and
+  # db/alembic_baseline.sql (both idempotent), then exec's `true` and the
+  # container exits 0. Runs only under the db profile, so a no-database
+  # dashboard never starts it.
+  #
+  # Gated on postgres being healthy rather than merely started, which is what
+  # makes the entrypoint's 120s retry loop a backstop instead of the mechanism.
+  db-init:
+    profiles: ["db"]
+    image: ${DASHBOARD_BACKEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-backend-latest}
+    container_name: dashboard-db-init
+    environment:
+      - INIT_DB_SCHEMA=true
+      - POSTGRES_HOST=postgres-telemetry
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
+      - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
+    command: ["true"]
+    depends_on:
+      postgres-telemetry:
+        condition: service_healthy
+    # A one-shot must not be resurrected: `unless-stopped` would restart it on
+    # every daemon start and re-run the init forever.
+    restart: "no"
 
 volumes:
   dashboard-telemetry-db:

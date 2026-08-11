@@ -313,7 +313,10 @@ services:
   # ============================================================================
   qgroundcontrol-x11:
     image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
-    pull_policy: always
+    # Mutable tag, so pull every start; MNS_IMAGE_PULL_POLICY=missing starts
+    # from the local cache when the registry is unreachable. See the same note
+    # on airsim-xfs in the ardupilot-xfs stack.
+    pull_policy: ${MNS_IMAGE_PULL_POLICY:-always}
     container_name: qgroundcontrol-x11
     hostname: qgc-x11
     restart: unless-stopped

@@ -35,16 +35,16 @@ Equivalent .env knob: EDITOR_MODE=true.
 
 --headless runs the containerized AirSim with -RenderOffScreen (no window,
 GPU still renders for cameras and PixelStreaming). Currently only consumed
-by the ardupilot-xfs scenario; ignored by others. Equivalent .env knob:
-AIRSIM_HEADLESS=true.
+by the ardupilot-xfs and ardupilot-urbansim scenarios; ignored by others.
+Equivalent .env knob: AIRSIM_HEADLESS=true.
 
---with-agent-external (ardupilot-xfs default flow only) also starts the
+--with-agent-external (ardupilot-xfs / ardupilot-urbansim default flow only) also starts the
 per-drone zenoh bridges (zenoh-bridge-{1..N}) onto agent_external for
 /shared/* topic routing. Without this flag, the per-drone airsim_bridge_dN
 containers run DDS-only on agent_internal-N.
 Equivalent .env knob: WITH_AGENT_EXTERNAL=true.
 
---with-pixel-streaming (ardupilot-xfs, px4-condo) starts the
+--with-pixel-streaming (ardupilot-xfs, ardupilot-urbansim, px4-condo) starts the
 pixel-streaming-signalling sidecar AND tells UE5 to dial it
 (-PixelStreamingURL). Default off — browser viewer disabled. View at
 http://localhost:\${PS_HTTP_PORT:-80} when enabled.
@@ -105,8 +105,22 @@ fi
 # Everything below is docker compose; bail out now with a diagnosis rather than
 # letting the first `up` fail on an image pull it never had permission to try.
 . "$SCRIPT_DIR/tools/check_docker.sh"
+# Retries an `up` that died on a transient registry timeout — see the file.
+. "$SCRIPT_DIR/tools/compose_retry.sh"
 check_docker || exit 1
-check_nvidia_runtime || true   # advisory — see the function's comment
+check_registry MNS_IMAGE_PULL_POLICY || true   # advisory — see the function's comment
+check_nvidia_runtime || true                   # advisory — see the function's comment
+# X11 for AirSim / GUI containers. Resolve BEFORE checking: the old
+# `${XAUTHORITY:-$HOME/.Xauthority}` default names a file that does not exist on
+# a GNOME/Wayland host, and Docker turns a missing bind source into an empty
+# directory rather than an error — see resolve_xauthority.
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="$(resolve_xauthority || echo "${XAUTHORITY:-}")"
+# --editor and --headless both skip the containerized sim's display, so an X11
+# problem only matters when the sim is actually rendering here.
+if [ "$EDITOR_MODE" != "true" ] && [ "$AIRSIM_HEADLESS" != "true" ]; then
+  check_x11 || true                            # advisory — see the function's comment
+fi
 
 export UID
 # The user's passwd primary group, NOT `id -g`: under `newgrp docker` the shell's
@@ -114,9 +128,15 @@ export UID
 # leave host-side logs/ and metrics_outputs/ owned by group docker.
 export GID="$(id -g "$(id -un)")"
 
-# X11 setup (needed for AirSim / GUI containers)
-export DISPLAY="${DISPLAY:-:0}"
-export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+# iceoryx2 shared-memory rendezvous for the zero-copy GPU-lidar / fisheye
+# transports. Both the sim and the bridges bind-mount this; the sim container
+# runs as root and would otherwise create it 0755 root:root, after which the
+# bridge (uid 1000) cannot create its iceoryx2 node and falls back with
+# "Cannot fix permissions on /tmp/iceoryx2". Create it first, sticky+world-
+# writable like /tmp itself. Lives under /tmp, so it is gone after a reboot —
+# hence every launch, not setup.sh.
+mkdir -p /tmp/iceoryx2 2>/dev/null && chmod 1777 /tmp/iceoryx2 2>/dev/null || \
+  echo "WARNING: could not prepare /tmp/iceoryx2 — SHM lidar/fisheye will fall back to RPC." >&2
 
 # Resolve CONFIG_ROOT to an absolute path so subdirectory compose files
 # resolve mounts correctly regardless of working directory.
@@ -260,7 +280,7 @@ if [ "$START_MONITORING" = "true" ]; then
   # and merges a Loki datasource onto monitoring's grafana. It must be passed
   # alongside the monitoring file with both profiles, or grafana's depends_on
   # loki resolves to an undefined service.
-  docker compose \
+  compose_retry \
     -f docker-compose-monitoring.yml \
     -f docker-compose-logs.yml \
     --profile monitoring --profile logs up -d
@@ -285,8 +305,8 @@ if [ -d "compose/${SCENARIO}/templates" ] && [ -f "$SCRIPT_DIR/tools/generate_sc
   fi
 fi
 
-# Pick profiles for ardupilot-xfs and px4-condo. Other scenarios don't have
-# profiles wired up yet — pass through unchanged.
+# Pick profiles for ardupilot-xfs, ardupilot-urbansim, and px4-condo. Other
+# scenarios don't have profiles wired up yet — pass through unchanged.
 COMPOSE_PROFILE_ARGS=()
 
 # The containerized AirSim sim service is gated behind the `sim` profile so
@@ -300,7 +320,7 @@ else
   COMPOSE_PROFILE_ARGS+=(--profile sim)
 fi
 
-if [ "$SCENARIO" = "ardupilot-xfs" ]; then
+if [ "$SCENARIO" = "ardupilot-xfs" ] || [ "$SCENARIO" = "ardupilot-urbansim" ]; then
   ensure_agent_internal_networks
   COMPOSE_PROFILE_ARGS+=(--profile per-drone-bridge)
   if [ "$WITH_AGENT_EXTERNAL" = "true" ]; then
@@ -312,9 +332,9 @@ if [ "$SCENARIO" = "ardupilot-xfs" ]; then
 fi
 
 # Pixel-streaming profile applies to scenarios that ship the
-# pixel-streaming-signalling sidecar (ardupilot-xfs, px4-condo).
+# pixel-streaming-signalling sidecar (ardupilot-xfs, ardupilot-urbansim, px4-condo).
 case "$SCENARIO" in
-  ardupilot-xfs|px4-condo)
+  ardupilot-xfs|ardupilot-urbansim|px4-condo)
     if [ "$ENABLE_PIXEL_STREAMING" = "true" ]; then
       COMPOSE_PROFILE_ARGS+=(--profile pixel-streaming)
       echo "Pixel streaming: enabled (signalling sidecar + UE5 dials it)"
@@ -355,15 +375,26 @@ if [ "$EDITOR_MODE" = "true" ]; then
   echo "AirSim RPC up at ${RPC_HOST}:${RPC_PORT} — starting the rest of the stack."
 fi
 
+# What the bridges will publish, resolved from settings.json + topic_names.yaml
+# + topic_prefix BEFORE anything starts — otherwise the only way to find out is
+# to boot the stack, wait for Unreal, and run `ros2 topic list`. Best-effort:
+# needs the bridge image locally and costs ~2s, so a failure here must never
+# block a launch. PREVIEW_TOPICS=false skips it.
+if [ "${PREVIEW_TOPICS:-true}" = "true" ]; then
+  echo "Resolving the topics this stack will publish..."
+  python3 "$SCRIPT_DIR/tools/preview_topics.py" "$SCENARIO" --brief 2>/dev/null || \
+    echo "  (preview unavailable — continuing)"
+fi
+
 echo "Starting simulation stack ($SCENARIO)..."
-docker compose --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
+compose_retry --project-directory "$SCRIPT_DIR" -f "$SCENARIO_FILE" \
   "${COMPOSE_PROFILE_ARGS[@]}" up -d
 
 start_local_planner
 
 if [ "$START_METRICS" = "true" ]; then
   echo "Starting metrics stack..."
-  docker compose -f docker-compose-metrics.yml --profile metrics up -d
+  compose_retry -f docker-compose-metrics.yml --profile metrics up -d
 fi
 
 echo

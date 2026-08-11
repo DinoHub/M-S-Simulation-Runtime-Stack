@@ -1,7 +1,7 @@
 # M&S Simulation Runtime Stack — dev convenience wrapper around ./launch.sh.
 #
 # Scenario targets (each wraps `./launch.sh <scenario> <flags>`):
-#   make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo
+#   make ardupilot-xfs | ardupilot-urbansim | px4-xfs | px4-condo | ardupilot-condo
 #
 # Flag vars -> launch.sh flags (set to `true` to enable):
 #   EDITOR=true            -> --editor                (skip sim container; run AirSim in UE editor)
@@ -51,23 +51,53 @@ ifeq ($(ALL),true)
 LAUNCH_FLAGS += --all
 endif
 
-SCENARIOS := ardupilot-xfs px4-xfs px4-condo ardupilot-condo
+SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics
 
 dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
-	@set -a; . ./product-images.env; set +a; \
+	# Create these as the HOST user first, the way product.sh does. The backend
+	# container runs as root, so if it mkdir's generated/ itself the directory
+	# lands root-owned — and the generator image runs --user $$(id -u):$$(id -g),
+	# so it then fails with "PermissionError: [Errno 13] ... generated/<name>"
+	# surfacing as a 422 from /api/scenario/generate.
+	@mkdir -p generated scenarios
+	# Fail on an unreachable daemon or an occupied port here, with the occupant
+	# named, instead of mid-`up` — or, for the host-net ros2-node, not at all.
+	@. ./tools/check_docker.sh; check_docker || exit 1; \
+	check_registry DASHBOARD_PULL_POLICY || true; \
+	set -a; . ./product-images.env; set +a; \
+	check_images "$$MNS_STACK_GENERATOR_IMAGE" "$$MNS_AUTHORING_IMAGE" || true; \
+	check_x11 || true; \
+	check_ports 3001:airsim-dashboard-frontend:frontend \
+	            8001:airsim-dashboard-api:backend \
+	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):dashboard-lichtblick:Lichtblick \
+	            $(or $(FOXGLOVE_BRIDGE_PORT),8765):ros2-node:"Foxglove websocket" || exit 1
+	# compose_retry, not a bare `up`: one transient registry timeout otherwise
+	# aborts the whole start even though every image is already cached.
+	@. ./tools/compose_retry.sh; set -a; . ./product-images.env; set +a; \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
-	docker compose -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
-	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :8082)"
+	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
+	# DB=true only: bounce the backend once postgres is healthy. Its telemetry
+	# pool is built at startup and never retried, so a backend that came up
+	# first — or that was already running when the database appeared — serves
+	# every telemetry endpoint off a dead pool until something restarts it. The
+	# API itself no longer waits on postgres (see the compose file), which is
+	# what makes this safe: worst case the bounce costs ~5s, and it cannot hang.
+	@$(if $(filter true,$(DB)),set -a; . ./product-images.env; set +a; 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db 	  restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
+	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082))"
 
 dashboard-down:
+	# --profile db unconditionally: without it `down` skips profiled services and
+	# leaves postgres-telemetry (and the db-init one-shot) behind as orphans after
+	# a DB=true session. Naming a profile that was never up is a no-op, so this is
+	# safe either way.
 	@set -a; . ./product-images.env; set +a; \
-	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml down
+	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db down
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"
-	@echo "  make ardupilot-xfs | px4-xfs | px4-condo | ardupilot-condo"
+	@echo "  make ardupilot-xfs | ardupilot-urbansim | px4-xfs | px4-condo | ardupilot-condo"
 	@echo "Flag vars (=true): EDITOR HEADLESS AGENT_EXTERNAL PIXEL_STREAMING MONITORING METRICS ALL"
 	@echo "  EDITOR=true skips containerized AirSim (run it from the Unreal editor on host)"
 	@echo "Utility targets:"
@@ -79,6 +109,8 @@ help:
 	@echo "  stop                  ./stop.sh [SCENARIO=name]"
 	@echo "  logs                  ./logs.sh"
 	@echo "  ps         running containers (name/status/image)"
+	@echo "  topics     ROS 2 topics a stack will publish, before starting it"
+	@echo "             [SCENARIO=name | STACK=generated/name]"
 	@echo "  generate   render compose files from templates [SCENARIO=name]"
 	@echo "  check      exit nonzero when rendered files drift from .env+templates"
 	@echo "  self-test  generator invariant checks"
@@ -130,6 +162,15 @@ logs:
 
 ps:
 	@docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+
+# What a stack will publish, without starting it. Resolves settings.json
+# sensors/cameras + topic_names.yaml renames + topic_prefix using the bridge
+# image's own launch code, so it cannot drift from what the bridge really does.
+#   make topics                          # default scenario
+#   make topics SCENARIO=ardupilot-xfs
+#   make topics STACK=generated/xfs-fisheye
+topics:
+	@python3 tools/preview_topics.py $(or $(STACK),$(SCENARIO),$(DEV_SCENARIO))
 
 generate:
 	python3 tools/generate_scenario.py $(if $(SCENARIO),--scenario $(SCENARIO))

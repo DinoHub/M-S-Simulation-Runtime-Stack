@@ -60,6 +60,16 @@ SCENARIOS: dict[str, list[tuple[str, str]]] = {
             "config/unreal-airsim/xfs/settings-ardupilot.json",
         ),
     ],
+    "ardupilot-urbansim": [
+        (
+            "compose/ardupilot-urbansim/templates/docker-compose.yml.j2",
+            "compose/ardupilot-urbansim/docker-compose.yml",
+        ),
+        (
+            "config/unreal-airsim/urbansim/templates/settings-ardupilot.json.j2",
+            "config/unreal-airsim/urbansim/settings-ardupilot.json",
+        ),
+    ],
     "px4-xfs": [
         (
             "compose/px4-xfs/templates/docker-compose.yml.j2",
@@ -380,6 +390,7 @@ def _lidar_context(env: dict) -> dict:
 # scenario -> context builder. Tasks registering new scenarios add entries.
 CONTEXT_BUILDERS: dict[str, Callable[[dict], dict]] = {
     "ardupilot-xfs": build_context_ardupilot_xfs,
+    "ardupilot-urbansim": build_context_ardupilot_xfs,
     "px4-xfs": build_context_px4_xfs,
     "px4-condo": build_context_condo,
     "ardupilot-condo": build_context_condo,
@@ -654,9 +665,75 @@ def _self_test_px4_condo() -> None:
     json.loads(body)
 
 
+def _self_test_ardupilot_urbansim() -> None:
+    """Idempotency + invariant checks for the urbansim clone of ardupilot-xfs."""
+    base_env = {
+        "NUM_DRONES": "4",
+        "VEHICLE_PREFIX": "Copter",
+        "DRONE_X_SPACING_M": "8",
+        "MAVLINK_PORT_BASE": "5760",
+        "MAVLINK_PORT_STRIDE": "10",
+        "FDM_TCP_PORT_BASE": "9002",
+        "FDM_UDP_PORT_BASE": "9003",
+        "FDM_PORT_STRIDE": "10",
+        "AGENT_INTERNAL_SUBNET_BASE": "172.28",
+    }
+    j_env = make_env()
+    pairs = SCENARIOS["ardupilot-urbansim"]
+
+    for n in (1, 2, 4, 8, 16):
+        env = dict(base_env, NUM_DRONES=str(n))
+        ctx = build_context_ardupilot_xfs(env)
+
+        renders = [render(j_env, t, ctx) for t, _ in pairs]
+        renders2 = [render(j_env, t, ctx) for t, _ in pairs]
+        for a, b in zip(renders, renders2):
+            assert a == b, f"urbansim render not idempotent for N={n}"
+
+        compose_yaml, settings_json = renders
+
+        assert compose_yaml.count("ardupilot-urbansim-drone-") >= n, \
+            f"expected at least {n} SITL containers in compose for N={n}"
+        for d in ctx["drones"]:
+            assert f"ardupilot-drone-{d.instance}:" in compose_yaml, \
+                f"missing SITL service for drone instance {d.instance}"
+            assert f"airsim_bridge_d{d.n}:" in compose_yaml, \
+                f"missing bridge service for drone {d.n}"
+            assert f"agent_internal-{d.n}" in compose_yaml, \
+                f"missing agent_internal-{d.n} attachment"
+            assert f'"{d.vehicle}":' in settings_json, \
+                f"missing {d.vehicle} in settings.json"
+
+        if n < MAX_DRONES:
+            assert f"airsim_bridge_d{n + 1}:" not in compose_yaml, \
+                f"unexpected bridge_d{n + 1} in compose for N={n}"
+
+        # Urbansim-specific invariants.
+        assert "urbansimdemo-latest" in compose_yaml, "wrong default AIRSIM_IMAGE"
+        assert "/home/ue4/Documents/AirSim/settings.json" in compose_yaml, \
+            "settings must mount at the image's sanctioned path"
+        assert "airsim-urbansim:" in compose_yaml, "sim service must be airsim-urbansim"
+        for tok in ("airsim-xfs", "ardupilot-xfs", "/app/Xfs", "xfs-latest", "unreal-airsim/xfs"):
+            assert tok not in compose_yaml, f"xfs remnant '{tok}' leaked into urbansim compose"
+        assert '"PawnPath"' not in settings_json, \
+            "urbansim settings must not reference xfs pawn blueprints"
+
+        assert "enable_coordination:=true" not in compose_yaml, \
+            f"enable_coordination must be false on every bridge for N={n}"
+        assert compose_yaml.count("enable_coordination:=false") == n, \
+            f"expected {n} bridges with enable_coordination:=false for N={n}"
+
+        for label, body in (("compose", compose_yaml), ("settings", settings_json)):
+            assert "{{" not in body and "{%" not in body, \
+                f"unsubstituted Jinja in {label} output for N={n}"
+
+        json.loads(settings_json)
+
+
 # scenario -> self-test function. Tasks registering new scenarios add entries.
 SELF_TESTS: dict[str, Callable[[], None]] = {
     "ardupilot-xfs": _self_test_ardupilot_xfs,
+    "ardupilot-urbansim": _self_test_ardupilot_urbansim,
     "px4-xfs": _self_test_px4_xfs,
     "px4-condo": _self_test_px4_condo,
     "ardupilot-condo": _self_test_ardupilot_condo,
