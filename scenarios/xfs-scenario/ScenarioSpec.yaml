@@ -1,0 +1,24 @@
+schema: mns.scenario.v1
+id: xfs-scenario
+name: xfs-scenario
+environment:
+  id: xfs
+runtime:
+  profile: airsim_unreal_px4_docker
+  features:
+    sim_real_eval: true
+    ros2_bridge: true
+    qgroundcontrol: false
+    mavros: false
+vehicles:
+  - id: drone_1
+    name: Drone1
+    runtime_name: Drone1
+    ros_domain_id: 1
+    start: { x: 0, y: 0, z: 0, yaw: 0 }
+    sensors: { imu: true, gps: true, gpu_lidar: true, barometer: true, magnetometer: true }
+    cameras:
+      front:
+        # width/height explicit: generator <= v0.2.0-review.16 drops them when
+        # capture_settings is authored (falls back to AirSim's 256x144)
+        capture_settings: [{ image_type: 0, fov_degrees: 81, width: 1280, height: 720 }]

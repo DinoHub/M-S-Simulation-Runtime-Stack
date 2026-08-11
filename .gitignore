@@ -29,3 +29,7 @@ generated/
 !/scenarios/condo-ardupilot/ScenarioSpec.yaml
 !/scenarios/condo-px4/
 !/scenarios/condo-px4/ScenarioSpec.yaml
+!/scenarios/xfs-ardupilot/
+!/scenarios/xfs-ardupilot/ScenarioSpec.yaml
+!/scenarios/xfs-scenario/
+!/scenarios/xfs-scenario/ScenarioSpec.yaml
