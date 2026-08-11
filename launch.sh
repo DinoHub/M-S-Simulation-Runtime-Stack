@@ -35,8 +35,8 @@ Equivalent .env knob: EDITOR_MODE=true.
 
 --headless runs the containerized AirSim with -RenderOffScreen (no window,
 GPU still renders for cameras and PixelStreaming). Currently only consumed
-by the ardupilot-xfs scenario; ignored by others. Equivalent .env knob:
-AIRSIM_HEADLESS=true.
+by the ardupilot-xfs and ardupilot-urbansim scenarios; ignored by others.
+Equivalent .env knob: AIRSIM_HEADLESS=true.
 
 --with-agent-external (ardupilot-xfs / ardupilot-urbansim default flow only) also starts the
 per-drone zenoh bridges (zenoh-bridge-{1..N}) onto agent_external for
@@ -276,8 +276,8 @@ if [ -d "compose/${SCENARIO}/templates" ] && [ -f "$SCRIPT_DIR/tools/generate_sc
   fi
 fi
 
-# Pick profiles for ardupilot-xfs and px4-condo. Other scenarios don't have
-# profiles wired up yet — pass through unchanged.
+# Pick profiles for ardupilot-xfs, ardupilot-urbansim, and px4-condo. Other
+# scenarios don't have profiles wired up yet — pass through unchanged.
 COMPOSE_PROFILE_ARGS=()
 
 # The containerized AirSim sim service is gated behind the `sim` profile so
@@ -303,7 +303,7 @@ if [ "$SCENARIO" = "ardupilot-xfs" ] || [ "$SCENARIO" = "ardupilot-urbansim" ]; 
 fi
 
 # Pixel-streaming profile applies to scenarios that ship the
-# pixel-streaming-signalling sidecar (ardupilot-xfs, px4-condo).
+# pixel-streaming-signalling sidecar (ardupilot-xfs, ardupilot-urbansim, px4-condo).
 case "$SCENARIO" in
   ardupilot-xfs|ardupilot-urbansim|px4-condo)
     if [ "$ENABLE_PIXEL_STREAMING" = "true" ]; then

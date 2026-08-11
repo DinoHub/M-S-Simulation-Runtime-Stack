@@ -77,8 +77,10 @@ copied unchanged (names aside).
 3. Settings mount: single target
    `.../urbansim/settings-ardupilot.json:/home/ue4/Documents/AirSim/settings.json:ro`
    (drop xfs's dual `/app/Xfs/settings.json` mount).
-4. `-scenario=` defaults to empty — unknown whether the UrbanSimDemo map
-   ships a ScenarioRunner/ScenarioManager. The knob stays wired.
+4. `-scenario=` is *not* plumbed into the compose command (no flag, no
+   `.env`/generator wiring) — unknown whether the UrbanSimDemo map ships a
+   ScenarioRunner/ScenarioManager. Probe for it at first boot; add the flag
+   then if present.
 5. Pixel streaming: unknown whether the plugin is baked into this build.
    Profile and env plumbing stay; default off (as on xfs).
 6. Container/hostname prefix `ardupilot-urbansim-*`. Same networks and
