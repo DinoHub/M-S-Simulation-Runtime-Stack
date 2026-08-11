@@ -232,7 +232,7 @@ services:
   # makes the entrypoint's 120s retry loop a backstop instead of the mechanism.
   db-init:
     profiles: ["db"]
-    image: ${DASHBOARD_BACKEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-backend-latest}
+    image: ${DASHBOARD_BACKEND_IMAGE:?source product-images.env}
     container_name: dashboard-db-init
     environment:
       - INIT_DB_SCHEMA=true
