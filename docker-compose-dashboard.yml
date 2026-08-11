@@ -44,16 +44,20 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
       - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
-      # Applies the telemetry schema (idempotent) before uvicorn starts — no
-      # SQL files needed on this machine. Defaults OFF, and `make dashboard
-      # DB=true` turns it on with the profile: the image's entrypoint retries
-      # psycopg2.connect 60x2s BEFORE exec'ing uvicorn, so with the db profile
-      # absent it blocked the API for a full 120s on every `up`. The browser
-      # got "Failed to fetch" on /api/scenario/* for those two minutes, which
-      # the frontend reports as "Scenario generation unavailable ... set
-      # PLATFORM_HOST_DIR" — a misleading message for a backend that simply
-      # was not listening yet.
-      - INIT_DB_SCHEMA=${INIT_DB_SCHEMA:-false}
+      # Deliberately never true here, and not overridable to true by accident.
+      #
+      # The image's /docker-entrypoint.sh applies the schema BEFORE `exec
+      # uvicorn`, retrying psycopg2.connect 60x2s. So INIT_DB_SCHEMA=true means
+      # the API cannot listen until postgres answers or 120s elapse — the
+      # browser gets "Cannot reach the dashboard API: Failed to fetch" from a
+      # container that looks perfectly Up, and restarting it restarts the wait.
+      # Defaulting it to false fixed the common case but left the coupling in
+      # place: anything that removed postgres while the flag was on brought the
+      # whole dashboard down with it.
+      #
+      # The db-init one-shot below owns that work now, so the API starts in ~4s
+      # whatever the database is doing.
+      - INIT_DB_SCHEMA=false
       - SIM2REAL_RUNS_DIR=/data/runs
       # Embedded in the Monitor's Grafana tab. The browser resolves it, so it
       # is a host URL, not a container one. Its panels read ClickHouse, which
@@ -112,15 +116,13 @@ services:
       # this repo at its identical host path (generator + stack lifecycle)
       - ${MSRS_ROOT:?set MSRS_ROOT}:${MSRS_ROOT}
       - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
-    # required: false is what keeps the db opt-in. Without it, depends_on drags
-    # postgres-telemetry's "db" profile in on every `up` — with it, this is a
-    # no-op when the profile is absent and a real gate when it is present, so
-    # the entrypoint's connect-retry loop becomes a backstop instead of the
-    # mechanism.
-    depends_on:
-      postgres-telemetry:
-        condition: service_healthy
-        required: false
+    # No depends_on the database, deliberately. It used to gate on
+    # postgres-telemetry being healthy (required: false, so the db stayed
+    # opt-in), which was right while this container ran the schema init. Now
+    # that db-init owns that, gating here would only reintroduce a smaller
+    # version of the same failure: a sick database would keep the API from
+    # starting at all. Telemetry endpoints failing is a far better outcome than
+    # an unreachable dashboard.
     # Marks the ~4s of import + startup where the API is up but not listening.
     # /api/scenario/catalog rather than a bare TCP probe: it is a plain read of
     # the generator's environment/profile lists, so it answers 200 only once
@@ -231,9 +233,9 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
     volumes:
       - dashboard-telemetry-db:/var/lib/postgresql/data
-    # What the backend's depends_on gates on. pg_isready, not a TCP probe:
-    # timescaledb's entrypoint starts postgres once on a throwaway socket to
-    # run initdb, so the port answers before the database is really there.
+    # What db-init gates on. pg_isready, not a TCP probe: timescaledb's
+    # entrypoint starts postgres once on a throwaway socket to run initdb, so
+    # the port answers before the database is really there.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airsim_user} -d ${POSTGRES_DB:-drone_telemetry}"]
       interval: 3s
@@ -241,6 +243,35 @@ services:
       retries: 20
       start_period: 10s
     restart: unless-stopped
+
+  # Schema init, moved out of the API container so it cannot delay serving.
+  #
+  # Same image and the same entrypoint code path, but with INIT_DB_SCHEMA=true
+  # and `true` as the command: the entrypoint applies db/schema.sql and
+  # db/alembic_baseline.sql (both idempotent), then exec's `true` and the
+  # container exits 0. Runs only under the db profile, so a no-database
+  # dashboard never starts it.
+  #
+  # Gated on postgres being healthy rather than merely started, which is what
+  # makes the entrypoint's 120s retry loop a backstop instead of the mechanism.
+  db-init:
+    profiles: ["db"]
+    image: ${DASHBOARD_BACKEND_IMAGE:-dhdevspace/auto_mns:tevv-web-dashboard-backend-latest}
+    container_name: dashboard-db-init
+    environment:
+      - INIT_DB_SCHEMA=true
+      - POSTGRES_HOST=postgres-telemetry
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
+      - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dashboard_local_only}
+    command: ["true"]
+    depends_on:
+      postgres-telemetry:
+        condition: service_healthy
+    # A one-shot must not be resurrected: `unless-stopped` would restart it on
+    # every daemon start and re-run the init forever.
+    restart: "no"
 
 volumes:
   dashboard-telemetry-db:
