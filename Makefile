@@ -63,7 +63,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	# surfacing as a 422 from /api/scenario/generate.
 	@mkdir -p generated scenarios
 	# Fail on an unreachable daemon or an occupied port here, with the occupant
-	# named, instead of mid-`up` — or, for the host-net ros2-node, not at all.
+	# named, instead of mid-`up` — or, for the host-net ros2-tools, not at all.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
 	check_registry DASHBOARD_PULL_POLICY || true; \
 	set -a; . ./product-images.env; set +a; \
@@ -72,7 +72,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	check_ports 3001:airsim-dashboard-frontend:frontend \
 	            8001:airsim-dashboard-api:backend \
 	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):dashboard-lichtblick:Lichtblick \
-	            $(or $(FOXGLOVE_BRIDGE_PORT),8765):ros2-node:"Foxglove websocket" || exit 1
+	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):ros2-tools:"Foxglove websocket" || exit 1
 	# compose_retry, not a bare `up`: one transient registry timeout otherwise
 	# aborts the whole start even though every image is already cached.
 	@. ./tools/compose_retry.sh; set -a; . ./product-images.env; set +a; \
