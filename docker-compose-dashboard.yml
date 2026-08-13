@@ -140,9 +140,9 @@ services:
 
   # ROS2 sidecar the backend drives over the docker socket for bag
   # record/replay (services/ros2_recorder.py + ros2_player.py exec into it;
-  # container name must match ROS2_CONTAINER_NAME, default "ros2-node").
+  # container name must match ROS2_CONTAINER_NAME, default "ros2-tools").
   # The bridge image ships ros2 + rosbag2 + foxglove_bridge, so the same
-  # container also serves the Foxglove websocket (:8765) that Lichtblick
+  # container also serves the Foxglove websocket (:8764) that Lichtblick
   # connects to for rendering replayed/live topics.
   #
   # host net + ipc host + /dev/shm: DDS reaches the per-drone bridge islands
@@ -151,7 +151,7 @@ services:
   # and receives /CopterN/* data). One domain at a time —
   # DASHBOARD_ROS_DOMAIN_ID picks the drone (ardupilot-xfs: drone N =
   # domain N; condo scenarios: 0).
-  # ros2-node is NOT declared here on purpose. The dashboard backend owns it:
+  # ros2-tools is NOT declared here on purpose. The dashboard backend owns it:
   # it is the only thing that knows which ROS domain the viewer should watch —
   # the domain follows whichever stack is running — and changing that means
   # recreating the container. While both sides declared it, whichever started
@@ -161,7 +161,9 @@ services:
   # The backend creates it at startup and re-creates it on domain changes, with
   # the same knobs this file used to parameterise: AIRSIM_BRIDGE_IMAGE,
   # FOXGLOVE_BRIDGE_PORT, DASHBOARD_ROS_DOMAIN_ID, TEVV_RUNS_DIR, HOST_UID/GID.
-  # 8765 is still the Foxglove standard port and still arbitrated the same way:
+  # 8764, not 8765: the per-vehicle bridges a generated stack publishes take
+  # 8765 upward, and vehicle 1 would collide with this sidecar. Arbitrated the
+  # same way as before:
   # the product shell moved to 8760 and the monitoring profile's bridge to
   # MONITORING_FOXGLOVE_PORT (8766).
 
