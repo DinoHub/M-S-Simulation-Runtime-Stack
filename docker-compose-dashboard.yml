@@ -76,6 +76,13 @@ services:
       # dashboard reporting "Visualization stack unavailable" for a service
       # that is actually running.
       - LICHTBLICK_PROBE_PORT=${DASHBOARD_LICHTBLICK_PORT:-8082}
+      # viz-health's foxglove probe. The backend's own default is 8765 — the
+      # port the sidecar USED to hold before it moved to 8764 to free 8765 for
+      # vehicle 1's per-vehicle bridge — so without this line the probe dials
+      # a dead port and reports "Visualization stack unavailable" while the
+      # bridge serves fine (the same failure the sidecar healthcheck already
+      # fixed via FOXGLOVE_BRIDGE_PORT; both must track the same knob).
+      - FOXGLOVE_PROBE_PORT=${FOXGLOVE_BRIDGE_PORT:-8764}
       # distribution mode: generate through the pinned generator image.
       # Generator/authoring pins are BAKED into the backend image as defaults
       # (MNS_*_IMAGE_DEFAULT), so the env lines below are overrides — empty is
