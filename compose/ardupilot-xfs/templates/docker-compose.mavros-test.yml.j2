@@ -9,9 +9,15 @@
 #
 #   mavros_dN  ─(agent_internal-N)─►  airsim_bridge_dN
 #       │
-#       └────(host MAVLink TCP {{ mavlink_port_base }}+{{ num_drones }} drones)────►  ardupilot-drone-{N-1}
+#       └────(sim_net MAVLink TCP {{ mavlink_port_base }}+{{ num_drones }} drones)────►  ardupilot-drone-{N-1}
 #                                                       │
 #                                                       └──►  AirSim XFS
+#
+# Each mavros_dN sits on TWO networks: agent_internal-N for ROS 2 topic
+# discovery with airsim_bridge_dN, and sim_net to reach the SITL's MAVLink
+# TCP server. SITL runs on sim_net and publishes no host port, so the FCU
+# must be dialled at its sim_net IP (172.30.0.{21+instance}) — a
+# host.docker.internal dial connects to nothing.
 #
 # Use via ./test-per-drone-mavros.sh (orchestrator) — that script also runs
 # the per-drone arm/takeoff/setpoint/land mission inside each mavros_dN.
@@ -68,7 +74,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_{{ d.n }}_DOMAIN_ID:-{{ d.domain_id }}}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-{{ d.n }}
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-{{ d.n }}: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.{{ 60 + d.n }}
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -78,7 +90,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:={{ d.vehicle }}
-        fcu_url:=tcp://host.docker.internal:{{ d.mavlink_tcp }}
+        fcu_url:=tcp://172.30.0.{{ 21 + d.instance }}:{{ d.mavlink_tcp }}
         target_system_id:={{ d.n }}
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:={{ "true" if d.n == 1 else "false" }}
@@ -88,3 +100,13 @@ networks:
 {% for d in drones %}
   agent_internal-{{ d.n }}: { external: true, name: agent_internal-{{ d.n }} }
 {% endfor %}
+  # sim_net is created by the MAIN ardupilot-xfs compose project, so docker
+  # names it `<project>_sim_net`. This test runs under its own project name,
+  # hence external + explicit name — without the `name:` docker would try to
+  # create `ardupilot-xfs-mavros-test_sim_net`, a second, unconnected network.
+  # Consequence: the main stack must be up first (already a documented prereq).
+  # Block style, not flow style: `${VAR:-default}` inside `{ }` closes the
+  # flow mapping at the variable's own brace and fails to parse.
+  sim_net:
+    external: true
+    name: ${SIM_NET_NAME:-ardupilot-xfs_sim_net}

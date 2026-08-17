@@ -26,14 +26,23 @@ default OFF since most runs don't open the browser), `--with-monitoring`,
 ## What `./launch.sh ardupilot-xfs` actually brings up
 
 Default flow (no flags) is an `N=NUM_DRONES` stack. Containers (with
-`NUM_DRONES=4`, the shipped default — eleven in total):
+`NUM_DRONES=9`, the shipped default in `.env.example` — twenty in total):
 
-| Container(s) | Count | Purpose | Network |
-|---|---|---|---|
-| `ardupilot-xfs-airsim` | 1 | UE5 + AirSim plugin (Xfs map) | host |
-| `ardupilot-xfs-drone-{0..N-1}` | N | ArduCopter SITL, one per drone | host |
-| `airsim_bridge_d{1..N}` | N | Per-drone AirSim → ROS 2 bridge | agent_internal-{1..N} |
-| `ardupilot-xfs-qgc` | 1 | QGroundControl viewer | host |
+| Container(s) | Count | Purpose | Network | Static IP |
+|---|---|---|---|---|
+| `ardupilot-xfs-airsim` | 1 | UE5 + AirSim plugin (Xfs map) | sim_net | 172.30.0.10 |
+| `ardupilot-xfs-drone-{0..N-1}` | N | ArduCopter SITL, one per drone | sim_net | 172.30.0.{21+N-1} |
+| `airsim_bridge_d{1..N}` | N | Per-drone AirSim → ROS 2 bridge | agent_internal-{1..N} **+** sim_net | 172.30.0.5N on sim_net |
+| `ardupilot-xfs-qgc` | 1 | QGroundControl viewer | sim_net | 172.30.0.30 |
+
+**No service uses `network_mode: host`.** FDM (900x) and AirSim RPC (41451)
+traverse the `sim_net` user-defined bridge by static IP rather than host
+loopback — so the stack no longer collides with anything else bound to those
+ports on the host, and `AIRSIM_HOST_IP` must be `172.30.0.10`, never
+`127.0.0.1`. **SITL's MAVLink TCP port is not published to the host**: reach
+`5760` from a container on `sim_net` (or via `docker exec`), not from the
+host. Sibling scenarios (`ardupilot-condo`, `px4-condo`, `px4-xfs`) are still
+host-networked — don't carry assumptions across.
 
 Add `--with-agent-external` to also start N× `zenoh-bridge-{1..N}` on
 agent_internal-N + agent_external.
@@ -55,9 +64,8 @@ T=0s    docker compose up -d
         │       │
         │       └─ healthy ──┐
         │                    ▼
-        ├─► airsim-xfs    waits for signalling healthy|release controls the archive format (-Compressed) but secretly hard-codes -clientconfig=Development regardless. Asking for "release" gave a Development binary in a compressed pak. Shipping was unreachable from the surface.
-
-
+        ├─► airsim-xfs    waits for signalling healthy (only when the
+        │       │              pixel-streaming profile is active)
         │       │              ↓ then UE5 cold-start (~5–30s)
         │       └─ healthy when nc -z 41451 passes (RPC port open)
         │                    │
@@ -79,15 +87,21 @@ Earlier `service_started` left the bridge to race AirSim's RPC port and silently
 
 ### Per-drone port plan
 
-| Drone | Vehicle | INSTANCE_NUM | MAVLink TCP | FDM TCP | FDM UDP |
-|-------|---------|--------------|-------------|---------|---------|
-|   1   | Copter1 |       0      |     5760    |   9002  |   9003  |
-|   2   | Copter2 |       1      |     5770    |   9012  |   9013  |
-|   3   | Copter3 |       2      |     5780    |   9022  |   9023  |
-|   4   | Copter4 |       3      |     5790    |   9032  |   9033  |
+| Drone | Vehicle | INSTANCE_NUM | SITL sim_net IP | MAVLink TCP | FDM TCP | FDM UDP |
+|-------|---------|--------------|-----------------|-------------|---------|---------|
+|   1   | Copter1 |       0      |   172.30.0.21   |     5760    |   9002  |   9003  |
+|   2   | Copter2 |       1      |   172.30.0.22   |     5770    |   9012  |   9013  |
+|   3   | Copter3 |       2      |   172.30.0.23   |     5780    |   9022  |   9023  |
+|   4   | Copter4 |       3      |   172.30.0.24   |     5790    |   9032  |   9033  |
 
 Pattern: `5760 + 10*INSTANCE_NUM` for MAVLink, `9002 + 10*INSTANCE_NUM`
-for FDM TCP, `+1` for FDM UDP. SYSID_THISMAV = INSTANCE_NUM + 1.
+for FDM TCP, `+1` for FDM UDP. SYSID_THISMAV = INSTANCE_NUM + 1. SITL IP is
+`172.30.0.(21 + INSTANCE_NUM)`. **These ports are bound inside the container
+on `sim_net`, not on the host** — dial them from a container on `sim_net`
+(QGC, `mavros_dN`) or via `docker exec`, never from the host.
+
+Full `sim_net` address plan: `.10` AirSim, `.2N` SITL, `.30` QGC, `.40`
+pixel-streaming signalling, `.5N` `airsim_bridge_dN`, `.6N` `mavros_dN`.
 
 ## For autonomy (integrating)
 
@@ -107,9 +121,19 @@ You don't talk to AirSim's RPC directly. The bridge does that for you.
 
 ### Network ownership contract
 
-`agent_internal-{1..N}` is **co-owned** by the sim stack and the
-autonomy stack. Both compose files attach to the same docker network,
-but only one creates it. Five rules to keep the contract clean:
+Three networks are in play, with different owners:
+
+- **`sim_net` (`172.30.0.0/24`)** — sim-internal and **sim-owned**.
+  Compose-managed (project-scoped, created and destroyed with the stack),
+  so autonomy never attaches here. Carries FDM, AirSim RPC, and SITL
+  MAVLink between the sim's own containers on static IPs. Deliberately a
+  non-overlapping subnet from `agent_internal-N` (`172.28.x`).
+- **`agent_internal-{1..N}`** — **co-owned** by sim and autonomy.
+- **`agent_external`** — **autonomy-owned**; sim never creates it.
+
+`agent_internal-{1..N}` being co-owned is where the sharp edges are. Both
+compose files attach to the same docker network, but only one creates it.
+Five rules to keep the contract clean:
 
 - **Both compose files MUST declare each network with `external:
   true, name: agent_internal-N`.** Without `name:`, docker prefixes
@@ -320,30 +344,42 @@ Two distinct causes; check in this order.
 ## MAVROS data path (how `test-per-drone-mavros.sh` actually moves a drone)
 
 Each `mavros_dN` container runs on `agent_internal-N`. There is **no**
-direct AirSim path for MAVROS — it talks MAVLink-over-TCP to the host:
+direct AirSim path for MAVROS — it talks MAVLink-over-TCP to the SITL:
+
+`mavros_dN` therefore sits on **two** networks: `agent_internal-N` for ROS 2
+discovery with `airsim_bridge_dN`, and `sim_net` to reach the SITL. It gets a
+static `172.30.0.6N`, clear of the sim's own reserved addresses. Because SITL
+publishes no host port, `fcu_url` must name the SITL's `sim_net` IP — the
+earlier `tcp://host.docker.internal:{port}` dial worked only while SITL ran
+with `network_mode: host` and now connects to nothing.
+
+`sim_net` is created by the *main* `ardupilot-xfs` compose project, so docker
+names it `ardupilot-xfs_sim_net`. This test runs under its own project name
+and attaches to it as `external` with that explicit `name:` — which is why
+the main stack must already be up (an existing prereq).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ mavros_dN container (on agent_internal-N)                       │
-│   ros2 launch airsim_ros_pkgs mavros_bringup.launch.py          │
+│ mavros_dN container (on agent_internal-N + sim_net)             │
+│   ros2 launch airsim_mavros_bringup mavros_bringup.launch.py    │
 │     vehicle:=CopterN  target_system_id:=N                       │
-│     fcu_url:=tcp://host.docker.internal:{5760+10*(N-1)}         │
+│     fcu_url:=tcp://172.30.0.{21+N-1}:{5760+10*(N-1)}            │
 └────────────────────────────┬────────────────────────────────────┘
-                             │ host.docker.internal:host-gateway
+                             │ sim_net (172.30.0.0/24)
                              ▼ (MAVLink-over-TCP)
 ┌─────────────────────────────────────────────────────────────────┐
-│ host networking                                                 │
-│   ardupilot-drone-{N-1} container (network_mode: host)          │
+│ ardupilot-drone-{N-1} container (sim_net, 172.30.0.{21+N-1})    │
 │     ArduCopter SITL  SYSID_THISMAV=N                            │
-│     listening tcp://0.0.0.0:{5760+10*(N-1)}                     │
+│     listening tcp://0.0.0.0:{5760+10*(N-1)}  (no host publish)  │
 └────────────────────────────┬────────────────────────────────────┘
-                             │ FDM bridge
+                             │ FDM over sim_net → 172.30.0.10
                              ▼ (TCP 9002+10*(N-1) / UDP 9003+10*(N-1))
 ┌─────────────────────────────────────────────────────────────────┐
-│ ardupilot-xfs-airsim container (network_mode: host)             │
+│ ardupilot-xfs-airsim container (sim_net, 172.30.0.10)           │
 │   UE5 + AirSim plugin renders Copter{N}                         │
-│   AirSim RPC on host:41451  ←  consumed by airsim_bridge_dN     │
-│                                (NOT by mavros_dN)               │
+│   AirSim RPC on 172.30.0.10:41451                               │
+│                       ←  consumed by airsim_bridge_dN           │
+│                          (NOT by mavros_dN)                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -352,8 +388,8 @@ A setpoint round-trip:
 > `test_one_drone_mavros.py` publishes a `Twist` on
 > `/Copter1/mavros/setpoint_velocity/cmd_vel_unstamped` inside
 > `mavros_d1`. MAVROS converts it to `SET_POSITION_TARGET_LOCAL_NED`
-> MAVLink and sends it to `ardupilot-drone-0` over TCP 5760
-> (host-gateway). The SITL accepts the setpoint, computes motor
+> MAVLink and sends it to `ardupilot-drone-0` over TCP 5760 on
+> `sim_net`. The SITL accepts the setpoint, computes motor
 > outputs, and pushes drone state to AirSim via the FDM channel.
 > AirSim updates UE5; sensors are read back via RPC by
 > `airsim_bridge_d1`, which republishes `/Copter1/*` on

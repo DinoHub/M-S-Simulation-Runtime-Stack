@@ -14,9 +14,15 @@
 #
 #   mavros_dN  ─(agent_internal-N)─►  airsim_bridge_dN
 #       │
-#       └────(host MAVLink TCP 5760+9 drones)────►  ardupilot-drone-{N-1}
+#       └────(sim_net MAVLink TCP 5760+9 drones)────►  ardupilot-drone-{N-1}
 #                                                       │
 #                                                       └──►  AirSim XFS
+#
+# Each mavros_dN sits on TWO networks: agent_internal-N for ROS 2 topic
+# discovery with airsim_bridge_dN, and sim_net to reach the SITL's MAVLink
+# TCP server. SITL runs on sim_net and publishes no host port, so the FCU
+# must be dialled at its sim_net IP (172.30.0.{21+instance}) — a
+# host.docker.internal dial connects to nothing.
 #
 # Use via ./test-per-drone-mavros.sh (orchestrator) — that script also runs
 # the per-drone arm/takeoff/setpoint/land mission inside each mavros_dN.
@@ -72,7 +78,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_1_DOMAIN_ID:-1}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-1
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-1: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.61
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -82,7 +94,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter1
-        fcu_url:=tcp://host.docker.internal:5760
+        fcu_url:=tcp://172.30.0.21:5760
         target_system_id:=1
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=true
@@ -101,7 +113,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_2_DOMAIN_ID:-2}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-2
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-2: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.62
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -111,7 +129,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter2
-        fcu_url:=tcp://host.docker.internal:5770
+        fcu_url:=tcp://172.30.0.22:5770
         target_system_id:=2
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -130,7 +148,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_3_DOMAIN_ID:-3}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-3
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-3: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.63
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -140,7 +164,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter3
-        fcu_url:=tcp://host.docker.internal:5780
+        fcu_url:=tcp://172.30.0.23:5780
         target_system_id:=3
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -159,7 +183,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_4_DOMAIN_ID:-4}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-4
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-4: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.64
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -169,7 +199,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter4
-        fcu_url:=tcp://host.docker.internal:5790
+        fcu_url:=tcp://172.30.0.24:5790
         target_system_id:=4
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -188,7 +218,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_5_DOMAIN_ID:-5}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-5
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-5: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.65
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -198,7 +234,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter5
-        fcu_url:=tcp://host.docker.internal:5800
+        fcu_url:=tcp://172.30.0.25:5800
         target_system_id:=5
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -217,7 +253,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_6_DOMAIN_ID:-6}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-6
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-6: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.66
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -227,7 +269,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter6
-        fcu_url:=tcp://host.docker.internal:5810
+        fcu_url:=tcp://172.30.0.26:5810
         target_system_id:=6
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -246,7 +288,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_7_DOMAIN_ID:-7}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-7
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-7: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.67
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -256,7 +304,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter7
-        fcu_url:=tcp://host.docker.internal:5820
+        fcu_url:=tcp://172.30.0.27:5820
         target_system_id:=7
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -275,7 +323,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_8_DOMAIN_ID:-8}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-8
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-8: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.68
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -285,7 +339,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter8
-        fcu_url:=tcp://host.docker.internal:5830
+        fcu_url:=tcp://172.30.0.28:5830
         target_system_id:=8
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -304,7 +358,13 @@ services:
       - ROS_DOMAIN_ID=${DRONE_9_DOMAIN_ID:-9}
       - ROS_LOCALHOST_ONLY=0
     networks:
-      - agent_internal-9
+      # ROS 2 topic discovery with airsim_bridge_dN.
+      agent_internal-9: {}
+      # MAVLink TCP to the SITL, which lives on sim_net and publishes no host
+      # port. Static .6N keeps this container clear of the sim's own reserved
+      # addresses (.10 AirSim, .2N SITL, .30 QGC, .40 signalling, .5N bridge).
+      sim_net:
+        ipv4_address: 172.30.0.69
     # bash -lc wrapper retained on purpose: it keeps bash as PID 1 (see the
     # `init: false` note above). The image ENTRYPOINT already sources ROS +
     # the workspace, so no explicit `source` line is needed.
@@ -314,7 +374,7 @@ services:
       - >
         ros2 launch airsim_mavros_bringup mavros_bringup.launch.py
         vehicle:=Copter9
-        fcu_url:=tcp://host.docker.internal:5840
+        fcu_url:=tcp://172.30.0.29:5840
         target_system_id:=9
         mavros_config:=mavros_ardupilot.yaml
         enable_dds_cleanup:=false
@@ -329,3 +389,13 @@ networks:
   agent_internal-7: { external: true, name: agent_internal-7 }
   agent_internal-8: { external: true, name: agent_internal-8 }
   agent_internal-9: { external: true, name: agent_internal-9 }
+  # sim_net is created by the MAIN ardupilot-xfs compose project, so docker
+  # names it `<project>_sim_net`. This test runs under its own project name,
+  # hence external + explicit name — without the `name:` docker would try to
+  # create `ardupilot-xfs-mavros-test_sim_net`, a second, unconnected network.
+  # Consequence: the main stack must be up first (already a documented prereq).
+  # Block style, not flow style: `${VAR:-default}` inside `{ }` closes the
+  # flow mapping at the variable's own brace and fails to parse.
+  sim_net:
+    external: true
+    name: ${SIM_NET_NAME:-ardupilot-xfs_sim_net}
