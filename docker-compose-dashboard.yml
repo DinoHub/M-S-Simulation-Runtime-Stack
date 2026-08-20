@@ -87,7 +87,20 @@ services:
       # Generator/authoring pins are BAKED into the backend image as defaults
       # (MNS_*_IMAGE_DEFAULT), so the env lines below are overrides — empty is
       # fine on an image-only deploy; product-images.env keeps them explicit.
-      - MNS_WORKSPACE_ROOT=${MSRS_ROOT:?set MSRS_ROOT to this repository's absolute path}
+      # Defaults to the directory compose was invoked from, which is this
+      # repository for every normal invocation — so `docker compose up` works
+      # without anyone exporting a path first. It stayed required for a long
+      # time and that made any route other than the Makefile fail at a wall.
+      #
+      # It cannot simply be dropped. This value is mounted below at its own
+      # absolute path, because `docker compose` for a generated stack runs as a
+      # CLI *inside* this container while the bind sources it resolves are
+      # opened by the daemon on the HOST — so the project directory has to be
+      # the same string in both places. That is also why PWD is only a default
+      # and not a discovery: a container cannot learn its own host path, and
+      # the backend asserts at startup that whatever arrives here really is
+      # this repository rather than trusting the guess.
+      - MNS_WORKSPACE_ROOT=${MSRS_ROOT:-${PWD}}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
@@ -124,7 +137,7 @@ services:
       # already does (product.sh:24).
       - ${DOCKER_CONFIG:-${HOME}/.docker}:/root/.docker:ro
       # this repo at its identical host path (generator + stack lifecycle)
-      - ${MSRS_ROOT:?set MSRS_ROOT}:${MSRS_ROOT}
+      - ${MSRS_ROOT:-${PWD}}:${MSRS_ROOT:-${PWD}}
       - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
     # No depends_on the database, deliberately. It used to gate on
     # postgres-telemetry being healthy (required: false, so the db stayed
