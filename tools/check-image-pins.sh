@@ -131,6 +131,67 @@ case "$report" in
     echo "without this repository changing. --bump rewrites it with a digest." >&2 ;;
 esac
 
+# --- baked pins -------------------------------------------------------------
+#
+# The dashboard backend bakes the authoring and stack-generator references into
+# its image (backend/Dockerfile ARG -> MNS_*_IMAGE_DEFAULT) so an image-only
+# deploy needs no MNS_* env wiring. That makes the backend image a CONSUMER of
+# two other rows in this file, and the coupling is invisible: bump the generator
+# pin here and the released backend still carries the old one, with nothing in
+# any repo to show for it. In the normal compose deployment
+# docker-compose-dashboard.yml passes the runtime env, which overrides the
+# baked value — so the drift is harmless exactly where it is observable, and
+# harmful only in the image-only case the baking exists to serve.
+#
+# Reading Config.Env needs the image config, not the manifest, so this goes
+# through buildx rather than the Hub API the rest of the script uses.
+# imagetools fetches the config blob without pulling layers.
+baked_pins_check() {
+    local backend want_auth want_gen got_auth got_gen cfg
+    backend=$(grep -E '^DASHBOARD_BACKEND_IMAGE=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
+    want_auth=$(grep -E '^MNS_AUTHORING_IMAGE=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
+    want_gen=$(grep -E '^MNS_STACK_GENERATOR_IMAGE=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
+    [[ -n "$backend" && -n "$want_auth" && -n "$want_gen" ]] || return 0
+
+    echo
+    if ! cfg=$(docker buildx imagetools inspect "$backend" --format '{{json .Image}}' 2>&1); then
+        # Not silently OK: an unreadable image is an unanswered question.
+        printf '%-28s %s\n' 'BAKED_UNREADABLE' "cannot inspect $backend"
+        printf '%s\n' "$cfg" | sed 's/^/    /' >&2
+        return 0
+    fi
+    got_auth=$(printf '%s' "$cfg" | python3 -c 'import json,sys;e=json.load(sys.stdin)["config"].get("Env") or [];print(next((v.split("=",1)[1] for v in e if v.startswith("MNS_AUTHORING_IMAGE_DEFAULT=")),""))')
+    got_gen=$(printf '%s' "$cfg" | python3 -c 'import json,sys;e=json.load(sys.stdin)["config"].get("Env") or [];print(next((v.split("=",1)[1] for v in e if v.startswith("MNS_STACK_GENERATOR_IMAGE_DEFAULT=")),""))')
+
+    local bad=0
+    for pair in "MNS_AUTHORING_IMAGE_DEFAULT|$want_auth|$got_auth" \
+                "MNS_STACK_GENERATOR_IMAGE_DEFAULT|$want_gen|$got_gen"; do
+        local key="${pair%%|*}" rest="${pair#*|}"
+        local want="${rest%%|*}" got="${rest#*|}"
+        if [[ -z "$got" ]]; then
+            printf '%-36s %s\n' "$key" 'BAKED_EMPTY'
+            bad=1
+        elif [[ "$got" != "$want" ]]; then
+            printf '%-36s %s\n' "$key" 'BAKED_STALE'
+            printf '    baked:  %s\n' "$got"
+            printf '    pinned: %s\n' "$want"
+            bad=1
+        else
+            printf '%-36s %s\n' "$key" 'ok'
+        fi
+    done
+    if [[ $bad == 1 ]]; then
+        echo
+        echo "BAKED_*: the released dashboard backend carries authoring/generator" >&2
+        echo "references that are empty or no longer match the pins above. Compose" >&2
+        echo "deployments override them at runtime and are unaffected; an image-only" >&2
+        echo "deploy is not. --bump cannot fix this — it needs a backend rebuild:" >&2
+        echo "    TEVV-Web-Dashboard/tools/build-dashboard-images.sh --push backend" >&2
+        echo "then re-run --bump here to pick up the new backend digest." >&2
+    fi
+}
+baked_pins_check
+
 case "$MODE" in
 report) exit 0 ;;
 
