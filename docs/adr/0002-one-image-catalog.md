@@ -48,10 +48,12 @@ run on every PR with no network dependency and no flakiness.
 **The digest is the contract; the tag is for humans — generalizing ADR 0001 to
 every image, not just the product ones.** `repo:tag@sha256:...` is what
 actually resolves; the tag next to it is a comment Docker happens to validate.
-Every digest is the **index** (manifest-list) digest: `docker buildx imagetools
-inspect <ref> --format '{{.Manifest.Digest}}'` reports it; `docker manifest
-inspect -v` reports the per-architecture manifest instead, which is the easy
-way to pin the wrong thing and have it work only on the machine you tested on.
+Every digest is the **index** (manifest-list) digest: the `Digest:` line of
+`docker buildx imagetools inspect <ref>`'s default (non-`--format`) report
+gives it — see below for why the tempting `--format '{{.Manifest.Digest}}'`
+is the wrong tool for this; `docker manifest inspect -v` reports the
+per-architecture manifest instead, which is the easy way to pin the wrong
+thing and have it work only on the machine you tested on.
 
 **`channel` replaces the old regex-based inference in `check-image-pins.sh`:**
 
@@ -108,16 +110,19 @@ non-`local`/non-`unpublished` row is `UNRESOLVABLE`, so it can gate a build.
 
 ### Unpublished images
 
-Building this catalog surfaced four images that are referenced live but do
-not exist on the registry today: `mock_data_generator`
+Building this catalog surfaced four images that were referenced live but did
+not exist on the registry at the time: `mock_data_generator`
 (`docker-compose-monitoring.yml:69`), `exploration_mock_generator`
 (`docker-compose-monitoring.yml:100`), `jsonl_ingestor`
 (`docker-compose-monitoring.yml:196` — present only as a local image on one
 machine), and `unreal_authored` (`image_sets.yaml`'s published
-`simulators.unreal_authored` role). `docker manifest inspect` finds none of
-them. A fresh clone pulling the affected compose profiles (`mock-testing`,
-`mock-data`, `exploration-mock`, `ingest`, or the published `unreal_authored`
-simulator role) fails today, registry-side, regardless of this catalog.
+`simulators.unreal_authored` role). `docker manifest inspect` found none of
+them. `jsonl_ingestor` was pushed to the registry during this work and is now
+`channel: moving` with a verified digest (`images/catalog.yaml`); the other
+three remain `channel: unpublished`. A fresh clone pulling the affected
+compose profiles (`mock-testing`, `mock-data`, `exploration-mock`, or the
+published `unreal_authored` simulator role) still fails today, registry-side,
+regardless of this catalog.
 
 These get `channel: unpublished` rather than `moving` (which would report
 `NO_DIGEST` forever, indistinguishable from "just hasn't been pinned yet")
@@ -128,8 +133,9 @@ reference exists, it does not resolve, and here is why. Each row's `purpose:`
 carries the "referenced from" pointer so the gap is discoverable without
 re-deriving it from a failed `docker pull`.
 
-Fixing the underlying gap — publish the four images, or remove the compose
-references that need them — is a follow-up decision for whoever owns those
+Fixing the underlying gap — publish the remaining three images, or remove
+the compose references that need them — is a follow-up decision for whoever
+owns those
 images' CI, not this catalog's job. The catalog's job is to make the gap
 visible instead of a pull failure being the first anyone hears of it.
 

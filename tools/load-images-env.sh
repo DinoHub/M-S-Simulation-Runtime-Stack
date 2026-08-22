@@ -44,11 +44,19 @@ load_images_env() {
     case "$line" in
       ''|'#'*) continue ;;
     esac
+    # Not a KEY=VAL line (no '=' anywhere) — ignore. Checked on the RAW line,
+    # before the `export ` prefix is stripped below: stripping first would
+    # change $key without touching a no-'=' $line (e.g. a hand-written
+    # `export FOO` with no value), so the old "did stripping do anything"
+    # check below would wrongly say yes and fall through to exporting FOO
+    # with the whole original line as its garbage value.
+    case "$line" in
+      *=*) ;;
+      *) continue ;;
+    esac
     key="${line%%=*}"
     val="${line#*=}"
     key="${key#export }"
-    # Not a KEY=VAL line (no '=') — ignore.
-    [ "$key" = "$line" ] && continue
     # Not a valid identifier (must start with a letter/underscore, and
     # contain only letters/digits/underscores after that) — ignore. POSIX
     # case globs, no regex: reject on a bad first character, then reject if

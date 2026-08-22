@@ -505,15 +505,20 @@ images:
     digest: sha256:98b931f289c71f5b7900e7ff367996b8831e0d2b44b1ce0cb38ed6efcd395d1a
     channel: moving
     purpose: >-
-      ardupilot-xfs's AIRSIM_IMAGE default. NOT the same image as
-      px4-xfs's AIRSIM_IMAGE default (the `xfs` row, tevv-airsim-xfs-latest)
-      — documented in the compose template itself
+      ardupilot-xfs's AIRSIM_IMAGE default. A DISTINCT TAG from px4-xfs's
+      AIRSIM_IMAGE default (the `xfs` row, tevv-airsim-xfs-latest) —
+      documented in the compose template itself
       (compose/px4-xfs/templates/docker-compose.yml.j2: "Default tag differs
       from ardupilot-xfs's xfs-latest on purpose") as relying on root .env
-      to unify both scenarios to one image; see
-      docs/adr/0002-one-image-catalog.md "Legacy scenario stacks:
-      conflicting defaults". Root .env currently pins AIRSIM_IMAGE to this
-      tag.
+      to unify both scenarios to one image. At pin time the two tags happen
+      to resolve to the identical digest (both sha256:98b931f2…) — that is a
+      snapshot of today's registry state, not a guarantee: they are two
+      independently-republished mutable tags with no coupling that keeps
+      them in sync, and the 3-way AIRSIM_IMAGE conflict this row exists to
+      document (see docs/adr/0002-one-image-catalog.md "Legacy scenario
+      stacks: conflicting defaults") stands regardless — airsim_urbansimdemo
+      is a third, currently-different value for the same var name. Root .env
+      currently pins AIRSIM_IMAGE to this tag.
 
   airsim_urbansimdemo:
     repo: dhdevspace/auto_mns
