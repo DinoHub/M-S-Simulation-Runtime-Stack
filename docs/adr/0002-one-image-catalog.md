@@ -68,6 +68,12 @@ way to pin the wrong thing and have it work only on the machine you tested on.
   `null`, and the row is skipped by both `verify` and `bump`. A `local/…` ref
   with `pull_policy: always` fails at registry lookup, so `sync` asserts no
   image set combines the two.
+- `unpublished` — a real (non-`local/`) repo/tag that this repository
+  references but that does not currently exist on the registry. `digest` is
+  always `null`; `report` shows `UNPUBLISHED` without attempting a lookup (a
+  lookup would only ever confirm what the row already says), `verify` does
+  not fail the build over it, and `bump` refuses it outright. See "Unpublished
+  images" below.
 
 **`resolver` says how `report`/`bump` find a live digest:** `hub` (default,
 Docker Hub v2 API — needed to enumerate `-review.N` siblings) or `imagetools`
@@ -84,8 +90,48 @@ comment and section-header comment — which is the entire point of hand-authori
 this file instead of a flat env list. `tools/images.sh bump` finds the specific
 `tag:`/`digest:` lines for the row being bumped with a targeted regex, rewrites
 only those two lines, then re-parses the whole file and asserts the structure
-is still valid and the bumped row shows the new value. `upstream` and `local`
-rows are refused outright, regardless of `--only`/`--channel`.
+is still valid and the bumped row shows the new value. `upstream`, `local`,
+and `unpublished` rows are refused outright, regardless of `--only`/`--channel`.
+
+**A failed live lookup is `UNRESOLVABLE`, never `NO_DIGEST`.** The two look
+similar in effect — neither has a digest to show — but they mean opposite
+things: `NO_DIGEST` means the registry answered and the row simply has not
+been pinned yet (routine, `bump` fixes it); `UNRESOLVABLE` means the lookup
+itself failed (404, auth, network) and nothing was learned. Collapsing them,
+which an early version of this tooling did, prints the row's own tag in the
+"live" column on failure — indistinguishable from "not yet pinned" at a
+glance, exactly the silent-OK failure mode `report` exists to prevent. Every
+resolver path (`hub` and `imagetools`) returns `(value, error)` and a nonzero
+`error` always produces `UNRESOLVABLE` with the reason in the detail column,
+before any digest-comparison logic runs. `report` exits nonzero when any
+non-`local`/non-`unpublished` row is `UNRESOLVABLE`, so it can gate a build.
+
+### Unpublished images
+
+Building this catalog surfaced four images that are referenced live but do
+not exist on the registry today: `mock_data_generator`
+(`docker-compose-monitoring.yml:69`), `exploration_mock_generator`
+(`docker-compose-monitoring.yml:100`), `jsonl_ingestor`
+(`docker-compose-monitoring.yml:196` — present only as a local image on one
+machine), and `unreal_authored` (`image_sets.yaml`'s published
+`simulators.unreal_authored` role). `docker manifest inspect` finds none of
+them. A fresh clone pulling the affected compose profiles (`mock-testing`,
+`mock-data`, `exploration-mock`, `ingest`, or the published `unreal_authored`
+simulator role) fails today, registry-side, regardless of this catalog.
+
+These get `channel: unpublished` rather than `moving` (which would report
+`NO_DIGEST` forever, indistinguishable from "just hasn't been pinned yet")
+or `UNRESOLVABLE` (which would report a real infrastructure gap as if it were
+a tooling failure, and — worse — would make `report` exit nonzero on every
+run in a way no `bump` can fix). `unpublished` says plainly, in git: this
+reference exists, it does not resolve, and here is why. Each row's `purpose:`
+carries the "referenced from" pointer so the gap is discoverable without
+re-deriving it from a failed `docker pull`.
+
+Fixing the underlying gap — publish the four images, or remove the compose
+references that need them — is a follow-up decision for whoever owns those
+images' CI, not this catalog's job. The catalog's job is to make the gap
+visible instead of a pull failure being the first anyone hears of it.
 
 **Baked backend refs are a generated, CI-verified cache, not a second source of
 truth.** The dashboard backend's Dockerfile bakes `MNS_AUTHORING_IMAGE_DEFAULT`

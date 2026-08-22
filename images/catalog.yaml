@@ -146,8 +146,14 @@ images:
     repo: dhdevspace/auto_mns
     tag: tevv-airsim-authored-latest
     digest: null
-    channel: moving
-    purpose: Authored/custom AirSim map, the published simulators.unreal_authored role.
+    channel: unpublished
+    purpose: >-
+      Authored/custom AirSim map, the published simulators.unreal_authored
+      role — referenced by image_sets.yaml (this catalog's
+      consumers.image_sets.published.images.simulators.unreal_authored) but
+      NOT present on the registry (docker manifest inspect: not found). A
+      fresh pull of the published image_sets.unreal_authored role fails
+      today; see docs/adr/0002-one-image-catalog.md "Unpublished images".
 
   ardupilot:
     repo: dhdevspace/auto_mns
@@ -254,15 +260,26 @@ images:
     repo: dhdevspace/auto_mns
     tag: mock-data-generator-latest
     digest: null
-    channel: moving
-    purpose: Synthetic per-drone metrics generator for dashboard testing.
+    channel: unpublished
+    purpose: >-
+      Synthetic per-drone metrics generator for dashboard testing —
+      referenced by docker-compose-monitoring.yml:69 (mock-data-generator)
+      but NOT present on the registry (docker manifest inspect: not found).
+      A fresh pull of the mock-testing/mock-data profiles fails today; see
+      docs/adr/0002-one-image-catalog.md "Unpublished images".
 
   exploration_mock_generator:
     repo: dhdevspace/auto_mns
     tag: exploration-mock-generator-latest
     digest: null
-    channel: moving
-    purpose: Synthetic exploration-metrics generator for dashboard testing.
+    channel: unpublished
+    purpose: >-
+      Synthetic exploration-metrics generator for dashboard testing —
+      referenced by docker-compose-monitoring.yml:100
+      (exploration-mock-generator) but NOT present on the registry (docker
+      manifest inspect: not found). A fresh pull of the exploration-mock
+      profile fails today; see docs/adr/0002-one-image-catalog.md
+      "Unpublished images".
 
   prometheus:
     repo: dhdevspace/auto_mns
@@ -283,8 +300,14 @@ images:
     repo: dhdevspace/auto_mns
     tag: tevv-jsonl-ingest-latest
     digest: null
-    channel: moving
-    purpose: Batch job computing TEVV metrics from events.jsonl into ES + pushgateway.
+    channel: unpublished
+    purpose: >-
+      Batch job computing TEVV metrics from events.jsonl into ES +
+      pushgateway — referenced by docker-compose-monitoring.yml:196
+      (jsonl-ingestor) but NOT present on the registry (docker manifest
+      inspect: not found; only a local docker image on this machine). A
+      fresh pull of the ingest profile fails today; see
+      docs/adr/0002-one-image-catalog.md "Unpublished images".
 
   grafana:
     repo: dhdevspace/auto_mns

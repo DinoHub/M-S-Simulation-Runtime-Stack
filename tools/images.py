@@ -7,13 +7,20 @@ docs/adr/0002-one-image-catalog.md (why this exists). Subcommands:
   sync     regenerate every generated artifact from images/catalog.yaml (offline)
   verify   regenerate into a tmp dir, diff against the committed artifacts,
            exit 1 on any difference (offline — the CI gate)
-  report   for each non-local image, show whether a newer tag/digest exists
-           (online: Docker Hub v2 API for channel review/moving, `docker
-           buildx imagetools inspect` for resolver: imagetools rows)
+  report   for each non-local, non-unpublished image, show whether a newer
+           tag/digest exists (online: Docker Hub v2 API for channel
+           review/moving, `docker buildx imagetools inspect` for resolver:
+           imagetools rows). A failed lookup is reported as UNRESOLVABLE with
+           the reason (404 / auth / network) in the detail column — never as
+           NO_DIGEST, and never by printing the tag as if it were live data.
+           `report` exits nonzero if any non-local/non-unpublished row is
+           UNRESOLVABLE, so it can gate. `channel: unpublished` rows (known to
+           be absent from the registry — see images/catalog.yaml) are shown
+           as UNPUBLISHED without attempting a lookup.
   bump     rewrite images/catalog.yaml LINE-TARGETED (never yaml.dump — that
            would destroy every `purpose:` comment) for rows that are behind,
            then re-parse and assert the structure. Only channel review/moving
-           rows are ever written; upstream/local are refused.
+           rows are ever written; upstream/local/unpublished are refused.
 
 Two small internal helpers, used by tools/images.sh's bash-side drift/baked
 logic rather than meant for interactive use:
@@ -57,7 +64,7 @@ GENERATED_MARKER = (
     "Do not hand-edit; run tools/images.sh sync."
 )
 
-VALID_CHANNELS = {"review", "moving", "upstream", "local"}
+VALID_CHANNELS = {"review", "moving", "upstream", "local", "unpublished"}
 VALID_RESOLVERS = {"hub", "imagetools"}
 
 COMPOSE_FILE_FOR_GROUP = {
@@ -101,8 +108,8 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
         resolver = row.get("resolver", "hub")
         if resolver not in VALID_RESOLVERS:
             raise CatalogError(f"images.{key}.resolver {resolver!r} not in {VALID_RESOLVERS}")
-        if row["channel"] == "local" and row["digest"] is not None:
-            raise CatalogError(f"images.{key} is channel local but digest is not null")
+        if row["channel"] in ("local", "unpublished") and row["digest"] is not None:
+            raise CatalogError(f"images.{key} is channel {row['channel']} but digest is not null")
         if row["channel"] == "local" and not str(row["repo"]).startswith("local/"):
             raise CatalogError(f"images.{key} is channel local but repo does not start with local/")
     consumers = data.get("consumers")
@@ -348,26 +355,46 @@ def _hub_token() -> str:
     return json.load(urllib.request.urlopen(req))["token"]
 
 
-def _hub_digest_for(repo: str, tag: str, token: str) -> str:
+def _hub_digest_for(repo: str, tag: str, token: str) -> tuple[str, str | None]:
+    """Returns (digest, error). error is None on success — even if Hub's
+    response happens to carry no digest field, which is not the same as a
+    failed lookup and must not be conflated with it (that conflation was the
+    bug: a 404 rendered identically to 'not pinned yet')."""
     try:
         req = urllib.request.Request(
             f"https://hub.docker.com/v2/repositories/{repo}/tags/{tag}",
             headers={"Authorization": f"JWT {token}"},
         )
-        return json.load(urllib.request.urlopen(req)).get("digest") or ""
-    except Exception:
-        return ""
+        resp = json.load(urllib.request.urlopen(req, timeout=30))
+        return resp.get("digest") or "", None
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return "", "404 not found"
+        if exc.code in (401, 403):
+            return "", f"HTTP {exc.code} auth"
+        return "", f"HTTP {exc.code}"
+    except urllib.error.URLError as exc:
+        return "", f"network: {exc.reason}"
+    except Exception as exc:  # malformed JSON, timeout, etc.
+        return "", f"error: {exc}"
 
 
-def _hub_tags(repo: str, family: str, token: str) -> list[str]:
+def _hub_tags(repo: str, family: str, token: str) -> tuple[list[str], str | None]:
     out: list[str] = []
     url = f"https://hub.docker.com/v2/repositories/{repo}/tags/?page_size=100&name={family}"
-    while url:
-        req = urllib.request.Request(url, headers={"Authorization": f"JWT {token}"})
-        d = json.load(urllib.request.urlopen(req))
-        out += [t["name"] for t in d["results"]]
-        url = d.get("next")
-    return out
+    try:
+        while url:
+            req = urllib.request.Request(url, headers={"Authorization": f"JWT {token}"})
+            d = json.load(urllib.request.urlopen(req, timeout=30))
+            out += [t["name"] for t in d["results"]]
+            url = d.get("next")
+        return out, None
+    except urllib.error.HTTPError as exc:
+        return out, f"HTTP {exc.code}"
+    except urllib.error.URLError as exc:
+        return out, f"network: {exc.reason}"
+    except Exception as exc:
+        return out, f"error: {exc}"
 
 
 def _review_num(tag: str) -> int | None:
@@ -375,90 +402,121 @@ def _review_num(tag: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _imagetools_digest(ref: str) -> str:
+def _imagetools_digest(ref: str) -> tuple[str, str | None]:
     """awk '/^Digest:/' idiom — NOT --format '{{.Manifest.Digest}}', which
     silently prints the wrong thing (or nothing useful) for a single-arch
     image. See MnS-Integration-Platform/services/tevv-web-dashboard/tools/
-    pin-dashboard-images.sh:52-58."""
+    pin-dashboard-images.sh:52-58. Returns (digest, error); error is None only
+    on a clean resolve, so a 'not found' / auth / network failure is never
+    indistinguishable from 'digest not pinned yet'."""
     try:
         out = subprocess.run(
             ["docker", "buildx", "imagetools", "inspect", ref],
             capture_output=True, text=True, timeout=60,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return "", f"error: {exc}"
     if out.returncode != 0:
-        return ""
+        reason = (out.stderr or out.stdout or "unknown imagetools failure").strip().splitlines()
+        return "", reason[0] if reason else "unknown imagetools failure"
     for line in out.stdout.splitlines():
         if line.startswith("Digest:"):
             digest = line.split(":", 1)[1].strip()
-            return digest if re.match(r"^sha256:[0-9a-f]{64}$", digest) else ""
-    return ""
+            if re.match(r"^sha256:[0-9a-f]{64}$", digest):
+                return digest, None
+            return "", f"unparseable Digest line: {digest!r}"
+    return "", "no Digest: line in imagetools output"
+
+
+def _row_result(key: str, row: dict[str, Any], *, status: str, detail: str,
+                 latest_tag: str | None = None, live_digest: str = "") -> dict[str, Any]:
+    return {
+        "key": key, "repo": row["repo"], "tag": row["tag"], "channel": row["channel"],
+        "latest_tag": latest_tag or row["tag"], "status": status,
+        "live_digest": live_digest, "detail": detail,
+    }
 
 
 def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, Any]:
     repo, tag, pinned_digest = row["repo"], row["tag"], row.get("digest") or ""
     channel = row["channel"]
     resolver = row.get("resolver", "hub")
-    out = {"key": key, "repo": repo, "tag": tag, "channel": channel,
-           "latest_tag": tag, "status": "SKIPPED", "live_digest": ""}
 
     if channel == "local":
-        out["status"] = "SKIPPED (local)"
-        return out
+        return _row_result(key, row, status="SKIPPED (local)", detail="-")
+
+    if channel == "unpublished":
+        # Known, deliberately, to not exist on the registry — see the row's
+        # purpose: for where it's referenced from and why. No lookup: we
+        # already know what it would say, and a stale network error here
+        # must never be mistaken for "this one just started failing".
+        return _row_result(key, row, status="UNPUBLISHED",
+                            detail="not on registry (see purpose:)")
 
     if resolver == "imagetools":
-        live = _imagetools_digest(f"{repo}:{tag}")
-        if not live:
-            out["status"] = "UNRESOLVABLE"
-        elif not pinned_digest:
-            out["status"] = "NO_DIGEST"
-        elif live != pinned_digest:
-            out["status"] = "DIGEST_CHANGED"
-        else:
-            out["status"] = "OK"
-        out["live_digest"] = live
-        return out
+        live, err = _imagetools_digest(f"{repo}:{tag}")
+        if err:
+            return _row_result(key, row, status="UNRESOLVABLE", detail=err)
+        if not pinned_digest:
+            return _row_result(key, row, status="NO_DIGEST", detail=live[:19], live_digest=live)
+        if live != pinned_digest:
+            return _row_result(key, row, status="DIGEST_CHANGED", detail=live[:19], live_digest=live)
+        return _row_result(key, row, status="OK", detail=live[:19], live_digest=live)
 
     # resolver == hub
     assert token is not None
-    live = _hub_digest_for(repo, tag, token)
+    live, err = _hub_digest_for(repo, tag, token)
+    if err:
+        return _row_result(key, row, status="UNRESOLVABLE", detail=err)
+
     if channel == "review":
         m = re.match(r"^(.*-review)\.\d+$", tag)
         family = m.group(1) if m else None
-        candidates = [(_review_num(t), t) for t in (_hub_tags(repo, family, token) if family else [])
-                      if _review_num(t) is not None]
+        family_tags: list[str] = []
+        if family:
+            family_tags, tags_err = _hub_tags(repo, family, token)
+            if tags_err and not family_tags:
+                # Current tag resolved fine above; only the sibling-tag
+                # enumeration failed. Degrade to "can't tell if newer exists"
+                # rather than masking it as OK.
+                return _row_result(key, row, status="NO_TAGS_FOUND",
+                                    detail=f"tag search failed: {tags_err}", live_digest=live)
+        candidates = [(_review_num(t), t) for t in family_tags if _review_num(t) is not None]
         latest = max(candidates)[1] if candidates else tag
         if not family or not candidates:
-            out["status"] = "NO_TAGS_FOUND"
-        elif not pinned_digest:
-            out["status"] = "NO_DIGEST"
-        elif live and live != pinned_digest:
-            out["status"] = "TAG_MOVED"
-        elif latest != tag:
-            out["status"] = "STALE"
-        else:
-            out["status"] = "OK"
-        out["latest_tag"] = latest
-        out["live_digest"] = _hub_digest_for(repo, latest, token) if latest != tag else live
-        return out
+            return _row_result(key, row, status="NO_TAGS_FOUND", detail="no -review.N siblings found",
+                                live_digest=live)
+        if not live:
+            # Hub resolved the request but returned no digest for an
+            # existing tag — rare, and distinct from both a failed lookup
+            # (UNRESOLVABLE, handled above) and "not pinned yet" (NO_DIGEST).
+            return _row_result(key, row, status="NO_TAGS_FOUND",
+                                detail="Hub returned no digest for this tag")
+        if not pinned_digest:
+            return _row_result(key, row, status="NO_DIGEST", detail=live[:19], live_digest=live)
+        if live != pinned_digest:
+            return _row_result(key, row, status="TAG_MOVED", detail=live[:19], live_digest=live)
+        if latest != tag:
+            latest_live, latest_err = _hub_digest_for(repo, latest, token)
+            detail = latest_live[:19] if latest_live else (latest_err or "")
+            return _row_result(key, row, status="STALE", detail=detail,
+                                latest_tag=latest, live_digest=latest_live)
+        return _row_result(key, row, status="OK", detail=live[:19], live_digest=live)
 
     # channel == moving (mutable tag, no family)
+    if not live:
+        return _row_result(key, row, status="NO_TAGS_FOUND",
+                            detail="Hub returned no digest for this tag")
     if not pinned_digest:
-        out["status"] = "NO_DIGEST"
-    elif live and live != pinned_digest:
-        out["status"] = "TAG_MOVED"
-    elif not live:
-        out["status"] = "NO_TAGS_FOUND"
-    else:
-        out["status"] = "OK"
-    out["live_digest"] = live
-    return out
+        return _row_result(key, row, status="NO_DIGEST", detail=live[:19], live_digest=live)
+    if live != pinned_digest:
+        return _row_result(key, row, status="TAG_MOVED", detail=live[:19], live_digest=live)
+    return _row_result(key, row, status="OK", detail=live[:19], live_digest=live)
 
 
 def _needs_hub(catalog: dict[str, Any]) -> bool:
     return any(
-        row.get("resolver", "hub") == "hub" and row["channel"] != "local"
+        row.get("resolver", "hub") == "hub" and row["channel"] not in ("local", "unpublished")
         for row in catalog["images"].values()
     )
 
@@ -476,19 +534,22 @@ def cmd_report(args: argparse.Namespace) -> int:
             continue
         rows.append(_report_row(key, images[key], token))
 
-    print(f"{'KEY':<26} {'CHANNEL':<9} {'TAG':<40} {'STATUS':<16} {'LATEST/LIVE'}")
+    print(f"{'KEY':<26} {'CHANNEL':<12} {'TAG':<40} {'STATUS':<16} {'DETAIL'}")
     bad = False
     for r in rows:
-        digest_col = r["live_digest"][:19] if r["live_digest"] else r["latest_tag"]
-        print(f"{r['key']:<26} {r['channel']:<9} {r['tag']:<40} {r['status']:<16} {digest_col}")
+        print(f"{r['key']:<26} {r['channel']:<12} {r['tag']:<40} {r['status']:<16} {r['detail']}")
         if r["status"] == "UNRESOLVABLE":
             bad = True
-    if any(r["status"] == "NO_DIGEST" for r in rows if r["channel"] != "local"):
+    if any(r["status"] == "NO_DIGEST" for r in rows):
         print("\nNO_DIGEST: pinned by tag alone; images.sh bump can resolve it "
               "(channel review/moving only).", file=sys.stderr)
     if any(r["status"] in ("TAG_MOVED", "DIGEST_CHANGED") for r in rows):
         print("TAG_MOVED/DIGEST_CHANGED: the tag now resolves to a different image "
               "than what is pinned. images.sh bump re-pins it.", file=sys.stderr)
+    if any(r["status"] == "UNPUBLISHED" for r in rows):
+        print("UNPUBLISHED: known-absent from the registry (see the row's purpose: in "
+              "images/catalog.yaml). Not an error; needs a push or a compose-reference "
+              "removal, tracked separately.", file=sys.stderr)
     if bad:
         print("UNRESOLVABLE: could not resolve at all — reported, not silently OK.",
               file=sys.stderr)
@@ -534,7 +595,7 @@ def cmd_bump(args: argparse.Namespace) -> int:
         row = images[key]
         if args.channel and row["channel"] != args.channel:
             continue
-        if row["channel"] in ("upstream", "local"):
+        if row["channel"] in ("upstream", "local", "unpublished"):
             print(f"refused: {key} is channel {row['channel']} (never auto-bumped)", file=sys.stderr)
             continue
         report_row = _report_row(key, row, token)
