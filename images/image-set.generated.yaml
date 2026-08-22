@@ -31,7 +31,7 @@ image_sets:
         unreal_authored: local/auto_mns:tevv-airsim-authored-latest
       autopilots:
         ardupilot: local/auto_mns:ardupilot-latest
-        px4: dhdevspace/auto_mns:px4-airsim-px4@sha256:cd5a87467c73a0f8f506bca38a6f5d8df0779cf3c21a99dd0f4384784d40588a
+        px4: local/auto_mns:px4-airsim-px4
       ros2_bridge: local/auto_mns:tevv-airsim-ros2-bridge-humble
       qgroundcontrol: local/auto_mns:airsim-qgc-x11-latest
       sim_real_eval: local/auto_mns:sim-real-eval-worker-latest

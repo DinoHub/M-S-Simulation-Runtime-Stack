@@ -193,9 +193,15 @@ images:
   # ---------------------------------------------------------------------
   # Runtime images — image_sets "dev-local" deltas (repo local/auto_mns).
   # local/ images are never resolved: channel local, digest always null.
-  # condo and px4 are NOT duplicated here — dev-local deliberately shares
-  # published's images for those two roles (see consumers.image_sets.dev-local
-  # below), so there is no local_condo / local_px4 row.
+  # condo is the ONLY role NOT duplicated here — P's image_sets.yaml pins the
+  # literal same dhdevspace/auto_mns ref for condo under both published and
+  # dev-local (no local/ condo build exists), so dev-local deliberately
+  # inherits published's condo image unchanged (see
+  # consumers.image_sets.dev-local below). Checked key-by-key against P's
+  # source for this ADR revision: every other role (including px4, which an
+  # earlier revision of this file wrongly assumed was also shared — it is
+  # not; P has pinned a distinct local/auto_mns:px4-airsim-px4 under
+  # dev-local since at least commit b83813f) has its own local_* row here.
   # ---------------------------------------------------------------------
   local_blocks:
     repo: local/auto_mns
@@ -231,6 +237,17 @@ images:
     digest: null
     channel: local
     purpose: dev-local override of ardupilot (image_sets autopilots.ardupilot).
+
+  local_px4:
+    repo: local/auto_mns
+    tag: px4-airsim-px4
+    digest: null
+    channel: local
+    purpose: >-
+      Developer's local PX4 build; dev-local override of px4 (image_sets
+      autopilots.px4). NOT shared with published — P's image_sets.yaml pins
+      a genuinely distinct local/auto_mns ref here (unlike condo, the one
+      role that really is shared).
 
   local_ros2_bridge:
     repo: local/auto_mns
@@ -464,11 +481,12 @@ consumers:
           safti_city: local_safti_city
           # condo: absent on purpose — no local/ condo build exists, so
           # dev-local deliberately runs published's condo image unchanged.
+          # This is the ONLY role in this image set that is genuinely shared;
+          # every other role below has its own local_* row.
           unreal_authored: local_unreal_authored
         autopilots:
-          # px4: absent on purpose, same reason — dev-local deliberately
-          # shares published's px4 image (no local/ px4 build exists).
           ardupilot: local_ardupilot
+          px4: local_px4
         ros2_bridge: local_ros2_bridge
         qgroundcontrol: local_qgroundcontrol
         sim_real_eval: local_sim_real_eval

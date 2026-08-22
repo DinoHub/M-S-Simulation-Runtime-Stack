@@ -815,7 +815,11 @@ def cmd_bump(args: argparse.Namespace) -> int:
                   f"use --only {key} to pin the currently-pinned version's digest)", file=sys.stderr)
             continue
         report_row = _report_row(key, row, token)
-        if report_row["status"] not in ("STALE", "TAG_MOVED", "NO_DIGEST"):
+        # DIGEST_CHANGED is the imagetools-resolver counterpart of TAG_MOVED
+        # (_report_row:663) — a drifted upstream row reports DIGEST_CHANGED,
+        # never TAG_MOVED, so omitting it here made --only a documented no-op
+        # for exactly the rows it exists to re-pin.
+        if report_row["status"] not in ("STALE", "TAG_MOVED", "NO_DIGEST", "DIGEST_CHANGED"):
             continue
         new_digest = report_row["live_digest"]
         if not new_digest:
