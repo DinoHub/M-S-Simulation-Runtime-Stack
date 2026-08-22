@@ -1,0 +1,35 @@
+name: images
+
+# DORMANT: this workflow only runs when triggered manually
+# (Actions tab -> "images" -> "Run workflow") or via `gh workflow run images.yml`.
+# It does not run on PRs or pushes yet.
+#
+# Enabling it for real PR coverage is a one-line change — uncomment the
+# `pull_request:` trigger below. Left off for R-1 (this workflow lands
+# alongside the catalog + tooling, not as a gate on this PR itself); flip it
+# on once a PR has exercised `tools/images.sh verify` for real.
+on:
+  workflow_dispatch: {}
+  # pull_request:
+  #   paths:
+  #     - "images/**"
+  #     - "product-images.env"
+  #     - "tools/images.py"
+  #     - "tools/images.sh"
+  #     - "tools/check-image-pins.sh"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install tooling deps
+        run: pip install -r tools/requirements.txt
+
+      - name: images.sh verify
+        run: tools/images.sh verify

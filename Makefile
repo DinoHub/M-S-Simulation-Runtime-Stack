@@ -53,7 +53,7 @@ endif
 
 SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images
 
 dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
 	# Create these as the HOST user first, the way product.sh does. The backend
@@ -114,6 +114,7 @@ help:
 	@echo "  generate   render compose files from templates [SCENARIO=name]"
 	@echo "  check      exit nonzero when rendered files drift from .env+templates"
 	@echo "  self-test  generator invariant checks"
+	@echo "  verify-images  CI gate: images/catalog.yaml matches generated artifacts"
 	@echo "Current flags: $(if $(LAUNCH_FLAGS),$(LAUNCH_FLAGS),(none))"
 
 $(SCENARIOS):
@@ -180,3 +181,10 @@ check:
 
 self-test:
 	python3 tools/generate_scenario.py --self-test
+
+# CI gate for the image catalog (images/catalog.yaml): regenerates
+# product-images.env / images/*.generated.* into a temp location and diffs
+# against the committed copies. Offline — no registry calls. See
+# docs/adr/0002-one-image-catalog.md.
+verify-images:
+	./tools/images.sh verify

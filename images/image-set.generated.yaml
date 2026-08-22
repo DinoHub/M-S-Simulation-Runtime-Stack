@@ -1,0 +1,37 @@
+schema: mns.image_sets.v1
+
+# GENERATED from images/catalog.yaml — see docs/adr/0002-one-image-catalog.md. Do not hand-edit; run tools/images.sh sync.
+# Overlay via MNS_IMAGE_SET_FILE (MnS-Integration-Platform stackgen's
+# existing overlay hook — see docs/adr/0002-one-image-catalog.md).
+
+image_sets:
+  published:
+    pull_policy: always
+    images:
+      simulators:
+        blocks: dhdevspace/auto_mns:blocks-v0.2.0-review.3@sha256:0b3aec1aa502b9aaef35d1082c0d6c2c33ba18ff9006e832df70b2d05468869a
+        xfs: dhdevspace/auto_mns:tevv-airsim-xfs-latest
+        safti_city: dhdevspace/auto_mns:safti-runtime-metrics
+        condo: dhdevspace/auto_mns:tevv-airsim-condo-latest-ceilingless
+        unreal_authored: dhdevspace/auto_mns:tevv-airsim-authored-latest
+      autopilots:
+        ardupilot: dhdevspace/auto_mns:ardupilot-latest
+        px4: dhdevspace/auto_mns:px4-airsim-px4
+      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble
+      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
+      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest
+  dev-local:
+    pull_policy: if_not_present
+    images:
+      simulators:
+        blocks: local/auto_mns:blocks-v0.2.0-review.3
+        xfs: local/auto_mns:tevv-airsim-xfs-latest
+        safti_city: local/auto_mns:safti-runtime-metrics
+        condo: dhdevspace/auto_mns:tevv-airsim-condo-latest-ceilingless
+        unreal_authored: local/auto_mns:tevv-airsim-authored-latest
+      autopilots:
+        ardupilot: local/auto_mns:ardupilot-latest
+        px4: dhdevspace/auto_mns:px4-airsim-px4
+      ros2_bridge: local/auto_mns:tevv-airsim-ros2-bridge-humble
+      qgroundcontrol: local/auto_mns:airsim-qgc-x11-latest
+      sim_real_eval: local/auto_mns:sim-real-eval-worker-latest
