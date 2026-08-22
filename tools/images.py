@@ -5,8 +5,13 @@ See images/catalog.yaml (the single authored source) and
 docs/adr/0002-one-image-catalog.md (why this exists). Subcommands:
 
   sync     regenerate every generated artifact from images/catalog.yaml (offline)
-  verify   regenerate into a tmp dir, diff against the committed artifacts,
-           exit 1 on any difference (offline — the CI gate)
+  verify   run selftest, then regenerate into a tmp dir and diff against the
+           committed artifacts, exit 1 on any difference or selftest failure
+           (offline — the CI gate)
+  selftest regression guard on synthetic fixtures, no real catalog or network
+           touched: asserts an unquoted numeric-looking tag (e.g. `3.4`) fails
+           catalog validation, and that `bump`'s line-targeted rewrite always
+           emits a double-quoted tag. `verify` always runs this first.
   report   for each non-local, non-unpublished image, show whether a newer
            tag/digest exists (online: Docker Hub v2 API for channel
            review/moving, `docker buildx imagetools inspect` for resolver:
@@ -89,10 +94,10 @@ class CatalogError(SystemExit):
 # Loading + validation
 # --------------------------------------------------------------------------
 
-def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
-    if not path.is_file():
-        raise CatalogError(f"not found: {path}")
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+def _validate_catalog(data: Any) -> None:
+    """The structural checks load_catalog() applies to a parsed catalog dict.
+    Split out from load_catalog() so tools/images.py's self-test can run it
+    against a synthetic in-memory fixture, with no file on disk."""
     if not isinstance(data, dict):
         raise CatalogError("must be a mapping at the top level")
     if data.get("schema") != "mns.images.v1":
@@ -108,6 +113,18 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
                 raise CatalogError(f"images.{key} missing required field {field!r}")
         if "digest" not in row:
             raise CatalogError(f"images.{key} missing required field 'digest' (use null)")
+        # A tag like `3.4` or `8.12` is valid YAML float syntax; an unquoted
+        # `tag: 3.4` parses as the number 3.4, not the string "3.4" — silently
+        # corrupting the ref everywhere it's rendered. `3.4.2` happens to be
+        # safe (two dots isn't a valid number), which is exactly what let this
+        # slip through once already (loki's tag briefly lost its quotes to an
+        # unrelated `bump` rewrite). Catch every case, not just the two-dot one.
+        if not isinstance(row["tag"], str):
+            raise CatalogError(
+                f"images.{key}.tag must be a string, got {type(row['tag']).__name__} "
+                f"({row['tag']!r}) — YAML parsed an unquoted numeric-looking tag as a "
+                f"number. Quote it: tag: \"{row['tag']}\""
+            )
         if row["channel"] not in VALID_CHANNELS:
             raise CatalogError(f"images.{key}.channel {row['channel']!r} not in {VALID_CHANNELS}")
         resolver = row.get("resolver", "hub")
@@ -123,6 +140,13 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
     for group_name in ("product_env", "image_sets", "compose_env"):
         if group_name not in consumers:
             raise CatalogError(f"consumers.{group_name} missing")
+
+
+def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
+    if not path.is_file():
+        raise CatalogError(f"not found: {path}")
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    _validate_catalog(data)
     return data
 
 
@@ -319,6 +343,7 @@ def cmd_sync(_args: argparse.Namespace) -> int:
 
 
 def cmd_verify(_args: argparse.Namespace) -> int:
+    run_selftest()  # regression guard: must pass before trusting the real catalog
     catalog = load_catalog()
     assert_invariants(catalog)
     artifacts = render_all(catalog)
@@ -334,6 +359,87 @@ def cmd_verify(_args: argparse.Namespace) -> int:
         return 1
     print("verify: ok (product-images.env, images/image-set.generated.yaml, "
           "images/platform-images.generated.env all match images/catalog.yaml)")
+    return 0
+
+
+# --------------------------------------------------------------------------
+# selftest — synthetic fixtures, no file on disk, no network. Exists so the
+# "unquoted numeric-looking tag" bug (loki's tag briefly became the float
+# 3.4 after a `bump` rewrite dropped its quotes) cannot regress silently:
+# `tools/images.sh verify` runs this on every invocation, offline.
+# --------------------------------------------------------------------------
+
+_SELFTEST_FIXTURE = """\
+schema: mns.images.v1
+
+images:
+  fixture:
+    repo: example/repo
+    tag: {tag}
+    digest: null
+    channel: moving
+    purpose: selftest fixture, not a real image.
+
+consumers:
+  product_env: {{}}
+  image_sets: {{}}
+  compose_env: {{}}
+"""
+
+
+def run_selftest() -> None:
+    # 1. An unquoted two-component numeric tag must be rejected: YAML parses
+    #    `tag: 3.4` as the float 3.4, not the string "3.4".
+    unquoted = yaml.safe_load(_SELFTEST_FIXTURE.format(tag="3.4"))
+    assert isinstance(unquoted["images"]["fixture"]["tag"], float), (
+        "selftest fixture assumption broken: expected YAML to parse an unquoted "
+        "'3.4' as a float — if this fails, PyYAML's number grammar changed and "
+        "the invariant below needs re-checking, not just this fixture."
+    )
+    try:
+        _validate_catalog(unquoted)
+    except CatalogError:
+        pass
+    else:
+        raise AssertionError(
+            "selftest FAILED: _validate_catalog accepted a non-string tag "
+            "(images.fixture.tag == 3.4, a float) — the tag-must-be-a-string "
+            "invariant regressed."
+        )
+
+    # 2. The quoted form of the same tag must be accepted, and stay a string.
+    quoted = yaml.safe_load(_SELFTEST_FIXTURE.format(tag='"3.4"'))
+    _validate_catalog(quoted)  # must not raise
+    assert quoted["images"]["fixture"]["tag"] == "3.4"
+    assert isinstance(quoted["images"]["fixture"]["tag"], str)
+
+    # 3. `bump`'s line-targeted rewrite must ALWAYS emit a quoted tag, even
+    #    when asked to write a value that would be unsafe unquoted (`3.4`),
+    #    and the result must re-parse as a string.
+    catalog_text = (
+        "schema: mns.images.v1\n\nimages:\n"
+        "  fixture:\n    repo: example/repo\n    tag: old-tag\n    digest: null\n"
+        "    channel: moving\n    purpose: selftest fixture.\n\nconsumers:\n"
+        "  product_env: {}\n"
+    )
+    rewritten = _bump_line_targeted(catalog_text, "fixture", "3.4", "sha256:" + "0" * 64)
+    m = re.search(r"(?m)^    tag: (.*)$", rewritten)
+    assert m, "selftest FAILED: bump did not rewrite the 'tag:' line at all"
+    assert m.group(1) == '"3.4"', (
+        f"selftest FAILED: bump must always double-quote tags — got {m.group(1)!r} "
+        "for a rewrite to '3.4', which is unsafe unquoted (parses as a float)."
+    )
+    reparsed = yaml.safe_load(rewritten)
+    tag_value = reparsed["images"]["fixture"]["tag"]
+    assert isinstance(tag_value, str) and tag_value == "3.4", (
+        f"selftest FAILED: bumped catalog text re-parses tag as {tag_value!r} "
+        f"({type(tag_value).__name__}), expected the string '3.4'"
+    )
+
+
+def cmd_selftest(_args: argparse.Namespace) -> int:
+    run_selftest()
+    print("selftest: ok (tag-must-be-string invariant + bump always-quotes-tags)")
     return 0
 
 
@@ -663,7 +769,13 @@ def _bump_line_targeted(text: str, key: str, new_tag: str, new_digest: str | Non
 
     if not re.search(r"(?m)^    tag: .*\n", body):
         raise CatalogError(f"bump: no 'tag:' line found in {key!r}'s block")
-    body = re.sub(r"(?m)^    tag: .*\n", f"    tag: {new_tag}\n", body, count=1)
+    # ALWAYS double-quote: an unquoted numeric-looking tag (`3.4`, `8.12`)
+    # is valid YAML float syntax and would silently become a number instead
+    # of a string. json.dumps gives a valid YAML double-quoted scalar (YAML's
+    # double-quote escaping is a superset of JSON's) with no assumptions
+    # about which tags happen to be "safe" unquoted.
+    quoted_tag = json.dumps(new_tag)
+    body = re.sub(r"(?m)^    tag: .*\n", lambda _m: f"    tag: {quoted_tag}\n", body, count=1)
 
     digest_literal = new_digest if new_digest else "null"
     if not re.search(r"(?m)^    digest: .*\n", body):
@@ -777,6 +889,7 @@ def main(argv: list[str]) -> int:
 
     sub.add_parser("sync").set_defaults(fn=cmd_sync)
     sub.add_parser("verify").set_defaults(fn=cmd_verify)
+    sub.add_parser("selftest").set_defaults(fn=cmd_selftest)
 
     p_report = sub.add_parser("report")
     p_report.add_argument("--only")

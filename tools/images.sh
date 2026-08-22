@@ -5,13 +5,17 @@
 # generated and committed. See docs/adr/0002-one-image-catalog.md.
 #
 #   tools/images.sh sync            # regenerate all artifacts (offline)
-#   tools/images.sh verify          # CI gate: regenerate + diff, exit 1 on drift (offline)
+#   tools/images.sh verify          # CI gate: selftest + regenerate + diff, exit 1 on
+#                                    # drift or a selftest failure (offline)
 #   tools/images.sh report          # pinned vs latest on Hub / upstream registries (online)
 #   tools/images.sh bump [--only KEY] [--channel review|moving]
 #   tools/images.sh drift           # regenerate committed ScenarioSpecs with the
 #                                    # LATEST generator into a tmp dir, diff vs generated/
 #   tools/images.sh baked           # assert the released dashboard-backend image's
 #                                    # baked authoring/generator refs match the catalog
+#   tools/images.sh selftest        # regression guard on synthetic fixtures (offline,
+#                                    # no real catalog/network involved); `verify` always
+#                                    # runs this first, so it rarely needs invoking directly
 #
 # sync/verify/report/bump are implemented in tools/images.py (YAML-heavy,
 # needs pyyaml). drift/baked stay here — they were already bash+docker in
@@ -24,7 +28,7 @@ MODE="${1:-}"
 [[ $# -gt 0 ]] && shift || true
 
 case "$MODE" in
-  sync|verify|report|bump)
+  sync|verify|report|bump|selftest)
     exec "$PY" "$ROOT/tools/images.py" "$MODE" "$@"
     ;;
   drift)
@@ -32,7 +36,7 @@ case "$MODE" in
   baked)
     ;;
   *)
-    echo "usage: $0 <sync|verify|report|bump|drift|baked> [args...]" >&2
+    echo "usage: $0 <sync|verify|report|bump|drift|baked|selftest> [args...]" >&2
     exit 2
     ;;
 esac

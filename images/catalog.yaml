@@ -390,7 +390,7 @@ images:
   # ---------------------------------------------------------------------
   loki:
     repo: grafana/loki
-    tag: 3.4.2
+    tag: "3.4.2"
     digest: sha256:58a6c186ce78ba04d58bfe2a927eff296ba733a430df09645d56cdc158f3ba08
     channel: upstream
     resolver: imagetools
