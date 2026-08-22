@@ -19,8 +19,12 @@ docs/adr/0002-one-image-catalog.md (why this exists). Subcommands:
            as UNPUBLISHED without attempting a lookup.
   bump     rewrite images/catalog.yaml LINE-TARGETED (never yaml.dump — that
            would destroy every `purpose:` comment) for rows that are behind,
-           then re-parse and assert the structure. Only channel review/moving
-           rows are ever written; upstream/local/unpublished are refused.
+           then re-parse and assert the structure. channel review/moving rows
+           bump freely (in bulk or via --only). channel upstream rows are
+           refused in bulk (never auto-bumped to a newer version) but CAN be
+           bumped one at a time with `--only KEY` — this only ever resolves
+           the digest of the version tag already pinned; it never walks
+           versions forward. local/unpublished are refused unconditionally.
 
 Two small internal helpers, used by tools/images.sh's bash-side drift/baked
 logic rather than meant for interactive use:
@@ -42,6 +46,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -402,7 +407,7 @@ def _review_num(tag: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _imagetools_digest(ref: str) -> tuple[str, str | None]:
+def _docker_imagetools_digest(ref: str) -> tuple[str, str | None]:
     """awk '/^Digest:/' idiom — NOT --format '{{.Manifest.Digest}}', which
     silently prints the wrong thing (or nothing useful) for a single-arch
     image. See MnS-Integration-Platform/services/tevv-web-dashboard/tools/
@@ -426,6 +431,95 @@ def _imagetools_digest(ref: str) -> tuple[str, str | None]:
                 return digest, None
             return "", f"unparseable Digest line: {digest!r}"
     return "", "no Digest: line in imagetools output"
+
+
+_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_MANIFEST_ACCEPT = ", ".join([
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+])
+
+
+def _anonymous_registry_digest(repo: str, tag: str) -> tuple[str, str | None]:
+    """Fallback for when `docker buildx imagetools inspect` fails because of a
+    LOCAL credential problem (e.g. a stale token for this ref's registry in
+    ~/.docker/config.json) rather than the image genuinely being unreachable.
+    Resolves the manifest digest directly via the anonymous Docker Registry
+    HTTP API v2 flow: an unauthenticated HEAD, then — on 401 — a token
+    request against whatever realm/service/scope the registry's own
+    WWW-Authenticate header names, the same protocol `docker pull` uses for a
+    public image with no stored credential at all. Never the primary path;
+    only tried after the primary fails, so a broken local credential does not
+    make an otherwise-public image UNRESOLVABLE."""
+    host, sep, path = repo.partition("/")
+    if not sep or ("." not in host and ":" not in host and host != "localhost"):
+        # bare Docker Hub repo (e.g. "prom/pushgateway") — no registry host
+        # in `repo` at all.
+        host, path = "registry-1.docker.io", repo
+        default_realm, default_service = "https://auth.docker.io/token", "registry.docker.io"
+    else:
+        default_realm = default_service = None
+
+    manifest_url = f"https://{host}/v2/{path}/manifests/{tag}"
+
+    def _token(realm: str, service: str, scope: str) -> str:
+        url = f"{realm}?service={urllib.parse.quote(service)}&scope={urllib.parse.quote(scope)}"
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=20) as resp:
+            data = json.load(resp)
+        return data.get("token") or data.get("access_token") or ""
+
+    def _head(headers: dict[str, str]) -> str:
+        req = urllib.request.Request(manifest_url, headers=headers, method="HEAD")
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return resp.headers.get("Docker-Content-Digest", "")
+
+    try:
+        digest = _head({"Accept": _MANIFEST_ACCEPT})
+    except urllib.error.HTTPError as exc:
+        if exc.code != 401:
+            return "", f"anonymous fallback: HTTP {exc.code} on {manifest_url}"
+        www_auth = exc.headers.get("WWW-Authenticate", "") if exc.headers else ""
+        realm = (re.search(r'realm="([^"]+)"', www_auth) or [None, None])[1]
+        service = (re.search(r'service="([^"]+)"', www_auth) or [None, None])[1]
+        scope = (re.search(r'scope="([^"]+)"', www_auth) or [None, None])[1]
+        realm, service = realm or default_realm, service or default_service
+        scope = scope or f"repository:{path}:pull"
+        if not realm or not service:
+            return "", f"anonymous fallback: no realm/service in WWW-Authenticate ({www_auth!r})"
+        try:
+            token = _token(realm, service, scope)
+        except Exception as exc2:
+            return "", f"anonymous fallback: token request failed: {exc2}"
+        if not token:
+            return "", "anonymous fallback: token endpoint returned no token"
+        try:
+            digest = _head({"Accept": _MANIFEST_ACCEPT, "Authorization": f"Bearer {token}"})
+        except Exception as exc3:
+            return "", f"anonymous fallback: manifest request failed: {exc3}"
+    except Exception as exc:
+        return "", f"anonymous fallback failed: {exc}"
+
+    if digest and _DIGEST_RE.match(digest):
+        return digest, None
+    return "", "anonymous fallback: no Docker-Content-Digest header in response"
+
+
+def _imagetools_digest(ref: str) -> tuple[str, str | None]:
+    """Resolve `ref`'s digest via `docker buildx imagetools inspect`; if that
+    fails, retry once via the anonymous registry-API fallback above before
+    giving up. On total failure, the error names BOTH what the primary path
+    said and what the fallback said, so a real registry gap is never
+    confused with a local credential problem, or vice versa."""
+    repo, _, tag = ref.rpartition(":")
+    digest, primary_err = _docker_imagetools_digest(ref)
+    if not primary_err:
+        return digest, None
+    digest, fallback_err = _anonymous_registry_digest(repo, tag)
+    if not fallback_err:
+        return digest, None
+    return "", f"{primary_err} (anonymous fallback also failed: {fallback_err})"
 
 
 def _row_result(key: str, row: dict[str, Any], *, status: str, detail: str,
@@ -595,8 +689,18 @@ def cmd_bump(args: argparse.Namespace) -> int:
         row = images[key]
         if args.channel and row["channel"] != args.channel:
             continue
-        if row["channel"] in ("upstream", "local", "unpublished"):
+        if row["channel"] in ("local", "unpublished"):
             print(f"refused: {key} is channel {row['channel']} (never auto-bumped)", file=sys.stderr)
+            continue
+        if row["channel"] == "upstream" and not args.only:
+            # Never auto-bumped in bulk — a version bump for someone else's
+            # image is a deliberate upgrade, not routine maintenance. But an
+            # explicit `--only KEY` is exactly that deliberate action: it
+            # resolves the digest of the version tag ALREADY pinned (no
+            # version-walking happens for upstream rows — see _report_row),
+            # it just turns "tag pinned" into "tag+digest pinned".
+            print(f"refused: {key} is channel upstream (never auto-bumped in bulk; "
+                  f"use --only {key} to pin the currently-pinned version's digest)", file=sys.stderr)
             continue
         report_row = _report_row(key, row, token)
         if report_row["status"] not in ("STALE", "TAG_MOVED", "NO_DIGEST"):
