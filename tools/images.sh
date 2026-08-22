@@ -59,7 +59,15 @@ if [[ "$MODE" == "drift" ]]; then
     for spec in "$ROOT"/scenarios/*/ScenarioSpec.yaml; do
         s=$(basename "$(dirname "$spec")")
         [[ -d "$ROOT/generated/$s" ]] || continue   # only diff stacks that exist
+        # MNS_IMAGE_SET_FILE is the HOST path here (not /workspace/... as in
+        # product.sh): this runs the generator directly from the host with an
+        # identical-path mount (-v "$ROOT:$ROOT" above), so the same string
+        # that's valid on the host is also what the generator container sees.
+        # Contrast product.sh's run_shell, which mounts the workspace at a
+        # fixed container path and needs launcher.py's HOST_WORKSPACE_ROOT
+        # translation instead — see the comment there.
         docker run --rm -v "$ROOT:$ROOT" -v "$tmp:$tmp" -w "$ROOT" -e MNS_IMAGE_SET=published \
+            -e "MNS_IMAGE_SET_FILE=$ROOT/images/image-set.generated.yaml" \
             "$gen_ref" generate "scenarios/$s/ScenarioSpec.yaml" --profile docker \
             --out "$tmp/$s" >/dev/null 2>&1 || { echo "$s: GENERATION FAILED with $gen_ref"; any=1; continue; }
         # the generator bakes the --out path into manifests — normalize it so

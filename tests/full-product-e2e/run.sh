@@ -166,6 +166,12 @@ export MNS_AUTHORING_DOCKER_ARGS="--name $AUTHORING_CONTAINER"
 verify authored "$AUTHORED"
 
 log "validating and generating the runtime stack through the generator image"
+# No separate -e MNS_IMAGE_SET_FILE here: this goes entirely through
+# `product.sh cli`, so it inherits the same overlay (CONTAINER path
+# /workspace/images/image-set.generated.yaml) from product.sh's run_shell —
+# see the comment there for why that's a container path, not this repo's
+# host path (contrast tools/images.sh drift, which runs the generator
+# directly from the host and so uses the host-path form instead).
 "$ROOT/product.sh" cli runtime \
   --scenario /workspace/scenarios/full-product-e2e-export \
   --out /workspace/generated/full-product-e2e-export \
