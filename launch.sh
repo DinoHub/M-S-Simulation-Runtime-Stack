@@ -111,6 +111,9 @@ fi
 # without overriding a shell export or an existing ./.env value — see the file.
 . "$SCRIPT_DIR/tools/load-images-env.sh"
 load_images_env "$SCRIPT_DIR/images/platform-images.generated.env"
+# Same, for the legacy static scenario stacks (compose/<scenario>/docker-
+# compose.yml) — see the file's header for the vars it deliberately omits.
+load_images_env "$SCRIPT_DIR/images/legacy-images.generated.env"
 check_docker || exit 1
 check_registry MNS_IMAGE_PULL_POLICY || true   # advisory — see the function's comment
 check_nvidia_runtime || true                   # advisory — see the function's comment

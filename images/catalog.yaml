@@ -54,6 +54,12 @@ schema: mns.images.v1
 #                   `images:` means it deliberately shares published's image)
 #   compose_env  -> images/platform-images.generated.env, one group per
 #                   compose file (monitoring / metrics / logs / dashboard)
+#   legacy_env   -> images/legacy-images.generated.env, one group per legacy
+#                   scenario stack (compose/<scenario>/docker-compose.yml).
+#                   Unlike the groups above, a var CAN map to a different key
+#                   per scenario here (AIRSIM_IMAGE, AIRSIM_CONDO_IMAGE do) —
+#                   see docs/adr/0002-one-image-catalog.md "Legacy scenario
+#                   stacks: conflicting defaults"
 
 images:
   # ---------------------------------------------------------------------
@@ -441,6 +447,107 @@ images:
     resolver: imagetools
     purpose: Opt-in (--profile db) telemetry database for the dashboard.
 
+  # ---------------------------------------------------------------------
+  # Legacy static scenario stacks — compose/{ardupilot-condo,ardupilot-
+  # urbansim,ardupilot-xfs,px4-condo,px4-xfs}/docker-compose.yml (R-6).
+  # 7 new rows here; the other 4 legacy vars reuse rows already above
+  # (qgroundcontrol, px4, condo, xfs) — see consumers.legacy_env below.
+  # Two of these vars (AIRSIM_IMAGE, AIRSIM_CONDO_IMAGE) resolve to a
+  # DIFFERENT image depending on which scenario file references them; see
+  # docs/adr/0002-one-image-catalog.md "Legacy scenario stacks: conflicting
+  # defaults" — consumers.legacy_env below binds each var per-scenario
+  # rather than once, and tools/images.py's generated-env renderer omits a
+  # var from images/legacy-images.generated.env entirely when its bound
+  # image differs across scenarios, rather than guess.
+  # ---------------------------------------------------------------------
+  ardupilot_slim:
+    repo: dhdevspace/auto_mns
+    tag: "ardupilot-slim"
+    digest: sha256:c9b690ccab7e4a9f5b8b245140a25d5c21b9990166cbe4ad23915d123ff7a4a6
+    channel: moving
+    purpose: >-
+      ArduPilot SITL with the per-instance SERIAL port offset baked in;
+      ARDUPILOT_IMAGE default for ardupilot-condo/ardupilot-urbansim/
+      ardupilot-xfs. Distinct from the `ardupilot` row's ardupilot-latest
+      tag, which lacks that offset and cannot run ardupilot-xfs's
+      multi-drone SITL (see .env's ARDUPILOT_IMAGE comment).
+
+  airsim_ros2_bridge_legacy:
+    repo: dhdevspace/auto_mns
+    tag: "airsim-ros2-bridge"
+    digest: sha256:d45153cfebba17201a443650e633dcca3fd6d1d18f588df89682b100e9cafdcc
+    channel: moving
+    purpose: >-
+      AIRSIM_BRIDGE_IMAGE default across all 5 legacy scenario stacks
+      (per-drone airsim_bridge_dN / mavros bridge) — consistent everywhere
+      it's used. Distinct from the `ros2_bridge` row's
+      tevv-airsim-ros2-bridge-humble tag, which is the published
+      image_sets ros2_bridge role instead.
+
+  condo_latest_legacy:
+    repo: dhdevspace/auto_mns
+    tag: "condo-latest"
+    digest: sha256:98562e5a44ee2c1f9c6514548dc3e163fa14b3666a2a83c383789ad19d82b98c
+    channel: moving
+    purpose: >-
+      px4-condo's AIRSIM_CONDO_IMAGE default. NOT the same image as
+      ardupilot-condo's AIRSIM_CONDO_IMAGE default (the `condo` row,
+      tevv-airsim-condo-latest-ceilingless) — the two legacy stacks
+      disagree on what this var name should default to; see
+      docs/adr/0002-one-image-catalog.md "Legacy scenario stacks:
+      conflicting defaults". Root .env currently pins AIRSIM_CONDO_IMAGE to
+      this tag, which is what ardupilot-condo actually runs today too
+      (shell/.env always outranks a compose default).
+
+  airsim_xfs_legacy:
+    repo: dhdevspace/auto_mns
+    tag: "xfs-latest"
+    digest: sha256:98b931f289c71f5b7900e7ff367996b8831e0d2b44b1ce0cb38ed6efcd395d1a
+    channel: moving
+    purpose: >-
+      ardupilot-xfs's AIRSIM_IMAGE default. NOT the same image as
+      px4-xfs's AIRSIM_IMAGE default (the `xfs` row, tevv-airsim-xfs-latest)
+      — documented in the compose template itself
+      (compose/px4-xfs/templates/docker-compose.yml.j2: "Default tag differs
+      from ardupilot-xfs's xfs-latest on purpose") as relying on root .env
+      to unify both scenarios to one image; see
+      docs/adr/0002-one-image-catalog.md "Legacy scenario stacks:
+      conflicting defaults". Root .env currently pins AIRSIM_IMAGE to this
+      tag.
+
+  airsim_urbansimdemo:
+    repo: dhdevspace/auto_mns
+    tag: "urbansimdemo-latest"
+    digest: sha256:9e99e78834068c0bc8b667ba7f28a3ba93cd718520120dedd7c64b635a892258
+    channel: moving
+    purpose: >-
+      ardupilot-urbansim's AIRSIM_IMAGE default — a THIRD distinct value for
+      this var name alongside ardupilot-xfs's and px4-xfs's; see
+      docs/adr/0002-one-image-catalog.md "Legacy scenario stacks:
+      conflicting defaults".
+
+  pixel_streaming_signalling:
+    repo: dhdevspace/auto_mns
+    tag: "tevv-pixel-streaming-signalling-5.5"
+    digest: sha256:1b2f0c2b64a56d2b3b798d599bc237b1779b8720e5e1a8ea774625dc3a1b36a3
+    channel: moving
+    purpose: >-
+      PIXEL_STREAMING_SIGNALLING_IMAGE default (ardupilot-urbansim,
+      ardupilot-xfs, px4-condo's pixel-streaming-signalling sidecar,
+      dialed by UE5 when --with-pixel-streaming is passed); consistent
+      across all three.
+
+  zenoh_bridge_ros2dds:
+    repo: eclipse/zenoh-bridge-ros2dds
+    tag: "1.4.0"
+    digest: sha256:5ac8701589d77c571519d5ebb66bf80d9d3cec1d1cc1b37d899eba7ade06a62a
+    channel: upstream
+    resolver: imagetools
+    purpose: >-
+      ZENOH_BRIDGE_IMAGE default (ardupilot-urbansim, ardupilot-xfs
+      zenoh-bridge-N sidecars for /shared/* topic routing); third-party
+      image, never auto-bumped.
+
 consumers:
   product_env:
     review:
@@ -515,3 +622,46 @@ consumers:
     dashboard:
       DASHBOARD_LICHTBLICK_IMAGE: dashboard_lichtblick
       DASHBOARD_TIMESCALEDB_IMAGE: dashboard_timescaledb
+
+  # Legacy static scenario stacks (R-6). Grouped by scenario — unlike
+  # product_env/compose_env's grouping (which is purely cosmetic, one var
+  # never appears in two groups), a var HERE can legitimately appear under
+  # more than one scenario with a DIFFERENT image key (AIRSIM_IMAGE,
+  # AIRSIM_CONDO_IMAGE — see the "conflicting defaults" rows above). That is
+  # why this grouping is load-bearing: it is how tools/images.py's renderer
+  # tells "same value everywhere" (safe to emit one env line) apart from
+  # "differs by scenario" (must NOT emit a line for it — see
+  # docs/adr/0002-one-image-catalog.md "Legacy scenario stacks"). The
+  # ${VAR:-default} fallback already in every one of these compose files is
+  # UNCHANGED by this catalog — see the ADR for why.
+  legacy_env:
+    ardupilot_condo:
+      ARDUPILOT_IMAGE: ardupilot_slim
+      AIRSIM_CONDO_IMAGE: condo
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      QGC_IMAGE: qgroundcontrol
+    ardupilot_urbansim:
+      ARDUPILOT_IMAGE: ardupilot_slim
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      ZENOH_BRIDGE_IMAGE: zenoh_bridge_ros2dds
+      AIRSIM_IMAGE: airsim_urbansimdemo
+      PIXEL_STREAMING_SIGNALLING_IMAGE: pixel_streaming_signalling
+      QGC_IMAGE: qgroundcontrol
+    ardupilot_xfs:
+      ARDUPILOT_IMAGE: ardupilot_slim
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      ZENOH_BRIDGE_IMAGE: zenoh_bridge_ros2dds
+      AIRSIM_IMAGE: airsim_xfs_legacy
+      PIXEL_STREAMING_SIGNALLING_IMAGE: pixel_streaming_signalling
+      QGC_IMAGE: qgroundcontrol
+    px4_condo:
+      AIRSIM_CONDO_IMAGE: condo_latest_legacy
+      PX4_IMAGE: px4
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      QGC_IMAGE: qgroundcontrol
+      PIXEL_STREAMING_SIGNALLING_IMAGE: pixel_streaming_signalling
+    px4_xfs:
+      AIRSIM_IMAGE: xfs
+      PX4_IMAGE: px4
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      QGC_IMAGE: qgroundcontrol

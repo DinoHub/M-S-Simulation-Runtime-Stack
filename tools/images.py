@@ -67,6 +67,7 @@ TEMPLATE_PATH = ROOT / "images" / "product-images.env.tmpl"
 PRODUCT_ENV_PATH = ROOT / "product-images.env"
 IMAGE_SET_PATH = ROOT / "images" / "image-set.generated.yaml"
 PLATFORM_ENV_PATH = ROOT / "images" / "platform-images.generated.env"
+LEGACY_ENV_PATH = ROOT / "images" / "legacy-images.generated.env"
 ENV_EXAMPLE_PATH = ROOT / ".env.example"
 
 GENERATED_MARKER = (
@@ -82,6 +83,14 @@ COMPOSE_FILE_FOR_GROUP = {
     "metrics": "docker-compose-metrics.yml",
     "logs": "docker-compose-logs.yml",
     "dashboard": "docker-compose-dashboard.yml, inline images",
+}
+
+COMPOSE_FILE_FOR_LEGACY_GROUP = {
+    "ardupilot_condo": "compose/ardupilot-condo/docker-compose.yml",
+    "ardupilot_urbansim": "compose/ardupilot-urbansim/docker-compose.yml",
+    "ardupilot_xfs": "compose/ardupilot-xfs/docker-compose.yml",
+    "px4_condo": "compose/px4-condo/docker-compose.yml",
+    "px4_xfs": "compose/px4-xfs/docker-compose.yml",
 }
 
 
@@ -137,7 +146,7 @@ def _validate_catalog(data: Any) -> None:
     consumers = data.get("consumers")
     if not isinstance(consumers, dict):
         raise CatalogError("consumers: must be a mapping")
-    for group_name in ("product_env", "image_sets", "compose_env"):
+    for group_name in ("product_env", "image_sets", "compose_env", "legacy_env"):
         if group_name not in consumers:
             raise CatalogError(f"consumers.{group_name} missing")
 
@@ -246,11 +255,80 @@ def render_platform_env(catalog: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
+def render_legacy_env(catalog: dict[str, Any]) -> str:
+    """images/legacy-images.generated.env — the legacy static scenario
+    stacks (compose/<scenario>/docker-compose.yml). Unlike compose_env,
+    consumers.legacy_env is grouped by SCENARIO, and the same var name can
+    legitimately be bound to a DIFFERENT image key in two scenario groups
+    (AIRSIM_IMAGE, AIRSIM_CONDO_IMAGE — see images/catalog.yaml's "Legacy
+    static scenario stacks" section and docs/adr/0002-one-image-catalog.md
+    "Legacy scenario stacks: conflicting defaults"). A var whose resolved
+    ref is identical across every scenario that binds it gets ONE line
+    here; a var that disagrees gets NO line — emitting either side's value
+    would silently override the other scenario's default the moment a
+    developer removes the var from ./.env, so this renderer refuses to
+    guess and documents the disagreement in a comment block instead.
+    """
+    images = catalog["images"]
+    groups = catalog["consumers"]["legacy_env"]
+
+    # var -> {ref: [group, ...]}
+    var_refs: dict[str, dict[str, list[str]]] = {}
+    for group, mapping in groups.items():
+        for var, key in mapping.items():
+            ref = image_ref(images, key)
+            var_refs.setdefault(var, {}).setdefault(ref, []).append(group)
+
+    consistent = {var: refs for var, refs in var_refs.items() if len(refs) == 1}
+    conflicting = {var: refs for var, refs in var_refs.items() if len(refs) > 1}
+
+    lines = [
+        GENERATED_MARKER,
+        "",
+        "# Legacy static scenario stacks (compose/<scenario>/docker-compose.yml).",
+        "# Loaded by tools/load-images-env.sh from launch.sh/stop.sh/logs.sh: a key",
+        "# below is exported ONLY if it is unset in the shell AND absent from",
+        "# ./.env. Precedence: shell env > ./.env > this file > the compose",
+        "# ${VAR:-default} fallback (itself UNCHANGED by this file). Until a var",
+        "# is removed from ./.env, its value below does NOT take effect for that",
+        "# developer — see docs/adr/0002-one-image-catalog.md \"Legacy scenario",
+        "# stacks\".",
+        "",
+    ]
+    for var in sorted(consistent):
+        (ref,) = consistent[var].keys()
+        used_by = ", ".join(
+            COMPOSE_FILE_FOR_LEGACY_GROUP.get(g, g) for g in sorted(consistent[var][ref])
+        )
+        lines.append(f"# {var} — {used_by}")
+        lines.append(f"{var}={ref}")
+        lines.append("")
+
+    if conflicting:
+        lines.append(
+            "# NOT emitted below — each var's bound image differs by scenario, so no"
+        )
+        lines.append(
+            "# single value here would be safe. See docs/adr/0002-one-image-catalog.md"
+        )
+        lines.append("# \"Legacy scenario stacks: conflicting defaults\":")
+        for var in sorted(conflicting):
+            for ref, group_list in sorted(conflicting[var].items()):
+                compose_files = ", ".join(
+                    COMPOSE_FILE_FOR_LEGACY_GROUP.get(g, g) for g in sorted(group_list)
+                )
+                lines.append(f"#   {var}={ref}   ({compose_files})")
+        lines.append("")
+
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
 def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
     return {
         PRODUCT_ENV_PATH: render_product_env(catalog),
         IMAGE_SET_PATH: render_image_set(catalog),
         PLATFORM_ENV_PATH: render_platform_env(catalog),
+        LEGACY_ENV_PATH: render_legacy_env(catalog),
     }
 
 
@@ -260,7 +338,12 @@ def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
 
 def _all_env_vars(catalog: dict[str, Any]) -> dict[str, str]:
     """var -> image key, across product_env and compose_env (image_sets has
-    no env vars of its own)."""
+    no env vars of its own). Deliberately excludes legacy_env: those vars
+    are expected to already be in .env.example (that IS the legacy stack's
+    .env — see images/legacy-images.generated.env's header), and legacy_env
+    is also the one group where the same var name is allowed to map to a
+    different key per scenario (AIRSIM_IMAGE, AIRSIM_CONDO_IMAGE), which
+    the invariant below would otherwise reject."""
     out: dict[str, str] = {}
     for group in catalog["consumers"]["product_env"].values():
         out.update(group)
@@ -358,7 +441,8 @@ def cmd_verify(_args: argparse.Namespace) -> int:
         print("run: tools/images.sh sync", file=sys.stderr)
         return 1
     print("verify: ok (product-images.env, images/image-set.generated.yaml, "
-          "images/platform-images.generated.env all match images/catalog.yaml)")
+          "images/platform-images.generated.env, images/legacy-images.generated.env "
+          "all match images/catalog.yaml)")
     return 0
 
 
@@ -384,6 +468,7 @@ consumers:
   product_env: {{}}
   image_sets: {{}}
   compose_env: {{}}
+  legacy_env: {{}}
 """
 
 

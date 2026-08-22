@@ -37,7 +37,7 @@ from the inline compose tags) and nothing would notice.
 | `product-images.env` | itself (unchanged path/format; only new line is the GENERATED marker) |
 | `images/image-set.generated.yaml` | overlays `MnS-Integration-Platform`'s `image_sets.yaml` via the generator's existing `MNS_IMAGE_SET_FILE` hook |
 | `images/platform-images.generated.env` | the 19 hardcoded tags in the metrics/monitoring/logs/dashboard compose files |
-| `images/legacy-images.generated.env` | the legacy static-stack `.env` (added in a later commit, R-6) |
+| `images/legacy-images.generated.env` | ~53 hardcoded/`.env`-fed refs across the legacy static scenario stacks (R-6; see "Legacy scenario stacks" below) |
 
 `tools/images.sh sync` renders all of them from the catalog; `tools/images.sh
 verify` regenerates into a temp location and diffs against the committed copies,
@@ -146,6 +146,92 @@ CI assert.
 mapping the old flags (`--bump`, `--drift`) through with a one-line deprecation
 notice on stderr and the same exit codes — three weeks and ~25 commits of muscle
 memory and PR descriptions reference it by name.
+
+### Legacy scenario stacks
+
+R-6 adds the ~53 image references across the five legacy static scenario
+stacks — `compose/{ardupilot-condo,ardupilot-urbansim,ardupilot-xfs,px4-condo,
+px4-xfs}/docker-compose.yml`, the autonomy team's daily `make ardupilot-xfs` /
+`make px4-xfs` path — to the catalog, generating `images/legacy-images.
+generated.env`. **The `${VAR:-default}` fallback already in every one of
+these compose files is UNCHANGED by this commit** — the eight legacy vars
+(`ARDUPILOT_IMAGE`, `AIRSIM_CONDO_IMAGE`, `AIRSIM_BRIDGE_IMAGE`, `QGC_IMAGE`,
+`ZENOH_BRIDGE_IMAGE`, `AIRSIM_IMAGE`, `PIXEL_STREAMING_SIGNALLING_IMAGE`,
+`PX4_IMAGE`) are stripped to `${VAR:?...}` only after a real `make
+ardupilot-xfs` + `make px4-xfs` round-trip on hardware, matching R-5's
+two-step precedent for the platform vars.
+
+**Reused rows** (default tag matches an existing catalog row exactly, so
+the legacy var is simply bound to it rather than duplicated): `QGC_IMAGE` →
+`qgroundcontrol`, `PX4_IMAGE` → `px4`, ardupilot-condo's `AIRSIM_CONDO_IMAGE`
+→ `condo`, px4-xfs's `AIRSIM_IMAGE` → `xfs`.
+
+**New rows**: `ardupilot_slim`, `airsim_ros2_bridge_legacy`,
+`condo_latest_legacy`, `airsim_xfs_legacy`, `airsim_urbansimdemo`,
+`pixel_streaming_signalling`, `zenoh_bridge_ros2dds` (`channel: upstream`,
+`resolver: imagetools` — `eclipse/` is a third-party Hub org this repo does
+not control, same treatment as `prom/`/`grafana/`/`sid220/`/`timescale/`).
+
+#### Conflicting defaults
+
+Building `consumers.legacy_env` surfaced two var names whose compose-file
+default is **not the same image** depending on which scenario references
+it — exactly the kind of drift ADR-era tooling (a single `product-
+images.env`-style flat var list) cannot represent honestly:
+
+- **`AIRSIM_IMAGE`** — three distinct defaults: ardupilot-xfs's
+  `xfs-latest`, px4-xfs's `tevv-airsim-xfs-latest`, ardupilot-urbansim's
+  `urbansimdemo-latest`. This one is **documented and intentional** — the
+  px4-xfs template itself says "Default tag differs from ardupilot-xfs's
+  xfs-latest on purpose (PX4-flavoured XFS build); root .env's AIRSIM_IMAGE
+  overrides both scenarios identically" (`compose/px4-xfs/templates/
+  docker-compose.yml.j2`).
+- **`AIRSIM_CONDO_IMAGE`** — two distinct defaults: ardupilot-condo's
+  `tevv-airsim-condo-latest-ceilingless` vs px4-condo's `condo-latest`, with
+  **no comment anywhere explaining the split** — looks like ordinary drift
+  rather than a deliberate choice, though nothing depends on unifying it
+  today (root `.env` already pins `AIRSIM_CONDO_IMAGE=...condo-latest`, so
+  ardupilot-condo runs px4-condo's image today too — shell/.env always
+  outranks a compose default).
+
+Because `consumers.legacy_env` is grouped by scenario (not by var name),
+the catalog records both values, correctly attributed to the file that uses
+each. `tools/images.py`'s `render_legacy_env` renders one `VAR=ref` line
+into `images/legacy-images.generated.env` only when every scenario group
+that binds a var agrees on the same resolved ref; a var where they disagree
+gets **no line at all**, plus a comment block naming every value and the
+scenario that uses it. This is deliberate, not an oversight: any single
+value chosen for the flat env file would, once a developer removes that var
+from `.env`, silently pin ardupilot-urbansim/ardupilot-xfs/px4-xfs (or
+ardupilot-condo/px4-condo) to each other's image — invisibly changing what
+one of those scenarios runs. Unifying it is a scenario-design decision for
+whoever owns those compose files, not this catalog's job; the catalog's job
+is to make the disagreement visible in git instead of two developers
+discovering it by diffing `docker ps` output.
+
+#### Precedence chain
+
+`load_images_env` (unchanged from R-4) exports a key from a given generated
+file only when it is **both** unset in the shell **and** absent from
+`./.env`. Stacking both generated files (`platform-images.generated.env`,
+then `legacy-images.generated.env`) in `launch.sh`/`stop.sh`/`logs.sh` gives:
+
+```
+shell env  >  ./.env  >  images/legacy-images.generated.env  >  compose ${VAR:-default}
+```
+
+Root `.env` today sets `ARDUPILOT_IMAGE`, `AIRSIM_IMAGE`, `PX4_IMAGE`,
+`AIRSIM_BRIDGE_IMAGE`, `ZENOH_BRIDGE_IMAGE`, and `AIRSIM_CONDO_IMAGE` —
+**for every one of those, the catalog's value does not take effect until a
+developer removes the key from `.env`**, by design, for this commit.
+`QGC_IMAGE` and `PIXEL_STREAMING_SIGNALLING_IMAGE` are commented out in
+`.env` today, so those two DO take effect immediately once this commit
+lands: the compose-resolved image gains an `@sha256:...` digest suffix
+pinning the exact same tag it already defaulted to (verified live against
+the registry at pin time) — same effective image, now reproducible, which
+is the entire point of R-4 through R-6. `AIRSIM_IMAGE` and
+`AIRSIM_CONDO_IMAGE` are never emitted at all (see "Conflicting defaults"
+above), so they are completely unaffected regardless of `.env` contents.
 
 ## Consequences
 

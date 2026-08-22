@@ -14,6 +14,9 @@ fi
 # without overriding a shell export or an existing ./.env value — see the file.
 . "$SCRIPT_DIR/tools/load-images-env.sh"
 load_images_env "$SCRIPT_DIR/images/platform-images.generated.env"
+# Same, for the legacy static scenario stacks (compose/<scenario>/docker-
+# compose.yml) — see the file's header for the vars it deliberately omits.
+load_images_env "$SCRIPT_DIR/images/legacy-images.generated.env"
 
 # Explicit target comes ONLY from the CLI arg ($1, e.g. `make stop SCENARIO=x`).
 # We deliberately do NOT fall back to $SCENARIO from the sourced .env: .env pins
