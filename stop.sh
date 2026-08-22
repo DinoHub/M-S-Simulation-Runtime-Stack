@@ -10,6 +10,10 @@ if [ -f ".env" ]; then
   set +a
 fi
 
+# Fills in monitoring/metrics/logs image vars from the catalog-generated env,
+# without overriding a shell export or an existing ./.env value — see the file.
+. "$SCRIPT_DIR/tools/load-images-env.sh"
+load_images_env "$SCRIPT_DIR/images/platform-images.generated.env"
 
 # Explicit target comes ONLY from the CLI arg ($1, e.g. `make stop SCENARIO=x`).
 # We deliberately do NOT fall back to $SCENARIO from the sourced .env: .env pins
