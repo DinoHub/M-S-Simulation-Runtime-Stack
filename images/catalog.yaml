@@ -74,9 +74,13 @@ images:
 
   mns_authoring:
     repo: dhdevspace/auto_mns
-    tag: mns-authoring-v0.2.0-review.4
-    digest: sha256:2d9175d9d9faa9ca605a22e0239d76c556d232a182519590f341fe3f5bdd7025
-    channel: review
+    tag: mns-authoring-v0.2.0-zones-preview.4
+    digest: sha256:fa58d138825e2587d3d2f567757fb78555df3abb2ed3e30f3bb919ea7c3ef52c
+    channel: pinned
+    # Off the -review.N line on purpose: this is the zones/sensor-noise/preview
+    # build (TEVV-Authoring PR #8), published as -zones-preview.N. bump refuses
+    # pinned rows, so this tag/digest pair moves only by hand. Move back to
+    # channel: review once that work ships as a -review.N tag.
     purpose: Authoring tool used to create/edit ScenarioSpecs ahead of generation.
 
   mns_stack_generator:

@@ -69,13 +69,14 @@ IMAGE_SET_PATH = ROOT / "images" / "image-set.generated.yaml"
 PLATFORM_ENV_PATH = ROOT / "images" / "platform-images.generated.env"
 LEGACY_ENV_PATH = ROOT / "images" / "legacy-images.generated.env"
 ENV_EXAMPLE_PATH = ROOT / ".env.example"
+DOTENV_PATH = ROOT / ".env"
 
 GENERATED_MARKER = (
     "# GENERATED from images/catalog.yaml — see docs/adr/0002-one-image-catalog.md. "
     "Do not hand-edit; run tools/images.sh sync."
 )
 
-VALID_CHANNELS = {"review", "moving", "upstream", "local", "unpublished"}
+VALID_CHANNELS = {"review", "moving", "upstream", "local", "unpublished", "pinned"}
 VALID_RESOLVERS = {"hub", "imagetools"}
 
 COMPOSE_FILE_FOR_GROUP = {
@@ -143,6 +144,22 @@ def _validate_catalog(data: Any) -> None:
             raise CatalogError(f"images.{key} is channel {row['channel']} but digest is not null")
         if row["channel"] == "local" and not str(row["repo"]).startswith("local/"):
             raise CatalogError(f"images.{key} is channel local but repo does not start with local/")
+        # A review row whose tag is off the -review.N line is a silent dead
+        # end: bump derives the tag family from the tag itself, finds no
+        # siblings, and reports NO_TAGS_FOUND — which reads as "already
+        # current" and is how an off-family pin sits stale for weeks. Say it
+        # at edit time instead. A deliberate off-line pin is channel: pinned.
+        if row["channel"] == "review" and not re.search(r"-review\.\d+$", row["tag"]):
+            raise CatalogError(
+                f"images.{key} is channel review but tag {row['tag']!r} is not on the "
+                f"-review.N line, so bump can never advance it. Either pin a -review.N "
+                f"tag, or declare the off-line pin honestly with channel: pinned."
+            )
+        if row["channel"] == "pinned" and not row["digest"]:
+            raise CatalogError(
+                f"images.{key} is channel pinned but has no digest — a pinned row exists "
+                f"precisely to name one exact image; without a digest it names nothing."
+            )
     consumers = data.get("consumers")
     if not isinstance(consumers, dict):
         raise CatalogError("consumers: must be a mapping")
@@ -349,6 +366,35 @@ def _all_env_vars(catalog: dict[str, Any]) -> dict[str, str]:
         out.update(group)
     for group in catalog["consumers"]["compose_env"].values():
         out.update(group)
+    return out
+
+
+def dotenv_overrides(catalog: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """(var, dotenv_value, catalog_ref) for every catalog var that ./.env also
+    sets. Compose auto-loads ./.env, and tools/load-images-env.sh deliberately
+    skips any key .env already defines, so for these vars the catalog's pin is
+    NOT what runs. That is the intended local-override escape hatch — the bug
+    is only ever that it is invisible, which is what this surfaces. Unlike
+    _all_env_vars() this DOES include legacy_env: those are precisely the vars
+    .env sets today, so excluding them would blind the check to every real
+    case. A legacy var mapping to different keys per scenario is reported
+    against the first key seen; the point is that .env wins, not which pin it
+    beat."""
+    if not DOTENV_PATH.is_file():
+        return []
+    env: dict[str, str] = {}
+    for line in DOTENV_PATH.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$", line)
+        if m:
+            env[m.group(1)] = m.group(2)
+    var_to_key = dict(_all_env_vars(catalog))
+    for group in catalog["consumers"]["legacy_env"].values():
+        for var, key in group.items():
+            var_to_key.setdefault(var, key)
+    out = []
+    for var, key in sorted(var_to_key.items()):
+        if var in env:
+            out.append((var, env[var], image_ref(catalog["images"], key)))
     return out
 
 
@@ -788,7 +834,8 @@ def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, A
                                 latest_tag=latest, live_digest=latest_live)
         return _row_result(key, row, status="OK", detail=live[:19], live_digest=live)
 
-    # channel == moving (mutable tag, no family)
+    # channel == moving / upstream / pinned: no tag family to walk, so the
+    # only question is whether the pinned digest still resolves.
     if not live:
         return _row_result(key, row, status="NO_TAGS_FOUND",
                             detail="Hub returned no digest for this tag")
@@ -835,6 +882,18 @@ def cmd_report(args: argparse.Namespace) -> int:
         print("UNPUBLISHED: known-absent from the registry (see the row's purpose: in "
               "images/catalog.yaml). Not an error; needs a push or a compose-reference "
               "removal, tracked separately.", file=sys.stderr)
+    overrides = dotenv_overrides(catalog)
+    if overrides and not args.only and not args.channel:
+        print("\nOVERRIDDEN BY ./.env — for these vars the pin above is NOT what runs.",
+              file=sys.stderr)
+        print("This is the intended local-override path (compose auto-loads .env and",
+              file=sys.stderr)
+        print("tools/load-images-env.sh skips keys .env already sets); remove the key",
+              file=sys.stderr)
+        print("from .env to fall back to the catalog.", file=sys.stderr)
+        for var, env_value, catalog_ref in overrides:
+            print(f"  {var:<34} .env: {env_value}", file=sys.stderr)
+            print(f"  {'':<34} cat.: {catalog_ref}", file=sys.stderr)
     if bad:
         print("UNRESOLVABLE: could not resolve at all — reported, not silently OK.",
               file=sys.stderr)
@@ -885,6 +944,11 @@ def cmd_bump(args: argparse.Namespace) -> int:
             sys.exit(f"unknown image key: {key}")
         row = images[key]
         if args.channel and row["channel"] != args.channel:
+            continue
+        if row["channel"] == "pinned":
+            print(f"refused: {key} is channel pinned (off the release line; edit tag+digest "
+                  f"in images/catalog.yaml by hand, or move it back to channel review once "
+                  f"the image ships on the -review.N line)", file=sys.stderr)
             continue
         if row["channel"] in ("local", "unpublished"):
             print(f"refused: {key} is channel {row['channel']} (never auto-bumped)", file=sys.stderr)
