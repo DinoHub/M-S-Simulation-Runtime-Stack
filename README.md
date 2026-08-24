@@ -57,6 +57,20 @@ Stop the browser shell with:
 
 **That file is generated — do not edit it.** Every image reference in this repository is authored in one place, `images/catalog.yaml`, and rendered from there by `tools/images.sh sync`. Pins are `repo:tag@sha256:…`: the digest is the contract, the tag is there so the file is readable. `tools/images.sh report` shows staleness, `bump` rewrites both parts, and `verify` is the CI gate that fails if a generated file has drifted from the catalog. Day-to-day procedure: [docs/images.md](docs/images.md). Why it works this way, and what it costs: [ADR 0002](docs/adr/0002-one-image-catalog.md), which generalizes [ADR 0001](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md) to every image rather than just the product ones.
 
+For local compatibility testing, override only the ScenarioLab image without
+editing the published pins. The override applies consistently to setup,
+doctor, the browser product shell, and the dashboard:
+
+```bash
+MNS_AUTHORING_IMAGE_OVERRIDE=local/auto_mns:mns-authoring-test ./product.sh doctor
+MNS_AUTHORING_IMAGE_OVERRIDE=local/auto_mns:mns-authoring-test ./product.sh start
+MNS_AUTHORING_IMAGE_OVERRIDE=local/auto_mns:mns-authoring-test make dashboard
+```
+
+The named image must already exist locally or be pullable. Omitting the
+variable restores the immutable `MNS_AUTHORING_IMAGE` pin from
+`product-images.env`.
+
 ### When the registry is unreachable
 
 Services on mutable tags pull on every start, so a Docker Hub outage aborts the

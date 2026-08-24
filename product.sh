@@ -3,6 +3,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT/product-images.env"
+if [[ -n "${MNS_AUTHORING_IMAGE_OVERRIDE:-}" ]]; then
+  MNS_AUTHORING_IMAGE="$MNS_AUTHORING_IMAGE_OVERRIDE"
+fi
 DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$ROOT/.mns/authoring-data}"
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
