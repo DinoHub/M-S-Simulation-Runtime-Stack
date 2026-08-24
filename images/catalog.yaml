@@ -6,9 +6,15 @@ schema: mns.images.v1
 # quietly never happens. Delete an entry when it is done.
 follow_ups:
   - >-
-    legacy scenario stacks still carry ${VAR:-tag} fallbacks in
-    compose/*/docker-compose.yml; strip them only after a real
-    `make ardupilot-xfs` + `make px4-xfs` round-trip on hardware
+    AIRSIM_IMAGE and AIRSIM_CONDO_IMAGE still carry inline ${VAR:-tag}
+    fallbacks in compose/*/docker-compose.yml, because the catalog emits no
+    line for either: each has a different value per scenario (AIRSIM_IMAGE is
+    xfs-latest / tevv-airsim-xfs-latest / urbansimdemo-latest, AIRSIM_CONDO_IMAGE
+    is condo-latest / tevv-airsim-condo-latest-ceilingless). Those inline
+    defaults are therefore the ONLY source for a fresh clone and must not be
+    stripped. Fixing it means deciding whether the per-scenario split is
+    intentional, then giving each scenario its own var — a scenario-design
+    call, not a catalog one.
   - >-
     3 images are referenced by live compose files but were never published
     (mock-data-generator-latest, exploration-mock-generator-latest,

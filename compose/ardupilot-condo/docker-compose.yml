@@ -44,7 +44,7 @@ services:
   # ArduPilot SITL
   # ---------------------------------------------------------------------------
   ardupilot-drone-0:
-    image: ${ARDUPILOT_IMAGE:-dhdevspace/auto_mns:ardupilot-slim}
+    image: ${ARDUPILOT_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: ardupilot-drone-0
     hostname: ardupilot-drone-0
@@ -166,7 +166,7 @@ services:
   # AirSim ROS2 bridge (standalone image — replaces the legacy ros2-x11 monolith)
   # ---------------------------------------------------------------------------
   airsim_bridge_d1:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d1
     hostname: airsim_bridge_d1
@@ -242,7 +242,7 @@ services:
   # (matches the legacy monolith's MAVROS_FCU_URL).
   # ---------------------------------------------------------------------------
   mavros_d1:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d1
     hostname: mavros_d1
@@ -287,7 +287,7 @@ services:
   # QGroundControl X11 — Ground control station with GPU acceleration
   # ---------------------------------------------------------------------------
   qgroundcontrol-x11:
-    image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
+    image: ${QGC_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: ardupilot-condo-qgc
     hostname: ardupilot-condo-qgc
