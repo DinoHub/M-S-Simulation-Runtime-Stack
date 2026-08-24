@@ -71,6 +71,10 @@ The named image must already exist locally or be pullable. Omitting the
 variable restores the immutable `MNS_AUTHORING_IMAGE` pin from
 `product-images.env`.
 
+ScenarioLab launches also mount the product's authoring-only AirSim settings.
+They select `ComputerVision` mode with no AirSim vehicles, preventing AirSim's
+car-versus-quadrotor prompt from blocking the authoring UI when a level loads.
+
 ### When the registry is unreachable
 
 Services on mutable tags pull on every start, so a Docker Hub outage aborts the
