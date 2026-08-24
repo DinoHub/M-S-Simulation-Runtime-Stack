@@ -48,8 +48,10 @@ import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import textwrap
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1020,22 +1022,58 @@ _ACTIONABLE = {
 }
 
 
+def _term_width() -> int:
+    """Honour COLUMNS when it is set (CI logs set it to something sane), fall
+    back to the terminal, then to 100. Clamped: below ~60 the wrapping is
+    worse than not wrapping, above ~110 long notes become hard to track back
+    to their subject."""
+    try:
+        cols = int(os.environ["COLUMNS"])
+    except (KeyError, ValueError):
+        cols = shutil.get_terminal_size(fallback=(100, 24)).columns
+    return max(60, min(cols, 110))
+
+
+def _print_notes(items: list[tuple[str, str]], indent: int) -> None:
+    """Subject on its own line, note wrapped underneath. Long prose in a
+    fixed-width column is unreadable; long prose on one unwrapped line is
+    worse."""
+    pad = " " * indent
+    body = " " * (indent + 2)
+    for subject, note in items:
+        print(f"{pad}{subject}")
+        for line in textwrap.wrap(note, width=_term_width() - indent - 2) or [""]:
+            print(f"{body}{line}")
+
+
+def _print_table(items: list[tuple[str, str]], indent: int) -> None:
+    """Two aligned columns, for the short one-fact-each rows."""
+    if not items:
+        return
+    width = max(len(subject) for subject, _ in items)
+    for subject, note in items:
+        print(f"{' ' * indent}{subject:<{width}}   {note}")
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     catalog = load_catalog()
     images = catalog["images"]
-    needs: list[tuple[str, str]] = []   # (subject, what to do)
-    fyi: list[tuple[str, str]] = []
+    broken: list[tuple[str, str]] = []      # catalog/artifacts wrong right now
+    pins: list[tuple[str, str]] = []        # registry says the pin is stale
+    followups: list[tuple[str, str]] = []   # someone must do something, later
+    unpublished: list[tuple[str, str]] = []
+    overrides: list[tuple[str, str]] = []
 
-    # 1. offline: are the generated artifacts in step with the catalog?
+    # 1. offline: is the catalog valid, and are the artifacts in step with it?
     try:
         assert_invariants(catalog)
         drifted = [path.relative_to(ROOT) for path, content in render_all(catalog).items()
                     if (path.read_text(encoding="utf-8") if path.is_file() else None) != content]
         if drifted:
-            needs.append((", ".join(str(d) for d in drifted),
-                          "generated file(s) out of step — tools/images.sh sync"))
+            broken.append((", ".join(str(d) for d in drifted),
+                           "out of step with the catalog — run: tools/images.sh sync"))
     except CatalogError as exc:
-        needs.append(("images/catalog.yaml", f"invalid: {exc}"))
+        broken.append(("images/catalog.yaml", f"invalid: {exc}"))
 
     # 2. follow_up: notes. The whole point of the field: a reminder that
     # lives next to the thing it is about, not in somebody's head. Rows carry
@@ -1044,45 +1082,70 @@ def cmd_status(args: argparse.Namespace) -> int:
     for key in sorted(images):
         note = images[key].get("follow_up")
         if note:
-            needs.append((key, f"follow-up: {note}"))
+            followups.append((key, note))
     for note in catalog.get("follow_ups") or []:
-        needs.append(("(repo)", f"follow-up: {note}"))
+        followups.append(("(repo)", note))
+    followup_text = " ".join(note for _, note in followups).lower()
 
     # 3. online: pin vs registry. Skipped entirely with --offline so this
     # command still works on a plane, or in CI with no registry credentials.
-    if args.offline:
-        fyi.append(("registry check", "skipped (--offline)"))
-    else:
+    suppressed = 0
+    if not args.offline:
         token = _hub_token() if _needs_hub(catalog) else None
         for key in sorted(images):
-            r = _report_row(key, images[key], token)
+            row = images[key]
+            r = _report_row(key, row, token)
             if r["status"] in _ACTIONABLE:
-                needs.append((key, f"{r['status']}: {_ACTIONABLE[r['status']]}"))
+                pins.append((key, f"{r['status']} — {_ACTIONABLE[r['status']]}"))
             elif r["status"] == "UNPUBLISHED":
-                fyi.append((key, "referenced by this repo but absent from the registry"))
+                # Don't say it twice. A follow-up that already names this row
+                # (by key or by tag) carries the pending decision; repeating
+                # the bare fact underneath only pads the list.
+                if key.lower() in followup_text or str(row["tag"]).lower() in followup_text:
+                    suppressed += 1
+                else:
+                    unpublished.append((key, "referenced by this repo, absent from the registry"))
 
     # 4. ./.env overrides — never actionable (they are the intended escape
     # hatch), always worth stating, because a pin that does not take effect
     # looks exactly like a pin that does.
     for var, env_value, _ref in dotenv_overrides(catalog):
-        fyi.append((var, f"overridden by ./.env -> {env_value}"))
+        overrides.append((var, env_value))
 
-    width = max([len(s) for s, _ in needs + fyi] + [12])
-    if needs:
-        print(f"NEEDS YOU ({len(needs)})")
-        for subject, action in needs:
-            print(f"  {subject:<{width}}  {action}")
-    else:
+    total = len(broken) + len(pins) + len(followups)
+    print(f"NEEDS YOU ({total})")
+    if not total:
         checked = "catalog and artifacts agree" if args.offline else \
                   "catalog, artifacts and registry agree"
-        print(f"NEEDS YOU (0)\n  nothing — {checked}")
-    if fyi:
-        print(f"\nFYI ({len(fyi)}) — known and deliberate, no action")
-        for subject, note in fyi:
-            print(f"  {subject:<{width}}  {note}")
+        print(f"  nothing — {checked}")
+    if broken:
+        print(f"\n  wrong now ({len(broken)})")
+        _print_notes(broken, 4)
+    if pins:
+        print(f"\n  stale pins ({len(pins)}) — tools/images.sh bump fixes all of these")
+        _print_table(pins, 4)
+    if followups:
+        print(f"\n  follow-ups ({len(followups)}) — from images/catalog.yaml; "
+              f"delete the entry when done")
+        _print_notes(followups, 4)
+
+    fyi_total = len(unpublished) + len(overrides)
+    print(f"\nFYI ({fyi_total}) — known and deliberate, no action")
+    if overrides:
+        print(f"\n  overridden by ./.env ({len(overrides)}) — for these the catalog "
+              f"pin is NOT what runs")
+        _print_table(overrides, 4)
+    if unpublished:
+        print(f"\n  unpublished ({len(unpublished)})")
+        _print_table(unpublished, 4)
+    if suppressed:
+        print(f"\n  ({suppressed} unpublished row(s) already named in a follow-up above)")
+    if args.offline:
+        print("\n  registry not checked (--offline)")
+
     print("\nNot covered here: tools/images.sh baked (needs docker), "
           "tools/images.sh drift (needs the generator image).")
-    return 1 if needs else 0
+    return 1 if total else 0
 
 
 # --------------------------------------------------------------------------
