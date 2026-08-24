@@ -19,10 +19,56 @@ into a temp dir and diffs against the committed copies, exiting nonzero on any
 drift — that is the CI gate (`make verify-images`). Both are offline: no
 registry calls, no network flakiness, runnable on every PR.
 
+## Start here
+
+```
+tools/images.sh status
+```
+
+One prioritized list: **NEEDS YOU** (something is stale, drifted, invalid, or
+has an open follow-up) and **FYI** (known and deliberate — unpublished images,
+`./.env` overrides). Exits nonzero only when the first list is non-empty.
+`--offline` skips every registry lookup and still checks catalog validity,
+artifact drift, follow-ups and overrides.
+
+It does not shell out to docker, so two things stay separate:
+`tools/images.sh baked` (needs docker) and `tools/images.sh drift` (needs the
+generator image). `status` says so in its last line rather than pretending to
+have covered them.
+
+CI runs it for you: `verify` gates every PR touching the catalog or its
+tooling, and a Monday-morning scheduled job runs the online `status`. Both on
+free public-repo runners.
+
+## Follow-ups: reminders live in the catalog
+
+Anything gated on something outside the catalog — a merge, a hardware test,
+a decision — goes in the file, not in your head. Per row:
+
+```yaml
+  mns_authoring:
+    channel: pinned
+    follow_up: >-
+      move back to channel review once TEVV-Authoring PR #8 ships a -review.N tag
+```
+
+Or, for a reminder belonging to no single image, the catalog-level list:
+
+```yaml
+follow_ups:
+  - >-
+    legacy stacks still carry ${VAR:-tag} fallbacks; strip them only after a
+    real `make ardupilot-xfs` + `make px4-xfs` round-trip on hardware
+```
+
+Both print under NEEDS YOU on every `status` run, and both are reviewed in any
+PR that touches the file. Delete the entry when it is done.
+
 ## Which command
 
 | You want to | Do |
 | --- | --- |
+| Find out what needs attention at all | `tools/images.sh status` |
 | Move to a newer `-review.N` build | `tools/images.sh bump` (all review rows) or `bump --only KEY` |
 | Re-pin a `-latest` image that was republished | `tools/images.sh bump` — reports `TAG_MOVED`, rewrites the digest |
 | Upgrade a third-party image (prom, grafana, nvcr…) | edit the `tag:` in the catalog, then `bump --only KEY` to resolve its digest. Never bulk-bumped: someone else's version bump is a deliberate upgrade |

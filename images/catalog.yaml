@@ -1,5 +1,19 @@
 schema: mns.images.v1
 
+# Reminders that belong to no single image row. `tools/images.sh status`
+# prints these under NEEDS YOU every time it runs, which is the point: a
+# gated migration that lives only in someone's memory is a migration that
+# quietly never happens. Delete an entry when it is done.
+follow_ups:
+  - >-
+    legacy scenario stacks still carry ${VAR:-tag} fallbacks in
+    compose/*/docker-compose.yml; strip them only after a real
+    `make ardupilot-xfs` + `make px4-xfs` round-trip on hardware
+  - >-
+    3 images are referenced by live compose files but were never published
+    (mock-data-generator-latest, exploration-mock-generator-latest,
+    tevv-airsim-authored-latest) — build+push them or drop the references
+
 # One canonical image catalog. Every container image this repository refers to
 # is a row here, exactly once — see docs/adr/0002-one-image-catalog.md for the
 # decision record. Nothing under images/*.generated.* or product-images.env is
@@ -91,6 +105,10 @@ images:
     # pinned rows, so this tag/digest pair moves only by hand. Move back to
     # channel: review once that work ships as a -review.N tag.
     purpose: Authoring tool used to create/edit ScenarioSpecs ahead of generation.
+    follow_up: >-
+      move back to channel review once TEVV-Authoring PR #8 ships the
+      zones/sensor-noise work as a -review.N tag; bump cannot advance a
+      pinned row, so this stays frozen until someone does it
 
   mns_stack_generator:
     repo: dhdevspace/auto_mns

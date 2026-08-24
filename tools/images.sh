@@ -5,6 +5,10 @@
 # images/legacy-images.generated.env) is generated and committed. See
 # docs/adr/0002-one-image-catalog.md.
 #
+#   tools/images.sh status          # START HERE: one prioritized "what needs you"
+#                                    # list, merging verify + report + baked +
+#                                    # .env overrides + per-row follow_up notes.
+#                                    # --offline skips every registry lookup.
 #   tools/images.sh sync            # regenerate all artifacts (offline)
 #   tools/images.sh verify          # CI gate: selftest + regenerate + diff, exit 1 on
 #                                    # drift or a selftest failure (offline)
@@ -29,7 +33,7 @@ MODE="${1:-}"
 [[ $# -gt 0 ]] && shift || true
 
 case "$MODE" in
-  sync|verify|report|bump|selftest)
+  sync|verify|report|bump|selftest|status)
     exec "$PY" "$ROOT/tools/images.py" "$MODE" "$@"
     ;;
   drift)
@@ -37,7 +41,7 @@ case "$MODE" in
   baked)
     ;;
   *)
-    echo "usage: $0 <sync|verify|report|bump|drift|baked|selftest> [args...]" >&2
+    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest> [args...]" >&2
     exit 2
     ;;
 esac

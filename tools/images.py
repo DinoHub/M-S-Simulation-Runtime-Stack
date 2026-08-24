@@ -137,6 +137,11 @@ def _validate_catalog(data: Any) -> None:
             )
         if row["channel"] not in VALID_CHANNELS:
             raise CatalogError(f"images.{key}.channel {row['channel']!r} not in {VALID_CHANNELS}")
+        if "follow_up" in row and not isinstance(row["follow_up"], str):
+            raise CatalogError(
+                f"images.{key}.follow_up must be a string (a note to whoever reads "
+                f"`tools/images.sh status` next)"
+            )
         resolver = row.get("resolver", "hub")
         if resolver not in VALID_RESOLVERS:
             raise CatalogError(f"images.{key}.resolver {resolver!r} not in {VALID_RESOLVERS}")
@@ -160,6 +165,12 @@ def _validate_catalog(data: Any) -> None:
                 f"images.{key} is channel pinned but has no digest — a pinned row exists "
                 f"precisely to name one exact image; without a digest it names nothing."
             )
+    follow_ups = data.get("follow_ups")
+    if follow_ups is not None and (
+        not isinstance(follow_ups, list)
+        or not all(isinstance(n, str) for n in follow_ups)
+    ):
+        raise CatalogError("follow_ups: must be a list of strings")
     consumers = data.get("consumers")
     if not isinstance(consumers, dict):
         raise CatalogError("consumers: must be a mapping")
@@ -994,6 +1005,87 @@ def cmd_bump(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# status — the one command. Everything the other subcommands each know a
+# corner of, merged into a single "what needs you" list, so nobody has to
+# remember which of six commands answers a given question.
+# --------------------------------------------------------------------------
+
+# Statuses that mean a human has to do something, and the one line each.
+_ACTIONABLE = {
+    "STALE": "newer -review.N published — tools/images.sh bump",
+    "TAG_MOVED": "tag now resolves elsewhere — tools/images.sh bump",
+    "DIGEST_CHANGED": "tag now resolves elsewhere — tools/images.sh bump",
+    "NO_DIGEST": "pinned by tag alone — tools/images.sh bump",
+    "UNRESOLVABLE": "could not resolve at all — check the registry/network",
+}
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    catalog = load_catalog()
+    images = catalog["images"]
+    needs: list[tuple[str, str]] = []   # (subject, what to do)
+    fyi: list[tuple[str, str]] = []
+
+    # 1. offline: are the generated artifacts in step with the catalog?
+    try:
+        assert_invariants(catalog)
+        drifted = [path.relative_to(ROOT) for path, content in render_all(catalog).items()
+                    if (path.read_text(encoding="utf-8") if path.is_file() else None) != content]
+        if drifted:
+            needs.append((", ".join(str(d) for d in drifted),
+                          "generated file(s) out of step — tools/images.sh sync"))
+    except CatalogError as exc:
+        needs.append(("images/catalog.yaml", f"invalid: {exc}"))
+
+    # 2. follow_up: notes. The whole point of the field: a reminder that
+    # lives next to the thing it is about, not in somebody's head. Rows carry
+    # their own; catalog-level `follow_ups:` holds the ones that belong to no
+    # single row (a migration still gated on a hardware cycle, say).
+    for key in sorted(images):
+        note = images[key].get("follow_up")
+        if note:
+            needs.append((key, f"follow-up: {note}"))
+    for note in catalog.get("follow_ups") or []:
+        needs.append(("(repo)", f"follow-up: {note}"))
+
+    # 3. online: pin vs registry. Skipped entirely with --offline so this
+    # command still works on a plane, or in CI with no registry credentials.
+    if args.offline:
+        fyi.append(("registry check", "skipped (--offline)"))
+    else:
+        token = _hub_token() if _needs_hub(catalog) else None
+        for key in sorted(images):
+            r = _report_row(key, images[key], token)
+            if r["status"] in _ACTIONABLE:
+                needs.append((key, f"{r['status']}: {_ACTIONABLE[r['status']]}"))
+            elif r["status"] == "UNPUBLISHED":
+                fyi.append((key, "referenced by this repo but absent from the registry"))
+
+    # 4. ./.env overrides — never actionable (they are the intended escape
+    # hatch), always worth stating, because a pin that does not take effect
+    # looks exactly like a pin that does.
+    for var, env_value, _ref in dotenv_overrides(catalog):
+        fyi.append((var, f"overridden by ./.env -> {env_value}"))
+
+    width = max([len(s) for s, _ in needs + fyi] + [12])
+    if needs:
+        print(f"NEEDS YOU ({len(needs)})")
+        for subject, action in needs:
+            print(f"  {subject:<{width}}  {action}")
+    else:
+        checked = "catalog and artifacts agree" if args.offline else \
+                  "catalog, artifacts and registry agree"
+        print(f"NEEDS YOU (0)\n  nothing — {checked}")
+    if fyi:
+        print(f"\nFYI ({len(fyi)}) — known and deliberate, no action")
+        for subject, note in fyi:
+            print(f"  {subject:<{width}}  {note}")
+    print("\nNot covered here: tools/images.sh baked (needs docker), "
+          "tools/images.sh drift (needs the generator image).")
+    return 1 if needs else 0
+
+
+# --------------------------------------------------------------------------
 # drift / baked support (bash side does the docker-heavy lifting; these are
 # the catalog-aware lookups it shells out to)
 # --------------------------------------------------------------------------
@@ -1043,6 +1135,11 @@ def main(argv: list[str]) -> int:
     sub.add_parser("sync").set_defaults(fn=cmd_sync)
     sub.add_parser("verify").set_defaults(fn=cmd_verify)
     sub.add_parser("selftest").set_defaults(fn=cmd_selftest)
+
+    p_status = sub.add_parser("status")
+    p_status.add_argument("--offline", action="store_true",
+                          help="skip every registry lookup")
+    p_status.set_defaults(fn=cmd_status)
 
     p_report = sub.add_parser("report")
     p_report.add_argument("--only")
