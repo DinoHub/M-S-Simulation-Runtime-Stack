@@ -108,6 +108,38 @@ resolver path (`hub` and `imagetools`) returns `(value, error)` and a nonzero
 before any digest-comparison logic runs. `report` exits nonzero when any
 non-`local`/non-`unpublished` row is `UNRESOLVABLE`, so it can gate a build.
 
+### Precedence: the catalog is authoritative, not absolute
+
+This applies to every generated env file, not only the legacy one where the
+mechanics are spelled out below. `tools/load-images-env.sh` exports a key from
+a generated file only when it is **both** unset in the shell **and** absent
+from `./.env`:
+
+```
+shell env  >  ./.env  >  images/*.generated.env  >  compose ${VAR:-default}
+```
+
+`./.env` beating the catalog is deliberate — it is how a developer runs a
+local build without editing tracked files, and compose auto-loads `./.env`
+regardless of what we do. The hazard is not that the override exists, it is
+that it is silent: the catalog can show a carefully resolved digest for a var
+that has no effect on this machine. `tools/images.sh report` therefore lists
+every catalog var that `./.env` also sets, both values side by side. That
+check spans `legacy_env` too, which is where every real override lives today.
+
+### Off-release-line pins
+
+`channel: review` means the tag ends in `-review.N`, and `bump` derives the
+family from the pinned tag itself. A review row carrying some other tag is a
+silent dead end: no siblings are found, `report` says `NO_TAGS_FOUND`, and
+that reads as "already current". `MNS_AUTHORING_IMAGE` sat two weeks stale
+this way while the newer build was present in `docker images` on the same
+machine — the digest is the contract, so a locally-present newer image
+changes nothing. `_validate_catalog` now rejects the combination at edit
+time. A deliberate off-line pin (a branch or preview build) declares
+`channel: pinned`: digest required, verified by `report` like any other row,
+refused by `bump`, moved only by hand.
+
 ### Unpublished images
 
 Building this catalog surfaced four images that were referenced live but did
@@ -215,11 +247,10 @@ whoever owns those compose files, not this catalog's job; the catalog's job
 is to make the disagreement visible in git instead of two developers
 discovering it by diffing `docker ps` output.
 
-#### Precedence chain
+#### Precedence chain, applied to the legacy stacks
 
-`load_images_env` (unchanged from R-4) exports a key from a given generated
-file only when it is **both** unset in the shell **and** absent from
-`./.env`. Stacking both generated files (`platform-images.generated.env`,
+The general rule is stated under "Precedence" above; this is what it works out
+to for these particular vars. Stacking both generated files (`platform-images.generated.env`,
 then `legacy-images.generated.env`) in `launch.sh`/`stop.sh`/`logs.sh` gives:
 
 ```

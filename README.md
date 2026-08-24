@@ -53,9 +53,9 @@ Stop the browser shell with:
 ./product.sh stop
 ```
 
-`product-images.env` pins the four-image review channel: product shell, ScenarioLab authoring, stack generator, and Blocks runtime. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this E2E image set.
+`product-images.env` carries the four-image review channel: product shell, ScenarioLab authoring, stack generator, and Blocks runtime. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this E2E image set.
 
-Pins are `repo:tag@sha256:…` — the digest is the contract, the tag is there so the file is readable. `tools/check-image-pins.sh` reports staleness and `--bump` rewrites both parts. Why it works this way, and what it costs: [ADR 0001](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md).
+**That file is generated — do not edit it.** Every image reference in this repository is authored in one place, `images/catalog.yaml`, and rendered from there by `tools/images.sh sync`. Pins are `repo:tag@sha256:…`: the digest is the contract, the tag is there so the file is readable. `tools/images.sh report` shows staleness, `bump` rewrites both parts, and `verify` is the CI gate that fails if a generated file has drifted from the catalog. Day-to-day procedure: [docs/images.md](docs/images.md). Why it works this way, and what it costs: [ADR 0002](docs/adr/0002-one-image-catalog.md), which generalizes [ADR 0001](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md) to every image rather than just the product ones.
 
 ### When the registry is unreachable
 

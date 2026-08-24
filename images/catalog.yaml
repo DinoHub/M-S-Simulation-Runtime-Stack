@@ -12,20 +12,29 @@ schema: mns.images.v1
 # to, on every machine, forever. `tag` stays alongside it purely for humans —
 # nothing prevents a tag being repointed at a different image, so the tag
 # alone is not a pin. Every digest below is the INDEX (manifest-list) digest,
-# not a per-architecture manifest: `docker buildx imagetools inspect <ref>
-# --format '{{.Manifest.Digest}}'` reports that; `docker manifest inspect -v`
-# reports the per-arch entry instead and is the easy way to get this wrong for
-# a multi-arch tag. See MnS-Integration-Platform/docs/adr/0001-image-versioning-
+# not a per-architecture manifest. Read it off the `Digest:` line of
+# `docker buildx imagetools inspect <ref>`'s DEFAULT report — not
+# `--format '{{.Manifest.Digest}}'`, which silently prints the wrong thing for
+# a single-arch image, and not `docker manifest inspect -v`, which reports the
+# per-arch entry and is the easy way to get this wrong for a multi-arch tag. See MnS-Integration-Platform/docs/adr/0001-image-versioning-
 # and-digest-pinning.md for the fuller reasoning (this catalog generalizes that
 # decision to every image, not just the product ones).
 #
 # `channel` drives report/bump behavior:
-#   review   - repo:tag-review.N; tag.sh --bump advances N via Hub tag search
+#   review   - repo:tag-review.N; `tools/images.sh bump` advances N via Hub
+#              tag search. The tag MUST end in -review.N: bump derives the
+#              family from the tag itself, so an off-line tag here would
+#              report NO_TAGS_FOUND forever. Enforced by _validate_catalog.
 #   moving   - repo:tag-latest (or similar); tag never changes, digest may;
 #              republished in place, reported as TAG_MOVED when it happens
 #   upstream - third-party image on a version tag; never auto-bumped
+#   pinned   - published, but deliberately off the release line (a branch or
+#              preview build). Digest required; verified by report like any
+#              other row; refused by bump. Moves only by hand.
 #   local    - locally built (repo starts with local/); digest is always
 #              null and the row is skipped by both verify and bump
+#   unpublished - referenced by this repo but absent from the registry;
+#              digest null, no lookup attempted, bump refuses
 #
 # `resolver` says how report/bump find the live digest:
 #   hub        - Docker Hub v2 API (default; needed for -review.N enumeration)
