@@ -16,9 +16,22 @@ follow_ups:
     intentional, then giving each scenario its own var — a scenario-design
     call, not a catalog one.
   - >-
-    3 images are referenced by live compose files but were never published
-    (mock-data-generator-latest, exploration-mock-generator-latest,
-    tevv-airsim-authored-latest) — build+push them or drop the references
+    tevv-airsim-authored-latest was never published, but the path that needs
+    it IS live: MnS-Integration-Platform stacks/orchestrator/catalogs/
+    environments.yaml defines the "authored" environment with
+    image_role: unreal_authored, so generating a scenario against it emits a
+    stack nobody can launch. Needs a real build+push, or the environment
+    gated off until one exists. (dev-local maps it to
+    local/auto_mns:tevv-airsim-authored-latest, so a local build works today.)
+  - >-
+    mock-data-generator-latest and exploration-mock-generator-latest are
+    unreachable, not merely unpublished: both services are profile-gated
+    (mock-testing / mock-data / local-planner-mock-testing / exploration-mock)
+    and NOTHING in this repo activates those profiles, their build: block is
+    commented out, and its context ../monitoring/mock-data-generator does not
+    exist in this checkout. Nothing can start them. Drop the two services and
+    their catalog rows unless someone still wants them, in which case they
+    need a build context first.
 
 # One canonical image catalog. Every container image this repository refers to
 # is a row here, exactly once — see docs/adr/0002-one-image-catalog.md for the
