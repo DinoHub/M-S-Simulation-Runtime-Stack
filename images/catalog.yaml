@@ -20,9 +20,22 @@ follow_ups:
     it IS live: MnS-Integration-Platform stacks/orchestrator/catalogs/
     environments.yaml defines the "authored" environment with
     image_role: unreal_authored, so generating a scenario against it emits a
-    stack nobody can launch. Needs a real build+push, or the environment
-    gated off until one exists. (dev-local maps it to
-    local/auto_mns:tevv-airsim-authored-latest, so a local build works today.)
+    stack nobody can launch. Either build+push it or gate the environment off
+    until one exists. Build contract, from runtime_image_bindings.yaml and
+    the level pack's runtime_binding.local.yaml -- the image must ship
+    executable_path /app/Unreal/UnrealScenario.sh, bake the map
+    /Game/Levels/L_BaseMap (mode: baked_image), and answer to
+    environment_name "authored" / image_role unreal_authored, target
+    unreal_authored_ue55_linux_iostore. Two inputs are NOT in this checkout
+    or anywhere on the build host: (1) the UE project holding
+    /Game/Levels/L_BaseMap -- the level pack
+    services/tevv-authoring/.../unreal_authored_l_basemap.mnslevelpack is
+    ~1 KB of metadata, no content; (2) the runtime Dockerfile that wraps a
+    packaged build as /app/Unreal/UnrealScenario.sh. The UE packaging
+    pipeline itself does exist (sim-main-pkg/docker/build/unreal-builder,
+    which outputs docker/unreal_executable/packaged/<Project>/LinuxNoEditor)
+    and is what produced the sibling xfs/condo sims, so this is a missing
+    source-content problem, not a missing-tooling one.
   - >-
     mock-data-generator-latest and exploration-mock-generator-latest are
     unreachable, not merely unpublished: both services are profile-gated
