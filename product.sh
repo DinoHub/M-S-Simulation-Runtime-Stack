@@ -3,9 +3,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT/product-images.env"
+if [[ -n "${MNS_AUTHORING_IMAGE_OVERRIDE:-}" ]]; then
+  MNS_AUTHORING_IMAGE="$MNS_AUTHORING_IMAGE_OVERRIDE"
+fi
 DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$ROOT/.mns/authoring-data}"
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
+AUTHORING_AIRSIM_SETTINGS="$ROOT/config/unreal-airsim/authoring-preview.json"
+AUTHORING_DOCKER_ARGS="-v \"$AUTHORING_AIRSIM_SETTINGS:/tmp/Documents/AirSim/settings.json:ro\"${MNS_AUTHORING_DOCKER_ARGS:+ $MNS_AUTHORING_DOCKER_ARGS}"
 # 8760 (was 8765): 8765 is the Foxglove websocket standard — Lichtblick's
 # default connection URL and the dashboard backend's FOXGLOVE_PROBE_PORT both
 # assume it, so the dashboard's ros2-node foxglove_bridge owns it now.
@@ -72,7 +77,7 @@ run_shell() {
     -e "MNS_SCENARIO_EXPORTS_ROOT=$EXPORT_ROOT" \
     -e "MNS_AUTHORING_DATA_ROOT=$DATA_ROOT" \
     -e "MNS_AUTHORING_IMAGE=$MNS_AUTHORING_IMAGE" \
-    -e "MNS_AUTHORING_DOCKER_ARGS=${MNS_AUTHORING_DOCKER_ARGS:-}" \
+    -e "MNS_AUTHORING_DOCKER_ARGS=$AUTHORING_DOCKER_ARGS" \
     -e "MNS_AUTHORING_DOCKER_GPU_ARGS=${MNS_AUTHORING_DOCKER_GPU_ARGS:-}" \
     -e "MNS_STACK_GENERATOR_IMAGE=$MNS_STACK_GENERATOR_IMAGE" \
     -e MNS_IMAGE_SET=published \
