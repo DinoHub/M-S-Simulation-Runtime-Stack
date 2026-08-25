@@ -70,6 +70,7 @@ PRODUCT_ENV_PATH = ROOT / "product-images.env"
 IMAGE_SET_PATH = ROOT / "images" / "image-set.generated.yaml"
 PLATFORM_ENV_PATH = ROOT / "images" / "platform-images.generated.env"
 LEGACY_ENV_PATH = ROOT / "images" / "legacy-images.generated.env"
+STANDALONE_V2_ENV_PATH = ROOT / "images" / "standalone-v2-images.generated.env"
 ENV_EXAMPLE_PATH = ROOT / ".env.example"
 DOTENV_PATH = ROOT / ".env"
 
@@ -179,6 +180,21 @@ def _validate_catalog(data: Any) -> None:
     for group_name in ("product_env", "image_sets", "compose_env", "legacy_env"):
         if group_name not in consumers:
             raise CatalogError(f"consumers.{group_name} missing")
+    # Optional: a catalog with no pre-release channel is an ordinary catalog.
+    # Shape-checked when present so a typo fails at load rather than emitting
+    # an empty pin file that reads as "no images pinned".
+    channels = consumers.get("release_channels")
+    if channels is not None:
+        if not isinstance(channels, dict):
+            raise CatalogError("consumers.release_channels: must be a mapping")
+        for name, spec in channels.items():
+            if not isinstance(spec, dict) or not isinstance(spec.get("vars"), dict) \
+                    or not spec["vars"]:
+                raise CatalogError(
+                    f"consumers.release_channels.{name}: needs a non-empty vars mapping")
+            if not spec.get("emits"):
+                raise CatalogError(
+                    f"consumers.release_channels.{name}: needs an emits path")
 
 
 def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
@@ -272,6 +288,45 @@ def render_image_set(catalog: dict[str, Any]) -> str:
     return header + yaml.safe_dump(body, sort_keys=False, default_flow_style=False)
 
 
+def render_standalone_v2_env(catalog: dict[str, Any]) -> str:
+    """images/standalone-v2-images.generated.env — the coordinated v2 set.
+
+    A separate file rather than another group in product-images.env, because
+    three of these bind the SAME variable names as the review group. Both in
+    one file and the later line silently wins; a consumer picks a channel by
+    picking a file, which is a choice it can make explicitly and a reader can
+    see.
+
+    Written even while every row is unpublished (digest null, tag only). That
+    is the point: the file exists, is generated, and gains its digests in one
+    place on the day they are published — rather than a hand-written copy in
+    another repository gaining them separately, which is how the platform came
+    to pin review.20 against this repo's review.22.
+    """
+    images = catalog["images"]
+    channel = catalog["consumers"]["release_channels"].get("standalone_v2")
+    if not channel or not channel.get("vars"):
+        raise CatalogError(
+            "consumers.release_channels.standalone_v2.vars is missing; "
+            "images/standalone-v2-images.generated.env has nothing to emit")
+    group = channel["vars"]
+    lines = [
+        GENERATED_MARKER,
+        "",
+        "# Coordinated standalone-v2 pre-release channel. Sourced INSTEAD of",
+        "# product-images.env by the v2 product shell, not alongside it.",
+        "#",
+        "# Rows are channel: unpublished until the set is built and pushed, so",
+        "# these are tags without digests. That is a deliberate, visible gap —",
+        "# `tools/images.sh status` lists every one of them under NEEDS YOU —",
+        "# not an oversight, and not something to paper over by hand-editing",
+        "# this file. Edit images/catalog.yaml and re-run `tools/images.sh sync`.",
+        "",
+    ]
+    lines += [f"{var}={image_ref(images, key)}" for var, key in group.items()]
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
 def render_platform_env(catalog: dict[str, Any]) -> str:
     images = catalog["images"]
     groups = catalog["consumers"]["compose_env"]
@@ -354,12 +409,15 @@ def render_legacy_env(catalog: dict[str, Any]) -> str:
 
 
 def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
-    return {
+    out = {
         PRODUCT_ENV_PATH: render_product_env(catalog),
         IMAGE_SET_PATH: render_image_set(catalog),
         PLATFORM_ENV_PATH: render_platform_env(catalog),
         LEGACY_ENV_PATH: render_legacy_env(catalog),
     }
+    if (catalog["consumers"].get("release_channels") or {}).get("standalone_v2"):
+        out[STANDALONE_V2_ENV_PATH] = render_standalone_v2_env(catalog)
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -368,12 +426,16 @@ def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
 
 def _all_env_vars(catalog: dict[str, Any]) -> dict[str, str]:
     """var -> image key, across product_env and compose_env (image_sets has
-    no env vars of its own). Deliberately excludes legacy_env: those vars
+    no env vars of its own). Deliberately excludes legacy_env and
+    release_channels: legacy_env's vars
     are expected to already be in .env.example (that IS the legacy stack's
     .env — see images/legacy-images.generated.env's header), and legacy_env
     is also the one group where the same var name is allowed to map to a
     different key per scenario (AIRSIM_IMAGE, AIRSIM_CONDO_IMAGE), which
-    the invariant below would otherwise reject."""
+    the invariant below would otherwise reject. release_channels is excluded
+    for the same reason from the other direction: a channel exists precisely to
+    bind the review channel's variable names to a different set of images, and
+    it emits to its own file so the two never meet."""
     out: dict[str, str] = {}
     for group in catalog["consumers"]["product_env"].values():
         out.update(group)
@@ -499,9 +561,8 @@ def cmd_verify(_args: argparse.Namespace) -> int:
             print(f"DRIFT: {path.relative_to(ROOT)} does not match images/catalog.yaml", file=sys.stderr)
         print("run: tools/images.sh sync", file=sys.stderr)
         return 1
-    print("verify: ok (product-images.env, images/image-set.generated.yaml, "
-          "images/platform-images.generated.env, images/legacy-images.generated.env "
-          "all match images/catalog.yaml)")
+    checked = ", ".join(sorted(str(p.relative_to(ROOT)) for p in artifacts))
+    print(f"verify: ok ({checked} all match images/catalog.yaml)")
     return 0
 
 

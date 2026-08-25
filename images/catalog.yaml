@@ -142,6 +142,66 @@ images:
       zones/sensor-noise work as a -review.N tag; bump cannot advance a
       pinned row, so this stays frozen until someone does it
 
+  # ---------------------------------------------------------------------
+  # standalone-v2 coordinated pre-release (4 rows)
+  #
+  # The v2 cutover (MnS-Integration-Platform #89) replaces the per-environment
+  # simulator images with ONE generic host and delivers levels as content
+  # packs. Its four images move together as a set and none is published yet,
+  # which is exactly what channel: unpublished is for — digest null, no
+  # registry lookup attempted, bump refuses to advance them.
+  #
+  # They live here rather than in a second hand-written pin file in the
+  # platform repo. That file existed once, drifted to review.20 against this
+  # repo's review.22, and #88 deleted it. Re-creating it for v2 would
+  # re-create the drift, with a fourth image to disagree about.
+  #
+  # release/standalone-v2.lock.json in the platform repo remains the record of
+  # what was ACCEPTED together (pack ids, artifact digests, archive checksums,
+  # acceptance state). These rows are what is CURRENTLY pinned. Those are
+  # different questions and both are worth recording.
+  # ---------------------------------------------------------------------
+  mns_product_shell_v2:
+    repo: dhdevspace/auto_mns
+    tag: mns-product-shell-standalone-v2-review.1
+    digest: null
+    channel: unpublished
+    purpose: Product shell for the standalone-v2 content-pack flow.
+    follow_up: >-
+      unpublished — fill the digest and move to channel review once the
+      standalone-v2 set is built, pushed and passes dual-host acceptance
+      (release/standalone-v2.lock.json is blocked until then)
+
+  mns_authoring_v2:
+    repo: dhdevspace/auto_mns
+    tag: mns-authoring-standalone-v2-review.1
+    digest: null
+    channel: unpublished
+    purpose: ScenarioLab authoring frozen on the v2 SM6 IoStore host capability.
+    follow_up: >-
+      unpublished — see mns_product_shell_v2; ships with TEVV-Authoring #10
+
+  mns_stack_generator_v2:
+    repo: dhdevspace/auto_mns
+    tag: mns-stack-generator-standalone-v2-review.1
+    digest: null
+    channel: unpublished
+    purpose: Generator that resolves content packs from the shared PackStore.
+    follow_up: >-
+      unpublished — see mns_product_shell_v2
+
+  tevv_runtime_host:
+    repo: dhdevspace/auto_mns
+    tag: tevv-runtime-host-standalone-v2-review.1
+    digest: null
+    channel: unpublished
+    purpose: >-
+      Generic standalone-v2 runtime host. Replaces the per-environment
+      simulator images (xfs / condo / safti_city / blocks): levels and assets
+      arrive as content packs mounted at runtime rather than baked per image.
+    follow_up: >-
+      unpublished — see mns_product_shell_v2; ships with TEVV-Airsim #132
+
   mns_stack_generator:
     repo: dhdevspace/auto_mns
     tag: mns-stack-generator-v0.2.0-review.22
@@ -628,6 +688,24 @@ consumers:
       DASHBOARD_FRONTEND_IMAGE: dashboard_frontend
     tools:
       AIRSIM_TOOLS_IMAGE: airsim_tools
+
+  # A release channel binds the SAME variable names as product_env.review to a
+  # different set of images, and emits to its own file. It is a separate
+  # section rather than another product_env group because the invariant on
+  # product_env — one variable, one image key — is worth keeping: inside a
+  # single channel a var bound twice really is a mistake. Between channels it
+  # is the whole point. Same exemption legacy_env already has, for the same
+  # reason.
+  #
+  # A consumer selects a channel by sourcing one file. Nothing merges them.
+  release_channels:
+    standalone_v2:
+      emits: images/standalone-v2-images.generated.env
+      vars:
+        MNS_PRODUCT_SHELL_IMAGE: mns_product_shell_v2
+        MNS_AUTHORING_IMAGE: mns_authoring_v2
+        MNS_STACK_GENERATOR_IMAGE: mns_stack_generator_v2
+        MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host
 
   image_sets:
     published:
