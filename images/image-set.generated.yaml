@@ -1,0 +1,37 @@
+schema: mns.image_sets.v1
+
+# GENERATED from images/catalog.yaml — see docs/adr/0002-one-image-catalog.md. Do not hand-edit; run tools/images.sh sync.
+# Overlay via MNS_IMAGE_SET_FILE (MnS-Integration-Platform stackgen's
+# existing overlay hook — see docs/adr/0002-one-image-catalog.md).
+
+image_sets:
+  published:
+    pull_policy: always
+    images:
+      simulators:
+        blocks: dhdevspace/auto_mns:blocks-v0.2.0-review.3@sha256:0b3aec1aa502b9aaef35d1082c0d6c2c33ba18ff9006e832df70b2d05468869a
+        xfs: dhdevspace/auto_mns:tevv-airsim-xfs-latest@sha256:98b931f289c71f5b7900e7ff367996b8831e0d2b44b1ce0cb38ed6efcd395d1a
+        safti_city: dhdevspace/auto_mns:safti-runtime-metrics@sha256:5b330b3fc5e84e8cd34f7337f5c1733f33f2ce12ed7d44142ffbbc145b40a814
+        condo: dhdevspace/auto_mns:tevv-airsim-condo-latest-ceilingless@sha256:51b22bb067f7630118748f228c92a444f955415661459a0b2c3b1c1a631d5a5f
+        unreal_authored: dhdevspace/auto_mns:tevv-airsim-authored-latest
+      autopilots:
+        ardupilot: dhdevspace/auto_mns:ardupilot-latest@sha256:0b6681c522a9d209a796fd4c3296d0a104b3245ea32532464d70b3a7070c3d35
+        px4: dhdevspace/auto_mns:px4-airsim-px4@sha256:cd5a87467c73a0f8f506bca38a6f5d8df0779cf3c21a99dd0f4384784d40588a
+      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble@sha256:068ea157e6d2347d6c515efbc2d33997d14068f72793b9b71fc29b8e9f2276fd
+      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
+      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest@sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb
+  dev-local:
+    pull_policy: if_not_present
+    images:
+      simulators:
+        blocks: local/auto_mns:blocks-v0.2.0-review.3
+        xfs: local/auto_mns:tevv-airsim-xfs-latest
+        safti_city: local/auto_mns:safti-runtime-metrics
+        condo: dhdevspace/auto_mns:tevv-airsim-condo-latest-ceilingless@sha256:51b22bb067f7630118748f228c92a444f955415661459a0b2c3b1c1a631d5a5f
+        unreal_authored: local/auto_mns:tevv-airsim-authored-latest
+      autopilots:
+        ardupilot: local/auto_mns:ardupilot-latest
+        px4: local/auto_mns:px4-airsim-px4
+      ros2_bridge: local/auto_mns:tevv-airsim-ros2-bridge-humble
+      qgroundcontrol: local/auto_mns:airsim-qgc-x11-latest
+      sim_real_eval: local/auto_mns:sim-real-eval-worker-latest

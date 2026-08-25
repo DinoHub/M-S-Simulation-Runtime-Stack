@@ -52,7 +52,7 @@ services:
   # Workflow: Connect MAVROS → Arm → Takeoff → Waypoints → Metrics → Evaluate
 
   metrics-collector:
-    image: dhdevspace/auto_mns:metrics-collectorV2-release
+    image: ${METRICS_COLLECTOR_IMAGE:?source images/platform-images.generated.env}
     # Mutable tag, so pull every start; MNS_IMAGE_PULL_POLICY=missing starts
     # from the local cache when the registry is unreachable.
     pull_policy: ${MNS_IMAGE_PULL_POLICY:-always}

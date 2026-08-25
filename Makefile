@@ -53,7 +53,7 @@ endif
 
 SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images
 
 dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
 	# Create these as the HOST user first, the way product.sh does. The backend
@@ -75,7 +75,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):ros2-tools:"Foxglove websocket" || exit 1
 	# compose_retry, not a bare `up`: one transient registry timeout otherwise
 	# aborts the whole start even though every image is already cached.
-	@. ./tools/compose_retry.sh; set -a; . ./product-images.env; set +a; \
+	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; set -a; . ./product-images.env; set +a; load_images_env ./images/platform-images.generated.env; \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
 	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
 	# DB=true only: bounce the backend once postgres is healthy. Its telemetry
@@ -84,7 +84,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	# every telemetry endpoint off a dead pool until something restarts it. The
 	# API itself no longer waits on postgres (see the compose file), which is
 	# what makes this safe: worst case the bounce costs ~5s, and it cannot hang.
-	@$(if $(filter true,$(DB)),set -a; . ./product-images.env; set +a; 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db 	  restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
+	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; set -a; . ./product-images.env; set +a; load_images_env ./images/platform-images.generated.env; 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db 	  restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082))"
 
 dashboard-down:
@@ -92,7 +92,7 @@ dashboard-down:
 	# leaves postgres-telemetry (and the db-init one-shot) behind as orphans after
 	# a DB=true session. Naming a profile that was never up is a no-op, so this is
 	# safe either way.
-	@set -a; . ./product-images.env; set +a; \
+	@. ./tools/load-images-env.sh; set -a; . ./product-images.env; set +a; load_images_env ./images/platform-images.generated.env; \
 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db down
 
 help:
@@ -114,6 +114,7 @@ help:
 	@echo "  generate   render compose files from templates [SCENARIO=name]"
 	@echo "  check      exit nonzero when rendered files drift from .env+templates"
 	@echo "  self-test  generator invariant checks"
+	@echo "  verify-images  CI gate: images/catalog.yaml matches generated artifacts"
 	@echo "Current flags: $(if $(LAUNCH_FLAGS),$(LAUNCH_FLAGS),(none))"
 
 $(SCENARIOS):
@@ -180,3 +181,10 @@ check:
 
 self-test:
 	python3 tools/generate_scenario.py --self-test
+
+# CI gate for the image catalog (images/catalog.yaml): regenerates
+# product-images.env / images/*.generated.* into a temp location and diffs
+# against the committed copies. Offline — no registry calls. See
+# docs/adr/0002-one-image-catalog.md.
+verify-images:
+	./tools/images.sh verify

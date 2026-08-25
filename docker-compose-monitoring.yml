@@ -66,7 +66,7 @@ services:
     # build:
     #   context: ../monitoring/mock-data-generator
     #   dockerfile: Dockerfile
-    image: dhdevspace/auto_mns:mock-data-generator-latest
+    image: ${MOCK_DATA_GENERATOR_IMAGE:?source images/platform-images.generated.env}
     pull_policy: if_not_present
     container_name: mock-data-generator
     hostname: mock-data-generator
@@ -97,7 +97,7 @@ services:
     # build:
     #   context: ../monitoring/mock-data-generator
     #   dockerfile: Dockerfile
-    image: dhdevspace/auto_mns:exploration-mock-generator-latest
+    image: ${EXPLORATION_MOCK_GENERATOR_IMAGE:?source images/platform-images.generated.env}
     pull_policy: if_not_present
     container_name: exploration-mock-generator
     hostname: exploration-mock-generator
@@ -129,7 +129,7 @@ services:
     # build:
     #   context: ../monitoring
     #   dockerfile: Dockerfile.prometheus
-    image: dhdevspace/auto_mns:prometheus-monitoring-latest
+    image: ${PROMETHEUS_IMAGE:?source images/platform-images.generated.env}
     pull_policy: if_not_present
     container_name: prometheus
     volumes:
@@ -169,7 +169,7 @@ services:
   #     static_configs:
   #       - targets: ['pushgateway:9091']
   pushgateway:
-    image: prom/pushgateway:v1.11.1
+    image: ${PUSHGATEWAY_IMAGE:?source images/platform-images.generated.env}
     container_name: pushgateway
     ports:
       - '${PUSHGATEWAY_HOST_PORT:-9091}:9091'
@@ -193,7 +193,7 @@ services:
   # Image is published by the TEVV-Metrics CI from metrics/jsonl_ingestor/Dockerfile.
   # Until it is on the registry, uncomment `build:` to build locally.
   jsonl-ingestor:
-    image: dhdevspace/auto_mns:tevv-jsonl-ingest-latest
+    image: ${JSONL_INGESTOR_IMAGE:?source images/platform-images.generated.env}
     pull_policy: if_not_present
     # build:
     #   context: ../TEVV-Metrics/metrics/jsonl_ingestor
@@ -222,7 +222,7 @@ services:
     # build:
     #   context: ../monitoring
     #   dockerfile: Dockerfile.grafana
-    image: dhdevspace/auto_mns:grafana-monitoring-latest
+    image: ${GRAFANA_IMAGE:?source images/platform-images.generated.env}
     pull_policy: if_not_present
     container_name: grafana
     user: "472"
@@ -252,7 +252,7 @@ services:
   # =================================
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
+    image: ${CADVISOR_IMAGE:?source images/platform-images.generated.env}
     container_name: cadvisor
     privileged: true
     ports:
@@ -271,7 +271,7 @@ services:
       - monitoring
 
   node-exporter:
-    image: prom/node-exporter:latest
+    image: ${NODE_EXPORTER_IMAGE:?source images/platform-images.generated.env}
     container_name: node-exporter
     ports:
       - '9100:9100'
@@ -283,7 +283,7 @@ services:
       - monitoring
 
   dcgm-exporter:
-    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.5-3.4.1-ubuntu22.04
+    image: ${DCGM_EXPORTER_IMAGE:?source images/platform-images.generated.env}
     container_name: dcgm-exporter
     ports:
       - '9400:9400'
@@ -311,7 +311,7 @@ services:
     # build:
     #   context: ${PROJECT_ROOT:-../..}
     #   dockerfile: runtime/docker/monitoring/exporters/Dockerfile.exporters
-    image: dhdevspace/auto_mns:airsim-metrics-exporters-latest
+    image: ${METRICS_EXPORTERS_IMAGE:?source images/platform-images.generated.env}
     pull_policy: if_not_present
     container_name: ros2-metrics-exporter
     environment:
@@ -331,7 +331,7 @@ services:
     # build:
     #   context: ${PROJECT_ROOT:-../..}
     #   dockerfile: runtime/docker/monitoring/exporters/Dockerfile.exporters
-    image: dhdevspace/auto_mns:airsim-metrics-exporters-latest
+    image: ${METRICS_EXPORTERS_IMAGE:?source images/platform-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim-api-exporter
     environment:
@@ -356,7 +356,7 @@ services:
     # build:
     #   context: ${PROJECT_ROOT:-../..}
     #   dockerfile: runtime/docker/monitoring/exporters/Dockerfile.exporters
-    image: dhdevspace/auto_mns:airsim-metrics-exporters-latest
+    image: ${METRICS_EXPORTERS_IMAGE:?source images/platform-images.generated.env}
     pull_policy: if_not_present
     container_name: px4-mavlink-exporter
     environment:
@@ -384,7 +384,7 @@ services:
     # build:
     #   context: ./postgres
     #   dockerfile: Dockerfile.postgres-telemetry
-    image: dhdevspace/auto_mns:postgres-telemetry-latest
+    image: ${POSTGRES_TELEMETRY_IMAGE:?source images/platform-images.generated.env}
     pull_policy: if_not_present
     container_name: postgres-telemetry
     hostname: postgres-telemetry
@@ -417,7 +417,7 @@ services:
   # =================================
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    image: ${ELASTICSEARCH_IMAGE:?source images/platform-images.generated.env}
     container_name: elasticsearch
     hostname: elasticsearch
     restart: unless-stopped
@@ -468,7 +468,7 @@ services:
   # entrypoint has to be replaced outright. Keep both `source` lines: the ROS
   # overlay is what puts foxglove_bridge and the AirSim-custom msgs on the path.
   foxglove-bridge:
-    image: dhdevspace/auto_mns:tevv-foxglove-bridge-humble-3.2
+    image: ${FOXGLOVE_BRIDGE_IMAGE:?source images/platform-images.generated.env}
     container_name: foxglove-bridge
     network_mode: host
     entrypoint:
@@ -483,7 +483,7 @@ services:
       - monitoring
 
   lichtblick:
-    image: sid220/lichtblick:latest
+    image: ${MONITORING_LICHTBLICK_IMAGE:?source images/platform-images.generated.env}
     container_name: lichtblick
     ports:
       # 8084, moved off 8082: the TEVV dashboard runs its own lichtblick and is

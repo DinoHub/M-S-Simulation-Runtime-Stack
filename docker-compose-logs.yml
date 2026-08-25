@@ -26,7 +26,7 @@ networks:
 
 services:
   loki:
-    image: grafana/loki:3.4.2
+    image: ${LOKI_IMAGE:?source images/platform-images.generated.env}
     container_name: loki
     command: -config.file=/etc/loki/loki-config.yaml
     ports:
@@ -41,7 +41,7 @@ services:
       - logs
 
   alloy:
-    image: grafana/alloy:v1.7.5
+    image: ${ALLOY_IMAGE:?source images/platform-images.generated.env}
     container_name: alloy
     command:
       - run

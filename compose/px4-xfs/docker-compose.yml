@@ -648,7 +648,7 @@ services:
   # one domain would race /clock and reset tf2 buffers.
   # ===========================================================================
   airsim_bridge_d1:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d1
     hostname: airsim_bridge_d1
@@ -716,7 +716,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d1:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d1
     hostname: mavros_d1
@@ -761,7 +761,7 @@ services:
         enable_dds_cleanup:=true
 
   airsim_bridge_d2:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d2
     hostname: airsim_bridge_d2
@@ -829,7 +829,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d2:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d2
     hostname: mavros_d2
@@ -874,7 +874,7 @@ services:
         enable_dds_cleanup:=false
 
   airsim_bridge_d3:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d3
     hostname: airsim_bridge_d3
@@ -942,7 +942,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d3:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d3
     hostname: mavros_d3
@@ -987,7 +987,7 @@ services:
         enable_dds_cleanup:=false
 
   airsim_bridge_d4:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d4
     hostname: airsim_bridge_d4
@@ -1055,7 +1055,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d4:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d4
     hostname: mavros_d4
@@ -1100,7 +1100,7 @@ services:
         enable_dds_cleanup:=false
 
   airsim_bridge_d5:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d5
     hostname: airsim_bridge_d5
@@ -1168,7 +1168,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d5:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d5
     hostname: mavros_d5
@@ -1213,7 +1213,7 @@ services:
         enable_dds_cleanup:=false
 
   airsim_bridge_d6:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d6
     hostname: airsim_bridge_d6
@@ -1281,7 +1281,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d6:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d6
     hostname: mavros_d6
@@ -1326,7 +1326,7 @@ services:
         enable_dds_cleanup:=false
 
   airsim_bridge_d7:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d7
     hostname: airsim_bridge_d7
@@ -1394,7 +1394,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d7:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d7
     hostname: mavros_d7
@@ -1439,7 +1439,7 @@ services:
         enable_dds_cleanup:=false
 
   airsim_bridge_d8:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d8
     hostname: airsim_bridge_d8
@@ -1507,7 +1507,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d8:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d8
     hostname: mavros_d8
@@ -1552,7 +1552,7 @@ services:
         enable_dds_cleanup:=false
 
   airsim_bridge_d9:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d9
     hostname: airsim_bridge_d9
@@ -1620,7 +1620,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d9:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d9
     hostname: mavros_d9
@@ -1668,7 +1668,7 @@ services:
   # QGROUNDCONTROL X11 — Ground control station with GPU acceleration
   # ===========================================================================
   qgroundcontrol-x11:
-    image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
+    image: ${QGC_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: qgroundcontrol-x11
     hostname: qgc-x11

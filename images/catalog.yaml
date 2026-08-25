@@ -1,0 +1,735 @@
+schema: mns.images.v1
+
+# Reminders that belong to no single image row. `tools/images.sh status`
+# prints these under NEEDS YOU every time it runs, which is the point: a
+# gated migration that lives only in someone's memory is a migration that
+# quietly never happens. Delete an entry when it is done.
+follow_ups:
+  - >-
+    AIRSIM_IMAGE and AIRSIM_CONDO_IMAGE still carry inline ${VAR:-tag}
+    fallbacks in compose/*/docker-compose.yml, because the catalog emits no
+    line for either: each has a different value per scenario (AIRSIM_IMAGE is
+    xfs-latest / tevv-airsim-xfs-latest / urbansimdemo-latest, AIRSIM_CONDO_IMAGE
+    is condo-latest / tevv-airsim-condo-latest-ceilingless). Those inline
+    defaults are therefore the ONLY source for a fresh clone and must not be
+    stripped. Fixing it means deciding whether the per-scenario split is
+    intentional, then giving each scenario its own var — a scenario-design
+    call, not a catalog one.
+  - >-
+    tevv-airsim-authored-latest was never published, but the path that needs
+    it IS live: MnS-Integration-Platform stacks/orchestrator/catalogs/
+    environments.yaml defines the "authored" environment with
+    image_role: unreal_authored, so generating a scenario against it emits a
+    stack nobody can launch. Either build+push it or gate the environment off
+    until one exists. Build contract, from runtime_image_bindings.yaml and
+    the level pack's runtime_binding.local.yaml -- the image must ship
+    executable_path /app/Unreal/UnrealScenario.sh, bake the map
+    /Game/Levels/L_BaseMap (mode: baked_image), and answer to
+    environment_name "authored" / image_role unreal_authored, target
+    unreal_authored_ue55_linux_iostore. Two inputs are NOT in this checkout
+    or anywhere on the build host: (1) the UE project holding
+    /Game/Levels/L_BaseMap -- the level pack
+    services/tevv-authoring/.../unreal_authored_l_basemap.mnslevelpack is
+    ~1 KB of metadata, no content; (2) the runtime Dockerfile that wraps a
+    packaged build as /app/Unreal/UnrealScenario.sh. The UE packaging
+    pipeline itself does exist (sim-main-pkg/docker/build/unreal-builder,
+    which outputs docker/unreal_executable/packaged/<Project>/LinuxNoEditor)
+    and is what produced the sibling xfs/condo sims, so this is a missing
+    source-content problem, not a missing-tooling one.
+  - >-
+    mock-data-generator-latest and exploration-mock-generator-latest are
+    unreachable, not merely unpublished: both services are profile-gated
+    (mock-testing / mock-data / local-planner-mock-testing / exploration-mock)
+    and NOTHING in this repo activates those profiles, their build: block is
+    commented out, and its context ../monitoring/mock-data-generator does not
+    exist in this checkout. Nothing can start them. Drop the two services and
+    their catalog rows unless someone still wants them, in which case they
+    need a build context first.
+
+# One canonical image catalog. Every container image this repository refers to
+# is a row here, exactly once — see docs/adr/0002-one-image-catalog.md for the
+# decision record. Nothing under images/*.generated.* or product-images.env is
+# hand-edited: they are rendered from this file by `tools/images.sh sync`, and
+# `tools/images.sh verify` (the CI gate) fails the build if a generated file
+# and this catalog have drifted apart. Edit here, then sync — never the other
+# way around.
+#
+# `digest` is the contract: it is what `repo:tag@sha256:...` actually resolves
+# to, on every machine, forever. `tag` stays alongside it purely for humans —
+# nothing prevents a tag being repointed at a different image, so the tag
+# alone is not a pin. Every digest below is the INDEX (manifest-list) digest,
+# not a per-architecture manifest. Read it off the `Digest:` line of
+# `docker buildx imagetools inspect <ref>`'s DEFAULT report — not
+# `--format '{{.Manifest.Digest}}'`, which silently prints the wrong thing for
+# a single-arch image, and not `docker manifest inspect -v`, which reports the
+# per-arch entry and is the easy way to get this wrong for a multi-arch tag. See MnS-Integration-Platform/docs/adr/0001-image-versioning-
+# and-digest-pinning.md for the fuller reasoning (this catalog generalizes that
+# decision to every image, not just the product ones).
+#
+# `channel` drives report/bump behavior:
+#   review   - repo:tag-review.N; `tools/images.sh bump` advances N via Hub
+#              tag search. The tag MUST end in -review.N: bump derives the
+#              family from the tag itself, so an off-line tag here would
+#              report NO_TAGS_FOUND forever. Enforced by _validate_catalog.
+#   moving   - repo:tag-latest (or similar); tag never changes, digest may;
+#              republished in place, reported as TAG_MOVED when it happens
+#   upstream - third-party image on a version tag; never auto-bumped
+#   pinned   - published, but deliberately off the release line (a branch or
+#              preview build). Digest required; verified by report like any
+#              other row; refused by bump. Moves only by hand.
+#   local    - locally built (repo starts with local/); digest is always
+#              null and the row is skipped by both verify and bump
+#   unpublished - referenced by this repo but absent from the registry;
+#              digest null, no lookup attempted, bump refuses
+#
+# `resolver` says how report/bump find the live digest:
+#   hub        - Docker Hub v2 API (default; needed for -review.N enumeration)
+#   imagetools - `docker buildx imagetools inspect <ref>` + the `Digest:` line
+#                of its default report (NOT --format '{{.Manifest.Digest}}',
+#                which silently prints the wrong thing for a single-arch
+#                image — see tools/images.py). Used for third-party registries
+#                (gcr.io, nvcr.io, ghcr.io, docker.elastic.co) and third-party
+#                Hub orgs this repo does not control (prom/, grafana/,
+#                sid220/, timescale/).
+#
+# `bakes` on an image row means: that image's Dockerfile bakes in another
+# row's ref as a build-time default (MNS_*_IMAGE_DEFAULT). `tools/images.sh
+# baked` walks these edges and asserts the released image's baked value still
+# matches the pin here — see the dashboard-backend row below.
+#
+# `consumers:` binds an image (by key) to how it is actually referenced, so no
+# image is listed twice under two different names:
+#   product_env  -> product-images.env, grouped the way that file's prose
+#                   sections already are (review / dashboard / tools)
+#   image_sets   -> images/image-set.generated.yaml, mirroring
+#                   MnS-Integration-Platform's stacks/orchestrator/catalogs/
+#                   image_sets.yaml schema (`published` + `dev-local`,
+#                   dev-local expressed as `inherits: published` plus ONLY
+#                   the keys that differ — a key absent from dev-local's
+#                   `images:` means it deliberately shares published's image)
+#   compose_env  -> images/platform-images.generated.env, one group per
+#                   compose file (monitoring / metrics / logs / dashboard)
+#   legacy_env   -> images/legacy-images.generated.env, one group per legacy
+#                   scenario stack (compose/<scenario>/docker-compose.yml).
+#                   Unlike the groups above, a var CAN map to a different key
+#                   per scenario here (AIRSIM_IMAGE, AIRSIM_CONDO_IMAGE do) —
+#                   see docs/adr/0002-one-image-catalog.md "Legacy scenario
+#                   stacks: conflicting defaults"
+
+images:
+  # ---------------------------------------------------------------------
+  # Product images (product-images.env "review channel" — 4 rows)
+  # ---------------------------------------------------------------------
+  mns_product_shell:
+    repo: dhdevspace/auto_mns
+    tag: mns-product-shell-v0.2.0-review.3
+    digest: sha256:d2f712db5ff8906362dffa0137ae83dd97f00c0c749ee0a00a280e4091cb6ae0
+    channel: review
+    purpose: Interactive product shell (product.sh) used to author and launch scenarios.
+
+  mns_authoring:
+    repo: dhdevspace/auto_mns
+    tag: mns-authoring-v0.2.0-zones-preview.4
+    digest: sha256:fa58d138825e2587d3d2f567757fb78555df3abb2ed3e30f3bb919ea7c3ef52c
+    channel: pinned
+    # Off the -review.N line on purpose: this is the zones/sensor-noise/preview
+    # build (TEVV-Authoring PR #8), published as -zones-preview.N. bump refuses
+    # pinned rows, so this tag/digest pair moves only by hand. Move back to
+    # channel: review once that work ships as a -review.N tag.
+    purpose: Authoring tool used to create/edit ScenarioSpecs ahead of generation.
+    follow_up: >-
+      move back to channel review once TEVV-Authoring PR #8 ships the
+      zones/sensor-noise work as a -review.N tag; bump cannot advance a
+      pinned row, so this stays frozen until someone does it
+
+  mns_stack_generator:
+    repo: dhdevspace/auto_mns
+    tag: mns-stack-generator-v0.2.0-review.22
+    digest: sha256:337daa0247bc3d19cac169630688920da987a080649eba2579f4b2655134217c
+    channel: review
+    purpose: Renders a ScenarioSpec into a runnable compose stack (the generator).
+
+  mns_blocks:
+    repo: dhdevspace/auto_mns
+    tag: blocks-v0.2.0-review.3
+    digest: sha256:0b3aec1aa502b9aaef35d1082c0d6c2c33ba18ff9006e832df70b2d05468869a
+    channel: review
+    purpose: >-
+      Blocks-map simulator build; also the published image_sets "blocks"
+      simulator role (one image, two consumers — see consumers.image_sets
+      below).
+
+  # ---------------------------------------------------------------------
+  # Product images (product-images.env "dashboard" section — mutable -latest)
+  # ---------------------------------------------------------------------
+  dashboard_backend:
+    repo: dhdevspace/auto_mns
+    tag: tevv-web-dashboard-backend-latest
+    digest: sha256:7a35a448630cf4e104b6996899a08b19205b4deececc4adf526b56abd313a75f
+    channel: moving
+    bakes: [mns_authoring, mns_stack_generator]
+    purpose: TEVV Web Dashboard backend API; bakes authoring/generator refs as defaults.
+
+  dashboard_frontend:
+    repo: dhdevspace/auto_mns
+    tag: tevv-web-dashboard-frontend-latest
+    digest: sha256:9823813753908199bbaca56f51d68e81ab9b225b38c7d0db74695d6392049bf3
+    channel: moving
+    purpose: TEVV Web Dashboard Next.js frontend, served at :3001.
+
+  # ---------------------------------------------------------------------
+  # Product images (product-images.env "tools" section)
+  # ---------------------------------------------------------------------
+  airsim_tools:
+    repo: dhdevspace/auto_mns
+    tag: airsim-tools-latest
+    digest: sha256:c6a3740b7b6e335b3cd265414f2a2e71b46e9f7578dd0e5390d039f8e30d2feb
+    channel: moving
+    purpose: ros2-tools image used by docker-compose-tools.yml.
+
+  # ---------------------------------------------------------------------
+  # Runtime images — image_sets "published" (dhdevspace, R-2 resolves digests)
+  # ---------------------------------------------------------------------
+  xfs:
+    repo: dhdevspace/auto_mns
+    tag: tevv-airsim-xfs-latest
+    digest: sha256:98b931f289c71f5b7900e7ff367996b8831e0d2b44b1ce0cb38ed6efcd395d1a
+    channel: moving
+    purpose: AirSim XFS multi-drone map, the published simulators.xfs role.
+
+  safti_city:
+    repo: dhdevspace/auto_mns
+    tag: safti-runtime-metrics
+    digest: sha256:5b330b3fc5e84e8cd34f7337f5c1733f33f2ce12ed7d44142ffbbc145b40a814
+    channel: moving
+    purpose: AirSim SAFTI City map, the published simulators.safti_city role.
+
+  condo:
+    repo: dhdevspace/auto_mns
+    tag: tevv-airsim-condo-latest-ceilingless
+    digest: sha256:51b22bb067f7630118748f228c92a444f955415661459a0b2c3b1c1a631d5a5f
+    channel: moving
+    purpose: AirSim Condo single-drone map, the published simulators.condo role.
+
+  unreal_authored:
+    repo: dhdevspace/auto_mns
+    tag: tevv-airsim-authored-latest
+    digest: null
+    channel: unpublished
+    purpose: >-
+      Authored/custom AirSim map, the published simulators.unreal_authored
+      role (referenced by this catalog's
+      consumers.image_sets.published.images.simulators.unreal_authored) —
+      not on the registry and not buildable from this checkout; needs a
+      source build or removal from its compose reference. See
+      docs/adr/0002-one-image-catalog.md "Unpublished images".
+
+  ardupilot:
+    repo: dhdevspace/auto_mns
+    tag: ardupilot-latest
+    digest: sha256:0b6681c522a9d209a796fd4c3296d0a104b3245ea32532464d70b3a7070c3d35
+    channel: moving
+    purpose: ArduPilot SITL, the published autopilots.ardupilot role.
+
+  px4:
+    repo: dhdevspace/auto_mns
+    tag: px4-airsim-px4
+    digest: sha256:cd5a87467c73a0f8f506bca38a6f5d8df0779cf3c21a99dd0f4384784d40588a
+    channel: moving
+    purpose: PX4 SITL, the published autopilots.px4 role.
+
+  ros2_bridge:
+    repo: dhdevspace/auto_mns
+    tag: tevv-airsim-ros2-bridge-humble
+    digest: sha256:068ea157e6d2347d6c515efbc2d33997d14068f72793b9b71fc29b8e9f2276fd
+    channel: moving
+    purpose: AirSim<->ROS2 bridge, the published ros2_bridge role.
+
+  qgroundcontrol:
+    repo: dhdevspace/auto_mns
+    tag: airsim-qgc-x11-latest
+    digest: sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
+    channel: moving
+    purpose: QGroundControl (X11), the published qgroundcontrol role.
+
+  sim_real_eval:
+    repo: dhdevspace/auto_mns
+    tag: sim-real-eval-worker-latest
+    digest: sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb
+    channel: moving
+    purpose: Sim-to-real evaluation worker, the published sim_real_eval role.
+
+  # ---------------------------------------------------------------------
+  # Runtime images — image_sets "dev-local" deltas (repo local/auto_mns).
+  # local/ images are never resolved: channel local, digest always null.
+  # condo is the ONLY role NOT duplicated here — P's image_sets.yaml pins the
+  # literal same dhdevspace/auto_mns ref for condo under both published and
+  # dev-local (no local/ condo build exists), so dev-local deliberately
+  # inherits published's condo image unchanged (see
+  # consumers.image_sets.dev-local below). Checked key-by-key against P's
+  # source for this ADR revision: every other role (including px4, which an
+  # earlier revision of this file wrongly assumed was also shared — it is
+  # not; P has pinned a distinct local/auto_mns:px4-airsim-px4 under
+  # dev-local since at least commit b83813f) has its own local_* row here.
+  # ---------------------------------------------------------------------
+  local_blocks:
+    repo: local/auto_mns
+    tag: blocks-v0.2.0-review.3
+    digest: null
+    channel: local
+    purpose: dev-local override of mns_blocks (image_sets simulators.blocks).
+
+  local_xfs:
+    repo: local/auto_mns
+    tag: tevv-airsim-xfs-latest
+    digest: null
+    channel: local
+    purpose: dev-local override of xfs (image_sets simulators.xfs).
+
+  local_safti_city:
+    repo: local/auto_mns
+    tag: safti-runtime-metrics
+    digest: null
+    channel: local
+    purpose: dev-local override of safti_city (image_sets simulators.safti_city).
+
+  local_unreal_authored:
+    repo: local/auto_mns
+    tag: tevv-airsim-authored-latest
+    digest: null
+    channel: local
+    purpose: dev-local override of unreal_authored (image_sets simulators.unreal_authored).
+
+  local_ardupilot:
+    repo: local/auto_mns
+    tag: ardupilot-latest
+    digest: null
+    channel: local
+    purpose: dev-local override of ardupilot (image_sets autopilots.ardupilot).
+
+  local_px4:
+    repo: local/auto_mns
+    tag: px4-airsim-px4
+    digest: null
+    channel: local
+    purpose: >-
+      Developer's local PX4 build; dev-local override of px4 (image_sets
+      autopilots.px4). NOT shared with published — P's image_sets.yaml pins
+      a genuinely distinct local/auto_mns ref here (unlike condo, the one
+      role that really is shared).
+
+  local_ros2_bridge:
+    repo: local/auto_mns
+    tag: tevv-airsim-ros2-bridge-humble
+    digest: null
+    channel: local
+    purpose: dev-local override of ros2_bridge (image_sets ros2_bridge).
+
+  local_qgroundcontrol:
+    repo: local/auto_mns
+    tag: airsim-qgc-x11-latest
+    digest: null
+    channel: local
+    purpose: dev-local override of qgroundcontrol (image_sets qgroundcontrol).
+
+  local_sim_real_eval:
+    repo: local/auto_mns
+    tag: sim-real-eval-worker-latest
+    digest: null
+    channel: local
+    purpose: dev-local override of sim_real_eval (image_sets sim_real_eval).
+
+  # ---------------------------------------------------------------------
+  # Platform images — docker-compose-monitoring.yml (14 rows)
+  # ---------------------------------------------------------------------
+  mock_data_generator:
+    repo: dhdevspace/auto_mns
+    tag: mock-data-generator-latest
+    digest: null
+    channel: unpublished
+    purpose: >-
+      Synthetic per-drone metrics generator for dashboard testing
+      (referenced by docker-compose-monitoring.yml:69,
+      mock-data-generator) — not on the registry and not buildable from
+      this checkout; needs a source build or removal from its compose
+      reference. See docs/adr/0002-one-image-catalog.md "Unpublished
+      images".
+
+  exploration_mock_generator:
+    repo: dhdevspace/auto_mns
+    tag: exploration-mock-generator-latest
+    digest: null
+    channel: unpublished
+    purpose: >-
+      Synthetic exploration-metrics generator for dashboard testing
+      (referenced by docker-compose-monitoring.yml:100,
+      exploration-mock-generator) — not on the registry and not buildable
+      from this checkout; needs a source build or removal from its compose
+      reference. See docs/adr/0002-one-image-catalog.md "Unpublished
+      images".
+
+  prometheus:
+    repo: dhdevspace/auto_mns
+    tag: prometheus-monitoring-latest
+    digest: sha256:aed4479f80f1e2ab5bef1c9be213a1f184ee93adbb589b795c1d4b77e14712a3
+    channel: moving
+    purpose: Prometheus with baked scrape config (config/prometheus rules).
+
+  pushgateway:
+    repo: prom/pushgateway
+    tag: v1.11.1
+    digest: sha256:03738d278e082ee9821df730c741b3b465c251fc2b68a85883def301a55a6215
+    channel: upstream
+    resolver: imagetools
+    purpose: Receives per-run gauges pushed by the JSONL ingestor / metrics collector.
+
+  jsonl_ingestor:
+    repo: dhdevspace/auto_mns
+    tag: tevv-jsonl-ingest-latest
+    digest: sha256:de26efb4347af61f18ba8678a7636acfae7c1c5a5b70d3d66447ac004b3d6b74
+    channel: moving
+    purpose: Batch job computing TEVV metrics from events.jsonl into ES + pushgateway.
+
+  grafana:
+    repo: dhdevspace/auto_mns
+    tag: grafana-monitoring-latest
+    digest: sha256:724b0cf4b51a982153e0c6c7c7844768251494fcedff5986328456e1c22f3089
+    channel: moving
+    purpose: Grafana with baked dashboards/provisioning (config/grafana).
+
+  cadvisor:
+    repo: gcr.io/cadvisor/cadvisor
+    tag: latest
+    digest: sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57
+    channel: upstream
+    resolver: imagetools
+    purpose: Per-container resource-usage exporter.
+
+  node_exporter:
+    repo: prom/node-exporter
+    tag: latest
+    digest: sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    channel: upstream
+    resolver: imagetools
+    purpose: Host system-metrics exporter.
+
+  dcgm_exporter:
+    repo: nvcr.io/nvidia/k8s/dcgm-exporter
+    tag: 3.3.5-3.4.1-ubuntu22.04
+    digest: sha256:ec962b59c8440427ddc2901fdb2616070d91a29da089a6d68c03ab1abdcf8870
+    channel: upstream
+    resolver: imagetools
+    purpose: NVIDIA GPU metrics exporter (DCGM).
+
+  metrics_exporters:
+    repo: dhdevspace/auto_mns
+    tag: airsim-metrics-exporters-latest
+    digest: sha256:472a0cfaca32781b42a466827057221fb7905542249e205af83ae18ab2095875
+    channel: moving
+    purpose: >-
+      Shared exporter image for ros2-exporter, airsim-exporter and
+      px4-exporter (EXPORTER_TYPE selects the mode; one image, three
+      consumers in docker-compose-monitoring.yml).
+
+  postgres_telemetry:
+    repo: dhdevspace/auto_mns
+    tag: postgres-telemetry-latest
+    digest: sha256:b43b89b59bd8f63ae38caafa06433877c529b63de6567753cbeff96ec35b732c
+    channel: moving
+    purpose: Postgres/TimescaleDB build for the monitoring stack's telemetry DB.
+
+  elasticsearch:
+    repo: docker.elastic.co/elasticsearch/elasticsearch
+    tag: 8.12.2
+    digest: sha256:81b3bbd42d4d5e238e7ee31b7e99acab0bac1fca4eb2fa88415bad5482e52b88
+    channel: upstream
+    resolver: imagetools
+    purpose: Experiment store (run-summaries index) for the JSONL ingestor.
+
+  foxglove_bridge:
+    repo: dhdevspace/auto_mns
+    tag: tevv-foxglove-bridge-humble-3.2
+    digest: sha256:63641b331e896f6db055b7fee8716096544b8ed7840e6e2395e94d092b50bf2c
+    channel: moving
+    purpose: foxglove_bridge + AirSim-custom ROS msgs, for the monitoring stack's visualizer.
+
+  monitoring_lichtblick:
+    repo: sid220/lichtblick
+    tag: latest
+    digest: sha256:44dd89948781b6c29b0ac905fc9478a08b4efd6456d3057493fd5cf2d2bbdc7a
+    channel: upstream
+    resolver: imagetools
+    purpose: Standalone Lichtblick viewer for the monitoring stack (port 8084).
+
+  # ---------------------------------------------------------------------
+  # Platform images — docker-compose-metrics.yml (1 row)
+  # ---------------------------------------------------------------------
+  metrics_collector:
+    repo: dhdevspace/auto_mns
+    tag: metrics-collectorV2-release
+    digest: sha256:47c473949fadfd39a9bd0bc23ea23bacc9e70b5aa43e32caf26a3abd150800c4
+    channel: moving
+    purpose: Unified benchmarking container (scenario controller + metrics + evaluation).
+
+  # ---------------------------------------------------------------------
+  # Platform images — docker-compose-logs.yml (2 rows)
+  # ---------------------------------------------------------------------
+  loki:
+    repo: grafana/loki
+    tag: "3.4.2"
+    digest: sha256:58a6c186ce78ba04d58bfe2a927eff296ba733a430df09645d56cdc158f3ba08
+    channel: upstream
+    resolver: imagetools
+    purpose: Log store/index for the logs observability plane.
+
+  alloy:
+    repo: grafana/alloy
+    tag: v1.7.5
+    digest: sha256:b92703c13c32c20d629ffd89f40287ed385c12a335a7c9f31c720a5f912f9d6f
+    channel: upstream
+    resolver: imagetools
+    purpose: Log shipper (containers + Unreal Saved/ logs) feeding Loki.
+
+  # ---------------------------------------------------------------------
+  # Platform images — docker-compose-dashboard.yml inline rows (2 rows;
+  # dashboard-backend/-frontend above are product rows, not these)
+  # ---------------------------------------------------------------------
+  dashboard_lichtblick:
+    repo: ghcr.io/lichtblick-suite/lichtblick
+    tag: latest
+    digest: sha256:b469986d523b06500a04445933fde4b96ca3bd3def918844e3af47362106c75f
+    channel: upstream
+    resolver: imagetools
+    purpose: Lichtblick instance embedded in the TEVV Web Dashboard (port 8082, URL baked into the frontend build).
+
+  dashboard_timescaledb:
+    repo: timescale/timescaledb
+    tag: 2.17.2-pg16
+    digest: sha256:4e459e217f00cbb09920c34d245501e63427e6767a495de57ce76823ff280f12
+    channel: upstream
+    resolver: imagetools
+    purpose: Opt-in (--profile db) telemetry database for the dashboard.
+
+  # ---------------------------------------------------------------------
+  # Legacy static scenario stacks — compose/{ardupilot-condo,ardupilot-
+  # urbansim,ardupilot-xfs,px4-condo,px4-xfs}/docker-compose.yml (R-6).
+  # 7 new rows here; the other 4 legacy vars reuse rows already above
+  # (qgroundcontrol, px4, condo, xfs) — see consumers.legacy_env below.
+  # Two of these vars (AIRSIM_IMAGE, AIRSIM_CONDO_IMAGE) resolve to a
+  # DIFFERENT image depending on which scenario file references them; see
+  # docs/adr/0002-one-image-catalog.md "Legacy scenario stacks: conflicting
+  # defaults" — consumers.legacy_env below binds each var per-scenario
+  # rather than once, and tools/images.py's generated-env renderer omits a
+  # var from images/legacy-images.generated.env entirely when its bound
+  # image differs across scenarios, rather than guess.
+  # ---------------------------------------------------------------------
+  ardupilot_slim:
+    repo: dhdevspace/auto_mns
+    tag: "ardupilot-slim"
+    digest: sha256:c9b690ccab7e4a9f5b8b245140a25d5c21b9990166cbe4ad23915d123ff7a4a6
+    channel: moving
+    purpose: >-
+      ArduPilot SITL with the per-instance SERIAL port offset baked in;
+      ARDUPILOT_IMAGE default for ardupilot-condo/ardupilot-urbansim/
+      ardupilot-xfs. Distinct from the `ardupilot` row's ardupilot-latest
+      tag, which lacks that offset and cannot run ardupilot-xfs's
+      multi-drone SITL (see .env's ARDUPILOT_IMAGE comment).
+
+  airsim_ros2_bridge_legacy:
+    repo: dhdevspace/auto_mns
+    tag: "airsim-ros2-bridge"
+    digest: sha256:d45153cfebba17201a443650e633dcca3fd6d1d18f588df89682b100e9cafdcc
+    channel: moving
+    purpose: >-
+      AIRSIM_BRIDGE_IMAGE default across all 5 legacy scenario stacks
+      (per-drone airsim_bridge_dN / mavros bridge) — consistent everywhere
+      it's used. Distinct from the `ros2_bridge` row's
+      tevv-airsim-ros2-bridge-humble tag, which is the published
+      image_sets ros2_bridge role instead.
+
+  condo_latest_legacy:
+    repo: dhdevspace/auto_mns
+    tag: "condo-latest"
+    digest: sha256:98562e5a44ee2c1f9c6514548dc3e163fa14b3666a2a83c383789ad19d82b98c
+    channel: moving
+    purpose: >-
+      px4-condo's AIRSIM_CONDO_IMAGE default. NOT the same image as
+      ardupilot-condo's AIRSIM_CONDO_IMAGE default (the `condo` row,
+      tevv-airsim-condo-latest-ceilingless) — the two legacy stacks
+      disagree on what this var name should default to; see
+      docs/adr/0002-one-image-catalog.md "Legacy scenario stacks:
+      conflicting defaults". Root .env currently pins AIRSIM_CONDO_IMAGE to
+      this tag, which is what ardupilot-condo actually runs today too
+      (shell/.env always outranks a compose default).
+
+  airsim_xfs_legacy:
+    repo: dhdevspace/auto_mns
+    tag: "xfs-latest"
+    digest: sha256:98b931f289c71f5b7900e7ff367996b8831e0d2b44b1ce0cb38ed6efcd395d1a
+    channel: moving
+    purpose: >-
+      ardupilot-xfs's AIRSIM_IMAGE default. A DISTINCT TAG from px4-xfs's
+      AIRSIM_IMAGE default (the `xfs` row, tevv-airsim-xfs-latest) —
+      documented in the compose template itself
+      (compose/px4-xfs/templates/docker-compose.yml.j2: "Default tag differs
+      from ardupilot-xfs's xfs-latest on purpose") as relying on root .env
+      to unify both scenarios to one image. At pin time the two tags happen
+      to resolve to the identical digest (both sha256:98b931f2…) — that is a
+      snapshot of today's registry state, not a guarantee: they are two
+      independently-republished mutable tags with no coupling that keeps
+      them in sync, and the 3-way AIRSIM_IMAGE conflict this row exists to
+      document (see docs/adr/0002-one-image-catalog.md "Legacy scenario
+      stacks: conflicting defaults") stands regardless — airsim_urbansimdemo
+      is a third, currently-different value for the same var name. Root .env
+      currently pins AIRSIM_IMAGE to this tag.
+
+  airsim_urbansimdemo:
+    repo: dhdevspace/auto_mns
+    tag: "urbansimdemo-latest"
+    digest: sha256:9e99e78834068c0bc8b667ba7f28a3ba93cd718520120dedd7c64b635a892258
+    channel: moving
+    purpose: >-
+      ardupilot-urbansim's AIRSIM_IMAGE default — a THIRD distinct value for
+      this var name alongside ardupilot-xfs's and px4-xfs's; see
+      docs/adr/0002-one-image-catalog.md "Legacy scenario stacks:
+      conflicting defaults".
+
+  pixel_streaming_signalling:
+    repo: dhdevspace/auto_mns
+    tag: "tevv-pixel-streaming-signalling-5.5"
+    digest: sha256:1b2f0c2b64a56d2b3b798d599bc237b1779b8720e5e1a8ea774625dc3a1b36a3
+    channel: moving
+    purpose: >-
+      PIXEL_STREAMING_SIGNALLING_IMAGE default (ardupilot-urbansim,
+      ardupilot-xfs, px4-condo's pixel-streaming-signalling sidecar,
+      dialed by UE5 when --with-pixel-streaming is passed); consistent
+      across all three.
+
+  zenoh_bridge_ros2dds:
+    repo: eclipse/zenoh-bridge-ros2dds
+    tag: "1.4.0"
+    digest: sha256:5ac8701589d77c571519d5ebb66bf80d9d3cec1d1cc1b37d899eba7ade06a62a
+    channel: upstream
+    resolver: imagetools
+    purpose: >-
+      ZENOH_BRIDGE_IMAGE default (ardupilot-urbansim, ardupilot-xfs
+      zenoh-bridge-N sidecars for /shared/* topic routing); third-party
+      image, never auto-bumped.
+
+consumers:
+  product_env:
+    review:
+      MNS_PRODUCT_SHELL_IMAGE: mns_product_shell
+      MNS_AUTHORING_IMAGE: mns_authoring
+      MNS_STACK_GENERATOR_IMAGE: mns_stack_generator
+      MNS_BLOCKS_IMAGE: mns_blocks
+    dashboard:
+      DASHBOARD_BACKEND_IMAGE: dashboard_backend
+      DASHBOARD_FRONTEND_IMAGE: dashboard_frontend
+    tools:
+      AIRSIM_TOOLS_IMAGE: airsim_tools
+
+  image_sets:
+    published:
+      pull_policy: always
+      images:
+        simulators:
+          blocks: mns_blocks
+          xfs: xfs
+          safti_city: safti_city
+          condo: condo
+          unreal_authored: unreal_authored
+        autopilots:
+          ardupilot: ardupilot
+          px4: px4
+        ros2_bridge: ros2_bridge
+        qgroundcontrol: qgroundcontrol
+        sim_real_eval: sim_real_eval
+
+    dev-local:
+      inherits: published
+      pull_policy: if_not_present
+      images:
+        simulators:
+          blocks: local_blocks
+          xfs: local_xfs
+          safti_city: local_safti_city
+          # condo: absent on purpose — no local/ condo build exists, so
+          # dev-local deliberately runs published's condo image unchanged.
+          # This is the ONLY role in this image set that is genuinely shared;
+          # every other role below has its own local_* row.
+          unreal_authored: local_unreal_authored
+        autopilots:
+          ardupilot: local_ardupilot
+          px4: local_px4
+        ros2_bridge: local_ros2_bridge
+        qgroundcontrol: local_qgroundcontrol
+        sim_real_eval: local_sim_real_eval
+
+  compose_env:
+    monitoring:
+      MOCK_DATA_GENERATOR_IMAGE: mock_data_generator
+      EXPLORATION_MOCK_GENERATOR_IMAGE: exploration_mock_generator
+      PROMETHEUS_IMAGE: prometheus
+      PUSHGATEWAY_IMAGE: pushgateway
+      JSONL_INGESTOR_IMAGE: jsonl_ingestor
+      GRAFANA_IMAGE: grafana
+      CADVISOR_IMAGE: cadvisor
+      NODE_EXPORTER_IMAGE: node_exporter
+      DCGM_EXPORTER_IMAGE: dcgm_exporter
+      METRICS_EXPORTERS_IMAGE: metrics_exporters
+      POSTGRES_TELEMETRY_IMAGE: postgres_telemetry
+      ELASTICSEARCH_IMAGE: elasticsearch
+      FOXGLOVE_BRIDGE_IMAGE: foxglove_bridge
+      MONITORING_LICHTBLICK_IMAGE: monitoring_lichtblick
+    metrics:
+      METRICS_COLLECTOR_IMAGE: metrics_collector
+    logs:
+      LOKI_IMAGE: loki
+      ALLOY_IMAGE: alloy
+    dashboard:
+      DASHBOARD_LICHTBLICK_IMAGE: dashboard_lichtblick
+      DASHBOARD_TIMESCALEDB_IMAGE: dashboard_timescaledb
+
+  # Legacy static scenario stacks (R-6). Grouped by scenario — unlike
+  # product_env/compose_env's grouping (which is purely cosmetic, one var
+  # never appears in two groups), a var HERE can legitimately appear under
+  # more than one scenario with a DIFFERENT image key (AIRSIM_IMAGE,
+  # AIRSIM_CONDO_IMAGE — see the "conflicting defaults" rows above). That is
+  # why this grouping is load-bearing: it is how tools/images.py's renderer
+  # tells "same value everywhere" (safe to emit one env line) apart from
+  # "differs by scenario" (must NOT emit a line for it — see
+  # docs/adr/0002-one-image-catalog.md "Legacy scenario stacks"). The
+  # ${VAR:-default} fallback already in every one of these compose files is
+  # UNCHANGED by this catalog — see the ADR for why.
+  legacy_env:
+    ardupilot_condo:
+      ARDUPILOT_IMAGE: ardupilot_slim
+      AIRSIM_CONDO_IMAGE: condo
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      QGC_IMAGE: qgroundcontrol
+    ardupilot_urbansim:
+      ARDUPILOT_IMAGE: ardupilot_slim
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      ZENOH_BRIDGE_IMAGE: zenoh_bridge_ros2dds
+      AIRSIM_IMAGE: airsim_urbansimdemo
+      PIXEL_STREAMING_SIGNALLING_IMAGE: pixel_streaming_signalling
+      QGC_IMAGE: qgroundcontrol
+    ardupilot_xfs:
+      ARDUPILOT_IMAGE: ardupilot_slim
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      ZENOH_BRIDGE_IMAGE: zenoh_bridge_ros2dds
+      AIRSIM_IMAGE: airsim_xfs_legacy
+      PIXEL_STREAMING_SIGNALLING_IMAGE: pixel_streaming_signalling
+      QGC_IMAGE: qgroundcontrol
+    px4_condo:
+      AIRSIM_CONDO_IMAGE: condo_latest_legacy
+      PX4_IMAGE: px4
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      QGC_IMAGE: qgroundcontrol
+      PIXEL_STREAMING_SIGNALLING_IMAGE: pixel_streaming_signalling
+    px4_xfs:
+      AIRSIM_IMAGE: xfs
+      PX4_IMAGE: px4
+      AIRSIM_BRIDGE_IMAGE: airsim_ros2_bridge_legacy
+      QGC_IMAGE: qgroundcontrol

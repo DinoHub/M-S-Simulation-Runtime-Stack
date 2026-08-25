@@ -46,6 +46,18 @@ run_shell() {
     docker_config_args=(-v "$docker_config:/root/.docker/config.json:ro")
   fi
   if [[ "${1:-}" == "cli" ]]; then mode=(--rm); port_args=(); shift; fi
+  # MNS_IMAGE_SET_FILE below is a CONTAINER path, not the host path:
+  # launcher.py's require_workspace_path()
+  # (MnS-Integration-Platform/apps/scenario_launcher/launcher.py:252) rejects
+  # any --image-set-file/MNS_IMAGE_SET_FILE outside MNS_WORKSPACE_ROOT
+  # (/workspace, mounted below). The launcher translates this back to a real
+  # HOST path via MNS_HOST_WORKSPACE_ROOT (also set below) when it re-mounts
+  # the workspace for the nested generator container it spawns — the same
+  # docker-outside-of-docker indirection docker-compose-dashboard.yml's
+  # MNS_WORKSPACE_ROOT comment describes.
+  # Contrast tools/images.sh drift, which runs the generator directly from
+  # the host with an identical-path mount ($ROOT:$ROOT) and so passes the
+  # HOST path form instead.
   docker run "${mode[@]}" \
     "${port_args[@]}" \
     -v /var/run/docker.sock:/var/run/docker.sock \
@@ -64,6 +76,7 @@ run_shell() {
     -e "MNS_AUTHORING_DOCKER_GPU_ARGS=${MNS_AUTHORING_DOCKER_GPU_ARGS:-}" \
     -e "MNS_STACK_GENERATOR_IMAGE=$MNS_STACK_GENERATOR_IMAGE" \
     -e MNS_IMAGE_SET=published \
+    -e MNS_IMAGE_SET_FILE=/workspace/images/image-set.generated.yaml \
     -e "DISPLAY=${DISPLAY:-:0}" \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
     "${xauth_args[@]}" \

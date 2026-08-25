@@ -1,0 +1,66 @@
+name: images
+
+# This repository is public, so GitHub-hosted standard runners cost nothing:
+# Actions minutes are free and unlimited for public repos. Both jobs below run
+# on `ubuntu-latest` for that reason — a larger runner would be billable.
+on:
+  pull_request:
+    paths:
+      - "images/**"
+      - "product-images.env"
+      - "tools/images.py"
+      - "tools/images.sh"
+      - "tools/check-image-pins.sh"
+  schedule:
+    # Mondays 02:00 UTC. Weekly, not daily: the point is to notice a moved tag
+    # or an unattended follow-up, and a daily run is a notification people
+    # learn to skip.
+    - cron: "0 2 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  # PR gate. Offline: regenerates the artifacts and diffs them against what is
+  # committed. No registry, no credentials, nothing to rate-limit.
+  verify:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install tooling deps
+        run: pip install -r tools/requirements.txt
+
+      - name: images.sh verify
+        run: tools/images.sh verify
+
+      - name: images.sh status --offline
+        # Advisory on a PR: an outstanding follow-up is not that PR's fault,
+        # so it is reported, never a failure. `|| true` keeps status's
+        # nonzero-means-actionable contract intact for every other caller.
+        run: tools/images.sh status --offline || true
+
+  # Weekly drift watch. Online, so it CAN fail for reasons that are not a
+  # code problem (Docker Hub rate limits an unauthenticated runner). That is
+  # why it is a separate job from the PR gate: a flaky registry must never be
+  # able to block a merge.
+  status:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install tooling deps
+        run: pip install -r tools/requirements.txt
+
+      - name: images.sh status
+        # Exits nonzero when something needs a human, which is exactly what a
+        # red weekly run should mean. Read the log: it names each item.
+        run: tools/images.sh status
