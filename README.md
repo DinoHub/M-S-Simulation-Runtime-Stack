@@ -17,6 +17,11 @@ make dashboard-down
 
 By default, `make dashboard` runs the transitional development workflow: it keeps any locally built matching image tags, pulls only tags absent from the Docker image store, and uses the tag-only development image-set overlay for generated stacks. It does not refresh an existing tag. Run `./product.sh setup` when you deliberately want the approved remote images refreshed; use `IMAGE_MODE=production` to test the immutable release pins.
 
+Dashboard startup also refreshes ScenarioLab's resolved pack index whenever
+`.mns/pack-store/index.json` changes. This keeps the dashboard and product-shell
+authoring paths on the same four-pack, immutable-content workflow without
+copying the pack payloads again on every launch.
+
 The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
 generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
 (no source checkouts — same distribution contract as `./launch.sh`).
@@ -58,9 +63,17 @@ Use the pull helper directly when you only want to refresh the image cache:
 
 `--refresh-moving` resolves the catalog entries that explicitly declare a `-latest` alias, records their new immutable digests, regenerates the image files, and then pulls them. Commit and review those catalog changes before using them for a release. The normal command never silently changes a digest.
 
-Before generating a v2 runtime, install a checksum-verified `.mnslevelpack` into `.mns/pack-store` using the release installer delivered with that pack. The ScenarioSpec must select it with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact.
+Install the checksum-verified standalone-v2 demo catalog before authoring or generating a runtime:
 
-XFS, SAFTI, Condo, and Pendleton v2 packs have not yet been published, so the image flow and product shell are ready but a full environment run remains blocked until one of those packs is installed.
+```bash
+tools/install-demo-packs.sh --all       # XFS, SAFTI, Condo, Pendleton + test objects
+tools/install-demo-packs.sh --condo --people
+tools/install-demo-packs.sh --objects   # market props, people, and object vehicles
+```
+
+The installer downloads the assets declared in `packs/standalone-v2-review.1.lock.json`, verifies their full SHA-256 checksums, installs them into the local content-addressed `.mns/pack-store`, and refreshes ScenarioLab's resolved pack index. Individual environment selections are `--xfs`, `--safti`, `--condo`, and `--pendleton`; individual object selections are `--market`, `--people`, and `--vehicles`. Run with `--dry-run` to inspect the selected immutable assets without downloading them.
+
+Each generated ScenarioSpec selects an environment with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact. The catalog includes six authoring vehicle models independently of the three placeable object-vehicle models.
 
 Stop the browser shell with:
 
@@ -123,7 +136,7 @@ The existing acceptance harness below covers the previous v1/Blocks product rele
 ./tests/full-product-e2e/run.sh
 ```
 
-See [Full Product E2E](tests/full-product-e2e/README.md). Do not treat that test as standalone-v2 acceptance. The v2 acceptance run requires a published pack whose digest loads in both ScenarioLab and TEVVRuntimeHost; it must also verify runtime cleanup. Until the four packs are published, the available smoke path is `setup` -> `doctor` -> `start` -> HTTP check -> `stop`.
+See [Full Product E2E](tests/full-product-e2e/README.md). Do not treat that test as standalone-v2 acceptance. The v2 acceptance run requires a published pack whose digest loads in both ScenarioLab and TEVVRuntimeHost; it must also verify runtime cleanup.
 
 ## Headless CLI
 

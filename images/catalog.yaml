@@ -148,17 +148,17 @@ images:
   # ---------------------------------------------------------------------
   mns_product_shell_v2:
     repo: dhdevspace/auto_mns
-    tag: mns-product-shell-20260826
+    tag: mns-product-shell-20260826.2
     latest_tag: mns-product-shell-latest
-    digest: sha256:35224d379a4784358d6b0656b9ed43dfb07673107ea70f9f0da0d1a43e8f022e
+    digest: sha256:d3208b2e70f758ae448a1dafb310e9daa45b9a77293921a2bf74edf41c3d9d85
     channel: pinned
     purpose: Product shell for the standalone-v2 content-pack flow.
 
   mns_authoring_v2:
     repo: dhdevspace/auto_mns
-    tag: mns-authoring-20260826.2
+    tag: mns-authoring-20260826.3
     latest_tag: mns-authoring-latest
-    digest: sha256:6ccf2bf8a800a60bcf2fa7edf2b627742a1d5a14197c080b9f220a72f203e4af
+    digest: sha256:7814011638e3031e67b36c8d6d37ddaf7fc806b181b82b0530b863b93413a23c
     channel: pinned
     purpose: ScenarioLab authoring frozen on the v2 SM6 IoStore host capability.
 

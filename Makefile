@@ -69,12 +69,17 @@ endif
 
 SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images dashboard dashboard-down
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images stage-authoring-packs dashboard dashboard-down
 
 ensure-images:  ## Use local image tags; pull only those that are missing
 	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
 
-dashboard: ensure-images  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
+stage-authoring-packs: ensure-images  ## Refresh ScenarioLab's view of installed immutable packs
+	@. ./tools/load-images-env.sh; \
+	$(LOAD_DASHBOARD_IMAGES); \
+	./tools/stage-authoring-packs.sh
+
+dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
 	# Create these as the HOST user first, the way product.sh does. The backend
 	# container runs as root, so if it mkdirs generated/ itself the directory
 	# lands root-owned and the generator image cannot write into it.

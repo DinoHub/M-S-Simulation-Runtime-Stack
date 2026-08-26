@@ -1,0 +1,90 @@
+{
+  "schema": "mns.pack_release_lock.v1",
+  "release": {"repository": "DinoHub/M-S-Simulation-Runtime-Stack", "tag": "standalone-v2-review.1"},
+  "capability_id": "ue-5.5.4-cl40574608-linux-development-vulkan-sm6-iostore-v2",
+  "required_images": {
+    "product_shell": "dhdevspace/auto_mns:mns-product-shell-20260826.2@sha256:d3208b2e70f758ae448a1dafb310e9daa45b9a77293921a2bf74edf41c3d9d85",
+    "authoring": "dhdevspace/auto_mns:mns-authoring-20260826.3@sha256:7814011638e3031e67b36c8d6d37ddaf7fc806b181b82b0530b863b93413a23c",
+    "stack_generator": "dhdevspace/auto_mns:mns-stack-generator-20260826@sha256:634052453fe72b14ca53681b732bc4e47f1cf44d80348be54bfe5ff4fe0496e9",
+    "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-20260826@sha256:04723c3fb35b1516946283bd942179a2def986ab843a88b667c7290a9f82af3c",
+    "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260826@sha256:e661e37f8639077401e56e23bd2c6a61e0e065cb0d93866904f1f0930a57e011"
+  },
+  "packs": [
+    {
+      "selection": "xfs", "kind": "level", "id": "my-level-verification3",
+      "display_name": "XFS (My Level Verification 3)", "version": "1.0.4",
+      "asset_name": "xfs-demo-1.0.4.mnslevelpack", "size_bytes": 1172004644,
+      "sha256": "77bff3608f0aace7bcedea8b51d1743b3d44fca63315c02bc237a7d2ea3c412d",
+      "artifact_digest": "sha256:fc56f51587f2347fe2774d88298e980611ac3046f351bf8a84c731b867d085e6",
+      "payload_digest": "sha256:d19adad018282792580dc0867534973865c0d4f6232fe93fd26c218c259e3848",
+      "source_revision": "sha256:e472be1491a9c86bb73a0f4bc67ed02a878f56e6214b5339b3cd6d0ed77c419e",
+      "map_path": "/MnsEnv_My_Level_Verification3_1_0_4/Xfs/Maps/L_Main_WP",
+      "required_plugins": ["InterchangeAssets", "PCG", "ScenarioAssets", "TEVVContentPackSDK"]
+    },
+    {
+      "selection": "safti", "kind": "level", "id": "safti-city-demo",
+      "display_name": "SAFTI City Demo", "version": "1.0.0",
+      "asset_name": "safti-city-demo-1.0.0.mnslevelpack", "size_bytes": 827269885,
+      "sha256": "1b7a88441a45fe8c1d8221ca14dc7fc53b6bd23e77df0ce1f54d12022daa940e",
+      "artifact_digest": "sha256:1752e44293d7b4f861e5d3bb5cd55252c56f319562314661a2cdc505275946da",
+      "payload_digest": "sha256:1e4711c77857f1cb5d720077b07d2f760de7026b45f4f9daa298bc0b1a0d88dc",
+      "source_revision": "sha256:9ea078b56c5ac1592d0bbe7af9f81fd3aeb10fb8be79cfe5b57f9a80ded7e96d",
+      "map_path": "/MnsEnv_Safti_City_Demo_1_0_0/safticitymain_subset_unclassed",
+      "required_plugins": ["DatasmithContent", "Interchange", "PCG", "ScenarioAssets", "ScenarioAuthored", "TEVVContentPackSDK"]
+    },
+    {
+      "selection": "condo", "kind": "level", "id": "condo-demo",
+      "display_name": "Condo Demo", "version": "1.0.0",
+      "asset_name": "condo-demo-1.0.0.mnslevelpack", "size_bytes": 8689445,
+      "sha256": "d1c8067f37f51d8b99452b4f1bd200ca6d13c05983dd17db24bf8ff989f5fea3",
+      "artifact_digest": "sha256:37be4be8b13e05795950d3052f5936a72cfe916019444a376053f7dddfca782e",
+      "payload_digest": "sha256:661a3acf020dc1fe44b6795de21210a0cb62e7faf23f1a1e04a8ab1176e766e5",
+      "source_revision": "sha256:c5381253c7e02d37ebedccc7e1ceeb45012df739805cded511b35efe22b99e9f",
+      "map_path": "/MnsEnv_Condo_Demo_1_0_0/Condo/Levels/L_Main",
+      "required_plugins": ["InterchangeAssets", "TEVVContentPackSDK"]
+    },
+    {
+      "selection": "pendleton", "kind": "level", "id": "pendleton-demo",
+      "display_name": "Pendleton Demo", "version": "1.0.0",
+      "asset_name": "pendleton-demo-1.0.0.mnslevelpack", "size_bytes": 603118738,
+      "sha256": "544d724c6cb8aecb30ec25d9e5bcbf918542062a816464f3795b585c82c0dc39",
+      "artifact_digest": "sha256:f4fcef96cbcb320814375f8d911f4aba9aa84729b05b84a01d5389d064c1028f",
+      "payload_digest": "sha256:11e2318d82c9a089143273533a5dd11b6e3f7310363d48b4b978b31fc91813d4",
+      "source_revision": "sha256:7d15bd76e3176a2019cca351edc93fb2ee33a240cc6f45171ea977c4be7da37c",
+      "map_path": "/MnsEnv_Pendleton_Demo_1_0_0/Pendleton/Maps/L_Main_WP",
+      "required_plugins": ["Interchange", "PCG", "ScenarioAssets", "TEVVContentPackSDK"]
+    },
+    {
+      "selection": "market", "kind": "asset", "id": "demo_market_props",
+      "display_name": "Demo Market Props", "version": "1.0.0",
+      "asset_name": "demo-market-props-1.0.0.mnsassetpack", "size_bytes": 16939505,
+      "sha256": "6952a3f23103b77f559429eb3ac5739960ccf42f4ba250644d8715a5aaae3c59",
+      "artifact_digest": "sha256:7d6fb4fb2729a578da8824fae209b187740a47693824c77d0b93aca8a2a041da",
+      "payload_digest": "sha256:4d22582930e0bf6638f5079f841e14664d079b972faa661e2f48625088e47a06",
+      "source_revision": "sha256:5658ca5aca8fb99962aa801cddf7f3d9d5fc947ef44cef4d3e3c8c5ba55ff01c",
+      "map_path": "", "required_plugins": ["InterchangeAssets", "TEVVContentPackSDK"],
+      "license": "CC0-1.0; Khronos glTF Sample Assets (Avocado, Lantern)"
+    },
+    {
+      "selection": "people", "kind": "asset", "id": "demo_people",
+      "display_name": "Demo People", "version": "1.0.0",
+      "asset_name": "demo-people-1.0.0.mnsassetpack", "size_bytes": 6557068,
+      "sha256": "5c5b219e0dd4c6938d3db4315194e488804515c32789e4551efe4b143fbbbf4a",
+      "artifact_digest": "sha256:4bfe22822749ed9c106c32a0ee741dc85d92e560906976873fb4b5f1779af828",
+      "payload_digest": "sha256:94abd5515c7e775c4f98ad77e5431940812fb924b85984ce6ffcdc381e7c177c",
+      "source_revision": "sha256:ada6e7c49a643e17a562636b8a62917ede4ad6acdd3f55f492868dc5b9862860",
+      "map_path": "", "required_plugins": ["InterchangeAssets", "TEVVContentPackSDK"],
+      "license": "CC-BY-4.0; Cesium/Khronos glTF Sample Models (CesiumMan, RiggedFigure, RiggedSimple)"
+    },
+    {
+      "selection": "vehicles", "kind": "asset", "id": "demo_vehicles",
+      "display_name": "Demo Vehicles", "version": "1.0.0",
+      "asset_name": "demo-vehicles-1.0.0.mnsassetpack", "size_bytes": 5631366,
+      "sha256": "6303d22ec796724d3b814e67617f2117254f5858381e3806b49b19cf018a742b",
+      "artifact_digest": "sha256:d4aedcc6d815f91214ea7ce3487b008a80ce771962dd252b0e82f88ab5619f9c",
+      "payload_digest": "sha256:8903c324b781e97180a835e63bf682a554ffdc978c6e36e2b7b75656cbaf9302",
+      "source_revision": "sha256:00ddcd04688f87f578edb162b4550ae666ad85f8266097242672dfbbbcbf5104",
+      "map_path": "", "required_plugins": ["TEVVContentPackSDK"]
+    }
+  ]
+}
