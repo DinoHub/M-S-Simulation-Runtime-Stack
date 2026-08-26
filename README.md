@@ -39,13 +39,24 @@ Requirements: Docker Engine with Compose, an NVIDIA-capable runtime for Unreal i
 ./product.sh start
 ```
 
-Open <http://127.0.0.1:8760> (`MNS_SCENARIO_LAUNCHER_PORT`; it was 8765 until
-the Foxglove websocket claimed that port).
+Open <http://127.0.0.1:8760> (`MNS_SCENARIO_LAUNCHER_PORT`; it was 8765 until the Foxglove websocket claimed that port).
 
-1. The Runtime form is prefilled with `scenarios/blocks-quickstart`. Click **Generate and Run** for the shortest end-to-end check.
-2. Use **Show Status**, **Show Logs**, and **Stop Runtime** for `generated/blocks-quickstart`.
-3. Click **Open Editor** to load the same scenario in ScenarioLab. The authoring image seeds the curated Blocks level, vehicle pack, and built-in placeable primitive pack into the persistent Pack Library on first launch.
-4. Edit and export into `scenarios/`, then run the exported ScenarioSpec from the Runtime form.
+`setup` creates the local content-addressed PackStore and pulls the current published product image set. It resolves 14 active image references, including the four standalone-v2 product images and the runtime prerequisites used by generated stacks. Every reference is remote and digest-pinned; no product run depends on a locally built or per-level image.
+
+Use the pull helper directly when you only want to refresh the image cache:
+
+```bash
+./product.sh pull-images                 # active product set
+./product.sh pull-images --dry-run       # print exact refs without pulling
+./product.sh pull-images --all-catalog   # legacy/optional catalog entries too
+./product.sh pull-images --refresh-moving
+```
+
+`--refresh-moving` resolves the catalog entries that explicitly declare a `-latest` alias, records their new immutable digests, regenerates the image files, and then pulls them. Commit and review those catalog changes before using them for a release. The normal command never silently changes a digest.
+
+Before generating a v2 runtime, install a checksum-verified `.mnslevelpack` into `.mns/pack-store` using the release installer delivered with that pack. The ScenarioSpec must select it with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact.
+
+XFS, SAFTI, Condo, and Pendleton v2 packs have not yet been published, so the image flow and product shell are ready but a full environment run remains blocked until one of those packs is installed.
 
 Stop the browser shell with:
 
@@ -53,57 +64,13 @@ Stop the browser shell with:
 ./product.sh stop
 ```
 
-`product-images.env` carries the four-image review channel: product shell, ScenarioLab authoring, stack generator, and Blocks runtime. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this E2E image set.
+The standalone-v2 image set contains ScenarioLab authoring, the product shell, the stack generator, and one generic TEVVRuntimeHost. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this consumer image set.
 
-**That file is generated — do not edit it.** Every image reference in this repository is authored in one place, `images/catalog.yaml`, and rendered from there by `tools/images.sh sync`. Pins are `repo:tag@sha256:…`: the digest is the contract, the tag is there so the file is readable. `tools/images.sh report` shows staleness, `bump` rewrites both parts, and `verify` is the CI gate that fails if a generated file has drifted from the catalog. Day-to-day procedure: [docs/images.md](docs/images.md). Why it works this way, and what it costs: [ADR 0002](docs/adr/0002-one-image-catalog.md), which generalizes [ADR 0001](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md) to every image rather than just the product ones.
+Every image reference in this repository is authored in `images/catalog.yaml` and rendered by `tools/images.sh sync`. Pins use `repo:tag@sha256:...`: the digest is the release contract and the tag keeps the reference readable. `tools/images.sh report` shows staleness, `bump` rewrites both parts, and `verify` is the CI drift gate. See [Image operations](docs/images.md), [ADR 0002](docs/adr/0002-one-image-catalog.md), and the platform [image-versioning ADR](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md).
 
-For local compatibility testing, override only the ScenarioLab image without
-editing the published pins. The override applies consistently to setup,
-doctor, the browser product shell, and the dashboard:
+ScenarioLab launches mount authoring-only AirSim settings that select `ComputerVision` mode with no AirSim vehicles, preventing the vehicle-type prompt from blocking the authoring UI.
 
-```bash
-MNS_AUTHORING_IMAGE_OVERRIDE=local/auto_mns:mns-authoring-test ./product.sh doctor
-MNS_AUTHORING_IMAGE_OVERRIDE=local/auto_mns:mns-authoring-test ./product.sh start
-MNS_AUTHORING_IMAGE_OVERRIDE=local/auto_mns:mns-authoring-test make dashboard
-```
-
-The named image must already exist locally or be pullable. Omitting the
-variable restores the immutable `MNS_AUTHORING_IMAGE` pin from
-`product-images.env`.
-
-ScenarioLab launches also mount the product's authoring-only AirSim settings.
-They select `ComputerVision` mode with no AirSim vehicles, preventing AirSim's
-car-versus-quadrotor prompt from blocking the authoring UI when a level loads.
-
-### When the registry is unreachable
-
-Services on mutable tags pull on every start, so a Docker Hub outage aborts the
-whole `up` — even when the image is already cached locally:
-
-```
-failed to resolve reference "docker.io/dhdevspace/auto_mns:tevv-airsim-xfs-latest":
-failed to do request: Head "https://registry-1.docker.io/v2/...": net/http: TLS handshake timeout
-```
-
-These blips are usually brief, so retry first (`./product.sh setup` now retries
-each pull three times with backoff). To start from the local cache instead, set
-the pull policy for the stack you are launching:
-
-| Stack | Variable |
-|-------|----------|
-| Generated stacks (`generated/<name>/`), scenario stacks, metrics | `MNS_IMAGE_PULL_POLICY=missing` |
-| TEVV dashboard (`make dashboard`) | `DASHBOARD_PULL_POLICY=missing` |
-
-```bash
-MNS_IMAGE_PULL_POLICY=missing ./launch.sh ardupilot-xfs
-DASHBOARD_PULL_POLICY=missing make dashboard
-```
-
-Generated stacks also carry the variable in their own `generated/<name>/.env`,
-which the launcher reads — edit it there to make the setting stick. Confirm what
-is cached with `docker images | grep auto_mns`; `./product.sh doctor` reports any
-of the four pinned product images that are missing. `launch.sh` and
-`make dashboard` warn up front when the registry does not answer.
+If Docker Hub is temporarily unreachable, `setup` retries each exact pull three times with backoff. Once all pins are cached, `./product.sh doctor` confirms the active set without contacting the registry. Generated stacks can use `MNS_IMAGE_PULL_POLICY=missing` to prefer those cached, digest-verified images.
 
 ## What will this stack publish?
 
@@ -146,13 +113,13 @@ launch are not visible here.
 
 ## Full Acceptance Test
 
-Reviewers can run the deterministic packaged-authoring-to-live-runtime acceptance path with:
+The existing acceptance harness below covers the previous v1/Blocks product release and is retained for rollback verification:
 
 ```bash
 ./tests/full-product-e2e/run.sh
 ```
 
-It checks authored drones, static and random-spawned objects, ROS FLU to AirSim NED conversion, rain/time conditions, generated sensor settings, live RGB/lidar topics for both drones, and test-container cleanup. See [Full Product E2E](tests/full-product-e2e/README.md).
+See [Full Product E2E](tests/full-product-e2e/README.md). Do not treat that test as standalone-v2 acceptance. The v2 acceptance run requires a published pack whose digest loads in both ScenarioLab and TEVVRuntimeHost; it must also verify runtime cleanup. Until the four packs are published, the available smoke path is `setup` -> `doctor` -> `start` -> HTTP check -> `stop`.
 
 ## Headless CLI
 
@@ -160,7 +127,7 @@ The same product shell image exposes equivalent CLI actions:
 
 ```bash
 ./product.sh cli check
-./product.sh cli runtime --scenario /workspace/scenarios/blocks-quickstart --out /workspace/generated/blocks-quickstart --no-run
+./product.sh cli runtime --scenario /workspace/scenarios/<scenario> --out /workspace/generated/<scenario> --no-run
 ./product.sh cli run-stack --stack /workspace/generated/my_scenario --detach
 ./product.sh cli status --stack /workspace/generated/my_scenario
 ./product.sh cli logs --stack /workspace/generated/my_scenario

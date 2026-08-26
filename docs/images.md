@@ -99,12 +99,7 @@ works on the machine you tested and fails everywhere else).
 
 ## Three things the catalog does not control
 
-**1. `./.env` beats it.** Compose auto-loads `./.env`, and
-`tools/load-images-env.sh` deliberately skips any key `.env` already sets, so
-a local override wins. That is the intended escape hatch for running a local
-build. It is also the first thing to check when the catalog looks right but
-the wrong image runs — `tools/images.sh report` lists every var `./.env`
-overrides, with both values.
+**1. Legacy `./.env` overrides.** Retained static Compose workflows still auto-load `./.env`, and `tools/load-images-env.sh` reports those overrides with both values. The active standalone-v2 product sources its generated remote pins after legacy settings and exposes no local-image override. Use a service repository or integration checkout for local image development; do not use `.env` to replace an active M-S product image.
 
 **2. Baked backend defaults.** The dashboard-backend image carries
 `MNS_AUTHORING_IMAGE_DEFAULT` and the generator equivalent *inside the built

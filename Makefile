@@ -67,9 +67,6 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
 	check_registry DASHBOARD_PULL_POLICY || true; \
 	set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; \
-	if [ -n "$${MNS_AUTHORING_IMAGE_OVERRIDE:-}" ]; then \
-		MNS_AUTHORING_IMAGE="$$MNS_AUTHORING_IMAGE_OVERRIDE"; export MNS_AUTHORING_IMAGE; \
-	fi; \
 	check_images "$$MNS_STACK_GENERATOR_IMAGE" "$$MNS_AUTHORING_IMAGE" || true; \
 	check_x11 || true; \
 	check_ports 3001:airsim-dashboard-frontend:frontend \
@@ -78,14 +75,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):ros2-tools:"Foxglove websocket" || exit 1
 	# compose_retry, not a bare `up`: one transient registry timeout otherwise
 	# aborts the whole start even though every image is already cached.
-	# The override is applied AFTER load_images_env on purpose. That ordering is
-	# the entire fix: a caller-supplied ScenarioLab image that loses to a reloaded
-	# pin file is how SAFTI launched the older published image and crashed
-	# deserializing the cooked map.
 	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; load_images_env ./images/platform-images.generated.env; \
-	if [ -n "$${MNS_AUTHORING_IMAGE_OVERRIDE:-}" ]; then \
-		MNS_AUTHORING_IMAGE="$$MNS_AUTHORING_IMAGE_OVERRIDE"; export MNS_AUTHORING_IMAGE; \
-	fi; \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
 	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
 	# DB=true only: bounce the backend once postgres is healthy. Its telemetry
