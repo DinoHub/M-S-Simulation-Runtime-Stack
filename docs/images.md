@@ -4,12 +4,13 @@ One rule: **every image reference in this repository is authored in
 `images/catalog.yaml` and nowhere else.** If you are typing a `repo:tag`
 anywhere but there, stop.
 
-The catalog renders four files. All are committed, all carry a
+The catalog renders five files. All are committed, all carry a
 `# GENERATED from images/catalog.yaml` header, none are hand-edited:
 
 | Generated file | Who reads it |
 | --- | --- |
-| `product-images.env` | `product.sh`, `Makefile`, the full-product e2e test |
+| `product-images.env` | legacy review channel plus dashboard/tool pins |
+| `images/standalone-v2-images.generated.env` | v2 product shell, dashboard overrides |
 | `images/image-set.generated.yaml` | the stack generator, via `MNS_IMAGE_SET_FILE` |
 | `images/platform-images.generated.env` | metrics / monitoring / logs / dashboard compose |
 | `images/legacy-images.generated.env` | the legacy static scenario stacks |
@@ -139,3 +140,37 @@ and pushed something new, the catalog is not updated until you update it.
 
 Why any of this exists, and what it costs:
 [ADR 0002](adr/0002-one-image-catalog.md).
+
+## MnS Docker image names and pulls
+
+MnS-owned images use one Docker Hub repository and two tags per build:
+
+- Mutable developer alias: `dhdevspace/auto_mns:<stem>-latest`
+- Immutable release tag: `dhdevspace/auto_mns:<stem>-<date-or-version>`
+
+For example, the ROS 2 bridge publishes
+`tevv-airsim-ros2-bridge-humble-latest` and
+`tevv-airsim-ros2-bridge-humble-20260826` to the same manifest. Production
+catalog rows use the immutable tag plus its full manifest digest. The
+`-latest` alias is for discovery and developer pulls; it is not a production
+pin. Retagging the same manifest does not duplicate its layers in the registry.
+
+The M-S product image set is remote-only. Local image development belongs in
+the integration repositories and is not an M-S image-set option.
+
+Pull every remote image in the active product set at its approved exact pin:
+
+```bash
+./tools/pull-all-images.sh
+# or
+./product.sh pull-images
+# inspect without pulling
+./tools/pull-all-images.sh --dry-run
+# include every legacy and optional catalog image
+./tools/pull-all-images.sh --all-catalog
+```
+
+To also advance all mutable catalog rows before pulling, use
+`./tools/pull-all-images.sh --refresh-moving`. This updates the authored
+catalog and generated pin files, so review and commit those changes. Immutable
+standalone-v2 release rows only advance through an explicit coordinated release.

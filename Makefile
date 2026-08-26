@@ -53,7 +53,7 @@ endif
 
 SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images
 
 dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
 	# Create these as the HOST user first, the way product.sh does. The backend
@@ -66,7 +66,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	# named, instead of mid-`up` — or, for the host-net ros2-tools, not at all.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
 	check_registry DASHBOARD_PULL_POLICY || true; \
-	set -a; . ./product-images.env; set +a; \
+	set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; \
 	if [ -n "$${MNS_AUTHORING_IMAGE_OVERRIDE:-}" ]; then \
 		MNS_AUTHORING_IMAGE="$$MNS_AUTHORING_IMAGE_OVERRIDE"; export MNS_AUTHORING_IMAGE; \
 	fi; \
@@ -82,7 +82,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	# the entire fix: a caller-supplied ScenarioLab image that loses to a reloaded
 	# pin file is how SAFTI launched the older published image and crashed
 	# deserializing the cooked map.
-	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; set -a; . ./product-images.env; set +a; load_images_env ./images/platform-images.generated.env; \
+	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; load_images_env ./images/platform-images.generated.env; \
 	if [ -n "$${MNS_AUTHORING_IMAGE_OVERRIDE:-}" ]; then \
 		MNS_AUTHORING_IMAGE="$$MNS_AUTHORING_IMAGE_OVERRIDE"; export MNS_AUTHORING_IMAGE; \
 	fi; \
@@ -94,7 +94,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	# every telemetry endpoint off a dead pool until something restarts it. The
 	# API itself no longer waits on postgres (see the compose file), which is
 	# what makes this safe: worst case the bounce costs ~5s, and it cannot hang.
-	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; set -a; . ./product-images.env; set +a; load_images_env ./images/platform-images.generated.env; 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db 	  restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
+	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; load_images_env ./images/platform-images.generated.env; 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db 	  restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082))"
 
 dashboard-down:
@@ -102,7 +102,7 @@ dashboard-down:
 	# leaves postgres-telemetry (and the db-init one-shot) behind as orphans after
 	# a DB=true session. Naming a profile that was never up is a no-op, so this is
 	# safe either way.
-	@. ./tools/load-images-env.sh; set -a; . ./product-images.env; set +a; load_images_env ./images/platform-images.generated.env; \
+	@. ./tools/load-images-env.sh; set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; load_images_env ./images/platform-images.generated.env; \
 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db down
 
 help:
@@ -125,6 +125,7 @@ help:
 	@echo "  check      exit nonzero when rendered files drift from .env+templates"
 	@echo "  self-test  generator invariant checks"
 	@echo "  verify-images  CI gate: images/catalog.yaml matches generated artifacts"
+	@echo "  pull-images    pull every exact published remote image pin"
 	@echo "Current flags: $(if $(LAUNCH_FLAGS),$(LAUNCH_FLAGS),(none))"
 
 $(SCENARIOS):
@@ -198,3 +199,6 @@ self-test:
 # docs/adr/0002-one-image-catalog.md.
 verify-images:
 	./tools/images.sh verify
+
+pull-images:
+	./tools/pull-all-images.sh

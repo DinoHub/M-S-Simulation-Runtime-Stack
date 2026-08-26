@@ -2,11 +2,12 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$ROOT/product-images.env"
+source "$ROOT/images/standalone-v2-images.generated.env"
 if [[ -n "${MNS_AUTHORING_IMAGE_OVERRIDE:-}" ]]; then
   MNS_AUTHORING_IMAGE="$MNS_AUTHORING_IMAGE_OVERRIDE"
 fi
 DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$ROOT/.mns/authoring-data}"
+PACK_STORE_ROOT="$ROOT/.mns/pack-store"
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
 AUTHORING_AIRSIM_SETTINGS="$ROOT/config/unreal-airsim/authoring-preview.json"
@@ -15,29 +16,10 @@ AUTHORING_DOCKER_ARGS="-v \"$AUTHORING_AIRSIM_SETTINGS:/tmp/Documents/AirSim/set
 # default connection URL and the dashboard backend's FOXGLOVE_PROBE_PORT both
 # assume it, so the dashboard's ros2-node foxglove_bridge owns it now.
 PORT="${MNS_SCENARIO_LAUNCHER_PORT:-8760}"
-images=("$MNS_PRODUCT_SHELL_IMAGE" "$MNS_AUTHORING_IMAGE" "$MNS_STACK_GENERATOR_IMAGE" "$MNS_BLOCKS_IMAGE")
 
-usage() { echo "Usage: ./product.sh setup|doctor|start|stop|cli [launcher args...]"; }
+usage() { echo "Usage: ./product.sh setup|pull-images|doctor|start|stop|cli [launcher args...]"; }
 
-# Docker Hub hands out transient TLS handshake timeouts often enough that a
-# single-shot pull turns a blip into a failed setup:
-#   failed to do request: Head "https://registry-1.docker.io/v2/...":
-#   net/http: TLS handshake timeout
-# Retry with backoff. A genuinely missing or unauthorized image still fails —
-# just three attempts later, and with the whole run's failures reported at the
-# end instead of `set -e` killing setup on the first one.
-pull_image() {
-  local image="$1" attempt
-  for attempt in 1 2 3; do
-    docker pull "$image" && return 0
-    [[ "$attempt" == 3 ]] && break
-    echo "  pull failed (attempt $attempt/3), retrying in $((attempt * 5))s: $image" >&2
-    sleep "$((attempt * 5))"
-  done
-  echo "ERROR: could not pull $image" >&2
-  return 1
-}
-prepare_dirs() { mkdir -p "$DATA_ROOT/PackLibrary/level_packs" "$DATA_ROOT/PackLibrary/asset_packs" "$EXPORT_ROOT" "$GENERATED_ROOT"; }
+prepare_dirs() { mkdir -p "$DATA_ROOT/PackLibrary/level_packs" "$DATA_ROOT/PackLibrary/asset_packs" "$PACK_STORE_ROOT" "$EXPORT_ROOT" "$GENERATED_ROOT"; }
 run_shell() {
   local mode=(--rm -d --name mns-product-shell)
   local port_args=(-p "$PORT:8765")
@@ -71,6 +53,7 @@ run_shell() {
     -e MNS_LAUNCH_BACKEND=docker \
     -e MNS_WORKSPACE_ROOT=/workspace \
     -e MNS_GENERATED_STACKS_ROOT=/workspace/generated \
+    -e MNS_PACK_STORE_ROOT=/workspace/.mns/pack-store \
     -e "MNS_HOST_WORKSPACE_ROOT=$ROOT" \
     -e "MNS_HOST_UID=$(id -u)" \
     -e "MNS_HOST_GID=$(id -g)" \
@@ -91,12 +74,15 @@ run_shell() {
 case "${1:-}" in
   setup)
     prepare_dirs
-    failed=0
-    for image in "${images[@]}"; do pull_image "$image" || failed=1; done
-    [[ "$failed" == 0 ]] || { echo "Setup incomplete — see the pull errors above; ./product.sh doctor lists what is missing." >&2; exit 1; }
+    "$ROOT/tools/pull-all-images.sh"
+    ;;
+  pull-images)
+    shift
+    exec "$ROOT/tools/pull-all-images.sh" "$@"
     ;;
   doctor)
     prepare_dirs; docker compose version >/dev/null
+    mapfile -t images < <("$ROOT/tools/images.sh" refs)
     failed=0
     for image in "${images[@]}"; do docker image inspect "$image" >/dev/null 2>&1 || { echo "MISSING IMAGE: $image"; failed=1; }; done
     [[ "$failed" == 0 ]] && echo "Product prerequisites are ready."

@@ -101,12 +101,9 @@ follow_ups:
 # image is listed twice under two different names:
 #   product_env  -> product-images.env, grouped the way that file's prose
 #                   sections already are (review / dashboard / tools)
-#   image_sets   -> images/image-set.generated.yaml, mirroring
-#                   MnS-Integration-Platform's stacks/orchestrator/catalogs/
-#                   image_sets.yaml schema (`published` + `dev-local`,
-#                   dev-local expressed as `inherits: published` plus ONLY
-#                   the keys that differ — a key absent from dev-local's
-#                   `images:` means it deliberately shares published's image)
+#   image_sets   -> images/image-set.generated.yaml, mirroring the platform
+#                   stackgen schema. The M-S product emits only the remote
+#                   published set; local development stays in integration repos.
 #   compose_env  -> images/platform-images.generated.env, one group per
 #                   compose file (monitoring / metrics / logs / dashboard)
 #   legacy_env   -> images/legacy-images.generated.env, one group per legacy
@@ -143,64 +140,46 @@ images:
       pinned row, so this stays frozen until someone does it
 
   # ---------------------------------------------------------------------
-  # standalone-v2 coordinated pre-release (4 rows)
+  # standalone-v2 coordinated release (4 rows)
   #
-  # The v2 cutover (MnS-Integration-Platform #89) replaces the per-environment
-  # simulator images with ONE generic host and delivers levels as content
-  # packs. Its four images move together as a set and none is published yet,
-  # which is exactly what channel: unpublished is for — digest null, no
-  # registry lookup attempted, bump refuses to advance them.
-  #
-  # They live here rather than in a second hand-written pin file in the
-  # platform repo. That file existed once, drifted to review.20 against this
-  # repo's review.22, and #88 deleted it. Re-creating it for v2 would
-  # re-create the drift, with a fourth image to disagree about.
-  #
-  # release/standalone-v2.lock.json in the platform repo remains the record of
-  # what was ACCEPTED together (pack ids, artifact digests, archive checksums,
-  # acceptance state). These rows are what is CURRENTLY pinned. Those are
-  # different questions and both are worth recording.
+  # The product flow uses immutable date/version tags plus manifest digests.
+  # Each build is also published under its mutable -latest alias for developer
+  # discovery, but production always consumes the exact ref rendered here.
   # ---------------------------------------------------------------------
   mns_product_shell_v2:
     repo: dhdevspace/auto_mns
-    tag: mns-product-shell-standalone-v2-review.1
-    digest: null
-    channel: unpublished
+    tag: mns-product-shell-20260826
+    latest_tag: mns-product-shell-latest
+    digest: sha256:35224d379a4784358d6b0656b9ed43dfb07673107ea70f9f0da0d1a43e8f022e
+    channel: pinned
     purpose: Product shell for the standalone-v2 content-pack flow.
-    follow_up: >-
-      unpublished — fill the digest and move to channel review once the
-      standalone-v2 set is built, pushed and passes dual-host acceptance
-      (release/standalone-v2.lock.json is blocked until then)
 
   mns_authoring_v2:
     repo: dhdevspace/auto_mns
-    tag: mns-authoring-standalone-v2-review.1
-    digest: null
-    channel: unpublished
+    tag: mns-authoring-20260826.2
+    latest_tag: mns-authoring-latest
+    digest: sha256:6ccf2bf8a800a60bcf2fa7edf2b627742a1d5a14197c080b9f220a72f203e4af
+    channel: pinned
     purpose: ScenarioLab authoring frozen on the v2 SM6 IoStore host capability.
-    follow_up: >-
-      unpublished — see mns_product_shell_v2; ships with TEVV-Authoring #10
 
   mns_stack_generator_v2:
     repo: dhdevspace/auto_mns
-    tag: mns-stack-generator-standalone-v2-review.1
-    digest: null
-    channel: unpublished
+    tag: mns-stack-generator-20260826
+    latest_tag: mns-stack-generator-latest
+    digest: sha256:634052453fe72b14ca53681b732bc4e47f1cf44d80348be54bfe5ff4fe0496e9
+    channel: pinned
     purpose: Generator that resolves content packs from the shared PackStore.
-    follow_up: >-
-      unpublished — see mns_product_shell_v2
 
   tevv_runtime_host:
     repo: dhdevspace/auto_mns
-    tag: tevv-runtime-host-standalone-v2-review.1
-    digest: null
-    channel: unpublished
+    tag: tevv-runtime-host-20260826
+    latest_tag: tevv-runtime-host-latest
+    digest: sha256:04723c3fb35b1516946283bd942179a2def986ab843a88b667c7290a9f82af3c
+    channel: pinned
     purpose: >-
-      Generic standalone-v2 runtime host. Replaces the per-environment
-      simulator images (xfs / condo / safti_city / blocks): levels and assets
-      arrive as content packs mounted at runtime rather than baked per image.
-    follow_up: >-
-      unpublished — see mns_product_shell_v2; ships with TEVV-Airsim #132
+      Generic standalone-v2 runtime host. Replaces all per-environment
+      simulator images; levels and assets arrive as content packs mounted at
+      runtime.
 
   mns_stack_generator:
     repo: dhdevspace/auto_mns
@@ -300,9 +279,10 @@ images:
 
   ros2_bridge:
     repo: dhdevspace/auto_mns
-    tag: tevv-airsim-ros2-bridge-humble
-    digest: sha256:068ea157e6d2347d6c515efbc2d33997d14068f72793b9b71fc29b8e9f2276fd
-    channel: moving
+    tag: tevv-airsim-ros2-bridge-humble-20260826
+    latest_tag: tevv-airsim-ros2-bridge-humble-latest
+    digest: sha256:e661e37f8639077401e56e23bd2c6a61e0e065cb0d93866904f1f0930a57e011
+    channel: pinned
     purpose: AirSim<->ROS2 bridge, the published ros2_bridge role.
 
   qgroundcontrol:
@@ -319,85 +299,6 @@ images:
     channel: moving
     purpose: Sim-to-real evaluation worker, the published sim_real_eval role.
 
-  # ---------------------------------------------------------------------
-  # Runtime images — image_sets "dev-local" deltas (repo local/auto_mns).
-  # local/ images are never resolved: channel local, digest always null.
-  # condo is the ONLY role NOT duplicated here — P's image_sets.yaml pins the
-  # literal same dhdevspace/auto_mns ref for condo under both published and
-  # dev-local (no local/ condo build exists), so dev-local deliberately
-  # inherits published's condo image unchanged (see
-  # consumers.image_sets.dev-local below). Checked key-by-key against P's
-  # source for this ADR revision: every other role (including px4, which an
-  # earlier revision of this file wrongly assumed was also shared — it is
-  # not; P has pinned a distinct local/auto_mns:px4-airsim-px4 under
-  # dev-local since at least commit b83813f) has its own local_* row here.
-  # ---------------------------------------------------------------------
-  local_blocks:
-    repo: local/auto_mns
-    tag: blocks-v0.2.0-review.3
-    digest: null
-    channel: local
-    purpose: dev-local override of mns_blocks (image_sets simulators.blocks).
-
-  local_xfs:
-    repo: local/auto_mns
-    tag: tevv-airsim-xfs-latest
-    digest: null
-    channel: local
-    purpose: dev-local override of xfs (image_sets simulators.xfs).
-
-  local_safti_city:
-    repo: local/auto_mns
-    tag: safti-runtime-metrics
-    digest: null
-    channel: local
-    purpose: dev-local override of safti_city (image_sets simulators.safti_city).
-
-  local_unreal_authored:
-    repo: local/auto_mns
-    tag: tevv-airsim-authored-latest
-    digest: null
-    channel: local
-    purpose: dev-local override of unreal_authored (image_sets simulators.unreal_authored).
-
-  local_ardupilot:
-    repo: local/auto_mns
-    tag: ardupilot-latest
-    digest: null
-    channel: local
-    purpose: dev-local override of ardupilot (image_sets autopilots.ardupilot).
-
-  local_px4:
-    repo: local/auto_mns
-    tag: px4-airsim-px4
-    digest: null
-    channel: local
-    purpose: >-
-      Developer's local PX4 build; dev-local override of px4 (image_sets
-      autopilots.px4). NOT shared with published — P's image_sets.yaml pins
-      a genuinely distinct local/auto_mns ref here (unlike condo, the one
-      role that really is shared).
-
-  local_ros2_bridge:
-    repo: local/auto_mns
-    tag: tevv-airsim-ros2-bridge-humble
-    digest: null
-    channel: local
-    purpose: dev-local override of ros2_bridge (image_sets ros2_bridge).
-
-  local_qgroundcontrol:
-    repo: local/auto_mns
-    tag: airsim-qgc-x11-latest
-    digest: null
-    channel: local
-    purpose: dev-local override of qgroundcontrol (image_sets qgroundcontrol).
-
-  local_sim_real_eval:
-    repo: local/auto_mns
-    tag: sim-real-eval-worker-latest
-    digest: null
-    channel: local
-    purpose: dev-local override of sim_real_eval (image_sets sim_real_eval).
 
   # ---------------------------------------------------------------------
   # Platform images — docker-compose-monitoring.yml (14 rows)
@@ -585,15 +486,13 @@ images:
   # ---------------------------------------------------------------------
   ardupilot_slim:
     repo: dhdevspace/auto_mns
-    tag: "ardupilot-slim"
-    digest: sha256:c9b690ccab7e4a9f5b8b245140a25d5c21b9990166cbe4ad23915d123ff7a4a6
-    channel: moving
+    tag: ardupilot-slim-20260826
+    latest_tag: ardupilot-slim-latest
+    digest: sha256:70471cfa514823ead72fcfe041cd559259749bd4ecd3fb343e3d48ec86d759f8
+    channel: pinned
     purpose: >-
-      ArduPilot SITL with the per-instance SERIAL port offset baked in;
-      ARDUPILOT_IMAGE default for ardupilot-condo/ardupilot-urbansim/
-      ardupilot-xfs. Distinct from the `ardupilot` row's ardupilot-latest
-      tag, which lacks that offset and cannot run ardupilot-xfs's
-      multi-drone SITL (see .env's ARDUPILOT_IMAGE comment).
+      ArduPilot SITL with C2 endpoint routing and root/user pymavlink support;
+      used by both standalone-v2 generation and legacy static stack defaults.
 
   airsim_ros2_bridge_legacy:
     repo: dhdevspace/auto_mns
@@ -712,37 +611,14 @@ consumers:
       pull_policy: always
       images:
         simulators:
-          blocks: mns_blocks
-          xfs: xfs
-          safti_city: safti_city
-          condo: condo
-          unreal_authored: unreal_authored
+          tevv_runtime_host: tevv_runtime_host
         autopilots:
-          ardupilot: ardupilot
+          ardupilot: ardupilot_slim
           px4: px4
         ros2_bridge: ros2_bridge
         qgroundcontrol: qgroundcontrol
         sim_real_eval: sim_real_eval
 
-    dev-local:
-      inherits: published
-      pull_policy: if_not_present
-      images:
-        simulators:
-          blocks: local_blocks
-          xfs: local_xfs
-          safti_city: local_safti_city
-          # condo: absent on purpose — no local/ condo build exists, so
-          # dev-local deliberately runs published's condo image unchanged.
-          # This is the ONLY role in this image set that is genuinely shared;
-          # every other role below has its own local_* row.
-          unreal_authored: local_unreal_authored
-        autopilots:
-          ardupilot: local_ardupilot
-          px4: local_px4
-        ros2_bridge: local_ros2_bridge
-        qgroundcontrol: local_qgroundcontrol
-        sim_real_eval: local_sim_real_eval
 
   compose_env:
     monitoring:

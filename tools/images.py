@@ -31,6 +31,9 @@ docs/adr/0002-one-image-catalog.md (why this exists). Subcommands:
            the digest of the version tag already pinned; it never walks
            versions forward. local/unpublished are refused unconditionally.
 
+  refs [--all-catalog] print exact remote refs for the active product, or every
+                       published catalog row for maintenance pulls.
+
 Two small internal helpers, used by tools/images.sh's bash-side drift/baked
 logic rather than meant for interactive use:
 
@@ -138,6 +141,10 @@ def _validate_catalog(data: Any) -> None:
                 f"({row['tag']!r}) — YAML parsed an unquoted numeric-looking tag as a "
                 f"number. Quote it: tag: \"{row['tag']}\""
             )
+        if "latest_tag" in row:
+            if not isinstance(row["latest_tag"], str) or not row["latest_tag"].endswith("-latest"):
+                raise CatalogError(
+                    f"images.{key}.latest_tag must be a string ending in '-latest'")
         if row["channel"] not in VALID_CHANNELS:
             raise CatalogError(f"images.{key}.channel {row['channel']!r} not in {VALID_CHANNELS}")
         if "follow_up" in row and not isinstance(row["follow_up"], str):
@@ -213,6 +220,32 @@ def image_ref(images: dict[str, Any], key: str) -> str:
     if row.get("digest"):
         ref = f"{ref}@{row['digest']}"
     return ref
+
+
+def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False) -> list[str]:
+    """Return unique, exact remote refs for the product or full catalog."""
+    images = catalog["images"]
+    if all_catalog:
+        keys = {
+            key for key, row in images.items()
+            if row["channel"] not in ("local", "unpublished")
+        }
+    else:
+        consumers = catalog["consumers"]
+        keys = set(consumers["release_channels"]["standalone_v2"]["vars"].values())
+        keys |= _flatten_leaf_keys(consumers["image_sets"]["published"]["images"])
+        for group in ("dashboard", "tools"):
+            keys |= set(consumers["product_env"].get(group, {}).values())
+        keys |= set(consumers["compose_env"].get("dashboard", {}).values())
+        unavailable = sorted(
+            key for key in keys
+            if images[key]["channel"] in ("local", "unpublished")
+        )
+        if unavailable:
+            raise CatalogError(
+                "active product references unavailable image(s): " + ", ".join(unavailable))
+    return sorted({image_ref(images, key) for key in keys})
+
 
 
 # --------------------------------------------------------------------------
@@ -297,11 +330,9 @@ def render_standalone_v2_env(catalog: dict[str, Any]) -> str:
     picking a file, which is a choice it can make explicitly and a reader can
     see.
 
-    Written even while every row is unpublished (digest null, tag only). That
-    is the point: the file exists, is generated, and gains its digests in one
-    place on the day they are published — rather than a hand-written copy in
-    another repository gaining them separately, which is how the platform came
-    to pin review.20 against this repo's review.22.
+    Every row is rendered with its immutable release tag and manifest digest.
+    Mutable -latest aliases are deliberately not emitted here: production
+    runs remain reproducible until the catalog is advanced and regenerated.
     """
     images = catalog["images"]
     channel = catalog["consumers"]["release_channels"].get("standalone_v2")
@@ -313,14 +344,13 @@ def render_standalone_v2_env(catalog: dict[str, Any]) -> str:
     lines = [
         GENERATED_MARKER,
         "",
-        "# Coordinated standalone-v2 pre-release channel. Sourced INSTEAD of",
+        "# Coordinated standalone-v2 production pins. Sourced INSTEAD of",
         "# product-images.env by the v2 product shell, not alongside it.",
         "#",
-        "# Rows are channel: unpublished until the set is built and pushed, so",
-        "# these are tags without digests. That is a deliberate, visible gap —",
-        "# `tools/images.sh status` lists every one of them under NEEDS YOU —",
-        "# not an oversight, and not something to paper over by hand-editing",
-        "# this file. Edit images/catalog.yaml and re-run `tools/images.sh sync`.",
+        "# Every ref uses an immutable date/version tag and manifest digest.",
+        "# The corresponding -latest aliases are for discovery and publishing;",
+        "# production runs the exact refs below. Edit images/catalog.yaml and",
+        "# re-run tools/images.sh sync to advance the approved release.",
         "",
     ]
     lines += [f"{var}={image_ref(images, key)}" for var, key in group.items()]
@@ -1209,6 +1239,14 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 1 if total else 0
 
 
+def cmd_refs(args: argparse.Namespace) -> int:
+    catalog = load_catalog()
+    assert_invariants(catalog)
+    for ref in pullable_refs(catalog, all_catalog=args.all_catalog):
+        print(ref)
+    return 0
+
+
 # --------------------------------------------------------------------------
 # drift / baked support (bash side does the docker-heavy lifting; these are
 # the catalog-aware lookups it shells out to)
@@ -1274,6 +1312,10 @@ def main(argv: list[str]) -> int:
     p_bump.add_argument("--only")
     p_bump.add_argument("--channel", choices=sorted(VALID_CHANNELS))
     p_bump.set_defaults(fn=cmd_bump)
+
+    p_refs = sub.add_parser("refs")
+    p_refs.add_argument("--all-catalog", action="store_true")
+    p_refs.set_defaults(fn=cmd_refs)
 
     p_rv = sub.add_parser("resolve-var")
     p_rv.add_argument("var")

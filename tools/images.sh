@@ -2,6 +2,7 @@
 # tools/images.sh — one canonical image catalog: images/catalog.yaml is the
 # single authored source; everything else (product-images.env,
 # images/image-set.generated.yaml, images/platform-images.generated.env,
+# images/standalone-v2-images.generated.env,
 # images/legacy-images.generated.env) is generated and committed. See
 # docs/adr/0002-one-image-catalog.md.
 #
@@ -12,6 +13,7 @@
 #   tools/images.sh sync            # regenerate all artifacts (offline)
 #   tools/images.sh verify          # CI gate: selftest + regenerate + diff, exit 1 on
 #                                    # drift or a selftest failure (offline)
+#   tools/images.sh refs            # exact active-product refs; --all-catalog for every row
 #   tools/images.sh report          # pinned vs latest on Hub / upstream registries (online)
 #   tools/images.sh bump [--only KEY] [--channel review|moving]
 #   tools/images.sh drift           # regenerate committed ScenarioSpecs with the
@@ -33,7 +35,7 @@ MODE="${1:-}"
 [[ $# -gt 0 ]] && shift || true
 
 case "$MODE" in
-  sync|verify|report|bump|selftest|status)
+  sync|verify|report|bump|selftest|status|refs)
     exec "$PY" "$ROOT/tools/images.py" "$MODE" "$@"
     ;;
   drift)
@@ -41,7 +43,7 @@ case "$MODE" in
   baked)
     ;;
   *)
-    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest> [args...]" >&2
+    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest|refs> [args...]" >&2
     exit 2
     ;;
 esac
