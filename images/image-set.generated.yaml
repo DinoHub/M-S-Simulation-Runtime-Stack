@@ -11,7 +11,7 @@ image_sets:
       simulators:
         tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-20260826@sha256:04723c3fb35b1516946283bd942179a2def986ab843a88b667c7290a9f82af3c
       autopilots:
-        ardupilot: dhdevspace/auto_mns:ardupilot-slim-20260826@sha256:70471cfa514823ead72fcfe041cd559259749bd4ecd3fb343e3d48ec86d759f8
+        ardupilot: dhdevspace/auto_mns:ardupilot-slim-20260826.1@sha256:0ba679fed0309e3004def725acb003b286d4cd99587618533f5d120760039bd9
         px4: dhdevspace/auto_mns:px4-airsim-px4@sha256:cd5a87467c73a0f8f506bca38a6f5d8df0779cf3c21a99dd0f4384784d40588a
       ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260826@sha256:e661e37f8639077401e56e23bd2c6a61e0e065cb0d93866904f1f0930a57e011
       qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804

@@ -486,12 +486,13 @@ images:
   # ---------------------------------------------------------------------
   ardupilot_slim:
     repo: dhdevspace/auto_mns
-    tag: ardupilot-slim-20260826
+    tag: ardupilot-slim-20260826.1
     latest_tag: ardupilot-slim-latest
-    digest: sha256:70471cfa514823ead72fcfe041cd559259749bd4ecd3fb343e3d48ec86d759f8
+    digest: sha256:0ba679fed0309e3004def725acb003b286d4cd99587618533f5d120760039bd9
     channel: pinned
     purpose: >-
-      ArduPilot SITL with C2 endpoint routing and root/user pymavlink support;
+      ArduPilot SITL with separate QGC/C2 routing, optional router fanout,
+      and root/user pymavlink support;
       used by both standalone-v2 generation and legacy static stack defaults.
 
   airsim_ros2_bridge_legacy:
