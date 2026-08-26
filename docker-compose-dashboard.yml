@@ -24,11 +24,9 @@
 services:
   dashboard-backend:
     image: ${DASHBOARD_BACKEND_IMAGE:?source product-images.env}
-    # All three images in this stack ride MUTABLE tags, and Compose's default
-    # pull policy ("missing") only ever pulls when the tag is absent locally —
-    # so a re-published -latest would never arrive. Pull every `up` instead.
-    # Costs a manifest check per service and needs the registry reachable;
-    # override with DASHBOARD_PULL_POLICY=missing to work offline.
+    # `product.sh setup` refreshes the exact remote pins. Normal dashboard
+    # starts use those cached pins and pull only when an image is absent.
+    # Set DASHBOARD_PULL_POLICY=always for a deliberate registry re-check.
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: airsim-dashboard-api
     ports:
@@ -103,6 +101,9 @@ services:
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:-${PWD}}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
+      # The backend owns the ros2-tools sidecar; pin it to the same published
+      # v2 bridge used by generated stacks instead of its baked floating tag.
+      - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?source images/standalone-v2-images.generated.env}
       - MNS_AUTHORING_DOCKER_ARGS=-v "${MSRS_ROOT:-${PWD}}/config/unreal-airsim/authoring-preview.json:/tmp/Documents/AirSim/settings.json:ro" ${MNS_AUTHORING_DOCKER_ARGS:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}

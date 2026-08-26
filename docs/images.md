@@ -109,9 +109,10 @@ deployments pass the env through and are unaffected; an image-only deploy is
 not. `tools/images.sh baked` reports the drift.
 
 **3. A locally-present newer image.** Because the digest is the contract, a
-newer build sitting in `docker images` changes nothing — even with
-`pull_policy: always`, Docker re-pulls the exact pinned digest. If you built
-and pushed something new, the catalog is not updated until you update it.
+newer build sitting in `docker images` changes nothing. The active v2 image set
+uses `pull_policy: missing` after the pull helper refreshes the cache; even an
+explicit `always` would re-pull the exact pinned digest. If you built and pushed
+something new, the catalog is not updated until you update it.
 
 ## Channels
 

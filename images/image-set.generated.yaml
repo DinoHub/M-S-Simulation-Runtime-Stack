@@ -6,7 +6,7 @@ schema: mns.image_sets.v1
 
 image_sets:
   published:
-    pull_policy: always
+    pull_policy: missing
     images:
       simulators:
         tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-20260826@sha256:04723c3fb35b1516946283bd942179a2def986ab843a88b667c7290a9f82af3c

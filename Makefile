@@ -65,7 +65,7 @@ dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds t
 	# Fail on an unreachable daemon or an occupied port here, with the occupant
 	# named, instead of mid-`up` — or, for the host-net ros2-tools, not at all.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
-	check_registry DASHBOARD_PULL_POLICY || true; \
+	[ "$${DASHBOARD_PULL_POLICY:-missing}" = always ] && check_registry DASHBOARD_PULL_POLICY || true; \
 	set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; \
 	check_images "$$MNS_STACK_GENERATOR_IMAGE" "$$MNS_AUTHORING_IMAGE" || true; \
 	check_x11 || true; \

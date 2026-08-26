@@ -606,10 +606,11 @@ consumers:
         MNS_AUTHORING_IMAGE: mns_authoring_v2
         MNS_STACK_GENERATOR_IMAGE: mns_stack_generator_v2
         MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host
+        MNS_ROS2_BRIDGE_IMAGE: ros2_bridge
 
   image_sets:
     published:
-      pull_policy: always
+      pull_policy: missing
       images:
         simulators:
           tevv_runtime_host: tevv_runtime_host

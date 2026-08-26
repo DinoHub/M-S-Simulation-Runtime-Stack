@@ -70,7 +70,7 @@ Every image reference in this repository is authored in `images/catalog.yaml` an
 
 ScenarioLab launches mount authoring-only AirSim settings that select `ComputerVision` mode with no AirSim vehicles, preventing the vehicle-type prompt from blocking the authoring UI.
 
-If Docker Hub is temporarily unreachable, `setup` retries each exact pull three times with backoff. Once all pins are cached, `./product.sh doctor` confirms the active set without contacting the registry. Generated stacks can use `MNS_IMAGE_PULL_POLICY=missing` to prefer those cached, digest-verified images.
+If Docker Hub is temporarily unreachable, `setup` retries each exact pull three times with backoff. Once all pins are cached, `./product.sh doctor` confirms the active set without contacting the registry. Generated stacks default to `MNS_IMAGE_PULL_POLICY=missing`, so they use cached, digest-verified images and pull only when a pin is absent. Set it to `always` only for a deliberate per-run registry check; use `./product.sh pull-images` for the normal refresh workflow.
 
 ## What will this stack publish?
 

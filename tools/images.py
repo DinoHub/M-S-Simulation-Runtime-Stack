@@ -550,6 +550,18 @@ def assert_invariants(catalog: dict[str, Any]) -> None:
                 + ", ".join(bad)
             )
 
+    # 4. Standalone v2 refreshes exact pins explicitly, then starts from the
+    # verified local cache. Keep the authored catalog from silently restoring
+    # per-run registry checks and defeating that workflow.
+    release_channels = catalog["consumers"].get("release_channels") or {}
+    if "standalone_v2" in release_channels:
+        published = (catalog["consumers"].get("image_sets") or {}).get("published") or {}
+        if published.get("pull_policy") != "missing":
+            raise CatalogError(
+                "image_sets.published must use pull_policy: missing for standalone_v2; "
+                "refresh images explicitly with tools/pull-all-images.sh"
+            )
+
 
 def _flatten_leaf_keys(node: Any) -> set[str]:
     out: set[str] = set()
