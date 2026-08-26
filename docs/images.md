@@ -4,14 +4,16 @@ One rule: **every image reference in this repository is authored in
 `images/catalog.yaml` and nowhere else.** If you are typing a `repo:tag`
 anywhere but there, stop.
 
-The catalog renders five files. All are committed, all carry a
+The catalog renders seven files. All are committed, all carry a
 `# GENERATED from images/catalog.yaml` header, none are hand-edited:
 
 | Generated file | Who reads it |
 | --- | --- |
 | `product-images.env` | legacy review channel plus dashboard/tool pins |
 | `images/standalone-v2-images.generated.env` | v2 product shell, dashboard overrides |
-| `images/image-set.generated.yaml` | the stack generator, via `MNS_IMAGE_SET_FILE` |
+| `images/standalone-v2-development.generated.env` | dashboard development defaults using mutable tags |
+| `images/image-set.generated.yaml` | production stack generator overlay with exact pins |
+| `images/image-set.development.generated.yaml` | dashboard development overlay with tag-only refs |
 | `images/platform-images.generated.env` | metrics / monitoring / logs / dashboard compose |
 | `images/legacy-images.generated.env` | the legacy static scenario stacks |
 
@@ -99,7 +101,7 @@ works on the machine you tested and fails everywhere else).
 
 ## Three things the catalog does not control
 
-**1. Legacy `./.env` overrides.** Retained static Compose workflows still auto-load `./.env`, and `tools/load-images-env.sh` reports those overrides with both values. The active standalone-v2 product sources its generated remote pins after legacy settings and exposes no local-image override. Use a service repository or integration checkout for local image development; do not use `.env` to replace an active M-S product image.
+**1. Local development overrides.** `make dashboard` defaults to the generated tag-only development image set. A matching locally built tag wins, while an absent tag is pulled from the registry. Shell/.env image overrides still take precedence through `tools/load-images-env.sh`. `IMAGE_MODE=production make dashboard` selects the immutable digest-pinned artifacts instead.
 
 **2. Baked backend defaults.** The dashboard-backend image carries
 `MNS_AUTHORING_IMAGE_DEFAULT` and the generator equivalent *inside the built
@@ -108,11 +110,7 @@ rebuild, then `tools/images.sh bump --only dashboard_backend`. Compose
 deployments pass the env through and are unaffected; an image-only deploy is
 not. `tools/images.sh baked` reports the drift.
 
-**3. A locally-present newer image.** Because the digest is the contract, a
-newer build sitting in `docker images` changes nothing. The active v2 image set
-uses `pull_policy: missing` after the pull helper refreshes the cache; even an
-explicit `always` would re-pull the exact pinned digest. If you built and pushed
-something new, the catalog is not updated until you update it.
+**3. A locally-present newer image.** Development mode intentionally uses a matching local tag and never pulls merely to check for a newer remote copy. If the tag is absent, `make dashboard` pulls it. Production mode remains digest-pinned and ignores a different local build. After publishing, other developers run `./product.sh setup` to refresh the approved remote set.
 
 ## Channels
 
@@ -151,15 +149,23 @@ catalog rows use the immutable tag plus its full manifest digest. The
 `-latest` alias is for discovery and developer pulls; it is not a production
 pin. Retagging the same manifest does not duplicate its layers in the registry.
 
-The M-S product image set is remote-only. Local image development belongs in
-the integration repositories and is not an M-S image-set option.
+The production M-S image set is remote-only and digest-pinned. The dashboard’s transitional development mode derives tag-only refs from that same catalog, allowing a local build to win without adding `local/...` repository names.
 
-Pull every remote image in the active product set at its approved exact pin:
+Use locally available development tags and pull only missing ones:
+
+```bash
+make ensure-images
+# automatically performed by:
+make dashboard
+```
+
+Explicitly refresh every approved production pin:
 
 ```bash
 ./tools/pull-all-images.sh
 # or
 ./product.sh pull-images
+./product.sh pull-images --development    # explicitly refresh dashboard development tags
 # inspect without pulling
 ./tools/pull-all-images.sh --dry-run
 # include every legacy and optional catalog image

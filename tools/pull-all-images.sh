@@ -5,12 +5,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DRY_RUN=false
 REFRESH_MOVING=false
 ALL_CATALOG=false
+DEVELOPMENT=false
 
 usage() {
-  echo "Usage: tools/pull-all-images.sh [--dry-run] [--refresh-moving] [--all-catalog]"
+  echo "Usage: tools/pull-all-images.sh [--dry-run] [--refresh-moving] [--all-catalog] [--development]"
   echo
   echo "Pulls the active product's remote images at exact catalog tag+digest pins."
   echo "--all-catalog includes legacy and optional observability images."
+  echo "--development refreshes mutable tag-only refs used by make dashboard."
   echo "--refresh-moving first advances mutable catalog pins, regenerates, and verifies."
 }
 
@@ -19,6 +21,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY_RUN=true ;;
     --refresh-moving) REFRESH_MOVING=true ;;
     --all-catalog) ALL_CATALOG=true ;;
+    --development) DEVELOPMENT=true ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -33,6 +36,7 @@ fi
 
 refs_args=()
 [[ "$ALL_CATALOG" == true ]] && refs_args+=(--all-catalog)
+[[ "$DEVELOPMENT" == true ]] && refs_args+=(--development)
 mapfile -t refs < <("$ROOT/tools/images.sh" refs "${refs_args[@]}")
 if [[ "${#refs[@]}" -eq 0 ]]; then
   echo "No pullable remote images are declared." >&2
@@ -70,4 +74,8 @@ if [[ "${#failed[@]}" -ne 0 ]]; then
   exit 1
 fi
 
-echo "Pulled ${#refs[@]} exact remote image pin(s); the next run uses this approved catalog set."
+if [[ "$DEVELOPMENT" == true ]]; then
+  echo "Refreshed ${#refs[@]} development image tag(s); make dashboard will use them locally."
+else
+  echo "Pulled ${#refs[@]} exact remote image pin(s); the next production run uses this approved catalog set."
+fi

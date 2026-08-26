@@ -31,8 +31,8 @@ docs/adr/0002-one-image-catalog.md (why this exists). Subcommands:
            the digest of the version tag already pinned; it never walks
            versions forward. local/unpublished are refused unconditionally.
 
-  refs [--all-catalog] print exact remote refs for the active product, or every
-                       published catalog row for maintenance pulls.
+  refs [--all-catalog] [--development] print exact production refs or
+                       tag-only development refs for the active product.
 
 Two small internal helpers, used by tools/images.sh's bash-side drift/baked
 logic rather than meant for interactive use:
@@ -71,6 +71,8 @@ CATALOG_PATH = ROOT / "images" / "catalog.yaml"
 TEMPLATE_PATH = ROOT / "images" / "product-images.env.tmpl"
 PRODUCT_ENV_PATH = ROOT / "product-images.env"
 IMAGE_SET_PATH = ROOT / "images" / "image-set.generated.yaml"
+DEVELOPMENT_IMAGE_SET_PATH = ROOT / "images" / "image-set.development.generated.yaml"
+DEVELOPMENT_ENV_PATH = ROOT / "images" / "standalone-v2-development.generated.env"
 PLATFORM_ENV_PATH = ROOT / "images" / "platform-images.generated.env"
 LEGACY_ENV_PATH = ROOT / "images" / "legacy-images.generated.env"
 STANDALONE_V2_ENV_PATH = ROOT / "images" / "standalone-v2-images.generated.env"
@@ -222,8 +224,16 @@ def image_ref(images: dict[str, Any], key: str) -> str:
     return ref
 
 
-def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False) -> list[str]:
-    """Return unique, exact remote refs for the product or full catalog."""
+def development_ref(images: dict[str, Any], key: str) -> str:
+    """Tag-only ref used by the local-first development workflow."""
+    if key not in images:
+        raise CatalogError(f"consumer references unknown image key {key!r}")
+    row = images[key]
+    return f"{row['repo']}:{row.get('latest_tag') or row['tag']}"
+
+
+def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, development: bool = False) -> list[str]:
+    """Return unique active refs in production or tag-only development form."""
     images = catalog["images"]
     if all_catalog:
         keys = {
@@ -244,7 +254,8 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False) -> list
         if unavailable:
             raise CatalogError(
                 "active product references unavailable image(s): " + ", ".join(unavailable))
-    return sorted({image_ref(images, key) for key in keys})
+    ref_for = development_ref if development else image_ref
+    return sorted({ref_for(images, key) for key in keys})
 
 
 
@@ -319,6 +330,63 @@ def render_image_set(catalog: dict[str, Any]) -> str:
     )
     body = {"image_sets": resolved_image_sets(catalog)}
     return header + yaml.safe_dump(body, sort_keys=False, default_flow_style=False)
+
+
+def render_development_image_set(catalog: dict[str, Any]) -> str:
+    """Tag-only v2 image set for local-first development.
+
+    The catalog remains the source of image names. Digests are removed only in
+    this development artifact so a locally built matching tag wins; Compose
+    pulls the tag only when it is absent from the Docker image store.
+    """
+    images = catalog["images"]
+    development_refs = {
+        image_ref(images, key): development_ref(images, key)
+        for key in images
+    }
+
+    def tag_only(node: Any) -> Any:
+        if isinstance(node, dict):
+            return {key: tag_only(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [tag_only(value) for value in node]
+        if isinstance(node, str):
+            return development_refs.get(node, node)
+        return node
+
+    header = (
+        "schema: mns.image_sets.v1\n\n"
+        f"{GENERATED_MARKER}\n"
+        "# Development overlay: tag-only refs plus pull_policy: missing let a\n"
+        "# local build win and pull the published tag only when it is absent.\n\n"
+    )
+    body = {"image_sets": tag_only(resolved_image_sets(catalog))}
+    return header + yaml.safe_dump(body, sort_keys=False, default_flow_style=False)
+
+
+def render_development_env(catalog: dict[str, Any]) -> str:
+    """Dashboard/product defaults using tag-only development aliases."""
+    images = catalog["images"]
+    consumers = catalog["consumers"]
+    groups = [
+        consumers["release_channels"]["standalone_v2"]["vars"],
+        consumers["product_env"].get("dashboard", {}),
+        consumers["product_env"].get("tools", {}),
+        consumers["compose_env"].get("dashboard", {}),
+    ]
+    mapping: dict[str, str] = {}
+    for group in groups:
+        mapping.update(group)
+    lines = [
+        GENERATED_MARKER,
+        "",
+        "# Local-first dashboard defaults. Matching local tags win; missing",
+        "# tags are pulled by tools/ensure-images.sh. Production uses the",
+        "# digest-pinned generated env files instead.",
+        "",
+    ]
+    lines += [f"{var}={development_ref(images, key)}" for var, key in mapping.items()]
+    return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def render_standalone_v2_env(catalog: dict[str, Any]) -> str:
@@ -442,6 +510,8 @@ def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
     out = {
         PRODUCT_ENV_PATH: render_product_env(catalog),
         IMAGE_SET_PATH: render_image_set(catalog),
+        DEVELOPMENT_IMAGE_SET_PATH: render_development_image_set(catalog),
+        DEVELOPMENT_ENV_PATH: render_development_env(catalog),
         PLATFORM_ENV_PATH: render_platform_env(catalog),
         LEGACY_ENV_PATH: render_legacy_env(catalog),
     }
@@ -1254,7 +1324,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 def cmd_refs(args: argparse.Namespace) -> int:
     catalog = load_catalog()
     assert_invariants(catalog)
-    for ref in pullable_refs(catalog, all_catalog=args.all_catalog):
+    for ref in pullable_refs(catalog, all_catalog=args.all_catalog, development=args.development):
         print(ref)
     return 0
 
@@ -1327,6 +1397,7 @@ def main(argv: list[str]) -> int:
 
     p_refs = sub.add_parser("refs")
     p_refs.add_argument("--all-catalog", action="store_true")
+    p_refs.add_argument("--development", action="store_true")
     p_refs.set_defaults(fn=cmd_refs)
 
     p_rv = sub.add_parser("resolve-var")

@@ -1,0 +1,18 @@
+schema: mns.image_sets.v1
+
+# GENERATED from images/catalog.yaml — see docs/adr/0002-one-image-catalog.md. Do not hand-edit; run tools/images.sh sync.
+# Development overlay: tag-only refs plus pull_policy: missing let a
+# local build win and pull the published tag only when it is absent.
+
+image_sets:
+  published:
+    pull_policy: missing
+    images:
+      simulators:
+        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-latest
+      autopilots:
+        ardupilot: dhdevspace/auto_mns:ardupilot-slim-latest
+        px4: dhdevspace/auto_mns:px4-airsim-px4
+      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-latest
+      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
+      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest

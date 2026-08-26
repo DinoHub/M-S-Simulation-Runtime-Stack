@@ -72,6 +72,7 @@ case "${1:-}" in
   setup)
     prepare_dirs
     "$ROOT/tools/pull-all-images.sh"
+    "$ROOT/tools/pull-all-images.sh" --development
     ;;
   pull-images)
     shift

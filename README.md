@@ -10,12 +10,15 @@ For teams that want configuration → run → evaluation in one UI instead of
 the CLI wrappers:
 
 ```bash
-make dashboard          # pulls published images; UI at http://localhost:3001
+make dashboard                         # local-first; pulls only missing tags
+make dashboard IMAGE_MODE=production   # exact release pins
 make dashboard-down
 ```
 
-The dashboard's **Scenario Configuration** tab authors a ScenarioSpec and
-generates + launches stacks through the pinned `MNS_STACK_GENERATOR_IMAGE`
+By default, `make dashboard` runs the transitional development workflow: it keeps any locally built matching image tags, pulls only tags absent from the Docker image store, and uses the tag-only development image-set overlay for generated stacks. It does not refresh an existing tag. Run `./product.sh setup` when you deliberately want the approved remote images refreshed; use `IMAGE_MODE=production` to test the immutable release pins.
+
+The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
+generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
 (no source checkouts — same distribution contract as `./launch.sh`).
 **Runtime Config** edits the evaluation files in the shared runs directory
 (`TEVV_RUNS_DIR`, default `~/tevv-runs`; hot-reloaded). **Calibration**
@@ -41,13 +44,14 @@ Requirements: Docker Engine with Compose, an NVIDIA-capable runtime for Unreal i
 
 Open <http://127.0.0.1:8760> (`MNS_SCENARIO_LAUNCHER_PORT`; it was 8765 until the Foxglove websocket claimed that port).
 
-`setup` creates the local content-addressed PackStore and pulls the current published product image set. It resolves 14 active image references, including the four standalone-v2 product images and the runtime prerequisites used by generated stacks. Every reference is remote and digest-pinned; no product run depends on a locally built or per-level image.
+`setup` creates the local content-addressed PackStore, refreshes the 14 immutable production pins, and then refreshes the 14 mutable development tags used by `make dashboard`. This is the deliberate operation that replaces matching local development tags with their published versions; normal dashboard starts never do that. No product configuration uses `local/...` repository names or per-level runtime images.
 
 Use the pull helper directly when you only want to refresh the image cache:
 
 ```bash
 ./product.sh pull-images                 # active product set
 ./product.sh pull-images --dry-run       # print exact refs without pulling
+./product.sh pull-images --development    # explicitly refresh dashboard development tags
 ./product.sh pull-images --all-catalog   # legacy/optional catalog entries too
 ./product.sh pull-images --refresh-moving
 ```

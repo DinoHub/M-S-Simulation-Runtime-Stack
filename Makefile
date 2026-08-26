@@ -28,6 +28,22 @@ ALL             ?= false
 # Also forwarded to `make stop` (stop.sh auto-detects when empty).
 SCENARIO        ?=
 
+# Transitional image workflow: development is local-first and tag-only;
+# production keeps the immutable catalog pins.
+IMAGE_MODE ?= development
+DASHBOARD_COMPOSE_PROJECT_NAME ?= m-s-simulation-runtime-stack
+ifeq ($(IMAGE_MODE),development)
+DASHBOARD_IMAGE_SET_FILE := images/image-set.development.generated.yaml
+ENSURE_IMAGES_FLAG := --development
+LOAD_DASHBOARD_IMAGES := load_images_env ./images/standalone-v2-development.generated.env
+else ifeq ($(IMAGE_MODE),production)
+DASHBOARD_IMAGE_SET_FILE := images/image-set.generated.yaml
+ENSURE_IMAGES_FLAG := --production
+LOAD_DASHBOARD_IMAGES := load_images_env ./images/standalone-v2-images.generated.env; load_images_env ./product-images.env; load_images_env ./images/platform-images.generated.env
+else
+$(error IMAGE_MODE must be development or production)
+endif
+
 LAUNCH_FLAGS :=
 ifeq ($(EDITOR),true)
 LAUNCH_FLAGS += --editor
@@ -53,46 +69,41 @@ endif
 
 SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images dashboard dashboard-down
 
-dashboard:  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
+ensure-images:  ## Use local image tags; pull only those that are missing
+	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
+
+dashboard: ensure-images  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
 	# Create these as the HOST user first, the way product.sh does. The backend
-	# container runs as root, so if it mkdir's generated/ itself the directory
-	# lands root-owned — and the generator image runs --user $$(id -u):$$(id -g),
-	# so it then fails with "PermissionError: [Errno 13] ... generated/<name>"
-	# surfacing as a 422 from /api/scenario/generate.
+	# container runs as root, so if it mkdirs generated/ itself the directory
+	# lands root-owned and the generator image cannot write into it.
 	@mkdir -p generated scenarios
-	# Fail on an unreachable daemon or an occupied port here, with the occupant
-	# named, instead of mid-`up` — or, for the host-net ros2-tools, not at all.
+	# Fail early on Docker, X11, or host-port problems.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
-	[ "$${DASHBOARD_PULL_POLICY:-missing}" = always ] && check_registry DASHBOARD_PULL_POLICY || true; \
-	set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; \
+	. ./tools/load-images-env.sh; \
+	$(LOAD_DASHBOARD_IMAGES); \
 	check_images "$$MNS_STACK_GENERATOR_IMAGE" "$$MNS_AUTHORING_IMAGE" || true; \
 	check_x11 || true; \
 	check_ports 3001:airsim-dashboard-frontend:frontend \
 	            8001:airsim-dashboard-api:backend \
 	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):dashboard-lichtblick:Lichtblick \
 	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):ros2-tools:"Foxglove websocket" || exit 1
-	# compose_retry, not a bare `up`: one transient registry timeout otherwise
-	# aborts the whole start even though every image is already cached.
-	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; load_images_env ./images/platform-images.generated.env; \
+	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; \
+	$(LOAD_DASHBOARD_IMAGES); \
+	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
 	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
-	# DB=true only: bounce the backend once postgres is healthy. Its telemetry
-	# pool is built at startup and never retried, so a backend that came up
-	# first — or that was already running when the database appeared — serves
-	# every telemetry endpoint off a dead pool until something restarts it. The
-	# API itself no longer waits on postgres (see the compose file), which is
-	# what makes this safe: worst case the bounce costs ~5s, and it cannot hang.
-	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; load_images_env ./images/platform-images.generated.env; 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db 	  restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
-	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082))"
+	# ros2-tools is created outside Compose by the backend. Recreate it so a
+	# locally rebuilt bridge tag is selected on every explicit dashboard start.
+	@docker rm -f ros2-tools >/dev/null 2>&1 || true; docker restart airsim-dashboard-api >/dev/null
+	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
+	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082), image mode: $(IMAGE_MODE))"
 
 dashboard-down:
-	# --profile db unconditionally: without it `down` skips profiled services and
-	# leaves postgres-telemetry (and the db-init one-shot) behind as orphans after
-	# a DB=true session. Naming a profile that was never up is a no-op, so this is
-	# safe either way.
-	@. ./tools/load-images-env.sh; set -a; . ./product-images.env; . ./images/standalone-v2-images.generated.env; set +a; load_images_env ./images/platform-images.generated.env; \
+	@. ./tools/load-images-env.sh; \
+	$(LOAD_DASHBOARD_IMAGES); \
+	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db down
 
 help:
@@ -115,7 +126,8 @@ help:
 	@echo "  check      exit nonzero when rendered files drift from .env+templates"
 	@echo "  self-test  generator invariant checks"
 	@echo "  verify-images  CI gate: images/catalog.yaml matches generated artifacts"
-	@echo "  pull-images    pull every exact published remote image pin"
+	@echo "  ensure-images  use local tags and pull only missing images [IMAGE_MODE=development|production]"
+	@echo "  pull-images    explicitly refresh every exact published remote image pin"
 	@echo "Current flags: $(if $(LAUNCH_FLAGS),$(LAUNCH_FLAGS),(none))"
 
 $(SCENARIOS):

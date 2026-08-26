@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # tools/images.sh — one canonical image catalog: images/catalog.yaml is the
 # single authored source; everything else (product-images.env,
-# images/image-set.generated.yaml, images/platform-images.generated.env,
+# images/image-set.generated.yaml, images/image-set.development.generated.yaml,
+# images/platform-images.generated.env,
+# images/standalone-v2-development.generated.env,
 # images/standalone-v2-images.generated.env,
 # images/legacy-images.generated.env) is generated and committed. See
 # docs/adr/0002-one-image-catalog.md.
@@ -13,7 +15,7 @@
 #   tools/images.sh sync            # regenerate all artifacts (offline)
 #   tools/images.sh verify          # CI gate: selftest + regenerate + diff, exit 1 on
 #                                    # drift or a selftest failure (offline)
-#   tools/images.sh refs            # exact active-product refs; --all-catalog for every row
+#   tools/images.sh refs            # exact refs; add --development for local-first tags
 #   tools/pull-all-images.sh       # pull exact active refs with retries; --all-catalog expands scope
 #   tools/images.sh report          # pinned vs latest on Hub / upstream registries (online)
 #   tools/images.sh bump [--only KEY] [--channel review|moving]

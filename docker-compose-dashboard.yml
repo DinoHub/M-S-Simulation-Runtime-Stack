@@ -99,11 +99,15 @@ services:
       # the backend asserts at startup that whatever arrives here really is
       # this repository rather than trusting the guess.
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:-${PWD}}
+      # The dashboard passes this through to the nested stack-generator run.
+      # Development uses the tag-only overlay; production selects the pinned one.
+      - MNS_IMAGE_SET=published
+      - MNS_IMAGE_SET_FILE=${MNS_IMAGE_SET_FILE:?set by make dashboard}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
-      # The backend owns the ros2-tools sidecar; pin it to the same published
-      # v2 bridge used by generated stacks instead of its baked floating tag.
-      - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?source images/standalone-v2-images.generated.env}
+      # The backend owns the ros2-tools sidecar; select the same published
+      # v2 bridge used by generated stacks instead of its baked default.
+      - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?set by selected image environment}
       - MNS_AUTHORING_DOCKER_ARGS=-v "${MSRS_ROOT:-${PWD}}/config/unreal-airsim/authoring-preview.json:/tmp/Documents/AirSim/settings.json:ro" ${MNS_AUTHORING_DOCKER_ARGS:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}
