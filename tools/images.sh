@@ -14,6 +14,7 @@
 #   tools/images.sh verify          # CI gate: selftest + regenerate + diff, exit 1 on
 #                                    # drift or a selftest failure (offline)
 #   tools/images.sh refs            # exact active-product refs; --all-catalog for every row
+#   tools/pull-all-images.sh       # pull exact active refs with retries; --all-catalog expands scope
 #   tools/images.sh report          # pinned vs latest on Hub / upstream registries (online)
 #   tools/images.sh bump [--only KEY] [--channel review|moving]
 #   tools/images.sh drift           # regenerate committed ScenarioSpecs with the
