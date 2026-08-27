@@ -97,12 +97,16 @@ lexically or numerically the way `-review.N` does, ordering them by tag name
 would be meaningless — the family walk keeps each candidate's registry
 `last_updated` and picks the most recently pushed one as newest.
 
-**`review` and `traced` coexist deliberately.** `mns_authoring`,
-`mns_stack_generator`, `mns_blocks`, and `mns_product_shell` stay on
-`-review.N`; nothing about this decision converts them. They publish from
-different repos with their own release cadence, and migrating them is
-separate work. Recording that here makes the two-scheme catalog a stated
-decision instead of something that reads as unfinished migration.
+**`review` and `traced` coexist deliberately.** `mns_stack_generator`,
+`mns_blocks`, and `mns_product_shell` stay on `-review.N`. `mns_authoring`
+sits on `channel: pinned` at `mns-authoring-v0.2.0-zones-preview.4`,
+deliberately off the review line pending TEVV-Authoring PR #8, with a
+follow-up to move it back to `channel: review` once that work ships as a
+`-review.N` tag. None of the four convert to `traced` by this decision.
+They publish from different repos with their own release cadence, and
+migrating them is separate work. Recording that here makes the two-scheme
+catalog a stated decision instead of something that reads as unfinished
+migration.
 
 ## Consequences
 
@@ -136,8 +140,10 @@ Existing `-latest` tags already on the registry (including
 `tevv-web-dashboard-backend-latest`, `tevv-web-dashboard-frontend-latest`,
 and `airsim-tools-latest`) are untouched by this decision: nothing here
 deletes or repoints them, it only stops new publishes from adding to their
-history. `mns_authoring`, `mns_stack_generator`, `mns_blocks`, and
-`mns_product_shell` keep publishing to `-review.N` exactly as before.
+history. `mns_stack_generator`, `mns_blocks`, and `mns_product_shell`
+keep publishing to `-review.N` exactly as before; `mns_authoring` keeps
+publishing to its off-line `channel: pinned` `-zones-preview.N` tag exactly
+as before.
 
 ## Cross-references
 
