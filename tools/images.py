@@ -204,6 +204,21 @@ def _validate_catalog(data: Any) -> None:
             if not spec.get("emits"):
                 raise CatalogError(
                     f"consumers.release_channels.{name}: needs an emits path")
+    # Optional: only a catalog that ships pack release locks declares these.
+    locks = consumers.get("pack_locks")
+    if locks is not None:
+        if not isinstance(locks, dict):
+            raise CatalogError("consumers.pack_locks: must be a mapping")
+        for lock_path, mapping in locks.items():
+            if not isinstance(mapping, dict) or not mapping:
+                raise CatalogError(
+                    f"consumers.pack_locks.{lock_path}: needs a non-empty "
+                    f"lock-key -> image-key mapping")
+            for lock_key, image_key in mapping.items():
+                if image_key not in data["images"]:
+                    raise CatalogError(
+                        f"consumers.pack_locks.{lock_path}.{lock_key} "
+                        f"references unknown image key {image_key!r}")
 
 
 def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
@@ -280,10 +295,18 @@ def render_product_env(catalog: dict[str, Any]) -> str:
 
 
 def _resolve_image_set(images: dict[str, Any], raw: dict[str, Any],
-                        base: dict[str, Any] | None) -> dict[str, Any]:
+                        base: dict[str, Any] | None,
+                        resolve_leaf: Any = image_ref) -> dict[str, Any]:
     """Deep-merge `raw.images` (key -> catalog key) over `base` (already-resolved
     refs), matching MnS-Integration-Platform's merge_dicts (scalars replaced
-    wholesale, mappings merged key-by-key)."""
+    wholesale, mappings merged key-by-key).
+
+    `resolve_leaf` turns a catalog KEY into a ref. The development overlay
+    passes development_ref here rather than post-processing the rendered
+    production tree: a ref->ref rewrite table keys on the rendered string, so
+    two rows sharing a repo:tag@digest would collapse onto whichever
+    latest_tag iterated last, silently and with no error.
+    """
     def merge(base_node: Any, overlay_keys: Any) -> Any:
         if isinstance(overlay_keys, dict):
             result = dict(base_node) if isinstance(base_node, dict) else {}
@@ -291,7 +314,7 @@ def _resolve_image_set(images: dict[str, Any], raw: dict[str, Any],
                 result[k] = merge(result.get(k), v)
             return result
         # overlay_keys is a leaf: a catalog image key -> resolve to a ref
-        return image_ref(images, overlay_keys)
+        return resolve_leaf(images, overlay_keys)
 
     resolved = merge(base or {}, raw.get("images") or {})
     return {
@@ -300,7 +323,8 @@ def _resolve_image_set(images: dict[str, Any], raw: dict[str, Any],
     }
 
 
-def resolved_image_sets(catalog: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def resolved_image_sets(catalog: dict[str, Any],
+                        resolve_leaf: Any = image_ref) -> dict[str, dict[str, Any]]:
     images = catalog["images"]
     sets_cfg = catalog["consumers"]["image_sets"]
     resolved: dict[str, dict[str, Any]] = {}
@@ -315,9 +339,9 @@ def resolved_image_sets(catalog: dict[str, Any]) -> dict[str, dict[str, Any]]:
             base_raw = pending.get(base_name)
             if base_raw is None:
                 raise CatalogError(f"image_sets.{name} inherits unknown set {base_name!r}")
-            resolved[base_name] = _resolve_image_set(images, base_raw, None)
+            resolved[base_name] = _resolve_image_set(images, base_raw, None, resolve_leaf)
             base = resolved[base_name]["images"]
-        resolved[name] = _resolve_image_set(images, raw, base)
+        resolved[name] = _resolve_image_set(images, raw, base, resolve_leaf)
     return resolved
 
 
@@ -339,28 +363,13 @@ def render_development_image_set(catalog: dict[str, Any]) -> str:
     this development artifact so a locally built matching tag wins; Compose
     pulls the tag only when it is absent from the Docker image store.
     """
-    images = catalog["images"]
-    development_refs = {
-        image_ref(images, key): development_ref(images, key)
-        for key in images
-    }
-
-    def tag_only(node: Any) -> Any:
-        if isinstance(node, dict):
-            return {key: tag_only(value) for key, value in node.items()}
-        if isinstance(node, list):
-            return [tag_only(value) for value in node]
-        if isinstance(node, str):
-            return development_refs.get(node, node)
-        return node
-
     header = (
         "schema: mns.image_sets.v1\n\n"
         f"{GENERATED_MARKER}\n"
         "# Development overlay: tag-only refs plus pull_policy: missing let a\n"
         "# local build win and pull the published tag only when it is absent.\n\n"
     )
-    body = {"image_sets": tag_only(resolved_image_sets(catalog))}
+    body = {"image_sets": resolved_image_sets(catalog, development_ref)}
     return header + yaml.safe_dump(body, sort_keys=False, default_flow_style=False)
 
 
@@ -658,10 +667,56 @@ def cmd_sync(_args: argparse.Namespace) -> int:
     return 0
 
 
+def pack_lock_drift(catalog: dict[str, Any]) -> list[str]:
+    """Assert packs/*.lock.json restates the catalog's pins verbatim.
+
+    The lock exists because tools/install_demo_packs.py must pull the product
+    shell before this repo has resolved anything, so it cannot read the
+    catalog. That makes it a second copy of a pin — the same shape that let
+    product-images.env drift to review.20 against this repo's review.22 — so
+    the copy is asserted here instead of trusted. Offline: pure file compare.
+    """
+    images = catalog["images"]
+    problems: list[str] = []
+    for lock_path, mapping in (catalog["consumers"].get("pack_locks") or {}).items():
+        path = ROOT / lock_path
+        if not path.is_file():
+            problems.append(f"{lock_path}: declared in consumers.pack_locks but not on disk")
+            continue
+        try:
+            lock = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            problems.append(f"{lock_path}: not valid JSON ({exc})")
+            continue
+        required = lock.get("required_images") or {}
+        for lock_key, image_key in sorted(mapping.items()):
+            want = image_ref(images, image_key)
+            got = required.get(lock_key)
+            if got is None:
+                problems.append(
+                    f"{lock_path}: required_images.{lock_key} is missing "
+                    f"(catalog {image_key} = {want})")
+            elif got != want:
+                problems.append(
+                    f"{lock_path}: required_images.{lock_key} does not match "
+                    f"catalog {image_key}\n    lock:    {got}\n    catalog: {want}")
+        for lock_key in sorted(set(required) - set(mapping)):
+            problems.append(
+                f"{lock_path}: required_images.{lock_key} is pinned but not declared "
+                f"in consumers.pack_locks, so nothing checks it")
+    return problems
+
+
 def cmd_verify(_args: argparse.Namespace) -> int:
     run_selftest()  # regression guard: must pass before trusting the real catalog
     catalog = load_catalog()
     assert_invariants(catalog)
+    lock_problems = pack_lock_drift(catalog)
+    if lock_problems:
+        for problem in lock_problems:
+            print(f"DRIFT: {problem}", file=sys.stderr)
+        print("regenerate the pack release lock, or fix consumers.pack_locks", file=sys.stderr)
+        return 1
     artifacts = render_all(catalog)
     drifted = []
     for path, content in artifacts.items():
@@ -673,7 +728,9 @@ def cmd_verify(_args: argparse.Namespace) -> int:
             print(f"DRIFT: {path.relative_to(ROOT)} does not match images/catalog.yaml", file=sys.stderr)
         print("run: tools/images.sh sync", file=sys.stderr)
         return 1
-    checked = ", ".join(sorted(str(p.relative_to(ROOT)) for p in artifacts))
+    names = sorted(str(p.relative_to(ROOT)) for p in artifacts)
+    names += sorted(catalog["consumers"].get("pack_locks") or {})
+    checked = ", ".join(names)
     print(f"verify: ok ({checked} all match images/catalog.yaml)")
     return 0
 

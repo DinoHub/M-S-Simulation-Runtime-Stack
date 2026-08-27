@@ -12,6 +12,14 @@ on:
       - "tools/images.sh"
       - "tools/check-image-pins.sh"
       - "tools/pull-all-images.sh"
+      - "tools/ensure-images.sh"
+      - "tools/stage-authoring-packs.sh"
+      - "tools/install-demo-packs.sh"
+      - "tools/install_demo_packs.py"
+      - "tools/load-images-env.sh"
+      - "packs/**"
+      - "docker-compose-dashboard.yml"
+      - "tests/full-product-e2e/run.sh"
       - "product.sh"
       - "Makefile"
       - ".github/workflows/images.yml"
@@ -46,6 +54,62 @@ jobs:
         # so it is reported, never a failure. `|| true` keeps status's
         # nonzero-means-actionable contract intact for every other caller.
         run: tools/images.sh status --offline || true
+
+      # The steps below exist because the paths: filter above used to list
+      # executables that nothing in this job ever ran, so touching them
+      # triggered a workflow that could not fail on them.
+      - name: shellcheck the image entrypoints
+        run: |
+          shellcheck -S warning \
+            product.sh \
+            tools/images.sh \
+            tools/pull-all-images.sh \
+            tools/ensure-images.sh \
+            tools/stage-authoring-packs.sh \
+            tools/install-demo-packs.sh \
+            tools/load-images-env.sh \
+            tests/full-product-e2e/run.sh
+
+      - name: python syntax
+        run: python -m compileall -q tools/images.py tools/install_demo_packs.py
+
+      - name: offline dry-run smoke
+        # Every one of these resolves the catalog and prints; none contacts a
+        # registry or the Docker daemon.
+        run: |
+          tools/images.sh refs > /dev/null
+          tools/images.sh refs --development > /dev/null
+          tools/pull-all-images.sh --dry-run > /dev/null
+          tools/pull-all-images.sh --dry-run --all-catalog > /dev/null
+          tools/install-demo-packs.sh --all --dry-run > /dev/null
+
+      - name: --dry-run must refuse --refresh-moving
+        # Guards the ordering bug where the bump ran BEFORE the dry-run exit
+        # and rewrote eight tracked files.
+        run: |
+          if tools/pull-all-images.sh --dry-run --refresh-moving; then
+            echo "expected a nonzero exit" >&2
+            exit 1
+          fi
+          git diff --exit-code
+
+      - name: dashboard compose resolves without make
+        # docker-compose-dashboard.yml interpolates every service at parse
+        # time, so a required variable there breaks `down`/`ps`/`logs` too.
+        # This is the by-hand invocation its own header documents.
+        run: |
+          cp .env.example .env
+          docker compose -f docker-compose-dashboard.yml \
+            --env-file .env \
+            --env-file images/standalone-v2-development.generated.env \
+            config > /dev/null
+          docker compose -f docker-compose-dashboard.yml \
+            --env-file .env \
+            --env-file images/standalone-v2-images.generated.env \
+            --env-file product-images.env \
+            --env-file images/platform-images.generated.env \
+            config > /dev/null
+          rm -f .env
 
   # Weekly drift watch. Online, so it CAN fail for reasons that are not a
   # code problem (Docker Hub rate limits an unauthenticated runner). That is

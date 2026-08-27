@@ -2,9 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# This harness is the v1/Blocks rollback check, so it pins itself to the v1
+# product shell in product-images.env — NOT the standalone-v2 shell that
+# product.sh, setup, doctor, and pull-images now resolve from
+# images/standalone-v2-images.generated.env. The two are different images.
 # shellcheck disable=SC1091
 source "$ROOT/product-images.env"
-FIXTURE="$ROOT/tests/full-product-e2e/fixture"
 AUTHORED="$ROOT/scenarios/full-product-e2e-export"
 AUTHORING_DATA="$ROOT/.mns/full-product-e2e/authoring-data"
 STACK="$ROOT/generated/full-product-e2e-export"
@@ -21,8 +24,8 @@ compose() {
     # shellcheck disable=SC1090
     source "$STACK/.env"
     set +a
-    export HOST_UID="$(id -u)"
-    export GID="$(id -g)"
+    HOST_UID="$(id -u)"; export HOST_UID
+    GID="$(id -g)"; export GID
     export CONFIG_ROOT="$STACK/config"
     export DISPLAY="${DISPLAY:-:1}"
     export XAUTHORITY="${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}"
@@ -104,9 +107,10 @@ wait_for_sensor_topics() {
   local runtime_name="$2"
   local camera_topic="/$runtime_name/front_rgb_Scene/image"
   local lidar_topic="/$runtime_name/LidarSensor1/points"
-  local container attempt
+  local container
   container="$(compose ps -q "$service")"
   [[ -n "$container" ]] || { log "missing bridge container for $runtime_name"; return 1; }
+  # shellcheck disable=SC2034  # the counter only bounds the retry loop
   for attempt in $(seq 1 90); do
     docker exec "$container" bash -lc \
       'source /opt/ros/humble/setup.bash; source /ws/install/setup.bash; ROS_DISABLE_DAEMON=1 ros2 topic list' \
@@ -148,7 +152,17 @@ capture_rate() {
 export MNS_AUTHORING_DATA_ROOT="$AUTHORING_DATA"
 rm -rf "$AUTHORING_DATA/PackLibrary/asset_packs/scenario_runtime_basic.mnsassetpack"
 
-log "checking the four pinned product images"
+# `product.sh doctor` below enumerates the standalone-v2 set, which does not
+# contain the v1 shell verify() runs. Nothing else pulls it, so without this the
+# first verify() failed on an image `setup` was never asked to fetch.
+log "ensuring the v1 product shell this harness verifies with is present"
+: "${MNS_PRODUCT_SHELL_IMAGE:?product-images.env did not set MNS_PRODUCT_SHELL_IMAGE}"
+if ! docker image inspect "$MNS_PRODUCT_SHELL_IMAGE" >/dev/null 2>&1; then
+  log "pulling $MNS_PRODUCT_SHELL_IMAGE"
+  docker pull "$MNS_PRODUCT_SHELL_IMAGE"
+fi
+
+log "checking the pinned standalone-v2 product images"
 "$ROOT/product.sh" doctor
 
 log "starting the browser product shell"

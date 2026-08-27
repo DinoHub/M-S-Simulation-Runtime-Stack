@@ -1,3 +1,17 @@
+# LEGACY v1 SCENARIO SPEC — not usable with the standalone-v2 image set.
+#
+# v2 selects a world with environment.id + environment.version +
+# environment.artifact_digest, and images/image-set.generated.yaml now ships a
+# single generic simulator (tevv_runtime_host) that loads the level pack those
+# fields name. This file still names a v1 per-world simulator key, which the
+# overlay no longer defines, so `product.sh cli runtime` and the dashboard
+# cannot generate a runnable stack from it and `tools/images.sh drift` skips
+# it by design.
+#
+# It is kept as a reference for the legacy static compose stacks under
+# compose/ (driven by launch.sh, which never reads this file). To get a
+# runnable v2 spec, install a level pack (tools/install-demo-packs.sh) and
+# re-author the scenario in ScenarioLab.
 schema: mns.scenario.v1
 id: xfs-ardupilot
 name: xfs-ardupilot

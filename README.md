@@ -61,7 +61,7 @@ Use the pull helper directly when you only want to refresh the image cache:
 ./product.sh pull-images --refresh-moving
 ```
 
-`--refresh-moving` resolves the catalog entries that explicitly declare a `-latest` alias, records their new immutable digests, regenerates the image files, and then pulls them. Commit and review those catalog changes before using them for a release. The normal command never silently changes a digest.
+`--refresh-moving` runs `tools/images.sh bump --channel moving`: it advances every `channel: moving` row — the legacy simulator, observability, and dashboard images, whose tags are republished in place — to whatever digest that tag resolves to now, regenerates the image files, and then pulls them. It deliberately does **not** touch the standalone-v2 rows: those are `channel: pinned`, and `bump` refuses pinned rows so a release pin only ever moves by hand. Because it rewrites `images/catalog.yaml`, it cannot be combined with `--dry-run`; use `tools/images.sh report` to preview instead. Commit and review those catalog changes before using them for a release. The normal command never silently changes a digest.
 
 Install the checksum-verified standalone-v2 demo catalog before authoring or generating a runtime:
 
@@ -73,7 +73,7 @@ tools/install-demo-packs.sh --objects   # market props, people, and object vehic
 
 The installer downloads the assets declared in `packs/standalone-v2-review.1.lock.json`, verifies their full SHA-256 checksums, installs them into the local content-addressed `.mns/pack-store`, and refreshes ScenarioLab's resolved pack index. Individual environment selections are `--xfs`, `--safti`, `--condo`, and `--pendleton`; individual object selections are `--market`, `--people`, and `--vehicles`. Run with `--dry-run` to inspect the selected immutable assets without downloading them.
 
-Each generated ScenarioSpec selects an environment with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact. The catalog includes six authoring vehicle models independently of the three placeable object-vehicle models.
+Each generated ScenarioSpec selects an environment with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact. The specs committed under `scenarios/` predate this and carry only `environment.id`, so they cannot select a v2 level pack — each one now says so in its header, and `tools/images.sh drift` skips them by name rather than reporting a generation failure. They remain as a reference for the legacy static stacks under `compose/`; re-author them in ScenarioLab to migrate. The catalog includes six authoring vehicle models independently of the three placeable object-vehicle models.
 
 Stop the browser shell with:
 

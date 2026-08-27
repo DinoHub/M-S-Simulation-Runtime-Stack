@@ -13,7 +13,12 @@ usage() {
   echo "Pulls the active product's remote images at exact catalog tag+digest pins."
   echo "--all-catalog includes legacy and optional observability images."
   echo "--development refreshes mutable tag-only refs used by make dashboard."
-  echo "--refresh-moving first advances mutable catalog pins, regenerates, and verifies."
+  echo "--refresh-moving first runs 'images.sh bump --channel moving', regenerates, and"
+  echo "  verifies. That advances every channel: moving row (the legacy sims,"
+  echo "  observability, and dashboard images) to the digest its mutable tag points at"
+  echo "  now. It does NOT touch the standalone-v2 rows: those are channel: pinned,"
+  echo "  and bump refuses pinned rows by design. Rewrites the catalog, so it is"
+  echo "  refused together with --dry-run."
 }
 
 while [[ $# -gt 0 ]]; do
@@ -27,6 +32,18 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+# Refuse rather than silently ignore: --refresh-moving REWRITES
+# images/catalog.yaml and every generated artifact, which is the opposite of
+# --dry-run's documented "print exact refs without pulling". Ordering the
+# checks the other way round (bump first, DRY_RUN exit later) meant
+# `--dry-run --refresh-moving` mutated eight tracked files.
+if [[ "$REFRESH_MOVING" == true && "$DRY_RUN" == true ]]; then
+  echo "ERROR: --refresh-moving rewrites images/catalog.yaml and the generated" >&2
+  echo "       artifacts, so it cannot be combined with --dry-run." >&2
+  echo "       To preview: tools/images.sh report" >&2
+  exit 2
+fi
 
 if [[ "$REFRESH_MOVING" == true ]]; then
   "$ROOT/tools/images.sh" bump --channel moving

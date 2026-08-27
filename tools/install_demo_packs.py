@@ -25,7 +25,23 @@ def sha256_file(path: Path) -> str:
 
 
 def run(command: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, check=True, text=True, capture_output=capture)
+    """Run a command, surfacing its stderr when it fails.
+
+    With capture_output=True, CalledProcessError swallows the child's stderr:
+    a failed `packs install` reported only "returned non-zero exit status 1"
+    and the real cause (bad archive, disk full, permission) was lost. Echo the
+    captured streams before re-raising so the caller's handler still sees a
+    CalledProcessError but the operator sees the reason.
+    """
+    try:
+        return subprocess.run(command, check=True, text=True, capture_output=capture)
+    except subprocess.CalledProcessError as exc:
+        if capture:
+            for stream, label in ((exc.stdout, "stdout"), (exc.stderr, "stderr")):
+                if stream:
+                    print(f"--- {' '.join(command[:3])}... {label} ---", file=sys.stderr)
+                    print(stream.rstrip(), file=sys.stderr)
+        raise
 
 
 def ensure_image(image: str) -> None:
@@ -97,7 +113,17 @@ def main(argv: list[str] | None = None) -> int:
 
     image = lock["required_images"]["product_shell"]
     ensure_image(image)
-    with tempfile.TemporaryDirectory(prefix="mns-demo-packs-") as temporary:
+    # Stage downloads inside the repo, not $TMPDIR. --all fetches ~2.6 GB (XFS
+    # alone is 1.17 GB) and on the common systemd layout /tmp is a tmpfs sized
+    # at half of RAM, so the default location ENOSPC'd partway through and
+    # discarded everything already fetched. .mns/ is gitignored and is where
+    # the pack store lives anyway, so it is on the same filesystem the install
+    # needs space on. MNS_DEMO_PACK_DOWNLOAD_DIR overrides it.
+    download_parent = Path(
+        os.environ.get("MNS_DEMO_PACK_DOWNLOAD_DIR") or (ROOT / ".mns" / "downloads")
+    )
+    download_parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="mns-demo-packs-", dir=download_parent) as temporary:
         download_root = Path(temporary)
         for pack in selected:
             archive = download_root / pack["asset_name"]
@@ -115,7 +141,14 @@ def main(argv: list[str] | None = None) -> int:
                     f"SHA-256 mismatch for {archive.name}: "
                     f"{actual_sha256} != {pack['sha256']}"
                 )
-            install_archive(image, archive, pack["artifact_digest"])
+            try:
+                install_archive(image, archive, pack["artifact_digest"])
+            finally:
+                # Free each archive as soon as it is installed. Holding all
+                # seven until the TemporaryDirectory unwound meant --all needed
+                # the full ~2.6 GB at once, on top of the copies written into
+                # .mns/pack-store.
+                archive.unlink(missing_ok=True)
             print(f"Installed {pack['id']}@{pack['version']}.")
 
     environment = os.environ.copy()
