@@ -20,7 +20,7 @@ name: tools
 
 services:
   tools:
-    image: ${AIRSIM_TOOLS_IMAGE:-dhdevspace/auto_mns:airsim-tools-latest}
+    image: ${AIRSIM_TOOLS_IMAGE:-dhdevspace/auto_mns:airsim-tools-v0.2.0-retag.2026-08-26}
     pull_policy: if_not_present
     profiles: ["tools"]
     network_mode: host
