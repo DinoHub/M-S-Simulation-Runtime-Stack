@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fnmatch
 import json
 import os
 import re
@@ -517,31 +518,70 @@ def owned_tag_prefixes(images: dict[str, Any]) -> set[str]:
     the tag with its version/suffix stripped. Derived from the catalog so an
     image name is never written down twice."""
     out: set[str] = set()
-    for row in images.values():
+    for key, row in images.items():
         if not row.get("published_by"):
             continue
-        component = re.sub(r"-(v\d+\.\d+\.\d+|latest|review)\b.*$", "", row["tag"])
+        tag = row["tag"]
+        component = re.sub(r"-(v\d+\.\d+\.\d+|latest|review)\b.*$", "", tag)
+        if component == tag:
+            # channel: pinned tags are free-form, so this substitution can be
+            # a no-op — the component would become the whole tag and the
+            # -latest guard would silently stop protecting this image.
+            raise CatalogError(
+                f"images.{key}: published_by tag {tag!r} does not match "
+                "-v<x.y.z>, -latest or -review<N> so no component prefix "
+                "could be derived for the mutable-tag guard. Give it a "
+                "parseable tag."
+            )
         out.add(f"{row['repo']}:{component}")
     return out
+
+
+def _tracked_files(root: Path) -> list[Path] | None:
+    """Paths git tracks under root, or None if git is unavailable / the
+    command fails. Callers must fall back to a filesystem walk in that case —
+    a guard that quietly scans nothing is worse than one that over-reports."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            capture_output=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    names = result.stdout.decode("utf-8", "surrogateescape").split("\0")
+    return [root / name for name in names if name]
 
 
 def scan_for_mutable_refs(root: Path, prefixes: set[str]) -> list[tuple[str, int, str]]:
     hits: list[tuple[str, int, str]] = []
     if not prefixes:
         return hits
-    for pattern in _MUTABLE_SCAN_GLOBS:
-        for path in sorted(root.rglob(pattern)):
-            rel = path.relative_to(root).as_posix()
-            if any(rel == d or rel.startswith(f"{d}/") for d in _MUTABLE_SCAN_SKIP_DIRS):
-                continue
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                continue
-            for n, line in enumerate(text.splitlines(), start=1):
-                for prefix in prefixes:
-                    if f"{prefix}-latest" in line:
-                        hits.append((rel, n, line.strip()))
+    # The spec scans "a tracked file in this repo" — restrict to git's index
+    # first so untracked scratch (e.g. .superpowers/sdd/ task briefs, which
+    # quote the very -latest strings this guard forbids) is never scanned.
+    # Fall back to the filesystem walk only if git itself is unusable.
+    tracked = _tracked_files(root)
+    if tracked is not None:
+        candidates = [
+            path for path in tracked
+            if any(fnmatch.fnmatch(path.name, pattern) for pattern in _MUTABLE_SCAN_GLOBS)
+        ]
+    else:
+        candidates = [path for pattern in _MUTABLE_SCAN_GLOBS for path in root.rglob(pattern)]
+    for path in sorted(set(candidates)):
+        rel = path.relative_to(root).as_posix()
+        if any(rel == d or rel.startswith(f"{d}/") for d in _MUTABLE_SCAN_SKIP_DIRS):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for n, line in enumerate(text.splitlines(), start=1):
+            for prefix in prefixes:
+                if f"{prefix}-latest" in line:
+                    hits.append((rel, n, line.strip()))
     return hits
 
 
@@ -894,6 +934,63 @@ consumers:
         assert [(p, n) for p, n, _ in hits] == [("compose.yml", 3)], (
             f"selftest FAILED: expected exactly the owned -latest hit, got {hits}"
         )
+
+    # 8b. The scan must only look at files git tracks, not the whole working
+    #     tree — an untracked scratch file (e.g. task-brief scratch under
+    #     .superpowers/sdd/) quoting a forbidden -latest string must not trip
+    #     it, and a tracked file with the same content must. If git itself is
+    #     unusable (no repo at all), the scan must fall back to the filesystem
+    #     walk rather than silently finding nothing.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        tracked_path = root / "docker-compose-tools.yml"
+        tracked_path.write_text("image: example/repo:thing-latest\n", encoding="utf-8")
+        subprocess.run(["git", "add", "docker-compose-tools.yml"], cwd=root, check=True)
+        untracked_path = root / "scratch.md"
+        untracked_path.write_text("image: example/repo:thing-latest\n", encoding="utf-8")
+        hits = scan_for_mutable_refs(root, prefixes)
+        assert [(p, n) for p, n, _ in hits] == [("docker-compose-tools.yml", 1)], (
+            f"selftest FAILED: expected only the tracked file to be scanned, got {hits}"
+        )
+    # No git repo at all -> fall back to the filesystem walk, not an empty scan.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "docker-compose-tools.yml").write_text(
+            "image: example/repo:thing-latest\n", encoding="utf-8")
+        hits = scan_for_mutable_refs(root, prefixes)
+        assert [(p, n) for p, n, _ in hits] == [("docker-compose-tools.yml", 1)], (
+            f"selftest FAILED: expected the filesystem-walk fallback to still find the "
+            f"hit when git is unusable, got {hits}"
+        )
+
+    # 8c. A published_by tag that owned_tag_prefixes cannot reduce to a
+    #     component (channel: pinned tags are free-form) must raise loudly
+    #     rather than silently disabling the -latest guard for that image.
+    #     The real free-form pinned tag in the catalog DOES parse (it carries
+    #     -v0.2.0) and must keep working.
+    unparseable = {
+        "fixture": {"repo": "example/repo", "tag": "airsim-tools-20260901",
+                    "channel": "pinned", "published_by": "x/tools/build.sh",
+                    "digest": None, "purpose": "p"},
+    }
+    try:
+        owned_tag_prefixes(unparseable)
+    except CatalogError:
+        pass
+    else:
+        raise AssertionError(
+            "selftest FAILED: owned_tag_prefixes silently no-op'd on an "
+            "unparseable published_by tag instead of raising"
+        )
+    real_case = owned_tag_prefixes({
+        "fixture": {"repo": "example/repo", "tag": "airsim-tools-v0.2.0-retag.2026-08-26",
+                    "channel": "pinned", "published_by": "x/tools/build.sh",
+                    "digest": None, "purpose": "p"},
+    })
+    assert real_case == {"example/repo:airsim-tools"}, (
+        f"selftest FAILED: owned_tag_prefixes broke the real pinned re-tag case: {real_case}"
+    )
 
     # 9. Traced tags do not sort: g6e6ae15 vs gaaaaaaa says nothing about
     #    which came first. Newest means most recently pushed.
