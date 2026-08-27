@@ -1068,6 +1068,19 @@ consumers:
             f"selftest FAILED: expected exactly the owned -latest hit, got {hits}"
         )
 
+    # 9. Traced tags do not sort: g6e6ae15 vs gaaaaaaa says nothing about
+    #    which came first. Newest means most recently pushed.
+    tags = [
+        ("dash-backend-v0.2.0-gaaaaaaa", "2026-08-20T10:00:00Z"),
+        ("dash-backend-v0.2.0-g6e6ae15", "2026-08-26T09:00:00Z"),
+        ("dash-backend-v0.1.0-gbbbbbbb", "2026-08-01T10:00:00Z"),
+        ("dash-backend-latest", "2026-08-27T10:00:00Z"),   # not traced: ignored
+        ("dash-frontend-v0.2.0-gccccccc", "2026-08-27T11:00:00Z"),  # other component
+    ]
+    got = newest_traced(tags, "dash-backend")
+    assert got == "dash-backend-v0.2.0-g6e6ae15", f"selftest FAILED: newest_traced -> {got!r}"
+    assert newest_traced(tags, "dash-nothing") is None
+
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
     run_selftest()
@@ -1123,14 +1136,16 @@ def _hub_digest_for(repo: str, tag: str, token: str) -> tuple[str, str | None]:
         return "", f"error: {exc}"
 
 
-def _hub_tags(repo: str, family: str, token: str) -> tuple[list[str], str | None]:
-    out: list[str] = []
+def _hub_tags(repo: str, family: str, token: str) -> tuple[list[tuple[str, str]], str | None]:
+    """(name, last_updated) per tag. last_updated is what orders a traced
+    family — sha tags carry no ordering of their own."""
+    out: list[tuple[str, str]] = []
     url = f"https://hub.docker.com/v2/repositories/{repo}/tags/?page_size=100&name={family}"
     try:
         while url:
             req = urllib.request.Request(url, headers={"Authorization": f"JWT {token}"})
             d = json.load(urllib.request.urlopen(req, timeout=30))
-            out += [t["name"] for t in d["results"]]
+            out += [(t["name"], t.get("last_updated") or "") for t in d["results"]]
             url = d.get("next")
         return out, None
     except urllib.error.HTTPError as exc:
@@ -1139,6 +1154,17 @@ def _hub_tags(repo: str, family: str, token: str) -> tuple[list[str], str | None
         return out, f"network: {exc.reason}"
     except Exception as exc:
         return out, f"error: {exc}"
+
+
+def newest_traced(tags: list[tuple[str, str]], component_prefix: str) -> str | None:
+    """Most recently pushed traced tag for one component. Ordering is by
+    registry push time because a sha tag has no intrinsic order — this is the
+    whole reason the traced family walk cannot reuse the review one."""
+    candidates = [
+        (updated, name) for name, updated in tags
+        if name.startswith(f"{component_prefix}-") and TRACED_TAG_RE.search(name)
+    ]
+    return max(candidates)[1] if candidates else None
 
 
 def _review_num(tag: str) -> int | None:
@@ -1305,7 +1331,7 @@ def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, A
     if channel == "review":
         m = re.match(r"^(.*-review)\.\d+$", tag)
         family = m.group(1) if m else None
-        family_tags: list[str] = []
+        family_tags: list[tuple[str, str]] = []
         if family:
             family_tags, tags_err = _hub_tags(repo, family, token)
             if tags_err and not family_tags:
@@ -1314,7 +1340,7 @@ def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, A
                 # rather than masking it as OK.
                 return _row_result(key, row, status="NO_TAGS_FOUND",
                                     detail=f"tag search failed: {tags_err}", live_digest=live)
-        candidates = [(_review_num(t), t) for t in family_tags if _review_num(t) is not None]
+        candidates = [(_review_num(t), t) for t, _ in family_tags if _review_num(t) is not None]
         latest = max(candidates)[1] if candidates else tag
         if not family or not candidates:
             return _row_result(key, row, status="NO_TAGS_FOUND", detail="no -review.N siblings found",
@@ -1334,6 +1360,28 @@ def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, A
             detail = latest_live[:19] if latest_live else (latest_err or "")
             return _row_result(key, row, status="STALE", detail=detail,
                                 latest_tag=latest, live_digest=latest_live)
+        return _row_result(key, row, status="OK", detail=live[:19], live_digest=live)
+
+    if channel == "traced":
+        component = re.sub(r"-v\d+\.\d+\.\d+-g[0-9a-f]{7,}(\.\d+)?$", "", tag)
+        family_tags, tags_err = _hub_tags(repo, component, token)
+        if tags_err and not family_tags:
+            return _row_result(key, row, status="NO_TAGS_FOUND",
+                               detail=f"tag search failed: {tags_err}", live_digest=live)
+        latest = newest_traced(family_tags, component)
+        if not latest:
+            return _row_result(key, row, status="NO_TAGS_FOUND",
+                               detail="no traced siblings found", live_digest=live)
+        if not pinned_digest:
+            return _row_result(key, row, status="NO_DIGEST", detail=live[:19], live_digest=live)
+        if live != pinned_digest:
+            # An immutable tag that moved means someone force-pushed over it.
+            return _row_result(key, row, status="TAG_MOVED", detail=live[:19], live_digest=live)
+        if latest != tag:
+            latest_live, latest_err = _hub_digest_for(repo, latest, token)
+            detail = latest_live[:19] if latest_live else (latest_err or "")
+            return _row_result(key, row, status="STALE", detail=detail,
+                               latest_tag=latest, live_digest=latest_live)
         return _row_result(key, row, status="OK", detail=live[:19], live_digest=live)
 
     # channel == moving / upstream / pinned: no tag family to walk, so the
@@ -1503,7 +1551,7 @@ def cmd_bump(args: argparse.Namespace) -> int:
 
 # Statuses that mean a human has to do something, and the one line each.
 _ACTIONABLE = {
-    "STALE": "newer -review.N published — tools/images.sh bump",
+    "STALE": "a newer tag was published — tools/images.sh bump",
     "TAG_MOVED": "tag now resolves elsewhere — tools/images.sh bump",
     "DIGEST_CHANGED": "tag now resolves elsewhere — tools/images.sh bump",
     "NO_DIGEST": "pinned by tag alone — tools/images.sh bump",
@@ -1576,6 +1624,18 @@ def cmd_status(args: argparse.Namespace) -> int:
         followups.append(("(repo)", note))
     followup_text = " ".join(note for _, note in followups).lower()
 
+    # Rows published before the current product_version. Not actionable — a
+    # published tag keeps the version it was built under — but the lag should
+    # be visible, because "every image still says v0.1.0" is how a bump that
+    # nobody rebuilt against looks from the outside.
+    behind: list[tuple[str, str]] = []
+    pv = _semver(catalog["product_version"])
+    for key in sorted(images):
+        claimed = traced_tag_version(images[key]["tag"])
+        if claimed is not None and claimed < pv:
+            behind.append((key, f"published under v{'.'.join(str(n) for n in claimed)}, "
+                                f"product_version is {catalog['product_version']}"))
+
     # 3. online: pin vs registry. Skipped entirely with --offline so this
     # command still works on a plane, or in CI with no registry credentials.
     suppressed = 0
@@ -1618,7 +1678,7 @@ def cmd_status(args: argparse.Namespace) -> int:
               f"delete the entry when done")
         _print_notes(followups, 4)
 
-    fyi_total = len(unpublished) + len(overrides)
+    fyi_total = len(unpublished) + len(overrides) + len(behind)
     print(f"\nFYI ({fyi_total}) — known and deliberate, no action")
     if overrides:
         print(f"\n  overridden by ./.env ({len(overrides)}) — for these the catalog "
@@ -1627,6 +1687,9 @@ def cmd_status(args: argparse.Namespace) -> int:
     if unpublished:
         print(f"\n  unpublished ({len(unpublished)})")
         _print_table(unpublished, 4)
+    if behind:
+        print(f"\n  published before the current product version ({len(behind)})")
+        _print_table(behind, 4)
     if suppressed:
         print(f"\n  ({suppressed} unpublished row(s) already named in a follow-up above)")
     if args.offline:
