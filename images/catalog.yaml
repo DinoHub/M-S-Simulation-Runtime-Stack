@@ -1,4 +1,10 @@
 schema: mns.images.v1
+# The version segment of every tag we publish. Mirrors
+# MnS-Integration-Platform/mns-product.yaml's `version`; see ADR-0003 for when
+# it moves (pre-1.0: MINOR on a contract change or new capability, PATCH on
+# fixes). Nothing is re-tagged when it moves — a published tag keeps the
+# version it was built under, which is the point of a tag that names its source.
+product_version: "0.2.0"
 
 # Reminders that belong to no single image row. `tools/images.sh status`
 # prints these under NEEDS YOU every time it runs, which is the point: a
