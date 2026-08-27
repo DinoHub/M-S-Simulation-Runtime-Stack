@@ -101,6 +101,32 @@ def traced_tag_version(tag: str) -> tuple[int, int, int] | None:
     m = re.search(r"-v(\d+\.\d+\.\d+)-g[0-9a-f]{7,}(\.\d+)?$", tag)
     return _semver(m.group(1)) if m else None
 
+
+def platform_product_version(root: Path | None = None) -> str | None:
+    """The sibling platform checkout's declared version, or None when that checkout
+    is not reachable. The sibling platform checkout is resolved the way
+    product-images-env.sh resolves the pin file in the other direction: an explicit
+    env var wins, then the layout this repo is actually checked out in. Absent is
+    normal (CI clones this repo alone), so every caller treats None as "cannot check",
+    never as a failure."""
+    if root is not None:                      # explicit root: used by the selftest
+        candidates = [root]
+    elif os.environ.get("MNS_PLATFORM_ROOT"):
+        candidates = [Path(os.environ["MNS_PLATFORM_ROOT"])]
+    else:
+        candidates = [ROOT.parent / "MnS-Integration-Platform"]
+    for c in candidates:
+        path = c / "mns-product.yaml"
+        if not path.is_file():
+            continue
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None                        # unreadable is "cannot check", not "wrong"
+        version = (data or {}).get("version")
+        return version if isinstance(version, str) else None
+    return None
+
 COMPOSE_FILE_FOR_GROUP = {
     "monitoring": "docker-compose-monitoring.yml",
     "metrics": "docker-compose-metrics.yml",
@@ -507,6 +533,17 @@ def assert_invariants(catalog: dict[str, Any]) -> None:
                 + ", ".join(bad)
             )
 
+    # 4. product_version must agree with the platform repo it mirrors. Skipped
+    # silently when that checkout is not present — see platform_product_version.
+    declared = catalog.get("product_version")
+    platform = platform_product_version()
+    if platform is not None and platform != declared:
+        raise CatalogError(
+            f"product_version {declared!r} does not match MnS-Integration-Platform's "
+            f"mns-product.yaml version {platform!r}. These drifted once already (0.1.0 "
+            f"vs v0.2.0 in every image tag); bump both in one PR."
+        )
+
 
 def _flatten_leaf_keys(node: Any) -> set[str]:
     out: set[str] = set()
@@ -710,11 +747,18 @@ consumers:
         else:
             raise AssertionError(f"selftest FAILED: accepted product_version {pv!r}")
 
+    # 6. The cross-repo version check must DEGRADE, never fail, when the
+    #    platform checkout is absent — MSRS CI clones this repo alone.
+    assert platform_product_version(Path("/nonexistent-checkout")) is None, (
+        "selftest FAILED: platform_product_version must return None for a missing "
+        "checkout, not raise — CI has no sibling clone and must still validate."
+    )
+
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
     run_selftest()
     print("selftest: ok (tag-must-be-string invariant, bump always-quotes-tags, "
-          "traced-tag shape check, product_version validation)")
+          "traced-tag shape check, product_version validation, cross-repo version check)")
     return 0
 
 
