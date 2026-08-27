@@ -11,6 +11,10 @@ on:
       - "tools/images.py"
       - "tools/images.sh"
       - "tools/check-image-pins.sh"
+      - "tools/pull-all-images.sh"
+      - "product.sh"
+      - "Makefile"
+      - ".github/workflows/images.yml"
   schedule:
     # Mondays 02:00 UTC. Weekly, not daily: the point is to notice a moved tag
     # or an unattended follow-up, and a daily run is a notification people

@@ -3,8 +3,25 @@
 # image) → Runtime Config (hot-reload evaluation files) → Calibration
 # (sim-to-real verdicts) → bag replay/monitoring.
 #
-#   docker compose -f docker-compose-dashboard.yml --env-file .env up -d
-#   # or: make dashboard / make dashboard-down
+#   make dashboard / make dashboard-down          # the supported entry point
+#
+# By hand (down/ps/logs included), the image pins have to come from the
+# catalog's generated env as well as .env -- compose REPLACES the default
+# .env when --env-file is given, so pass both. Later files win:
+#
+#   docker compose -f docker-compose-dashboard.yml \
+#     --env-file .env \
+#     --env-file images/standalone-v2-development.generated.env \
+#     up -d
+#
+# That is the development (tag-only) set. The production (digest-pinned) set
+# is spread over three files, the same ones make's IMAGE_MODE=production
+# loads:
+#
+#   --env-file .env \
+#   --env-file images/standalone-v2-images.generated.env \
+#   --env-file product-images.env \
+#   --env-file images/platform-images.generated.env
 #
 # Frontend: http://localhost:3001  (3000 belongs to the monitoring Grafana)
 # Backend:  http://localhost:8001
@@ -24,11 +41,9 @@
 services:
   dashboard-backend:
     image: ${DASHBOARD_BACKEND_IMAGE:?source product-images.env}
-    # All three images in this stack ride MUTABLE tags, and Compose's default
-    # pull policy ("missing") only ever pulls when the tag is absent locally —
-    # so a re-published -latest would never arrive. Pull every `up` instead.
-    # Costs a manifest check per service and needs the registry reachable;
-    # override with DASHBOARD_PULL_POLICY=missing to work offline.
+    # `product.sh setup` refreshes the exact remote pins. Normal dashboard
+    # starts use those cached pins and pull only when an image is absent.
+    # Set DASHBOARD_PULL_POLICY=always for a deliberate registry re-check.
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: airsim-dashboard-api
     ports:
@@ -101,8 +116,23 @@ services:
       # the backend asserts at startup that whatever arrives here really is
       # this repository rather than trusting the guess.
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:-${PWD}}
+      # The dashboard passes this through to the nested stack-generator run.
+      # Development uses the tag-only overlay; production selects the pinned one.
+      - MNS_IMAGE_SET=published
+      # A repo-owned path, not an image pin, so a default carries no drift
+      # risk -- and a required var here broke `down`/`ps`/`logs` too, since
+      # compose interpolates every service at parse time. The default is the
+      # production (digest-pinned) overlay; make dashboard overrides it with
+      # an absolute host path chosen by IMAGE_MODE.
+      - MNS_IMAGE_SET_FILE=${MNS_IMAGE_SET_FILE:-${MSRS_ROOT:-${PWD}}/images/image-set.generated.yaml}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
+      # The backend owns the ros2-tools sidecar; select the same published
+      # v2 bridge used by generated stacks instead of its baked default.
+      # Stays required: this one IS a catalog pin, and an inline default would
+      # be exactly the drift images/catalog.yaml exists to prevent. It ships in
+      # both generated env files -- pass one with --env-file (see the header).
+      - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?add --env-file images/standalone-v2-development.generated.env (or the -images- variant), or use make dashboard}
       - MNS_AUTHORING_DOCKER_ARGS=-v "${MSRS_ROOT:-${PWD}}/config/unreal-airsim/authoring-preview.json:/tmp/Documents/AirSim/settings.json:ro" ${MNS_AUTHORING_DOCKER_ARGS:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}

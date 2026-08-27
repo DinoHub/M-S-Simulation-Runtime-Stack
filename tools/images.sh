@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # tools/images.sh — one canonical image catalog: images/catalog.yaml is the
 # single authored source; everything else (product-images.env,
-# images/image-set.generated.yaml, images/platform-images.generated.env,
+# images/image-set.generated.yaml, images/image-set.development.generated.yaml,
+# images/platform-images.generated.env,
+# images/standalone-v2-development.generated.env,
+# images/standalone-v2-images.generated.env,
 # images/legacy-images.generated.env) is generated and committed. See
 # docs/adr/0002-one-image-catalog.md.
 #
@@ -12,6 +15,8 @@
 #   tools/images.sh sync            # regenerate all artifacts (offline)
 #   tools/images.sh verify          # CI gate: selftest + regenerate + diff, exit 1 on
 #                                    # drift or a selftest failure (offline)
+#   tools/images.sh refs            # exact refs; add --development for local-first tags
+#   tools/pull-all-images.sh       # pull exact active refs with retries; --all-catalog expands scope
 #   tools/images.sh report          # pinned vs latest on Hub / upstream registries (online)
 #   tools/images.sh bump [--only KEY] [--channel review|moving]
 #   tools/images.sh drift           # regenerate committed ScenarioSpecs with the
@@ -33,7 +38,15 @@ MODE="${1:-}"
 [[ $# -gt 0 ]] && shift || true
 
 case "$MODE" in
-  sync|verify|report|bump|selftest|status)
+  sync|verify|report|bump|selftest|status|refs)
+    # product.sh setup/doctor/pull-images reach these subcommands, so this is
+    # on the customer path: fail with the fix rather than "python3: command
+    # not found". images.py carries the matching pyyaml guard.
+    if ! command -v "$PY" >/dev/null 2>&1; then
+      echo "ERROR: tools/images.sh $MODE needs Python 3 ('$PY' not found; set \$PYTHON to override)." >&2
+      echo "       Install python3, then: pip install -r tools/requirements.txt" >&2
+      exit 1
+    fi
     exec "$PY" "$ROOT/tools/images.py" "$MODE" "$@"
     ;;
   drift)
@@ -41,7 +54,7 @@ case "$MODE" in
   baked)
     ;;
   *)
-    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest> [args...]" >&2
+    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest|refs> [args...]" >&2
     exit 2
     ;;
 esac

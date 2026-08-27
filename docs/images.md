@@ -4,13 +4,16 @@ One rule: **every image reference in this repository is authored in
 `images/catalog.yaml` and nowhere else.** If you are typing a `repo:tag`
 anywhere but there, stop.
 
-The catalog renders four files. All are committed, all carry a
+The catalog renders seven files. All are committed, all carry a
 `# GENERATED from images/catalog.yaml` header, none are hand-edited:
 
 | Generated file | Who reads it |
 | --- | --- |
-| `product-images.env` | `product.sh`, `Makefile`, the full-product e2e test |
-| `images/image-set.generated.yaml` | the stack generator, via `MNS_IMAGE_SET_FILE` |
+| `product-images.env` | legacy review channel plus dashboard/tool pins |
+| `images/standalone-v2-images.generated.env` | v2 product shell, dashboard overrides |
+| `images/standalone-v2-development.generated.env` | dashboard development defaults using mutable tags |
+| `images/image-set.generated.yaml` | production stack generator overlay with exact pins |
+| `images/image-set.development.generated.yaml` | dashboard development overlay with tag-only refs |
 | `images/platform-images.generated.env` | metrics / monitoring / logs / dashboard compose |
 | `images/legacy-images.generated.env` | the legacy static scenario stacks |
 
@@ -98,12 +101,7 @@ works on the machine you tested and fails everywhere else).
 
 ## Three things the catalog does not control
 
-**1. `./.env` beats it.** Compose auto-loads `./.env`, and
-`tools/load-images-env.sh` deliberately skips any key `.env` already sets, so
-a local override wins. That is the intended escape hatch for running a local
-build. It is also the first thing to check when the catalog looks right but
-the wrong image runs — `tools/images.sh report` lists every var `./.env`
-overrides, with both values.
+**1. Local development overrides.** `make dashboard` defaults to the generated tag-only development image set. A matching locally built tag wins, while an absent tag is pulled from the registry. Shell/.env image overrides still take precedence through `tools/load-images-env.sh`. `IMAGE_MODE=production make dashboard` selects the immutable digest-pinned artifacts instead.
 
 **2. Baked backend defaults.** The dashboard-backend image carries
 `MNS_AUTHORING_IMAGE_DEFAULT` and the generator equivalent *inside the built
@@ -112,10 +110,7 @@ rebuild, then `tools/images.sh bump --only dashboard_backend`. Compose
 deployments pass the env through and are unaffected; an image-only deploy is
 not. `tools/images.sh baked` reports the drift.
 
-**3. A locally-present newer image.** Because the digest is the contract, a
-newer build sitting in `docker images` changes nothing — even with
-`pull_policy: always`, Docker re-pulls the exact pinned digest. If you built
-and pushed something new, the catalog is not updated until you update it.
+**3. A locally-present newer image.** Development mode intentionally uses a matching local tag and never pulls merely to check for a newer remote copy. If the tag is absent, `make dashboard` pulls it. Production mode remains digest-pinned and ignores a different local build. After publishing, other developers run `./product.sh setup` to refresh the approved remote set.
 
 ## Channels
 
@@ -139,3 +134,45 @@ and pushed something new, the catalog is not updated until you update it.
 
 Why any of this exists, and what it costs:
 [ADR 0002](adr/0002-one-image-catalog.md).
+
+## MnS Docker image names and pulls
+
+MnS-owned images use one Docker Hub repository and two tags per build:
+
+- Mutable developer alias: `dhdevspace/auto_mns:<stem>-latest`
+- Immutable release tag: `dhdevspace/auto_mns:<stem>-<date-or-version>`
+
+For example, the ROS 2 bridge publishes
+`tevv-airsim-ros2-bridge-humble-latest` and
+`tevv-airsim-ros2-bridge-humble-20260826` to the same manifest. Production
+catalog rows use the immutable tag plus its full manifest digest. The
+`-latest` alias is for discovery and developer pulls; it is not a production
+pin. Retagging the same manifest does not duplicate its layers in the registry.
+
+The production M-S image set is remote-only and digest-pinned. The dashboard’s transitional development mode derives tag-only refs from that same catalog, allowing a local build to win without adding `local/...` repository names.
+
+Use locally available development tags and pull only missing ones:
+
+```bash
+make ensure-images
+# automatically performed by:
+make dashboard
+```
+
+Explicitly refresh every approved production pin:
+
+```bash
+./tools/pull-all-images.sh
+# or
+./product.sh pull-images
+./product.sh pull-images --development    # explicitly refresh dashboard development tags
+# inspect without pulling
+./tools/pull-all-images.sh --dry-run
+# include every legacy and optional catalog image
+./tools/pull-all-images.sh --all-catalog
+```
+
+To also advance all mutable catalog rows before pulling, use
+`./tools/pull-all-images.sh --refresh-moving`. This updates the authored
+catalog and generated pin files, so review and commit those changes. Immutable
+standalone-v2 release rows only advance through an explicit coordinated release.

@@ -31,6 +31,9 @@ docs/adr/0002-one-image-catalog.md (why this exists). Subcommands:
            the digest of the version tag already pinned; it never walks
            versions forward. local/unpublished are refused unconditionally.
 
+  refs [--all-catalog] [--development] print exact production refs or
+                       tag-only development refs for the active product.
+
 Two small internal helpers, used by tools/images.sh's bash-side drift/baked
 logic rather than meant for interactive use:
 
@@ -68,6 +71,8 @@ CATALOG_PATH = ROOT / "images" / "catalog.yaml"
 TEMPLATE_PATH = ROOT / "images" / "product-images.env.tmpl"
 PRODUCT_ENV_PATH = ROOT / "product-images.env"
 IMAGE_SET_PATH = ROOT / "images" / "image-set.generated.yaml"
+DEVELOPMENT_IMAGE_SET_PATH = ROOT / "images" / "image-set.development.generated.yaml"
+DEVELOPMENT_ENV_PATH = ROOT / "images" / "standalone-v2-development.generated.env"
 PLATFORM_ENV_PATH = ROOT / "images" / "platform-images.generated.env"
 LEGACY_ENV_PATH = ROOT / "images" / "legacy-images.generated.env"
 STANDALONE_V2_ENV_PATH = ROOT / "images" / "standalone-v2-images.generated.env"
@@ -138,6 +143,10 @@ def _validate_catalog(data: Any) -> None:
                 f"({row['tag']!r}) — YAML parsed an unquoted numeric-looking tag as a "
                 f"number. Quote it: tag: \"{row['tag']}\""
             )
+        if "latest_tag" in row:
+            if not isinstance(row["latest_tag"], str) or not row["latest_tag"].endswith("-latest"):
+                raise CatalogError(
+                    f"images.{key}.latest_tag must be a string ending in '-latest'")
         if row["channel"] not in VALID_CHANNELS:
             raise CatalogError(f"images.{key}.channel {row['channel']!r} not in {VALID_CHANNELS}")
         if "follow_up" in row and not isinstance(row["follow_up"], str):
@@ -215,6 +224,41 @@ def image_ref(images: dict[str, Any], key: str) -> str:
     return ref
 
 
+def development_ref(images: dict[str, Any], key: str) -> str:
+    """Tag-only ref used by the local-first development workflow."""
+    if key not in images:
+        raise CatalogError(f"consumer references unknown image key {key!r}")
+    row = images[key]
+    return f"{row['repo']}:{row.get('latest_tag') or row['tag']}"
+
+
+def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, development: bool = False) -> list[str]:
+    """Return unique active refs in production or tag-only development form."""
+    images = catalog["images"]
+    if all_catalog:
+        keys = {
+            key for key, row in images.items()
+            if row["channel"] not in ("local", "unpublished")
+        }
+    else:
+        consumers = catalog["consumers"]
+        keys = set(consumers["release_channels"]["standalone_v2"]["vars"].values())
+        keys |= _flatten_leaf_keys(consumers["image_sets"]["published"]["images"])
+        for group in ("dashboard", "tools"):
+            keys |= set(consumers["product_env"].get(group, {}).values())
+        keys |= set(consumers["compose_env"].get("dashboard", {}).values())
+        unavailable = sorted(
+            key for key in keys
+            if images[key]["channel"] in ("local", "unpublished")
+        )
+        if unavailable:
+            raise CatalogError(
+                "active product references unavailable image(s): " + ", ".join(unavailable))
+    ref_for = development_ref if development else image_ref
+    return sorted({ref_for(images, key) for key in keys})
+
+
+
 # --------------------------------------------------------------------------
 # Renderers — each returns the exact text of one generated artifact
 # --------------------------------------------------------------------------
@@ -288,6 +332,63 @@ def render_image_set(catalog: dict[str, Any]) -> str:
     return header + yaml.safe_dump(body, sort_keys=False, default_flow_style=False)
 
 
+def render_development_image_set(catalog: dict[str, Any]) -> str:
+    """Tag-only v2 image set for local-first development.
+
+    The catalog remains the source of image names. Digests are removed only in
+    this development artifact so a locally built matching tag wins; Compose
+    pulls the tag only when it is absent from the Docker image store.
+    """
+    images = catalog["images"]
+    development_refs = {
+        image_ref(images, key): development_ref(images, key)
+        for key in images
+    }
+
+    def tag_only(node: Any) -> Any:
+        if isinstance(node, dict):
+            return {key: tag_only(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [tag_only(value) for value in node]
+        if isinstance(node, str):
+            return development_refs.get(node, node)
+        return node
+
+    header = (
+        "schema: mns.image_sets.v1\n\n"
+        f"{GENERATED_MARKER}\n"
+        "# Development overlay: tag-only refs plus pull_policy: missing let a\n"
+        "# local build win and pull the published tag only when it is absent.\n\n"
+    )
+    body = {"image_sets": tag_only(resolved_image_sets(catalog))}
+    return header + yaml.safe_dump(body, sort_keys=False, default_flow_style=False)
+
+
+def render_development_env(catalog: dict[str, Any]) -> str:
+    """Dashboard/product defaults using tag-only development aliases."""
+    images = catalog["images"]
+    consumers = catalog["consumers"]
+    groups = [
+        consumers["release_channels"]["standalone_v2"]["vars"],
+        consumers["product_env"].get("dashboard", {}),
+        consumers["product_env"].get("tools", {}),
+        consumers["compose_env"].get("dashboard", {}),
+    ]
+    mapping: dict[str, str] = {}
+    for group in groups:
+        mapping.update(group)
+    lines = [
+        GENERATED_MARKER,
+        "",
+        "# Local-first dashboard defaults. Matching local tags win; missing",
+        "# tags are pulled by tools/ensure-images.sh. Production uses the",
+        "# digest-pinned generated env files instead.",
+        "",
+    ]
+    lines += [f"{var}={development_ref(images, key)}" for var, key in mapping.items()]
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
 def render_standalone_v2_env(catalog: dict[str, Any]) -> str:
     """images/standalone-v2-images.generated.env — the coordinated v2 set.
 
@@ -297,11 +398,9 @@ def render_standalone_v2_env(catalog: dict[str, Any]) -> str:
     picking a file, which is a choice it can make explicitly and a reader can
     see.
 
-    Written even while every row is unpublished (digest null, tag only). That
-    is the point: the file exists, is generated, and gains its digests in one
-    place on the day they are published — rather than a hand-written copy in
-    another repository gaining them separately, which is how the platform came
-    to pin review.20 against this repo's review.22.
+    Every row is rendered with its immutable release tag and manifest digest.
+    Mutable -latest aliases are deliberately not emitted here: production
+    runs remain reproducible until the catalog is advanced and regenerated.
     """
     images = catalog["images"]
     channel = catalog["consumers"]["release_channels"].get("standalone_v2")
@@ -313,14 +412,13 @@ def render_standalone_v2_env(catalog: dict[str, Any]) -> str:
     lines = [
         GENERATED_MARKER,
         "",
-        "# Coordinated standalone-v2 pre-release channel. Sourced INSTEAD of",
+        "# Coordinated standalone-v2 production pins. Sourced INSTEAD of",
         "# product-images.env by the v2 product shell, not alongside it.",
         "#",
-        "# Rows are channel: unpublished until the set is built and pushed, so",
-        "# these are tags without digests. That is a deliberate, visible gap —",
-        "# `tools/images.sh status` lists every one of them under NEEDS YOU —",
-        "# not an oversight, and not something to paper over by hand-editing",
-        "# this file. Edit images/catalog.yaml and re-run `tools/images.sh sync`.",
+        "# Every ref uses an immutable date/version tag and manifest digest.",
+        "# The corresponding -latest aliases are for discovery and publishing;",
+        "# production runs the exact refs below. Edit images/catalog.yaml and",
+        "# re-run tools/images.sh sync to advance the approved release.",
         "",
     ]
     lines += [f"{var}={image_ref(images, key)}" for var, key in group.items()]
@@ -412,6 +510,8 @@ def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
     out = {
         PRODUCT_ENV_PATH: render_product_env(catalog),
         IMAGE_SET_PATH: render_image_set(catalog),
+        DEVELOPMENT_IMAGE_SET_PATH: render_development_image_set(catalog),
+        DEVELOPMENT_ENV_PATH: render_development_env(catalog),
         PLATFORM_ENV_PATH: render_platform_env(catalog),
         LEGACY_ENV_PATH: render_legacy_env(catalog),
     }
@@ -518,6 +618,18 @@ def assert_invariants(catalog: dict[str, Any]) -> None:
             raise CatalogError(
                 f"image_sets.{name} has pull_policy: always but resolves local/ image(s): "
                 + ", ".join(bad)
+            )
+
+    # 4. Standalone v2 refreshes exact pins explicitly, then starts from the
+    # verified local cache. Keep the authored catalog from silently restoring
+    # per-run registry checks and defeating that workflow.
+    release_channels = catalog["consumers"].get("release_channels") or {}
+    if "standalone_v2" in release_channels:
+        published = (catalog["consumers"].get("image_sets") or {}).get("published") or {}
+        if published.get("pull_policy") != "missing":
+            raise CatalogError(
+                "image_sets.published must use pull_policy: missing for standalone_v2; "
+                "refresh images explicitly with tools/pull-all-images.sh"
             )
 
 
@@ -1209,6 +1321,14 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 1 if total else 0
 
 
+def cmd_refs(args: argparse.Namespace) -> int:
+    catalog = load_catalog()
+    assert_invariants(catalog)
+    for ref in pullable_refs(catalog, all_catalog=args.all_catalog, development=args.development):
+        print(ref)
+    return 0
+
+
 # --------------------------------------------------------------------------
 # drift / baked support (bash side does the docker-heavy lifting; these are
 # the catalog-aware lookups it shells out to)
@@ -1274,6 +1394,11 @@ def main(argv: list[str]) -> int:
     p_bump.add_argument("--only")
     p_bump.add_argument("--channel", choices=sorted(VALID_CHANNELS))
     p_bump.set_defaults(fn=cmd_bump)
+
+    p_refs = sub.add_parser("refs")
+    p_refs.add_argument("--all-catalog", action="store_true")
+    p_refs.add_argument("--development", action="store_true")
+    p_refs.set_defaults(fn=cmd_refs)
 
     p_rv = sub.add_parser("resolve-var")
     p_rv.add_argument("var")
