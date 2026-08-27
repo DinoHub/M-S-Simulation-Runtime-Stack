@@ -94,6 +94,19 @@ VALID_RESOLVERS = {"hub", "imagetools"}
 # is git's own short-sha floor; longer is fine and stays valid as repos grow.
 TRACED_TAG_RE = re.compile(r"-v\d+\.\d+\.\d+-g[0-9a-f]{7,}(\.\d+)?$")
 
+_SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+
+
+def _semver(value: str) -> tuple[int, int, int] | None:
+    m = _SEMVER_RE.match(value or "")
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+
+
+def traced_tag_version(tag: str) -> tuple[int, int, int] | None:
+    """The version a traced tag claims, or None if the tag is not traced."""
+    m = re.search(r"-v(\d+\.\d+\.\d+)-g[0-9a-f]{7,}(\.\d+)?$", tag)
+    return _semver(m.group(1)) if m else None
+
 COMPOSE_FILE_FOR_GROUP = {
     "monitoring": "docker-compose-monitoring.yml",
     "metrics": "docker-compose-metrics.yml",
@@ -130,6 +143,17 @@ def _validate_catalog(data: Any) -> None:
     images = data.get("images")
     if not isinstance(images, dict) or not images:
         raise CatalogError("images: must be a non-empty mapping")
+    # The version segment of every tag we publish comes from here, and this
+    # comes from MnS-Integration-Platform/mns-product.yaml. Before this field
+    # existed the number was a string copied into each new tag: the product
+    # file said 0.1.0, every image tag said v0.2.0, and two orphaned
+    # mns-authoring-v0.3.0-review tags sat on the registry that no repo
+    # referenced. See ADR-0003.
+    product_version = data.get("product_version")
+    if not isinstance(product_version, str) or _semver(product_version) is None:
+        raise CatalogError(
+            f"product_version must be a semver string like \"0.2.0\", got {product_version!r}"
+        )
     for key, row in images.items():
         if not isinstance(row, dict):
             raise CatalogError(f"images.{key} must be a mapping")
@@ -188,6 +212,14 @@ def _validate_catalog(data: Any) -> None:
                 f"source (expected <component>-v<x.y.z>-g<short-sha>), so bump can never "
                 f"advance it. Either publish a traced tag, or declare the off-line pin "
                 f"honestly with channel: pinned."
+            )
+        claimed = traced_tag_version(row["tag"]) if row["channel"] == "traced" else None
+        if claimed is not None and claimed > _semver(product_version):
+            raise CatalogError(
+                f"images.{key} tag {row['tag']!r} claims version "
+                f"{'.'.join(str(n) for n in claimed)}, ahead of product_version "
+                f"{product_version} — a tag from the future is a typo or a bad mint. "
+                f"A tag BEHIND product_version is fine (it was published before the bump)."
             )
         if row["channel"] == "pinned" and not row["digest"]:
             raise CatalogError(
@@ -704,6 +736,7 @@ def cmd_verify(_args: argparse.Namespace) -> int:
 
 _SELFTEST_FIXTURE = """\
 schema: mns.images.v1
+product_version: "0.2.0"
 
 images:
   fixture:
@@ -751,7 +784,7 @@ def run_selftest() -> None:
     #    when asked to write a value that would be unsafe unquoted (`3.4`),
     #    and the result must re-parse as a string.
     catalog_text = (
-        "schema: mns.images.v1\n\nimages:\n"
+        "schema: mns.images.v1\nproduct_version: \"0.2.0\"\n\nimages:\n"
         "  fixture:\n    repo: example/repo\n    tag: old-tag\n    digest: null\n"
         "    channel: moving\n    purpose: selftest fixture.\n\nconsumers:\n"
         "  product_env: {}\n"
@@ -776,6 +809,7 @@ def run_selftest() -> None:
     #    which reads as "already current".
     traced_fixture = """\
 schema: mns.images.v1
+product_version: "0.2.0"
 
 images:
   fixture:
@@ -802,13 +836,58 @@ consumers:
                 f"selftest FAILED: _validate_catalog accepted {bad!r} as a traced tag"
             )
     for good in ("thing-v0.2.0-g6e6ae15", "thing-v0.2.0-g6e6ae15.2",
-                 "thing-v1.10.3-g0123456789abcdef"):
+                 "thing-v0.1.9-g0123456789abcdef"):
         _validate_catalog(yaml.safe_load(traced_fixture.format(tag=good, d="0" * 64)))
+
+    # 5. product_version is required, must be semver, and a traced tag may not
+    #    claim a version ahead of it (that is a typo or a bad mint). Behind is
+    #    legal: an image published before a version bump keeps its version.
+    pv_fixture = """\
+schema: mns.images.v1
+product_version: "{pv}"
+
+images:
+  fixture:
+    repo: example/repo
+    tag: "{tag}"
+    digest: sha256:{d}
+    channel: traced
+    purpose: selftest fixture, not a real image.
+
+consumers:
+  product_env: {{}}
+  image_sets: {{}}
+  compose_env: {{}}
+  legacy_env: {{}}
+"""
+    # ahead of product_version -> rejected
+    try:
+        _validate_catalog(yaml.safe_load(
+            pv_fixture.format(pv="0.2.0", tag="thing-v0.3.0-g6e6ae15", d="0" * 64)))
+    except CatalogError:
+        pass
+    else:
+        raise AssertionError(
+            "selftest FAILED: accepted a traced tag versioned ahead of product_version"
+        )
+    # equal and behind -> accepted
+    for tag in ("thing-v0.2.0-g6e6ae15", "thing-v0.1.9-g6e6ae15"):
+        _validate_catalog(yaml.safe_load(pv_fixture.format(pv="0.2.0", tag=tag, d="0" * 64)))
+    # missing / non-semver product_version -> rejected
+    for pv in ("", "0.2", "v0.2.0", "latest"):
+        try:
+            _validate_catalog(yaml.safe_load(
+                pv_fixture.format(pv=pv, tag="thing-v0.2.0-g6e6ae15", d="0" * 64)))
+        except CatalogError:
+            pass
+        else:
+            raise AssertionError(f"selftest FAILED: accepted product_version {pv!r}")
 
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
     run_selftest()
-    print("selftest: ok (tag-must-be-string invariant + bump always-quotes-tags)")
+    print("selftest: ok (tag-must-be-string invariant, bump always-quotes-tags, "
+          "traced-tag shape check, product_version validation)")
     return 0
 
 
