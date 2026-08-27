@@ -84,8 +84,15 @@ GENERATED_MARKER = (
     "Do not hand-edit; run tools/images.sh sync."
 )
 
-VALID_CHANNELS = {"review", "moving", "upstream", "local", "unpublished", "pinned"}
+VALID_CHANNELS = {"review", "traced", "moving", "upstream", "local", "unpublished", "pinned"}
 VALID_RESOLVERS = {"hub", "imagetools"}
+
+# A traced tag names its source: <component>-v<x.y.z>-g<short-sha>, with an
+# optional .N rebuild suffix for republishing the same commit against a new
+# base image. ADR-0001: "New tags name their source ... so a pin answers
+# 'what is in this?' with `git show`". The sha is >= 7 hex chars because that
+# is git's own short-sha floor; longer is fine and stays valid as repos grow.
+TRACED_TAG_RE = re.compile(r"-v\d+\.\d+\.\d+-g[0-9a-f]{7,}(\.\d+)?$")
 
 COMPOSE_FILE_FOR_GROUP = {
     "monitoring": "docker-compose-monitoring.yml",
@@ -171,6 +178,16 @@ def _validate_catalog(data: Any) -> None:
                 f"images.{key} is channel review but tag {row['tag']!r} is not on the "
                 f"-review.N line, so bump can never advance it. Either pin a -review.N "
                 f"tag, or declare the off-line pin honestly with channel: pinned."
+            )
+        # Same reasoning as the review check above: a traced row whose tag is
+        # off the -v<x.y.z>-g<sha> line cannot be walked, so `bump` would
+        # silently never advance it.
+        if row["channel"] == "traced" and not TRACED_TAG_RE.search(row["tag"]):
+            raise CatalogError(
+                f"images.{key} is channel traced but tag {row['tag']!r} does not name its "
+                f"source (expected <component>-v<x.y.z>-g<short-sha>), so bump can never "
+                f"advance it. Either publish a traced tag, or declare the off-line pin "
+                f"honestly with channel: pinned."
             )
         if row["channel"] == "pinned" and not row["digest"]:
             raise CatalogError(
@@ -752,6 +769,41 @@ def run_selftest() -> None:
         f"selftest FAILED: bumped catalog text re-parses tag as {tag_value!r} "
         f"({type(tag_value).__name__}), expected the string '3.4'"
     )
+
+    # 4. A traced row's tag must name its source: -v<x.y.z>-g<sha>. Anything
+    #    else is the same silent dead end a review row off the -review.N line
+    #    is — the family walk finds no siblings and reports NO_TAGS_FOUND,
+    #    which reads as "already current".
+    traced_fixture = """\
+schema: mns.images.v1
+
+images:
+  fixture:
+    repo: example/repo
+    tag: "{tag}"
+    digest: sha256:{d}
+    channel: traced
+    purpose: selftest fixture, not a real image.
+
+consumers:
+  product_env: {{}}
+  image_sets: {{}}
+  compose_env: {{}}
+  legacy_env: {{}}
+"""
+    for bad in ("thing-latest", "thing-review.4", "thing-v0.2.0", "thing-g6e6ae15",
+                "thing-v0.2-g6e6ae15", "thing-v0.2.0-gZZZZZZZ"):
+        try:
+            _validate_catalog(yaml.safe_load(traced_fixture.format(tag=bad, d="0" * 64)))
+        except CatalogError:
+            pass
+        else:
+            raise AssertionError(
+                f"selftest FAILED: _validate_catalog accepted {bad!r} as a traced tag"
+            )
+    for good in ("thing-v0.2.0-g6e6ae15", "thing-v0.2.0-g6e6ae15.2",
+                 "thing-v1.10.3-g0123456789abcdef"):
+        _validate_catalog(yaml.safe_load(traced_fixture.format(tag=good, d="0" * 64)))
 
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
