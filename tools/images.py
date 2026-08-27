@@ -245,6 +245,21 @@ def _validate_catalog(data: Any) -> None:
                 f"images.{key} is channel pinned but has no digest — a pinned row exists "
                 f"precisely to name one exact image; without a digest it names nothing."
             )
+        # published_by names the repo+script that pushes this image. Carrying
+        # it is a claim of ownership, and we do not publish our own images to
+        # a tag that can move under a pin: traced (built, names its source) or
+        # pinned (a deliberate one-off, e.g. a re-tag with no source commit).
+        publisher = row.get("published_by")
+        if publisher is not None:
+            if not isinstance(publisher, str) or not publisher.strip():
+                raise CatalogError(f"images.{key}.published_by must be a non-empty string")
+            if row["channel"] not in ("traced", "pinned"):
+                raise CatalogError(
+                    f"images.{key} is published_by {publisher!r} but sits on channel "
+                    f"{row['channel']!r}. An image we publish ourselves must be on an "
+                    f"immutable tag: channel traced (built from a commit) or pinned "
+                    f"(a deliberate one-off). See ADR-0003."
+                )
     follow_ups = data.get("follow_ups")
     if follow_ups is not None and (
         not isinstance(follow_ups, list)
@@ -771,6 +786,42 @@ consumers:
             "selftest FAILED: platform_product_version must return None for a bare scalar, "
             "not raise AttributeError"
         )
+
+    # 7. A row we publish ourselves may not sit on a mutable tag. This is the
+    #    regression guard for the whole change: without it, one PR flipping a
+    #    row back to channel: moving undoes it silently.
+    owned_fixture = """\
+schema: mns.images.v1
+product_version: "0.2.0"
+
+images:
+  fixture:
+    repo: example/repo
+    tag: "{tag}"
+    digest: sha256:{d}
+    channel: {channel}
+    published_by: example-repo/tools/build.sh
+    purpose: selftest fixture, not a real image.
+
+consumers:
+  product_env: {{}}
+  image_sets: {{}}
+  compose_env: {{}}
+  legacy_env: {{}}
+"""
+    try:
+        _validate_catalog(yaml.safe_load(owned_fixture.format(
+            tag="thing-latest", channel="moving", d="0" * 64)))
+    except CatalogError:
+        pass
+    else:
+        raise AssertionError(
+            "selftest FAILED: a published_by row was allowed on channel moving"
+        )
+    _validate_catalog(yaml.safe_load(owned_fixture.format(
+        tag="thing-v0.2.0-g6e6ae15", channel="traced", d="0" * 64)))
+    _validate_catalog(yaml.safe_load(owned_fixture.format(
+        tag="thing-v0.2.0-retag.2026-08-26", channel="pinned", d="0" * 64)))
 
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
