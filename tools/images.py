@@ -394,25 +394,46 @@ def _resolve_image_set(images: dict[str, Any], raw: dict[str, Any],
     }
 
 
+def inherit_chain(sets_cfg: dict[str, Any], name: str) -> list[str]:
+    """`name` and every set it inherits from, nearest first. Raises on a cycle."""
+    chain: list[str] = []
+    seen: set[str] = set()
+    current: str | None = name
+    while current:
+        if current in seen:
+            raise CatalogError(
+                "image_sets inherits cycle: " + " -> ".join(chain + [current])
+            )
+        if current not in sets_cfg:
+            raise CatalogError(f"image_sets.{chain[-1]} inherits unknown set {current!r}")
+        seen.add(current)
+        chain.append(current)
+        current = sets_cfg[current].get("inherits")
+    return chain
+
+
 def resolved_image_sets(catalog: dict[str, Any]) -> dict[str, dict[str, Any]]:
     images = catalog["images"]
     sets_cfg = catalog["consumers"]["image_sets"]
     resolved: dict[str, dict[str, Any]] = {}
-    # two passes so `inherits` can point at a set defined earlier or later
-    pending = dict(sets_cfg)
-    order = list(pending.keys())
-    for name in order:
-        raw = pending[name]
-        base_name = raw.get("inherits")
-        base = resolved.get(base_name, {}).get("images") if base_name else None
-        if base_name and base is None:
-            base_raw = pending.get(base_name)
-            if base_raw is None:
-                raise CatalogError(f"image_sets.{name} inherits unknown set {base_name!r}")
-            resolved[base_name] = _resolve_image_set(images, base_raw, None)
-            base = resolved[base_name]["images"]
-        resolved[name] = _resolve_image_set(images, raw, base)
-    return resolved
+
+    def resolve(name: str) -> dict[str, Any]:
+        # Recursive, not the old two-pass loop. That loop pre-resolved a
+        # not-yet-seen base with base=None, so for A inherits B inherits C it
+        # merged A over a B that was missing C's images, and the later
+        # iteration repaired resolved[B] but not the copy already baked into A.
+        # Today's catalog has two sets and one level, so it emitted the right
+        # file — it would have gone silently wrong on the third set.
+        if name in resolved:
+            return resolved[name]
+        chain = inherit_chain(sets_cfg, name)   # also raises on cycles
+        base_name = chain[1] if len(chain) > 1 else None
+        base = resolve(base_name)["images"] if base_name else None
+        resolved[name] = _resolve_image_set(images, sets_cfg[name], base)
+        return resolved[name]
+
+    # Resolve in authored order so the rendered artifact keeps its order.
+    return {name: resolve(name) for name in sets_cfg}
 
 
 def render_image_set(catalog: dict[str, Any]) -> str:
@@ -783,10 +804,13 @@ def assert_invariants(catalog: dict[str, Any]) -> None:
     for name, resolved in resolved_image_sets(catalog).items():
         if resolved.get("pull_policy") != "always":
             continue
-        local_keys = _flatten_leaf_keys(catalog["consumers"]["image_sets"][name].get("images") or {})
-        base_name = catalog["consumers"]["image_sets"][name].get("inherits")
-        if base_name:
-            local_keys |= _flatten_leaf_keys(catalog["consumers"]["image_sets"][base_name].get("images") or {})
+        # The WHOLE chain, not just the direct base: with A inherits B
+        # inherits C, a channel: local image contributed by C is still in A's
+        # resolved set and would have slipped past a one-level union.
+        sets_cfg = catalog["consumers"]["image_sets"]
+        local_keys: set[str] = set()
+        for link in inherit_chain(sets_cfg, name):
+            local_keys |= _flatten_leaf_keys(sets_cfg[link].get("images") or {})
         bad = sorted(k for k in local_keys if images.get(k, {}).get("channel") == "local")
         if bad:
             raise CatalogError(
@@ -1192,12 +1216,57 @@ consumers:
         "selftest FAILED: the extending component must still find its own tag"
     )
 
+    # 11. A three-deep inherits chain must carry the ROOT set's images all the
+    #     way up. The old two-pass loop pre-resolved an unseen base with no base
+    #     of its own, so `top` merged over a `mid` that was missing `root`'s
+    #     images -- and today's two-set catalog could never show it.
+    chained = {
+        "images": {
+            "a": {"repo": "example/repo", "tag": "a", "digest": "sha256:" + "a" * 64,
+                  "channel": "upstream", "purpose": "fixture"},
+            "b": {"repo": "example/repo", "tag": "b", "digest": "sha256:" + "b" * 64,
+                  "channel": "upstream", "purpose": "fixture"},
+            "c": {"repo": "example/repo", "tag": "c", "digest": "sha256:" + "c" * 64,
+                  "channel": "upstream", "purpose": "fixture"},
+        },
+        "consumers": {
+            "image_sets": {
+                "top": {"inherits": "mid", "images": {"three": "c"}},
+                "mid": {"inherits": "root", "images": {"two": "b"}},
+                "root": {"images": {"one": "a"}},
+            },
+        },
+    }
+    got_sets = resolved_image_sets(chained)["top"]["images"]
+    assert got_sets == {
+        "one": "example/repo:a@sha256:" + "a" * 64,
+        "two": "example/repo:b@sha256:" + "b" * 64,
+        "three": "example/repo:c@sha256:" + "c" * 64,
+    }, f"selftest FAILED: chained inherits lost an image -> {got_sets!r}"
+    assert list(resolved_image_sets(chained)) == ["top", "mid", "root"], (
+        "selftest FAILED: resolved_image_sets must keep the authored order, or the "
+        "generated artifact reorders and every diff becomes noise"
+    )
+
+    # A cycle must be named, not recursed into.
+    cyclic = {"images": chained["images"],
+              "consumers": {"image_sets": {
+                  "x": {"inherits": "y", "images": {}},
+                  "y": {"inherits": "x", "images": {}},
+              }}}
+    try:
+        resolved_image_sets(cyclic)
+    except CatalogError as exc:
+        assert "cycle" in str(exc), f"selftest FAILED: unhelpful cycle error {exc}"
+    else:
+        raise AssertionError("selftest FAILED: an inherits cycle was accepted")
+
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
     run_selftest()
     print("selftest: ok (tag-must-be-string invariant, bump always-quotes-tags, "
           "traced-tag shape check, product_version validation, cross-repo version check, "
-          "traced component anchoring)")
+          "traced component anchoring, chained image_set inherits)")
     return 0
 
 

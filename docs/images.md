@@ -122,6 +122,17 @@ not. `tools/images.sh baked` reports the drift.
   forever while quietly meaning "stale".
 - `moving` — a mutable tag (typically `-latest`) republished in place. Tag
   never changes, digest does; reported as `TAG_MOVED`.
+- `traced` — an image **we** publish, on a tag that names the source it was
+  built from: `<component>-v<x.y.z>-g<sha>` (optionally `.N` for a rebuild of
+  the same commit). Immutable by contract — nothing ever republishes one of
+  these — so `TAG_MOVED` on a traced row means someone force-pushed over it.
+  The catalog rejects a `traced` row whose tag is not that shape, and rejects
+  a version component that runs ahead of `product_version:`. `report`/`bump`
+  walk the family by registry push time, because a `g<sha>` suffix carries no
+  ordering of its own; a newer sibling reports `STALE`. A row carrying
+  `published_by:` may not sit on a mutable channel at all, and `verify` fails
+  on any tracked file that still references one of these images by a bare
+  `-latest` tag. See [ADR 0003](adr/0003-traced-tags-and-product-version.md).
 - `upstream` — third-party image on a version tag. Never auto-bumped.
 - `pinned` — published, deliberately off the release line (branch or preview
   build). Digest required, verified by `report`, refused by `bump`, moved by

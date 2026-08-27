@@ -5,6 +5,21 @@
 # are baked into custom images at build time. pull_policy: build means
 # `docker compose up` automatically builds images — no separate build step needed.
 #
+#
+# BEFORE any `docker compose` line below: the image: fields in this file are
+# `${VAR:?source images/platform-images.generated.env}`, and compose
+# interpolates every service at parse time -- so a bare invocation aborts with
+# "required variable is not set" on `config`, `down`, `ps`, and `logs`, not just
+# `up`, and profile-gated services are interpolated even when their profile is
+# off. launch.sh / logs.sh / stop.sh / the Makefile already do this for you; by
+# hand, run it first in the same shell:
+#
+#   . ./tools/load-images-env.sh
+#   load_images_env ./images/platform-images.generated.env
+#
+# (That helper exports only keys absent from both your shell and ./.env, so it
+# never overrides a local override.)
+#
 # Usage (run from this directory, or use -f with full path):
 #
 #   # Run monitoring with mock data (for dashboard testing)
