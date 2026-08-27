@@ -188,10 +188,29 @@ images:
   # ---------------------------------------------------------------------
   airsim_tools:
     repo: dhdevspace/auto_mns
-    tag: airsim-tools-latest
-    digest: sha256:c6a3740b7b6e335b3cd265414f2a2e71b46e9f7578dd0e5390d039f8e30d2feb
-    channel: moving
+    tag: "airsim-tools-v0.2.0-retag.2026-08-26"
+    # Digest is the tag's own INDEX digest (per the file-header convention:
+    # read off the `Digest:` line of `docker buildx imagetools inspect
+    # <ref>`'s default report), NOT the platform manifest digest. `imagetools
+    # create` wrapped this single-arch source in a manifest list even though
+    # the source (airsim-tools-latest) was a bare manifest, so the new tag's
+    # own digest differs from the old tag's — sha256:c6a3740b7b6e335b3cd265
+    # 414f2a2e71b46e9f7578dd0e5390d039f8e30d2feb is still there, nested as the
+    # linux/amd64 entry under this index, byte-identical to what was pinned.
+    digest: sha256:3ca0e1cd711addd5c258d323609fa668d91baac4e2547d34e529cb88c759dfd8
+    channel: pinned
+    published_by: "(re-tag only — no known build source)"
+    # Not traced: this tag is a copy of the digest that was published as
+    # airsim-tools-latest, and nobody knows which commit produced those bits.
+    # rpc-clients/python/tools/Dockerfile in MnS-Integration-Platform may or
+    # may not reproduce them. A -g<sha> tag would be a false claim, so this is
+    # a dated re-tag on channel pinned instead: immutable, and honest about
+    # being a copy rather than a build.
     purpose: ros2-tools image used by docker-compose-tools.yml.
+    follow_up: >-
+      airsim_tools has no build source: its tag is a re-tag of an image of
+      unknown provenance. Give it a build script in MnS-Integration-Platform
+      and republish on channel traced, then delete this note.
 
   # ---------------------------------------------------------------------
   # Runtime images — image_sets "published" (dhdevspace, R-2 resolves digests)
