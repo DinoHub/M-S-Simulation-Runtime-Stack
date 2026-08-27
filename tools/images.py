@@ -54,6 +54,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import urllib.error
 import urllib.parse
@@ -127,10 +128,12 @@ def platform_product_version(root: Path | None = None) -> str | None:
             continue
         try:
             data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return None                    # non-mapping is "cannot check", not "wrong"
+            version = data.get("version")
+            return version if isinstance(version, str) else None
         except Exception:
             return None                        # unreadable is "cannot check", not "wrong"
-        version = (data or {}).get("version")
-        return version if isinstance(version, str) else None
     return None
 
 COMPOSE_FILE_FOR_GROUP = {
@@ -921,11 +924,26 @@ consumers:
             raise AssertionError(f"selftest FAILED: accepted product_version {pv!r}")
 
     # 6. The cross-repo version check must DEGRADE, never fail, when the
-    #    platform checkout is absent — MSRS CI clones this repo alone.
+    #    platform checkout is absent or malformed — MSRS CI clones this repo alone.
     assert platform_product_version(Path("/nonexistent-checkout")) is None, (
         "selftest FAILED: platform_product_version must return None for a missing "
         "checkout, not raise — CI has no sibling clone and must still validate."
     )
+    # Also test that non-mapping YAML documents degrade gracefully
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Test YAML list: [1, 2, 3]
+        list_yaml = Path(tmpdir) / "mns-product.yaml"
+        list_yaml.write_text("[1, 2, 3]", encoding="utf-8")
+        assert platform_product_version(Path(tmpdir)) is None, (
+            "selftest FAILED: platform_product_version must return None for a YAML list, "
+            "not raise AttributeError"
+        )
+        # Test bare scalar: 42
+        list_yaml.write_text("42", encoding="utf-8")
+        assert platform_product_version(Path(tmpdir)) is None, (
+            "selftest FAILED: platform_product_version must return None for a bare scalar, "
+            "not raise AttributeError"
+        )
 
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
