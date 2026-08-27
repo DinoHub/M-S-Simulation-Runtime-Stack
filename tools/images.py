@@ -1178,11 +1178,29 @@ consumers:
     assert got == "dash-backend-v0.2.0-g6e6ae15", f"selftest FAILED: newest_traced -> {got!r}"
     assert newest_traced(tags, "dash-nothing") is None
 
+    # 10. A component whose name EXTENDS another component's must not be
+    #     mistaken for it. With a bare startswith(prefix + "-") test,
+    #     dash-backend-worker's newer tag satisfied dash-backend's filter, so
+    #     the row reported STALE and a bump would have repointed it at a
+    #     different image entirely.
+    sibling_tags = tags + [
+        ("dash-backend-worker-v0.2.0-gdddddddd", "2026-08-27T12:00:00Z"),
+    ]
+    got = newest_traced(sibling_tags, "dash-backend")
+    assert got == "dash-backend-v0.2.0-g6e6ae15", (
+        f"selftest FAILED: newest_traced leaked a sibling component's tag -> {got!r}"
+    )
+    assert newest_traced(sibling_tags, "dash-backend-worker") == \
+        "dash-backend-worker-v0.2.0-gdddddddd", (
+        "selftest FAILED: the extending component must still find its own tag"
+    )
+
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
     run_selftest()
     print("selftest: ok (tag-must-be-string invariant, bump always-quotes-tags, "
-          "traced-tag shape check, product_version validation, cross-repo version check)")
+          "traced-tag shape check, product_version validation, cross-repo version check, "
+          "traced component anchoring)")
     return 0
 
 
@@ -1257,9 +1275,17 @@ def newest_traced(tags: list[tuple[str, str]], component_prefix: str) -> str | N
     """Most recently pushed traced tag for one component. Ordering is by
     registry push time because a sha tag has no intrinsic order — this is the
     whole reason the traced family walk cannot reuse the review one."""
+    # Anchored, not `startswith(prefix + "-")` plus a loose suffix search: with
+    # a bare prefix test, a DIFFERENT component whose name extends this one
+    # (dash-backend vs dash-backend-worker) satisfies both conditions, and its
+    # newer tag would be returned as this row's `latest` — reporting STALE and
+    # then bumping the row onto the wrong image. Requiring the version suffix
+    # to start immediately after the prefix makes that impossible.
+    anchored = re.compile(
+        re.escape(component_prefix) + r"-v\d+\.\d+\.\d+-g[0-9a-f]{7,}(\.\d+)?$"
+    )
     candidates = [
-        (updated, name) for name, updated in tags
-        if name.startswith(f"{component_prefix}-") and TRACED_TAG_RE.search(name)
+        (updated, name) for name, updated in tags if anchored.fullmatch(name)
     ]
     return max(candidates)[1] if candidates else None
 
@@ -1431,10 +1457,13 @@ def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, A
         family_tags: list[tuple[str, str]] = []
         if family:
             family_tags, tags_err = _hub_tags(repo, family, token)
-            if tags_err and not family_tags:
+            if tags_err:
                 # Current tag resolved fine above; only the sibling-tag
                 # enumeration failed. Degrade to "can't tell if newer exists"
-                # rather than masking it as OK.
+                # rather than masking it as OK. Note this fires even when
+                # family_tags is non-empty: _hub_tags accumulates across pages
+                # and returns what it had when a page failed, so a partial list
+                # can be missing exactly the newest tag we are looking for.
                 return _row_result(key, row, status="NO_TAGS_FOUND",
                                     detail=f"tag search failed: {tags_err}", live_digest=live)
         candidates = [(_review_num(t), t) for t, _ in family_tags if _review_num(t) is not None]
@@ -1462,13 +1491,24 @@ def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, A
     if channel == "traced":
         component = re.sub(r"-v\d+\.\d+\.\d+-g[0-9a-f]{7,}(\.\d+)?$", "", tag)
         family_tags, tags_err = _hub_tags(repo, component, token)
-        if tags_err and not family_tags:
+        if tags_err:
+            # Same reasoning as the review branch: a partial page-walk can be
+            # missing the newest tag, which is the only thing this lookup is for.
             return _row_result(key, row, status="NO_TAGS_FOUND",
                                detail=f"tag search failed: {tags_err}", live_digest=live)
         latest = newest_traced(family_tags, component)
         if not latest:
             return _row_result(key, row, status="NO_TAGS_FOUND",
                                detail="no traced siblings found", live_digest=live)
+        if not live:
+            # Hub resolved the request but returned no digest. Without this
+            # guard the comparison below sees "" != pinned_digest and reports
+            # TAG_MOVED — "someone force-pushed over an immutable tag" — which
+            # is the loudest alarm this tool can raise, on the one channel
+            # where it must never be raised falsely. The review branch has
+            # always had this check; traced was missing it.
+            return _row_result(key, row, status="NO_TAGS_FOUND",
+                               detail="Hub returned no digest for this tag")
         if not pinned_digest:
             return _row_result(key, row, status="NO_DIGEST", detail=live[:19], live_digest=live)
         if live != pinned_digest:
