@@ -182,7 +182,7 @@ services:
   # ===========================================================================
 {% for d in px4_drones %}
   airsim_bridge_d{{ d.n }}:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d{{ d.n }}
     hostname: airsim_bridge_d{{ d.n }}
@@ -250,7 +250,7 @@ services:
       - "local_obs_crop_radius:=${LOCAL_OBS_CROP_RADIUS:-30.0}"
 
   mavros_d{{ d.n }}:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d{{ d.n }}
     hostname: mavros_d{{ d.n }}
@@ -299,7 +299,7 @@ services:
   # QGROUNDCONTROL X11 — Ground control station with GPU acceleration
   # ===========================================================================
   qgroundcontrol-x11:
-    image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
+    image: ${QGC_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: qgroundcontrol-x11
     hostname: qgc-x11

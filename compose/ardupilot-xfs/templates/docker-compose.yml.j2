@@ -41,7 +41,7 @@
 name: ardupilot-xfs
 
 x-ardupilot-base: &ardupilot-base
-  image: ${ARDUPILOT_IMAGE:-dhdevspace/auto_mns:ardupilot-slim}
+  image: ${ARDUPILOT_IMAGE:?source images/legacy-images.generated.env}
   pull_policy: if_not_present
   restart: "no"
   # network_mode: host removed — SITL now joins sim_net (shared bridge net) with
@@ -61,7 +61,7 @@ x-ardupilot-base: &ardupilot-base
 
 # Per-drone airsim_bridge_dN defaults.
 x-airsim-bridge: &airsim-bridge-defaults
-  image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+  image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
   pull_policy: if_not_present
   init: true
   restart: unless-stopped
@@ -100,7 +100,7 @@ x-airsim-bridge: &airsim-bridge-defaults
 # when the user explicitly opts into agent_external connectivity. Pass
 # `./launch.sh ardupilot-xfs --with-agent-external` to activate.
 x-zenoh-bridge: &zenoh-bridge-defaults
-  image: ${ZENOH_BRIDGE_IMAGE:-eclipse/zenoh-bridge-ros2dds:1.4.0}
+  image: ${ZENOH_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
   pull_policy: if_not_present
   init: true
   restart: unless-stopped
@@ -289,7 +289,7 @@ services:
   # live scene as a WebRTC stream when enabled.
   # ---------------------------------------------------------------------------
   pixel-streaming-signalling:
-    image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.5}
+    image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: ardupilot-xfs-pixel-streaming-signalling
     hostname: ardupilot-xfs-pixel-streaming-signalling
@@ -466,7 +466,7 @@ services:
   # QGroundControl X11 — Ground control station with GPU acceleration.
   # ---------------------------------------------------------------------------
   qgroundcontrol-x11:
-    image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
+    image: ${QGC_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: ardupilot-xfs-qgc
     hostname: ardupilot-xfs-qgc

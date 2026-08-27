@@ -34,7 +34,7 @@ name: ardupilot-xfs-mavros-test
 x-mavros: &mavros-defaults
   # Same image family as airsim_bridge_dN — already ships airsim_mavros_bringup
   # + mavros + mavros_msgs. Fallback matches the main compose's fallback.
-  image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+  image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
   pull_policy: if_not_present
   # init: false (intentional). mavros_bringup.launch.py's DDS cleanup step
   # (enable_dds_cleanup, on for d1 only) forks children; with tini as PID 1

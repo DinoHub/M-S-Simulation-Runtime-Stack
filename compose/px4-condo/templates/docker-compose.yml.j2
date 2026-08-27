@@ -167,7 +167,7 @@ services:
   # same recipe as ardupilot-xfs, adapted to host networking).
   # ============================================================================
   airsim_bridge_d1:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: airsim_bridge_d1
     hostname: airsim_bridge_d1
@@ -260,7 +260,7 @@ services:
   # bind 14540/14550 (AirSim and QGC own those sockets respectively).
   # ============================================================================
   mavros_d1:
-    image: ${AIRSIM_BRIDGE_IMAGE:-dhdevspace/auto_mns:airsim-ros2-bridge}
+    image: ${AIRSIM_BRIDGE_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: mavros_d1
     hostname: mavros_d1
@@ -307,7 +307,7 @@ services:
   # QGroundControl X11
   # ============================================================================
   qgroundcontrol-x11:
-    image: ${QGC_IMAGE:-dhdevspace/auto_mns:airsim-qgc-x11-latest}
+    image: ${QGC_IMAGE:?source images/legacy-images.generated.env}
     # Mutable tag, so pull every start; MNS_IMAGE_PULL_POLICY=missing starts
     # from the local cache when the registry is unreachable. See the same note
     # on airsim-xfs in the ardupilot-xfs stack.
@@ -378,7 +378,7 @@ services:
   # the plugin stays idle. Browser viewer at http://localhost:${PS_HTTP_PORT}.
   # ============================================================================
   pixel-streaming-signalling:
-    image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.5}
+    image: ${PIXEL_STREAMING_SIGNALLING_IMAGE:?source images/legacy-images.generated.env}
     pull_policy: if_not_present
     container_name: pixel-streaming-signalling
     hostname: pixel-streaming-signalling
