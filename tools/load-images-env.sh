@@ -1,4 +1,8 @@
 #!/usr/bin/env sh
+# `local` is not in POSIX but is implemented by every shell that runs this
+# (dash, bash, ash, ksh). Keeping it is deliberate; SC3043 would otherwise
+# fire on every helper below.
+# shellcheck disable=SC3043
 # tools/load-images-env.sh — sourced helper, not executed directly.
 #
 # POSIX sh, not bash: the Makefile's dashboard targets source this under

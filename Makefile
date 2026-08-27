@@ -31,7 +31,23 @@ SCENARIO        ?=
 # Transitional image workflow: development is local-first and tag-only;
 # production keeps the immutable catalog pins.
 IMAGE_MODE ?= development
+# Fixed rather than derived from the checkout directory. The dashboard services
+# carry daemon-global container_names (airsim-dashboard-api, ...), so two
+# projects could never run side by side anyway; a stable project name at least
+# makes `dashboard-down` find them from a worktree or a renamed clone. The cost
+# is a one-time migration: a dashboard started BEFORE this change lives under
+# the directory-derived project, so dashboard-down tears that one down as well
+# (see LEGACY_DASHBOARD_PROJECT below) or its containers would be orphaned and
+# the next `up` would fail with `Conflict. The container name
+# "/airsim-dashboard-api" is already in use`.
 DASHBOARD_COMPOSE_PROJECT_NAME ?= m-s-simulation-runtime-stack
+# Compose's own normalisation of the directory name: lowercased, restricted to
+# [a-z0-9_-]. This is the project name a checkout used before the line above.
+LEGACY_DASHBOARD_PROJECT = $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')
+# auto  - recreate ros2-tools only when the selected bridge image changed
+# always- always recreate (the pre-existing behaviour)
+# never - never touch it
+RECREATE_ROS2_TOOLS ?= auto
 ifeq ($(IMAGE_MODE),development)
 DASHBOARD_IMAGE_SET_FILE := images/image-set.development.generated.yaml
 ENSURE_IMAGES_FLAG := --development
@@ -99,9 +115,25 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
 	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
-	# ros2-tools is created outside Compose by the backend. Recreate it so a
-	# locally rebuilt bridge tag is selected on every explicit dashboard start.
-	@docker rm -f ros2-tools >/dev/null 2>&1 || true; docker restart airsim-dashboard-api >/dev/null
+	# ros2-tools is created outside Compose by the backend. It serves the
+	# Foxglove websocket Lichtblick renders from and is what services/
+	# ros2_recorder.py execs into for bag recording, so removing it
+	# unconditionally destroyed an in-progress recording and dropped the viz
+	# connection every time `make dashboard` was re-run against a live stack.
+	# Recreate it only when the selected bridge image actually changed —
+	# RECREATE_ROS2_TOOLS=always restores the old behaviour, =never skips it.
+	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	desired="$${MNS_ROS2_BRIDGE_IMAGE:-}"; \
+	current=$$(docker inspect -f '{{.Config.Image}}' ros2-tools 2>/dev/null || true); \
+	if [ "$(RECREATE_ROS2_TOOLS)" = "never" ]; then \
+	  echo "RECREATE_ROS2_TOOLS=never: leaving ros2-tools as it is."; \
+	elif [ "$(RECREATE_ROS2_TOOLS)" = "always" ] || [ -z "$$current" ] || [ "$$current" != "$$desired" ]; then \
+	  [ -n "$$current" ] && [ "$$current" != "$$desired" ] && echo "ros2-tools image changed ($$current -> $$desired); recreating."; \
+	  docker rm -f ros2-tools >/dev/null 2>&1 || true; \
+	else \
+	  echo "ros2-tools already running $$desired; leaving it (Foxglove :8764 and any bag recording stay up)."; \
+	fi; \
+	docker restart airsim-dashboard-api >/dev/null
 	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082), image mode: $(IMAGE_MODE))"
 
@@ -110,6 +142,14 @@ dashboard-down:
 	$(LOAD_DASHBOARD_IMAGES); \
 	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db down
+	# Also tear down the pre-fixed-name project, or a dashboard started before
+	# DASHBOARD_COMPOSE_PROJECT_NAME existed is left running and its
+	# daemon-global container names block the next `up`.
+	@if [ "$(LEGACY_DASHBOARD_PROJECT)" != "$(DASHBOARD_COMPOSE_PROJECT_NAME)" ]; then \
+	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	  COMPOSE_PROJECT_NAME=$(LEGACY_DASHBOARD_PROJECT) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
+	  MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db down >/dev/null 2>&1 || true; \
+	fi
 
 help:
 	@echo "Scenario targets (wrap ./launch.sh):"

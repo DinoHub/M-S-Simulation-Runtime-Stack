@@ -608,6 +608,21 @@ consumers:
         MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host
         MNS_ROS2_BRIDGE_IMAGE: ros2_bridge
 
+  # A pack release lock (packs/*.lock.json) restates a few image pins because
+  # tools/install_demo_packs.py has to pull the product shell before anything
+  # in this repo has resolved an image set. That is a second copy of a pin, and
+  # a second copy is how product-images.env drifted to review.20 against this
+  # repo's review.22. So the edge is declared here (lock key -> catalog key)
+  # and `tools/images.sh verify` asserts the JSON still agrees, offline. A bump
+  # that advances one of these rows now fails CI until the lock is regenerated.
+  pack_locks:
+    packs/standalone-v2-review.1.lock.json:
+      product_shell: mns_product_shell_v2
+      authoring: mns_authoring_v2
+      stack_generator: mns_stack_generator_v2
+      runtime_host: tevv_runtime_host
+      ros2_bridge: ros2_bridge
+
   image_sets:
     published:
       pull_policy: missing

@@ -77,6 +77,24 @@ if [[ "$MODE" == "drift" ]]; then
     for spec in "$ROOT"/scenarios/*/ScenarioSpec.yaml; do
         s=$(basename "$(dirname "$spec")")
         [[ -d "$ROOT/generated/$s" ]] || continue   # only diff stacks that exist
+        # The standalone-v2 image set ships ONE generic simulator
+        # (tevv_runtime_host) and resolves the world from a level pack named by
+        # environment.version + environment.artifact_digest. A v1 spec instead
+        # names a per-world simulator key (environment.id: blocks|xfs|condo|...)
+        # that no longer exists in the overlay, so the generator cannot resolve
+        # it. Say that, rather than letting it surface as a bare
+        # "GENERATION FAILED" that reads like a broken generator pin.
+        if ! "$PY" -c '
+import sys, yaml
+spec = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+env = spec.get("environment") or {}
+sys.exit(0 if env.get("artifact_digest") else 1)
+' "$spec"; then
+            echo "== $s: SKIPPED (v1 ScenarioSpec — environment has no artifact_digest,"
+            echo "   so it cannot select a standalone-v2 level pack. Re-author it in"
+            echo "   ScenarioLab to migrate.)"
+            continue
+        fi
         # MNS_IMAGE_SET_FILE is the HOST path here (not /workspace/... as in
         # product.sh): this runs the generator directly from the host with an
         # identical-path mount (-v "$ROOT:$ROOT" above), so the same string
