@@ -39,7 +39,7 @@ monitoring stays on :3000 — the dashboard uses :3001.
 
 ## Quick Start
 
-Requirements: Docker Engine with Compose, an NVIDIA-capable runtime for Unreal images, X11 when opening ScenarioLab, and a Docker login that can pull the private `dhdevspace/auto_mns` images. The product wrapper mounts the active Docker config read-only so generated stacks can pull their pinned runtime dependencies.
+Requirements: Docker Engine with Compose, Python 3 with `pip install -r tools/requirements.txt` (`./product.sh setup`, `doctor`, and `pull-images` resolve their image list through `tools/images.sh`, which needs PyYAML), an NVIDIA-capable runtime for Unreal images, X11 when opening ScenarioLab, and a Docker login that can pull the private `dhdevspace/auto_mns` images. The product wrapper mounts the active Docker config read-only so generated stacks can pull their pinned runtime dependencies.
 
 ```bash
 ./product.sh setup

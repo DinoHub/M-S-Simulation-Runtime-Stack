@@ -37,7 +37,16 @@ fi
 refs_args=()
 [[ "$ALL_CATALOG" == true ]] && refs_args+=(--all-catalog)
 [[ "$DEVELOPMENT" == true ]] && refs_args+=(--development)
-mapfile -t refs < <("$ROOT/tools/images.sh" refs "${refs_args[@]}")
+# Capture before splitting: a process substitution's exit status is discarded,
+# so a failing `images.sh refs` used to surface as the misleading "No pullable
+# remote images are declared." instead of naming the real cause.
+if ! refs_out="$("$ROOT/tools/images.sh" refs "${refs_args[@]}")"; then
+  echo "ERROR: could not enumerate catalog images (tools/images.sh refs failed)." >&2
+  echo "       See the Requirements section of README.md." >&2
+  exit 1
+fi
+mapfile -t refs <<<"$refs_out"
+[[ "${#refs[@]}" -eq 1 && -z "${refs[0]}" ]] && refs=()
 if [[ "${#refs[@]}" -eq 0 ]]; then
   echo "No pullable remote images are declared." >&2
   exit 1

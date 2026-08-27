@@ -80,7 +80,21 @@ case "${1:-}" in
     ;;
   doctor)
     prepare_dirs; docker compose version >/dev/null
-    mapfile -t images < <("$ROOT/tools/images.sh" refs)
+    # NOT `mapfile -t images < <(... refs)`: a process substitution's exit
+    # status is discarded, so a failing `images.sh refs` (no python3, no
+    # pyyaml, unreadable catalog) left `images` empty, skipped the loop
+    # entirely, and printed "Product prerequisites are ready." on a machine
+    # with zero images pulled. Capture first, check the status, then split.
+    if ! images_out="$("$ROOT/tools/images.sh" refs)"; then
+      echo "ERROR: could not enumerate product images (tools/images.sh refs failed)." >&2
+      echo "       See the Requirements section of README.md." >&2
+      exit 1
+    fi
+    mapfile -t images <<<"$images_out"
+    if [[ "${#images[@]}" -eq 0 || -z "${images[0]}" ]]; then
+      echo "ERROR: tools/images.sh refs returned no images; refusing to report success." >&2
+      exit 1
+    fi
     failed=0
     for image in "${images[@]}"; do docker image inspect "$image" >/dev/null 2>&1 || { echo "MISSING IMAGE: $image"; failed=1; }; done
     [[ "$failed" == 0 ]] && echo "Product prerequisites are ready."

@@ -39,6 +39,14 @@ MODE="${1:-}"
 
 case "$MODE" in
   sync|verify|report|bump|selftest|status|refs)
+    # product.sh setup/doctor/pull-images reach these subcommands, so this is
+    # on the customer path: fail with the fix rather than "python3: command
+    # not found". images.py carries the matching pyyaml guard.
+    if ! command -v "$PY" >/dev/null 2>&1; then
+      echo "ERROR: tools/images.sh $MODE needs Python 3 ('$PY' not found; set \$PYTHON to override)." >&2
+      echo "       Install python3, then: pip install -r tools/requirements.txt" >&2
+      exit 1
+    fi
     exec "$PY" "$ROOT/tools/images.py" "$MODE" "$@"
     ;;
   drift)
