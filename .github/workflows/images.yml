@@ -4,17 +4,17 @@ name: images
 # Actions minutes are free and unlimited for public repos. Both jobs below run
 # on `ubuntu-latest` for that reason — a larger runner would be billable.
 on:
+  # No paths: filter. It used to list images/**, product-images.env, and the
+  # tooling — but one of the invariants verify enforces (scan_for_mutable_refs)
+  # reads EVERY tracked *.yml, *.yaml, *.sh, *.md, and Makefile looking for a
+  # bare -latest reference to an image we publish ourselves. A PR reintroducing
+  # one of those mutable refs into docker-compose-tools.yml or tools.sh matched
+  # none of the listed paths, so the job never ran and the guard stayed silent —
+  # exactly the regression it exists to prevent. Any filter narrower
+  # than the scan's own globs is a filter that lies, and those globs are close
+  # enough to "everything" that the honest filter is none. The job is offline
+  # and finishes in about fifteen seconds.
   pull_request:
-    paths:
-      - "images/**"
-      - "product-images.env"
-      - "tools/images.py"
-      - "tools/images.sh"
-      - "tools/check-image-pins.sh"
-      - "tools/pull-all-images.sh"
-      - "product.sh"
-      - "Makefile"
-      - ".github/workflows/images.yml"
   schedule:
     # Mondays 02:00 UTC. Weekly, not daily: the point is to notice a moved tag
     # or an unattended follow-up, and a daily run is a notification people
@@ -67,4 +67,16 @@ jobs:
       - name: images.sh status
         # Exits nonzero when something needs a human, which is exactly what a
         # red weekly run should mean. Read the log: it names each item.
+        #
+        # A hosted runner has no `docker login`, so the catalog's private
+        # dhdevspace/auto_mns rows cannot be resolved without a token. Supply
+        # one through these secrets and every row is checked; leave them unset
+        # and images.py falls back to anonymous Hub access, where the public
+        # rows still resolve and the private ones report UNRESOLVABLE. Either
+        # way the run says what it could not check, which is the contract —
+        # before this, a missing credential exited the process outright and the
+        # red run looked like drift.
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: tools/images.sh status

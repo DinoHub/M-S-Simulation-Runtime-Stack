@@ -806,16 +806,13 @@ def assert_invariants(catalog: dict[str, Any]) -> None:
                 "refresh images explicitly with tools/pull-all-images.sh"
             )
 
-    # 5. product_version must agree with the platform repo it mirrors. Skipped
-    # silently when that checkout is not present — see platform_product_version.
-    declared = catalog.get("product_version")
-    platform = platform_product_version()
-    if platform is not None and platform != declared:
-        raise CatalogError(
-            f"product_version {declared!r} does not match MnS-Integration-Platform's "
-            f"mns-product.yaml version {platform!r}. These drifted once already (0.1.0 "
-            f"vs v0.2.0 in every image tag); bump both in one PR."
-        )
+    # NOTE: the product_version vs MnS-Integration-Platform cross-check is
+    # deliberately NOT an invariant. It reads a sibling checkout this repo does
+    # not control, at whatever branch that checkout happens to sit on, so as an
+    # invariant it made `sync` and `verify` -- both documented as offline and
+    # self-contained -- fail on a developer's machine for a reason unrelated to
+    # the edit being made, while CI (which clones this repo alone) passed. It
+    # lives in `status` instead: see platform_version_lag().
 
     # 5. No bare -latest reference to an image we publish. The pins live in
     # product-images.env; a fallback naming the mutable tag is how a fresh
@@ -1210,15 +1207,7 @@ def cmd_selftest(_args: argparse.Namespace) -> int:
 # STALE / TAG_MOVED / NO_DIGEST / NO_TAGS_FOUND / OK vocabulary).
 # --------------------------------------------------------------------------
 
-def _hub_token() -> str:
-    cfg_path = Path("~/.docker/config.json").expanduser()
-    if not cfg_path.is_file():
-        sys.exit("no ~/.docker/config.json — run docker login")
-    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-    auth = next((v["auth"] for k, v in cfg.get("auths", {}).items() if "docker.io" in k), None)
-    if not auth:
-        sys.exit("no docker.io credentials in ~/.docker/config.json — run docker login")
-    user, pw = base64.b64decode(auth).decode().split(":", 1)
+def _hub_login(user: str, pw: str) -> str:
     req = urllib.request.Request(
         "https://hub.docker.com/v2/users/login",
         data=json.dumps({"username": user, "password": pw}).encode(),
@@ -1227,7 +1216,52 @@ def _hub_token() -> str:
     return json.load(urllib.request.urlopen(req))["token"]
 
 
-def _hub_digest_for(repo: str, tag: str, token: str) -> tuple[str, str | None]:
+def _hub_token() -> str | None:
+    """A Hub JWT, or None to fall back to anonymous access.
+
+    Returning None rather than exiting is what lets this run in CI. The
+    previous version called sys.exit() when it found no ~/.docker/config.json,
+    so the weekly workflow died before a single registry lookup on a hosted
+    runner -- which never has a docker login -- and the failure read like drift
+    when it was a missing credential. Anonymous access still answers for public
+    repositories; a private row degrades to UNRESOLVABLE with an auth error,
+    which is reported, never silently OK.
+
+    Order: DOCKERHUB_USERNAME/DOCKERHUB_TOKEN from the environment (how CI
+    supplies a token), then ~/.docker/config.json (how a developer already
+    has one), then anonymous.
+    """
+    env_user = os.environ.get("DOCKERHUB_USERNAME")
+    env_pw = os.environ.get("DOCKERHUB_TOKEN") or os.environ.get("DOCKERHUB_PASSWORD")
+    if env_user and env_pw:
+        return _hub_login(env_user, env_pw)
+
+    cfg_path = Path("~/.docker/config.json").expanduser()
+    if cfg_path.is_file():
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            cfg = {}
+        auth = next((v["auth"] for k, v in cfg.get("auths", {}).items()
+                     if "docker.io" in k and v.get("auth")), None)
+        if auth:
+            user, pw = base64.b64decode(auth).decode().split(":", 1)
+            return _hub_login(user, pw)
+
+    print(
+        "note: no Docker Hub credentials (set DOCKERHUB_USERNAME + DOCKERHUB_TOKEN, "
+        "or run docker login). Continuing anonymously; private rows will report "
+        "UNRESOLVABLE rather than being silently skipped.",
+        file=sys.stderr,
+    )
+    return None
+
+
+def _hub_headers(token: str | None) -> dict[str, str]:
+    return {"Authorization": f"JWT {token}"} if token else {}
+
+
+def _hub_digest_for(repo: str, tag: str, token: str | None) -> tuple[str, str | None]:
     """Returns (digest, error). error is None on success — even if Hub's
     response happens to carry no digest field, which is not the same as a
     failed lookup and must not be conflated with it (that conflation was the
@@ -1235,7 +1269,7 @@ def _hub_digest_for(repo: str, tag: str, token: str) -> tuple[str, str | None]:
     try:
         req = urllib.request.Request(
             f"https://hub.docker.com/v2/repositories/{repo}/tags/{tag}",
-            headers={"Authorization": f"JWT {token}"},
+            headers=_hub_headers(token),
         )
         resp = json.load(urllib.request.urlopen(req, timeout=30))
         return resp.get("digest") or "", None
@@ -1251,14 +1285,14 @@ def _hub_digest_for(repo: str, tag: str, token: str) -> tuple[str, str | None]:
         return "", f"error: {exc}"
 
 
-def _hub_tags(repo: str, family: str, token: str) -> tuple[list[tuple[str, str]], str | None]:
+def _hub_tags(repo: str, family: str, token: str | None) -> tuple[list[tuple[str, str]], str | None]:
     """(name, last_updated) per tag. last_updated is what orders a traced
     family — sha tags carry no ordering of their own."""
     out: list[tuple[str, str]] = []
     url = f"https://hub.docker.com/v2/repositories/{repo}/tags/?page_size=100&name={family}"
     try:
         while url:
-            req = urllib.request.Request(url, headers={"Authorization": f"JWT {token}"})
+            req = urllib.request.Request(url, headers=_hub_headers(token))
             d = json.load(urllib.request.urlopen(req, timeout=30))
             out += [(t["name"], t.get("last_updated") or "") for t in d["results"]]
             url = d.get("next")
@@ -1445,8 +1479,9 @@ def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, A
             return _row_result(key, row, status="DIGEST_CHANGED", detail=live[:19], live_digest=live)
         return _row_result(key, row, status="OK", detail=live[:19], live_digest=live)
 
-    # resolver == hub
-    assert token is not None
+    # resolver == hub. token may be None: anonymous access answers for public
+    # repositories, and a private row comes back as an auth error, which is
+    # reported as UNRESOLVABLE below rather than crashing the whole run.
     live, err = _hub_digest_for(repo, tag, token)
     if err:
         return _row_result(key, row, status="UNRESOLVABLE", detail=err)
@@ -1729,6 +1764,27 @@ def _print_table(items: list[tuple[str, str]], indent: int) -> None:
         print(f"{' ' * indent}{subject:<{width}}   {note}")
 
 
+def platform_version_lag(catalog: dict[str, Any]) -> str | None:
+    """product_version vs the platform repo's mns-product.yaml, as a note.
+
+    Returns None when they agree or when the sibling checkout is absent or
+    unreadable -- see platform_product_version. Reported by `status` rather
+    than enforced by `verify` because the sibling checkout is uncontrolled:
+    a developer whose clone sits on an older release would otherwise be unable
+    to regenerate artifacts for an unrelated catalog edit.
+    """
+    declared = catalog.get("product_version")
+    platform = platform_product_version()
+    if platform is None or platform == declared:
+        return None
+    return (
+        f"product_version is {declared!r} but MnS-Integration-Platform's "
+        f"mns-product.yaml says {platform!r}. These drifted once already (0.1.0 vs "
+        f"v0.2.0 in every image tag). If the platform checkout is current, bump "
+        f"both in one PR; if it is just on an old branch, ignore this."
+    )
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     catalog = load_catalog()
     images = catalog["images"]
@@ -1759,6 +1815,9 @@ def cmd_status(args: argparse.Namespace) -> int:
             followups.append((key, note))
     for note in catalog.get("follow_ups") or []:
         followups.append(("(repo)", note))
+    lag = platform_version_lag(catalog)
+    if lag:
+        followups.append(("product_version", lag))
     followup_text = " ".join(note for _, note in followups).lower()
 
     # Rows published before the current product_version. Not actionable — a
