@@ -666,6 +666,47 @@ def dotenv_overrides(catalog: dict[str, Any]) -> list[tuple[str, str, str]]:
     return out
 
 
+# Files worth scanning for a resurrected mutable reference. Compose files and
+# docs are where the bare-tag fallbacks live; scanning everything would drag in
+# generated artifacts and this plan's own spec, which quote the old tags on
+# purpose.
+_MUTABLE_SCAN_GLOBS = ("*.yml", "*.yaml", "*.sh", "*.md", "Makefile")
+_MUTABLE_SCAN_SKIP_DIRS = {".git", "graphify-out", "generated", "images", "docs/superpowers", "docs/adr"}
+
+
+def owned_tag_prefixes(images: dict[str, Any]) -> set[str]:
+    """`repo:component` for every row we publish ourselves, where component is
+    the tag with its version/suffix stripped. Derived from the catalog so an
+    image name is never written down twice."""
+    out: set[str] = set()
+    for row in images.values():
+        if not row.get("published_by"):
+            continue
+        component = re.sub(r"-(v\d+\.\d+\.\d+|latest|review)\b.*$", "", row["tag"])
+        out.add(f"{row['repo']}:{component}")
+    return out
+
+
+def scan_for_mutable_refs(root: Path, prefixes: set[str]) -> list[tuple[str, int, str]]:
+    hits: list[tuple[str, int, str]] = []
+    if not prefixes:
+        return hits
+    for pattern in _MUTABLE_SCAN_GLOBS:
+        for path in sorted(root.rglob(pattern)):
+            rel = path.relative_to(root).as_posix()
+            if any(rel == d or rel.startswith(f"{d}/") for d in _MUTABLE_SCAN_SKIP_DIRS):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            for n, line in enumerate(text.splitlines(), start=1):
+                for prefix in prefixes:
+                    if f"{prefix}-latest" in line:
+                        hits.append((rel, n, line.strip()))
+    return hits
+
+
 def assert_invariants(catalog: dict[str, Any]) -> None:
     images = catalog["images"]
     all_vars = _all_env_vars(catalog)
@@ -734,6 +775,17 @@ def assert_invariants(catalog: dict[str, Any]) -> None:
             f"product_version {declared!r} does not match MnS-Integration-Platform's "
             f"mns-product.yaml version {platform!r}. These drifted once already (0.1.0 "
             f"vs v0.2.0 in every image tag); bump both in one PR."
+        )
+
+    # 5. No bare -latest reference to an image we publish. The pins live in
+    # product-images.env; a fallback naming the mutable tag is how a fresh
+    # clone silently runs whatever was pushed last.
+    hits = scan_for_mutable_refs(ROOT, owned_tag_prefixes(images))
+    if hits:
+        detail = "; ".join(f"{p}:{n}" for p, n, _ in hits[:5])
+        raise CatalogError(
+            f"{len(hits)} reference(s) to a mutable -latest tag for an image we publish: "
+            f"{detail}. Point them at the pinned traced tag instead."
         )
 
 
@@ -995,6 +1047,26 @@ consumers:
         tag="thing-v0.2.0-g6e6ae15", channel="traced", d="0" * 64)))
     _validate_catalog(yaml.safe_load(owned_fixture.format(
         tag="thing-v0.2.0-retag.2026-08-26", channel="pinned", d="0" * 64)))
+
+    # 8. A bare -latest reference to an image we own, anywhere in this repo,
+    #    is how the repointed compose fallbacks would quietly revert.
+    prefixes = owned_tag_prefixes({
+        "fixture": {"repo": "example/repo", "tag": "thing-v0.2.0-g6e6ae15",
+                    "channel": "traced", "published_by": "x/tools/build.sh",
+                    "digest": None, "purpose": "p"},
+        "other": {"repo": "example/repo", "tag": "unowned-latest",
+                  "channel": "moving", "digest": None, "purpose": "p"},
+    })
+    assert prefixes == {"example/repo:thing"}, f"unexpected owned prefixes: {prefixes}"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "compose.yml").write_text(
+            "services:\n  a:\n    image: ${X:-example/repo:thing-latest}\n"
+            "  b:\n    image: example/repo:unowned-latest\n", encoding="utf-8")
+        hits = scan_for_mutable_refs(root, prefixes)
+        assert [(p, n) for p, n, _ in hits] == [("compose.yml", 3)], (
+            f"selftest FAILED: expected exactly the owned -latest hit, got {hits}"
+        )
 
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
