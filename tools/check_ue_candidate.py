@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,10 @@ IMAGE_ROLES = ("product_shell", "authoring", "stack_generator", "runtime_host",
 HOST_LABEL = "tevv.content_packs.host_compatibility_id"
 PIN = re.compile(r"[^\s@]+@sha256:[0-9a-f]{64}")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
+TAGGED_IMAGE = re.compile(
+    r"[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
+    r":[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}"
+)
 
 
 class CandidateError(ValueError):
@@ -42,7 +47,14 @@ def host_id_from_engine(engine_root: Path, expected_version: str) -> str:
     return f"ue-{actual}-cl{build['Changelist']}-linux-development-vulkan-sm6-iostore-v2"
 
 
-def validate_lock(lock: dict, host_id: str) -> None:
+def is_local_candidate_reference(reference: object) -> bool:
+    """Return true for an explicit, non-moving tag usable in local mode."""
+    if not isinstance(reference, str) or not TAGGED_IMAGE.fullmatch(reference):
+        return False
+    return not reference.rsplit(":", 1)[1].lower().endswith("latest")
+
+
+def validate_lock(lock: dict, host_id: str, local_images: bool = False) -> None:
     if not isinstance(lock, dict) or lock.get("schema") != "mns.pack_release_lock.v1":
         raise CandidateError("expected mns.pack_release_lock.v1 candidate lock")
     if lock.get("capability_id") != host_id:
@@ -51,12 +63,40 @@ def validate_lock(lock: dict, host_id: str) -> None:
     if not isinstance(images, dict):
         raise CandidateError("candidate lock must declare required_images")
     for role in IMAGE_ROLES:
-        if not isinstance(images.get(role), str) or not PIN.fullmatch(images[role]):
-            raise CandidateError(f"required_images.{role} must be pinned by registry digest")
-    # Additional components (for example an autopilot) must also be pinned.
+        if role not in images:
+            requirement = "declare an explicit local tag or registry digest" if local_images else "be pinned by registry digest"
+            raise CandidateError(f"required_images.{role} must {requirement}")
+
+    # Additional components (for example an autopilot) follow the same mode.
+    local_references = set()
     for role, reference in images.items():
-        if not isinstance(reference, str) or not PIN.fullmatch(reference):
+        if isinstance(reference, str) and PIN.fullmatch(reference):
+            continue
+        if not local_images:
             raise CandidateError(f"required_images.{role} must be pinned by registry digest")
+        if not is_local_candidate_reference(reference):
+            raise CandidateError(
+                f"required_images.{role} must be a registry digest or an explicit non-latest local tag"
+            )
+        if reference in local_references:
+            raise CandidateError(f"local image tag is reused by more than one role: {reference}")
+        local_references.add(reference)
+
+    if local_images:
+        if not local_references:
+            raise CandidateError("--local-images requires at least one explicit local image tag")
+        expected_ids = lock.get("required_image_ids")
+        if not isinstance(expected_ids, dict):
+            raise CandidateError("local candidate lock must declare required_image_ids")
+        missing = sorted(set(images) - set(expected_ids))
+        extra = sorted(set(expected_ids) - set(images))
+        if missing or extra:
+            raise CandidateError(
+                f"required_image_ids keys must exactly match required_images; missing={missing}, extra={extra}"
+            )
+        for role, image_id in expected_ids.items():
+            if not isinstance(image_id, str) or not DIGEST.fullmatch(image_id):
+                raise CandidateError(f"required_image_ids.{role} must be sha256:<64 lowercase hex>")
     packs = lock.get("packs")
     if not isinstance(packs, list) or not packs:
         raise CandidateError("candidate lock must include the packs used by this test")
@@ -76,19 +116,24 @@ def validate_lock(lock: dict, host_id: str) -> None:
         raise CandidateError("candidate requires at least one level pack")
 
 
-def verify_images(images: dict, host_id: str) -> dict:
+def verify_images(images: dict, host_id: str, expected_ids: dict | None = None) -> dict:
     receipts = {}
     for role, reference in images.items():
         metadata = docker_json("image", "inspect", reference)[0]
+        image_id = metadata.get("Id")
+        if expected_ids is not None and image_id != expected_ids[role]:
+            raise CandidateError(
+                f"{role} local image ID is {image_id!r}; expected {expected_ids[role]!r}"
+            )
         if role in ("authoring", "runtime_host"):
             actual = (metadata.get("Config", {}).get("Labels") or {}).get(HOST_LABEL)
             if actual != host_id:
                 raise CandidateError(f"{role} image declares {actual!r}; expected {host_id}")
-        receipts[role] = {"reference": reference, "image_id": metadata["Id"]}
+        receipts[role] = {"reference": reference, "image_id": image_id}
     return receipts
 
 
-def verify_packs(lock: dict, store: Path, host_id: str) -> list:
+def verify_packs(lock: dict, store: Path, host_id: str, local_images: bool = False) -> list:
     receipts = []
     store = store.resolve(strict=True)
     for pack in lock["packs"]:
@@ -99,8 +144,9 @@ def verify_packs(lock: dict, store: Path, host_id: str) -> list:
             raise CandidateError("pack bundle escapes the selected store")
         # Use the Authoring-owned verifier shipped in the product shell. It
         # verifies file checksums, bundle identity, and an exact host variant.
+        pull_policy = ("--pull=never",) if local_images else ()
         result = docker_json(
-            "run", "--rm", "--network=none", "--read-only", "--tmpfs", "/tmp",
+            "run", *pull_policy, "--rm", "--network=none", "--read-only", "--tmpfs", "/tmp",
             "--user", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp",
             "-v", f"{store}:/packs:ro", lock["required_images"]["product_shell"],
             "packs", "verify", str(Path("/packs") / relative), "--host", host_id,
@@ -127,18 +173,22 @@ def verify_dashboard(container: str, workspace: Path, images: dict, receipts: di
             raise CandidateError(f"running dashboard {key} differs from the candidate: {environment.get(key)!r}")
 
 
-def dashboard_configuration(images: dict) -> tuple[dict, dict]:
+def dashboard_configuration(images: dict, local_images: bool = False) -> tuple[dict, dict]:
     """Select every generated runtime slot explicitly for the full E2E matrix."""
     for role in ("ardupilot", "px4", "qgroundcontrol", "sim_real_eval", "lichtblick"):
-        if not isinstance(images.get(role), str) or not PIN.fullmatch(images[role]):
-            raise CandidateError(f"dashboard launch requires digest-pinned required_images.{role}")
+        reference = images.get(role)
+        if not isinstance(reference, str) or not (
+            PIN.fullmatch(reference) or (local_images and is_local_candidate_reference(reference))
+        ):
+            requirement = "an explicit local tag or registry digest" if local_images else "a registry digest"
+            raise CandidateError(f"dashboard launch requires {requirement} in required_images.{role}")
     names = {"product_shell": "MNS_PRODUCT_SHELL_IMAGE", "authoring": "MNS_AUTHORING_IMAGE",
              "stack_generator": "MNS_STACK_GENERATOR_IMAGE", "runtime_host": "MNS_RUNTIME_HOST_IMAGE",
              "ros2_bridge": "MNS_ROS2_BRIDGE_IMAGE", "dashboard_backend": "DASHBOARD_BACKEND_IMAGE",
              "dashboard_frontend": "DASHBOARD_FRONTEND_IMAGE", "lichtblick": "DASHBOARD_LICHTBLICK_IMAGE"}
     environment = {name: images[role] for role, name in names.items()}
     overlay = {"schema": "mns.image_sets.v1", "image_sets": {"published": {
-        "pull_policy": "missing", "images": {
+        "pull_policy": "never" if local_images else "missing", "images": {
             "simulators": {"tevv_runtime_host": images["runtime_host"]},
             "autopilots": {"ardupilot": images["ardupilot"], "px4": images["px4"]},
             "ros2_bridge": images["ros2_bridge"], "qgroundcontrol": images["qgroundcontrol"],
@@ -146,24 +196,86 @@ def dashboard_configuration(images: dict) -> tuple[dict, dict]:
     return environment, overlay
 
 
-def start_dashboard(workspace: Path, store: Path, images: dict) -> None:
+def write_local_override(path: Path, environment: dict, images: dict, expected_ids: dict) -> None:
+    """Persist shell-safe local selections and their inspected IDs for reruns."""
+    lines = [
+        "# Generated by tools/check_ue_candidate.py --local-images.",
+        "# Source this file before a manual docker compose rerun; do not hand-edit.",
+    ]
+    for role in sorted(images):
+        lines.append(f"# {role}: {images[role]} = {expected_ids[role]}")
+    for key, value in sorted(environment.items()):
+        value = str(value)
+        if "\n" in value or "\r" in value:
+            raise CandidateError(f"cannot persist multiline local override {key}")
+        lines.append(f"{key}={shlex.quote(value)}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(0o600)
+
+
+def write_local_rerun(path: Path, engine_root: Path, engine_version: str, lock: Path,
+                      pack_store: Path, workspace: Path) -> None:
+    """Persist a revalidating command, never a catalog/Makefile shortcut."""
+    command = [
+        sys.executable, str(ROOT / "tools/check_ue_candidate.py"),
+        "--engine-root", str(engine_root.resolve()),
+        "--engine-version", engine_version,
+        "--lock", str(lock.resolve()),
+        "--pack-store", str(pack_store.resolve()),
+        "--workspace", str(workspace.resolve()),
+        "--local-images", "--start-dashboard",
+    ]
+    override = path.parent / "local-images.env"
+    path.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "set -a\n"
+        f"source {shlex.quote(str(override.resolve()))}\n"
+        "set +a\n"
+        "exec " + shlex.join(command) + "\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o700)
+
+
+def start_dashboard(workspace: Path, store: Path, images: dict, local_images: bool = False,
+                    expected_ids: dict | None = None) -> Path | None:
     workspace = workspace.resolve(strict=True)
     if store.resolve() != workspace / ".mns/pack-store":
         raise CandidateError("dashboard launch must use the workspace's .mns/pack-store")
-    environment, overlay = dashboard_configuration(images)
+    environment, overlay = dashboard_configuration(images, local_images=local_images)
     config = workspace / ".mns/ue-candidate"
     config.mkdir(parents=True, exist_ok=True)
     image_set = config / "image-set.json"
     image_set.write_text(json.dumps(overlay, indent=2) + "\n")
     # Explicit environment takes precedence over old machine-local .env pins.
-    environment = {**os.environ, **environment, "MSRS_ROOT": str(workspace),
-                   "MNS_IMAGE_SET_FILE": str(image_set), "HOST_UID": str(os.getuid()),
-                   "HOST_GID": str(os.getgid()), "DASHBOARD_PULL_POLICY": "never"}
+    overrides = {**environment, "MSRS_ROOT": str(workspace),
+                 "MNS_IMAGE_SET_FILE": str(image_set), "HOST_UID": str(os.getuid()),
+                 "HOST_GID": str(os.getgid()), "DASHBOARD_PULL_POLICY": "never",
+                 "MNS_IMAGE_PULL_POLICY": "never"}
+    for key in ("DISPLAY", "XAUTHORITY"):
+        if os.environ.get(key):
+            overrides[key] = os.environ[key]
+    local_override = None
+    if local_images:
+        if expected_ids is None:
+            raise CandidateError("local dashboard launch requires expected image IDs")
+        local_override = config / "local-images.env"
+        write_local_override(local_override, overrides, images, expected_ids)
+    environment = {**os.environ, **overrides}
+    stage_environment = environment
+    if local_images:
+        # Address the already-inspected local image by immutable ID and require
+        # the staging helper to reject a missing local image without pulling.
+        stage_environment = {
+            **environment, "MNS_PRODUCT_SHELL_IMAGE": expected_ids["product_shell"]
+        }
     subprocess.run([str(workspace / "tools/stage-authoring-packs.sh")],
-                   cwd=workspace, env=environment, check=True)
+                   cwd=workspace, env=stage_environment, check=True)
     subprocess.run(["docker", "compose", "-p", "m-s-simulation-runtime-stack", "-f",
                     "docker-compose-dashboard.yml", "up", "-d", "--pull", "never"],
                    cwd=workspace, env=environment, check=True)
+    return local_override
 
 
 def main(argv=None) -> int:
@@ -176,19 +288,35 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace", type=Path, default=ROOT)
     parser.add_argument("--start-dashboard", action="store_true",
                         help="after verification, stage packs and launch the dashboard with this exact candidate")
+    parser.add_argument("--local-images", action="store_true",
+                        help="allow explicit local tags only with exact required_image_ids; never pull them")
     args = parser.parse_args(argv)
     try:
         host_id = host_id_from_engine(args.engine_root.expanduser(), args.engine_version)
         lock = read_json(args.lock)
-        validate_lock(lock, host_id)
-        images = verify_images(lock["required_images"], host_id)
-        packs = verify_packs(lock, args.pack_store, host_id)
+        validate_lock(lock, host_id, local_images=args.local_images)
+        expected_ids = lock.get("required_image_ids") if args.local_images else None
+        images = verify_images(lock["required_images"], host_id, expected_ids=expected_ids)
+        packs = verify_packs(lock, args.pack_store, host_id, local_images=args.local_images)
+        local_override = None
+        local_rerun = None
         if args.start_dashboard:
-            start_dashboard(args.workspace, args.pack_store, lock["required_images"])
+            local_override = start_dashboard(
+                args.workspace, args.pack_store, lock["required_images"],
+                local_images=args.local_images, expected_ids=expected_ids,
+            )
+            if args.local_images:
+                local_rerun = args.workspace.resolve() / ".mns/ue-candidate/rerun.sh"
+                write_local_rerun(
+                    local_rerun, args.engine_root.expanduser(), args.engine_version,
+                    args.lock.expanduser(), args.pack_store.expanduser(), args.workspace,
+                )
         if args.dashboard_container:
             verify_dashboard(args.dashboard_container, args.workspace, lock["required_images"], images)
         print(json.dumps({"status": "preflight_passed", "e2e_verified": False,
-                          "host_compatibility_id": host_id, "images": images, "packs": packs}, indent=2))
+                          "host_compatibility_id": host_id, "images": images, "packs": packs,
+                          "local_override": str(local_override) if local_override else None,
+                          "local_rerun": str(local_rerun) if local_rerun else None}, indent=2))
         return 0
     except (CandidateError, OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as exc:
         print(f"UE candidate BLOCKED: {exc}", file=sys.stderr)

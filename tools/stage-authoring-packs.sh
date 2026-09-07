@@ -36,6 +36,14 @@ if [[ ! -f "$STORE_INDEX" ]]; then
 fi
 
 IMAGE="${MNS_PRODUCT_SHELL_IMAGE:?MNS_PRODUCT_SHELL_IMAGE is required}"
+PULL_POLICY="${MNS_IMAGE_PULL_POLICY:-missing}"
+case "$PULL_POLICY" in
+  always|missing|never) ;;
+  *)
+    echo "MNS_IMAGE_PULL_POLICY must be always, missing, or never; got: $PULL_POLICY" >&2
+    exit 2
+    ;;
+esac
 
 if [[ -f "$STAGED_INDEX" && ! "$STORE_INDEX" -nt "$STAGED_INDEX" \
       && -f "$STAGED_STAMP" && "$(cat "$STAGED_STAMP")" == "$IMAGE" ]]; then
@@ -43,7 +51,7 @@ if [[ -f "$STAGED_INDEX" && ! "$STORE_INDEX" -nt "$STAGED_INDEX" \
   exit 0
 fi
 
-docker run --rm \
+docker run --pull "$PULL_POLICY" --rm \
   --user "$(id -u):$(id -g)" \
   -e HOME=/tmp \
   -e MNS_WORKSPACE_ROOT=/workspace \

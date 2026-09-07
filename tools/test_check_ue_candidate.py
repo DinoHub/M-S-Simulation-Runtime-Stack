@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,6 +40,37 @@ class CandidateTests(unittest.TestCase):
             with self.assertRaises(candidate.CandidateError):
                 candidate.validate_lock(lock, self.host)
 
+    def test_local_mode_requires_unique_non_latest_tags_and_exact_ids(self):
+        lock = copy.deepcopy(self.lock)
+        lock["required_images"]["product_shell"] = "dhdevspace/auto_mns:mns-product-shell-ue582-local.1"
+        lock["required_images"]["authoring"] = "local/mns-authoring:20260907.1"
+        lock["required_image_ids"] = {role: "sha256:" + "c" * 64 for role in lock["required_images"]}
+        candidate.validate_lock(lock, self.host, local_images=True)
+        with self.assertRaisesRegex(candidate.CandidateError, "registry digest"):
+            candidate.validate_lock(lock, self.host)
+
+        for mutate, message in (
+            (lambda value: value["required_images"].update(authoring="local/mns-authoring:latest"), "non-latest"),
+            (lambda value: value["required_images"].update(authoring=value["required_images"]["product_shell"]), "reused"),
+            (lambda value: value["required_image_ids"].pop("authoring"), "exactly match"),
+            (lambda value: value["required_image_ids"].update(authoring="not-an-id"), "sha256"),
+        ):
+            changed = copy.deepcopy(lock)
+            mutate(changed)
+            with self.assertRaisesRegex(candidate.CandidateError, message):
+                candidate.validate_lock(changed, self.host, local_images=True)
+
+    def test_local_image_id_is_checked_before_use(self):
+        images = {"authoring": "local/mns-authoring:ue582.1"}
+        expected = {"authoring": "sha256:" + "c" * 64}
+        metadata = [{"Id": expected["authoring"], "Config": {"Labels": {candidate.HOST_LABEL: self.host}}}]
+        with patch.object(candidate, "docker_json", return_value=metadata):
+            self.assertEqual(candidate.verify_images(images, self.host, expected)["authoring"]["image_id"],
+                             expected["authoring"])
+            metadata[0]["Id"] = "sha256:" + "d" * 64
+            with self.assertRaisesRegex(candidate.CandidateError, "local image ID"):
+                candidate.verify_images(images, self.host, expected)
+
     def test_unreal_images_need_matching_built_host_label(self):
         metadata = [{"Id": "sha256:image", "Config": {"Labels": {candidate.HOST_LABEL: self.host}}}]
         with patch.object(candidate, "docker_json", return_value=metadata):
@@ -73,6 +105,9 @@ class CandidateTests(unittest.TestCase):
                 result["digest"] = "sha256:" + "c" * 64
                 with self.assertRaisesRegex(candidate.CandidateError, "receipt"):
                     candidate.verify_packs(self.lock, store, self.host)
+                result["digest"] = "sha256:" + "b" * 64
+                candidate.verify_packs(self.lock, store, self.host, local_images=True)
+                self.assertIn("--pull=never", docker.call_args.args)
 
     def test_launch_overrides_stale_env_and_uses_only_candidate_runtime_slots(self):
         images = self.lock["required_images"]
@@ -95,6 +130,85 @@ class CandidateTests(unittest.TestCase):
             self.assertEqual(selected["simulators"]["tevv_runtime_host"], images["runtime_host"])
             self.assertEqual(selected["autopilots"]["ardupilot"], images["ardupilot"])
             self.assertEqual(selected["ros2_bridge"], images["ros2_bridge"])
+
+    def test_local_launch_persists_pull_never_override_and_receipts(self):
+        images = self.lock["required_images"]
+        for role in ("ardupilot", "px4", "qgroundcontrol", "sim_real_eval", "lichtblick"):
+            images[role] = f"example.invalid/{role}:candidate@sha256:" + "c" * 64
+        images["product_shell"] = "dhdevspace/auto_mns:mns-product-shell-ue582-local.1"
+        expected_ids = {role: "sha256:" + "d" * 64 for role in images}
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            store = workspace / ".mns/pack-store"
+            store.mkdir(parents=True)
+            with patch.dict(os.environ, {"DISPLAY": ":1", "XAUTHORITY": "/run/user/1000/gdm/Xauthority"}), \
+                 patch.object(candidate.subprocess, "run") as run:
+                    override = candidate.start_dashboard(
+                        workspace, store, images, local_images=True, expected_ids=expected_ids,
+                    )
+            self.assertEqual(run.call_args_list[0].kwargs["env"]["MNS_PRODUCT_SHELL_IMAGE"],
+                             expected_ids["product_shell"])
+            self.assertEqual(run.call_args_list[0].kwargs["env"]["MNS_IMAGE_PULL_POLICY"], "never")
+            self.assertEqual(run.call_args_list[-1].kwargs["env"]["MNS_PRODUCT_SHELL_IMAGE"],
+                             images["product_shell"])
+            self.assertEqual(run.call_args_list[-1].args[0][-2:], ["--pull", "never"])
+            overlay = json.loads((workspace / ".mns/ue-candidate/image-set.json").read_text())
+            self.assertEqual(overlay["image_sets"]["published"]["pull_policy"], "never")
+            contents = override.read_text()
+            self.assertIn("MNS_PRODUCT_SHELL_IMAGE=dhdevspace/auto_mns:mns-product-shell-ue582-local.1", contents)
+            self.assertIn("DISPLAY=:1", contents)
+            self.assertIn("XAUTHORITY=/run/user/1000/gdm/Xauthority", contents)
+            self.assertIn(expected_ids["product_shell"], contents)
+            self.assertEqual(override.stat().st_mode & 0o777, 0o600)
+
+            rerun = workspace / ".mns/ue-candidate/rerun.sh"
+            candidate.write_local_rerun(
+                rerun, Path("/opt/Unreal-5.8.2"), "5.8.2", workspace / ".mns/lock.json",
+                store, workspace,
+            )
+            rerun_contents = rerun.read_text()
+            self.assertIn("--engine-root /opt/Unreal-5.8.2", rerun_contents)
+            self.assertIn("--lock", rerun_contents)
+            self.assertIn("--local-images --start-dashboard", rerun_contents)
+            self.assertIn("set -a", rerun_contents)
+            self.assertIn("source ", rerun_contents)
+            self.assertIn("local-images.env", rerun_contents)
+            self.assertNotIn("make dashboard", rerun_contents)
+            self.assertEqual(rerun.stat().st_mode & 0o777, 0o700)
+
+    def test_pack_staging_honors_validated_pull_policy(self):
+        source = candidate.ROOT / "tools/stage-authoring-packs.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            script = workspace / "tools/stage-authoring-packs.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text(source.read_text())
+            script.chmod(0o755)
+            (workspace / ".mns/pack-store").mkdir(parents=True)
+            (workspace / ".mns/pack-store/index.json").write_text("{}\n")
+            bin_dir = workspace / "bin"
+            bin_dir.mkdir()
+            docker = bin_dir / "docker"
+            docker.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$DOCKER_ARGS"\n')
+            docker.chmod(0o755)
+            docker_args = workspace / "docker.args"
+            environment = {
+                **os.environ,
+                "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                "DOCKER_ARGS": str(docker_args),
+                "MNS_PRODUCT_SHELL_IMAGE": "sha256:" + "d" * 64,
+                "MNS_IMAGE_PULL_POLICY": "never",
+            }
+            subprocess.run([str(script)], env=environment, check=True, capture_output=True, text=True)
+            arguments = docker_args.read_text().splitlines()
+            self.assertEqual(arguments[:3], ["run", "--pull", "never"])
+
+            environment["MNS_IMAGE_PULL_POLICY"] = "sometimes"
+            failed = subprocess.run(
+                [str(script)], env=environment, check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(failed.returncode, 2)
+            self.assertIn("must be always, missing, or never", failed.stderr)
 
     def test_launch_requires_support_images_instead_of_inheriting_catalog_defaults(self):
         with self.assertRaisesRegex(candidate.CandidateError, "ardupilot"):
