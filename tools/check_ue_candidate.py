@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_ROLES = ("product_shell", "authoring", "stack_generator", "runtime_host",
-               "ros2_bridge", "dashboard_backend", "dashboard_frontend")
+               "ros2_bridge", "dashboard_backend", "dashboard_frontend", "timescaledb")
 HOST_LABEL = "tevv.content_packs.host_compatibility_id"
 PIN = re.compile(r"[^\s@]+@sha256:[0-9a-f]{64}")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
@@ -175,7 +175,7 @@ def verify_dashboard(container: str, workspace: Path, images: dict, receipts: di
 
 def dashboard_configuration(images: dict, local_images: bool = False) -> tuple[dict, dict]:
     """Select every generated runtime slot explicitly for the full E2E matrix."""
-    for role in ("ardupilot", "px4", "qgroundcontrol", "sim_real_eval", "lichtblick"):
+    for role in ("ardupilot", "px4", "qgroundcontrol", "sim_real_eval", "lichtblick", "timescaledb"):
         reference = images.get(role)
         if not isinstance(reference, str) or not (
             PIN.fullmatch(reference) or (local_images and is_local_candidate_reference(reference))
@@ -185,7 +185,8 @@ def dashboard_configuration(images: dict, local_images: bool = False) -> tuple[d
     names = {"product_shell": "MNS_PRODUCT_SHELL_IMAGE", "authoring": "MNS_AUTHORING_IMAGE",
              "stack_generator": "MNS_STACK_GENERATOR_IMAGE", "runtime_host": "MNS_RUNTIME_HOST_IMAGE",
              "ros2_bridge": "MNS_ROS2_BRIDGE_IMAGE", "dashboard_backend": "DASHBOARD_BACKEND_IMAGE",
-             "dashboard_frontend": "DASHBOARD_FRONTEND_IMAGE", "lichtblick": "DASHBOARD_LICHTBLICK_IMAGE"}
+             "dashboard_frontend": "DASHBOARD_FRONTEND_IMAGE", "lichtblick": "DASHBOARD_LICHTBLICK_IMAGE",
+             "timescaledb": "DASHBOARD_TIMESCALEDB_IMAGE"}
     environment = {name: images[role] for role, name in names.items()}
     overlay = {"schema": "mns.image_sets.v1", "image_sets": {"published": {
         "pull_policy": "never" if local_images else "missing", "images": {

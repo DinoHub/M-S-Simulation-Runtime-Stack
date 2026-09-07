@@ -74,7 +74,7 @@ class CandidateTests(unittest.TestCase):
     def test_unreal_images_need_matching_built_host_label(self):
         metadata = [{"Id": "sha256:image", "Config": {"Labels": {candidate.HOST_LABEL: self.host}}}]
         with patch.object(candidate, "docker_json", return_value=metadata):
-            self.assertEqual(len(candidate.verify_images(self.lock["required_images"], self.host)), 7)
+            self.assertEqual(len(candidate.verify_images(self.lock["required_images"], self.host)), 8)
             metadata[0]["Config"]["Labels"][candidate.HOST_LABEL] = self.host.replace("5.8.2", "5.5.4")
             with self.assertRaisesRegex(candidate.CandidateError, "authoring image"):
                 candidate.verify_images(self.lock["required_images"], self.host)
@@ -124,6 +124,8 @@ class CandidateTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             self.assertEqual(calls[0].kwargs["env"]["MNS_AUTHORING_IMAGE"], images["authoring"])
             self.assertEqual(calls[1].kwargs["env"]["MSRS_ROOT"], str(workspace))
+            self.assertEqual(calls[1].kwargs["env"]["DASHBOARD_TIMESCALEDB_IMAGE"],
+                             images["timescaledb"])
             self.assertEqual(calls[1].args[0][-2:], ["--pull", "never"])
             overlay = json.loads((workspace / ".mns/ue-candidate/image-set.json").read_text())
             selected = overlay["image_sets"]["published"]["images"]
@@ -213,6 +215,13 @@ class CandidateTests(unittest.TestCase):
     def test_launch_requires_support_images_instead_of_inheriting_catalog_defaults(self):
         with self.assertRaisesRegex(candidate.CandidateError, "ardupilot"):
             candidate.dashboard_configuration(self.lock["required_images"])
+
+        images = copy.deepcopy(self.lock["required_images"])
+        for role in ("ardupilot", "px4", "qgroundcontrol", "sim_real_eval", "lichtblick"):
+            images[role] = f"example.invalid/{role}:candidate@sha256:" + "c" * 64
+        images.pop("timescaledb")
+        with self.assertRaisesRegex(candidate.CandidateError, "timescaledb"):
+            candidate.dashboard_configuration(images)
 
 
 if __name__ == "__main__":

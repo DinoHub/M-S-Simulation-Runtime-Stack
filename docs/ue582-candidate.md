@@ -20,8 +20,11 @@ Keep the previous release unchanged. Create a candidate lock using the existing
 receipts. Its `required_images` must include `product_shell`, `authoring`,
 `stack_generator`, `runtime_host`, `ros2_bridge`, `dashboard_backend`, and
 `dashboard_frontend`. Launch additionally requires pinned `ardupilot`, `px4`,
-`qgroundcontrol`, `sim_real_eval`, and `lichtblick` supporting images. They
-belong to the tested candidate set; only Unreal-bearing images contain UE.
+`qgroundcontrol`, `sim_real_eval`, `lichtblick`, and `timescaledb` supporting
+images. Compose interpolates the TimescaleDB image even when its optional
+`db` profile is disabled, so omitting it blocks the dashboard before launch.
+These images belong to the tested candidate set; only Unreal-bearing images
+contain UE.
 
 Install the chosen packs and pull the exact image digests before the check:
 
