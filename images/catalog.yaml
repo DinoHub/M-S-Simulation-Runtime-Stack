@@ -221,10 +221,19 @@ images:
   # ---------------------------------------------------------------------
   airsim_tools:
     repo: dhdevspace/auto_mns
-    tag: airsim-tools-latest
-    digest: sha256:c6a3740b7b6e335b3cd265414f2a2e71b46e9f7578dd0e5390d039f8e30d2feb
-    channel: moving
+    tag: "airsim-tools-v0.2.0-retag.2026-08-26"
+    latest_tag: airsim-tools-latest
+    # This immutable dated tag wraps the exact linux/amd64 manifest formerly
+    # pinned through airsim-tools-latest. Its index digest differs because the
+    # re-tag is a manifest list containing that original manifest.
+    digest: sha256:3ca0e1cd711addd5c258d323609fa668d91baac4e2547d34e529cb88c759dfd8
+    channel: pinned
+    published_by: "(re-tag only — no known build source)"
     purpose: ros2-tools image used by docker-compose-tools.yml.
+    follow_up: >-
+      airsim_tools has no known build source. Give it an owned build script,
+      publish a source-identifying immutable tag after the stable tag policy
+      is defined, then delete this note.
 
   # ---------------------------------------------------------------------
   # Runtime images — image_sets "published" (dhdevspace, R-2 resolves digests)
