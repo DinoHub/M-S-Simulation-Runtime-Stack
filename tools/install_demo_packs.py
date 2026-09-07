@@ -84,13 +84,15 @@ def build_parser() -> argparse.ArgumentParser:
     for name in SELECTIONS:
         result.add_argument(f"--{name}", action="store_true", help=f"Install the {name} pack")
     result.add_argument("--dry-run", action="store_true", help="Print selected release assets without downloading")
+    result.add_argument("--lock", type=Path, default=LOCK_PATH,
+                        help="Use a separate candidate lock without changing the released pack set")
     return result
 
 
 def main(argv: list[str] | None = None) -> int:
     argument_parser = build_parser()
     args = argument_parser.parse_args(argv)
-    lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    lock = json.loads(args.lock.read_text(encoding="utf-8"))
     requested = {name for name in SELECTIONS if getattr(args, name)}
     if args.all:
         requested.update(pack["selection"] for pack in lock["packs"])
