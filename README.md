@@ -47,6 +47,26 @@ TEVV-Web-Dashboard branch, put `DASHBOARD_BACKEND_IMAGE=` /
 never overridden by the generated image env files, and `pull_policy: missing`
 keeps a local tag.
 
+### Engine lines
+
+`CHANNEL` picks which Unreal line the whole dashboard runs, from the images to
+the packs. Packs cooked for one engine never mount on another, so each channel
+owns its own pack store and authoring data under `.mns/` and its own lock and
+host contract under `packs/` (see [packs/README.md](packs/README.md)):
+
+```bash
+make dashboard                 # CHANNEL=v2, UE 5.5.4 (default)
+make dashboard CHANNEL=ue582   # UE 5.8.2 candidate: 5 level + 2 object packs
+MNS_CHANNEL=ue582 ./product.sh start
+```
+
+The 5.8.2 channel's runtime host and ScenarioLab are published pins; its
+generator and product shell are `channel: local` rows built on this machine
+until published (build steps in `packs/README.md`). `tools/ensure-images.sh`
+refuses to start a channel whose local images are missing. The dashboard's
+Content phase shows the active engine line, the packs published for it, and
+installs the missing ones.
+
 The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
 generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
 (no source checkouts — same distribution contract as `./launch.sh`).

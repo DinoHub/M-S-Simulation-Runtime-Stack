@@ -16,3 +16,14 @@ image_sets:
       ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-latest
       qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
       sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest
+  ue582:
+    pull_policy: missing
+    images:
+      simulators:
+        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-20260908
+      autopilots:
+        ardupilot: dhdevspace/auto_mns:ardupilot-slim-latest
+        px4: dhdevspace/auto_mns:px4-airsim-px4
+      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-latest
+      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
+      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest

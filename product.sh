@@ -1,10 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-source "$ROOT/images/standalone-v2-images.generated.env"
-DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$ROOT/.mns/authoring-data}"
-PACK_STORE_ROOT="$ROOT/.mns/pack-store"
+# Which standalone-v2 release channel to run (same knob as `make dashboard
+# CHANNEL=`): v2 is UE 5.5.4, ue582 the UE 5.8.2 candidate. Each channel has
+# its own generated image env, pack lock, runtime-host contract and, because
+# packs cooked for one engine never mount on the other, its own pack store
+# and authoring data root under .mns/.
+CHANNEL="${MNS_CHANNEL:-v2}"
+case "$CHANNEL" in
+  v2)
+    CHANNEL_ENV="$ROOT/images/standalone-v2-images.generated.env"
+    CHANNEL_LOCK="$ROOT/packs/standalone-v2-review.1.lock.json"
+    CHANNEL_CONTRACT="$ROOT/packs/runtime-host-compatibility.json"
+    CHANNEL_DIR="$ROOT/.mns"
+    ;;
+  ue582)
+    CHANNEL_ENV="$ROOT/images/standalone-v2-ue582.generated.env"
+    CHANNEL_LOCK="$ROOT/packs/standalone-v2-ue582.lock.json"
+    CHANNEL_CONTRACT="$ROOT/packs/runtime-host-compatibility.ue582.json"
+    CHANNEL_DIR="$ROOT/.mns/ue582"
+    ;;
+  *) echo "ERROR: MNS_CHANNEL must be v2 or ue582; got: $CHANNEL" >&2; exit 2 ;;
+esac
+# shellcheck disable=SC1090
+source "$CHANNEL_ENV"
+export MNS_DEMO_PACK_LOCK="$CHANNEL_LOCK"
+export MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT="$CHANNEL_CONTRACT"
+DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$CHANNEL_DIR/authoring-data}"
+PACK_STORE_ROOT="${MNS_PACK_STORE_ROOT:-$CHANNEL_DIR/pack-store}"
+export MNS_PACK_STORE_ROOT="$PACK_STORE_ROOT"
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
 AUTHORING_AIRSIM_SETTINGS="$ROOT/config/unreal-airsim/authoring-preview.json"

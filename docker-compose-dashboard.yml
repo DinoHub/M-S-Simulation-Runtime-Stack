@@ -132,7 +132,11 @@ services:
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:-${PWD}}
       # The dashboard passes this through to the nested stack-generator run.
       # Development uses the tag-only overlay; production selects the pinned one.
-      - MNS_IMAGE_SET=published
+      # The image_sets entry generated stacks select from MNS_IMAGE_SET_FILE.
+      # `published` is the standalone-v2 default; a candidate channel (make
+      # dashboard CHANNEL=ue582) names its own entry, rendered into the same
+      # file from images/catalog.yaml.
+      - MNS_IMAGE_SET=${MNS_IMAGE_SET:-published}
       # A repo-owned path, not an image pin, so a default carries no drift
       # risk -- and a required var here broke `down`/`ps`/`logs` too, since
       # compose interpolates every service at parse time. The default is the
@@ -157,6 +161,21 @@ services:
       # the one baked into the pinned tevv_runtime_host image -- see
       # packs/README.md for how it is refreshed.
       - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.json}
+      # Content onboarding (the dashboard's Content phase, /api/content): the
+      # pack lock the catalog is read from and the product shell that installs
+      # and stages packs. Both come from the selected channel; `make dashboard
+      # CHANNEL=` exports them, and the defaults are the 5.5.4 review set.
+      # The backend runs the runtime stack's own tools/install-demo-packs.sh
+      # against this checkout, so a pack installed from the browser is exactly
+      # a pack installed by `make dashboard`.
+      - MNS_CHANNEL=${MNS_CHANNEL:-v2}
+      - MNS_DEMO_PACK_LOCK=${MNS_DEMO_PACK_LOCK:-${MSRS_ROOT:-${PWD}}/packs/standalone-v2-review.1.lock.json}
+      - MNS_PRODUCT_SHELL_IMAGE=${MNS_PRODUCT_SHELL_IMAGE:-}
+      # Reported (presence + host label) by the Content phase; the generated
+      # stacks take the runtime host from MNS_IMAGE_SET_FILE, not from this.
+      - MNS_RUNTIME_HOST_IMAGE=${MNS_RUNTIME_HOST_IMAGE:-}
+      - MNS_SEED_AUTHORING_DEFAULTS=${MNS_SEED_AUTHORING_DEFAULTS:-1}
+      - MNS_IMAGE_PULL_POLICY=${MNS_IMAGE_PULL_POLICY:-missing}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
       # The backend owns the ros2-tools sidecar; select the same published

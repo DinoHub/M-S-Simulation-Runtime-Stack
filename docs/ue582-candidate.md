@@ -1,47 +1,61 @@
-# UE 5.8.2 browser acceptance
+# UE 5.8.2 candidate: the `ue582` channel
 
 Run from the canonical `M-S-Simulation-Runtime-Stack` checkout. The removed
 `M-S-Simulation-Runtime-Stack-standalone-v2` worktree is not a product dependency.
 
-The acceptance chain is browser dashboard → packaged ScenarioLab → scenario
-export → stack generator → generic runtime host with cooked level/object packs.
-Packaging consumes declared dependencies; project-specific plugin, streaming,
-and world implementation choices belong to the source project.
+The acceptance chain is browser dashboard → Content phase (packs) → packaged
+ScenarioLab → scenario export → stack generator → generic runtime host with
+cooked level/object packs. Packaging consumes declared dependencies;
+project-specific plugin, streaming, and world implementation choices belong to
+the source project.
+
+## What the channel is
+
+`make dashboard CHANNEL=ue582` selects the `standalone_v2_ue582` release channel
+from `images/catalog.yaml`: the UE 5.8.2 runtime host and ScenarioLab (pinned
+by digest, both labelled `tevv.content_packs.host_compatibility_id =
+ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2`), a generator and
+product shell built locally on this engine line's pack contract (`channel:
+local` rows; `packs/README.md` has the build), the `ue582` image set for
+generated stacks, and `packs/standalone-v2-ue582.lock.json` installed into
+`.mns/ue582/`. The 5.5.4 channel is untouched and stays the default.
+
+Everything is keyed by the one host id. It comes from the runtime host image's
+packaging label, which the packaging step wrote from the engine's own
+`Build.version`; `tools/check_ue_candidate.py` reads it from there when no
+engine is installed (every customer machine) and from `--engine-root` when one
+is. ScenarioLab must carry the same label; every selected pack must have a
+variant cooked for it. Never relabel old cooked payloads.
 
 ## Candidate inputs
 
-Use an actual Linux UE 5.8.2 installation. `Engine/Build/Build.version` supplies
-the changelist. ScenarioLab and TEVVRuntimeHost images must expose that exact
-host ID in `tevv.content_packs.host_compatibility_id`; recook all selected packs
-with the same frozen host/base release. Never relabel old cooked payloads.
+```bash
+make dashboard CHANNEL=ue582                       # installs the 7 packs (~5.7 GB) on first run
+make dashboard CHANNEL=ue582 MNS_DEMO_PACKS="--condo --office-props"
+```
 
-Keep the previous release unchanged. Create a candidate lock using the existing
-`mns.pack_release_lock.v1` shape, with real published digests and download
-receipts. Its `required_images` must include `product_shell`, `authoring`,
-`stack_generator`, `runtime_host`, `ros2_bridge`, `dashboard_backend`, and
-`dashboard_frontend`. Launch additionally requires pinned `ardupilot`, `px4`,
-`qgroundcontrol`, `sim_real_eval`, `lichtblick`, and `timescaledb` supporting
-images. Compose interpolates the TimescaleDB image even when its optional
-`db` profile is disabled, so omitting it blocks the dashboard before launch.
-These images belong to the tested candidate set; only Unreal-bearing images
-contain UE.
-
-Install the chosen packs and pull the exact image digests before the check:
+Or verify the candidate explicitly before launching, with the gate PR #57
+introduced. Without `--engine-root` the host id is read from the lock's
+`runtime_host` image label:
 
 ```bash
-python3 tools/install_demo_packs.py --lock .mns/ue582.lock.json --all
-python3 tools/check_ue_candidate.py \
-  --engine-root /path/to/Linux_Unreal_Engine_5.8.2 \
-  --lock .mns/ue582.lock.json --start-dashboard
+python3 tools/check_ue_candidate.py --lock packs/standalone-v2-ue582.lock.json \
+  --pack-store .mns/ue582/pack-store --local-images
 ```
+
+`--local-images` permits the two `local/` tags only when the lock records their
+exact image IDs (`required_image_ids`); the generated lock does not carry those
+because `tools/build_pack_lock.py` records what the catalog pins, so add them by
+hand for a gated candidate run, or use the Makefile path, which checks local
+image presence through `tools/ensure-images.sh --channel standalone_v2_ue582`.
 
 The check rejects engine/host mismatches, unpinned images, missing or invalid
 packs, and bad bundle receipts. Pack integrity uses the Authoring-owned
-verifier inside the pinned product-shell image with read-only mounts and
-network disabled. After verification, `--start-dashboard` stages packs,
-writes an ignored candidate image overlay, and starts the dashboard with
-explicit image selections that override stale `.env` values. No release
-catalog or version is promoted. Without this flag, no dashboard is started.
+verifier inside the product-shell image with read-only mounts and network
+disabled. After verification, `--start-dashboard` stages packs, writes an
+ignored candidate image overlay, and starts the dashboard with explicit image
+selections that override stale `.env` values. No release catalog or version is
+promoted. Without this flag, no dashboard is started.
 
 ### Local-only image set
 
@@ -56,9 +70,9 @@ Docker image ID for every role:
   "schema": "mns.pack_release_lock.v1",
   "capability_id": "ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2",
   "required_images": {
-    "product_shell": "dhdevspace/auto_mns:mns-product-shell-ue582-local.1",
-    "authoring": "dhdevspace/auto_mns:mns-authoring-20260907.1",
-    "ros2_bridge": "local/tevv-airsim-ros2-bridge-humble:ue582-review.1-07a5da0"
+    "product_shell": "local/mns-product-shell:ue582-local.a1936b0a5f5f",
+    "authoring": "dhdevspace/auto_mns:mns-authoring-20260908@sha256:f9156845…",
+    "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260826@sha256:e661e37f…"
   },
   "required_image_ids": {
     "product_shell": "sha256:<64 lowercase hex>",
@@ -73,53 +87,33 @@ real lock, `required_image_ids` must have exactly the same keys as
 `required_images`. Local tags may use the normal `dhdevspace/auto_mns` name or
 a `local/` name, but must be unique in the lock and must not end in `latest`.
 The gate compares every `docker image inspect` ID before pack verification or
-launch, while retaining the exact engine/host-label and pack checks:
-
-```bash
-python3 tools/check_ue_candidate.py \
-  --engine-root /path/to/Linux_Unreal_Engine_5.8.2 \
-  --lock .mns/ue582-local.lock.json --local-images --start-dashboard
-```
+launch, while retaining the exact host-label and pack checks.
 
 Local pack verification, the candidate image-set overlay, and dashboard launch
 all use pull-never behavior. The launch writes the explicit selections and
 their inspected IDs to ignored files under `.mns/ue-candidate/`, plus an
-executable `.mns/ue-candidate/rerun.sh`. Use that script for subsequent starts:
-it reruns the full engine, image-ID, host-label, and pack verification with the
-same absolute engine/lock/store/workspace paths before launch. It does not use
-the Makefile or released catalog path. The ignored environment file also
-captures `DISPLAY` and `XAUTHORITY` when they were present for the successful
-launch, and the rerun script exports those values before revalidation.
-
-For a manual Compose invocation, export the generated values instead of merely
-reading them into the shell:
-
-```bash
-set -a
-source .mns/ue-candidate/local-images.env
-set +a
-docker compose -p m-s-simulation-runtime-stack \
-  -f docker-compose-dashboard.yml up -d --pull never
-```
+executable `.mns/ue-candidate/rerun.sh` that reruns the full verification with
+the same absolute paths before launch.
 
 Once the backend is healthy, verify its actual selections:
 
 ```bash
-python3 tools/check_ue_candidate.py \
-  --engine-root /path/to/Linux_Unreal_Engine_5.8.2 \
-  --lock .mns/ue582.lock.json --dashboard-container airsim-dashboard-api
+python3 tools/check_ue_candidate.py --lock packs/standalone-v2-ue582.lock.json \
+  --pack-store .mns/ue582/pack-store --local-images --dashboard-container airsim-dashboard-api
 ```
 
 ## Runtime gate
 
 The preflight deliberately reports `e2e_verified: false`. Open
-`http://localhost:3001`, launch ScenarioLab, load a level and object packs,
-change a scenario, export it, generate and launch its stack. Record the
-generated manifest, actual running image IDs, pack/variant digests, RGB and
-lidar samples, ROS2 domains, conditions and object placement, MCP automation,
-and cleanup results. Repeat across the four catalog levels and their supported
-autopilot/multi-vehicle flows. Include sky/depth/segmentation and asynchronous
-sensor shutdown regressions from the owning services.
+`http://localhost:3001`; the Content phase shows the engine line, the images
+and their labels, and the seven packs with state. Launch ScenarioLab from
+Author, load a level and object packs, change a scenario, export it, generate
+and launch its stack. Record the generated manifest, actual running image IDs,
+pack/variant digests, RGB and lidar samples, ROS2 domains, conditions and
+object placement, MCP automation, and cleanup results. Repeat across the level
+packs and their supported autopilot/multi-vehicle flows. Include
+sky/depth/segmentation and asynchronous sensor shutdown regressions from the
+owning services.
 
 The legacy `tests/full-product-e2e` runner is not evidence of this browser
 acceptance. Unit tests and a successful catalog response are prerequisites
@@ -130,4 +124,15 @@ Focused checks (no Unreal workload):
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools -p 'test_check_ue_candidate.py'
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools -p 'test_install_demo_packs.py'
 ```
+
+## Known gaps on this channel
+
+- Generator and product shell are local builds (MnS-Integration-Platform main
+  + TEVV-Authoring #15 SDK); publish them, then replace the `local/` catalog
+  rows with digest pins and rebuild the lock.
+- The ROS 2 bridge is the 5.5.4-era `tevv-airsim-ros2-bridge-humble-20260826`
+  until TEVV-Airsim-ROS2-Bridge #45 publishes a 5.8.2 build.
+- `ardupilot-slim-20260826.1` has no SITL binary (catalog follow-up); the drone
+  container exits 127 on every channel.
