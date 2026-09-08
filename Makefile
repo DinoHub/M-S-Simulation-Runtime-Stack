@@ -31,6 +31,15 @@ SCENARIO        ?=
 # Transitional image workflow: development is local-first and tag-only;
 # production keeps the immutable catalog pins.
 IMAGE_MODE ?= development
+# Standalone-v2 demo packs `make dashboard` guarantees are installed before
+# ScenarioLab opens, as tools/install-demo-packs.sh selections. Only packs
+# MISSING from .mns/pack-store are downloaded (--missing), so a re-run costs one
+# offline lock/index comparison. The full set is ~2.6 GB (XFS 1.17 GB, SAFTI
+# 0.83 GB, Pendleton 0.6 GB, Condo 9 MB, three object packs ~30 MB).
+#   make dashboard MNS_DEMO_PACKS="--condo --objects"   # a small subset
+#   make dashboard MNS_SKIP_PACK_INSTALL=1             # offline / v1-only
+MNS_DEMO_PACKS ?= --all
+MNS_SKIP_PACK_INSTALL ?= 0
 # Fixed rather than derived from the checkout directory. The dashboard services
 # carry daemon-global container_names (airsim-dashboard-api, ...), so two
 # projects could never run side by side anyway; a stable project name at least
@@ -85,12 +94,24 @@ endif
 
 SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images stage-authoring-packs dashboard dashboard-down
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images ensure-demo-packs stage-authoring-packs dashboard dashboard-down
 
 ensure-images:  ## Use local image tags; pull only those that are missing
 	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
 
-stage-authoring-packs: ensure-images  ## Refresh ScenarioLab's view of installed immutable packs
+# The product-shell image comes from the selected IMAGE_MODE's env (the
+# -latest alias in development, the digest pin in production), not from the
+# pack lock's pin, so install and the staging step right after it use ONE
+# shell image and stage-authoring-packs.sh's .staged-with stamp stays current.
+ensure-demo-packs: ensure-images  ## Install any standalone-v2 demo packs missing from .mns/pack-store
+	@if [ "$(MNS_SKIP_PACK_INSTALL)" = "1" ]; then \
+	  echo "MNS_SKIP_PACK_INSTALL=1: not installing demo packs."; \
+	else \
+	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	  ./tools/install-demo-packs.sh --missing $(MNS_DEMO_PACKS); \
+	fi
+
+stage-authoring-packs: ensure-demo-packs  ## Refresh ScenarioLab's view of installed immutable packs
 	@. ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
 	./tools/stage-authoring-packs.sh

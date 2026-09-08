@@ -1,0 +1,102 @@
+{
+  "schema": "mns.host_compatibility.v1",
+  "id": "ue-5.5.4-cl40574608-linux-development-vulkan-sm6-iostore-v2",
+  "consumer": "tevv-runtime",
+  "engine": "5.5",
+  "platform": "Linux",
+  "configuration": "Development",
+  "container_format": "iostore",
+  "sdk_abi": 1,
+  "content_api": 1,
+  "plugins": [
+    {
+      "id": "AirSim",
+      "version": "2.0.0"
+    },
+    {
+      "id": "TEVVContentPackSDK",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioRunner",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioContracts",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioEnvironment",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioAssets",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioProcedural",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioAuthored",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioObstacles",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioDynamic",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioDynamicAerial",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioDegradation",
+      "version": "0.1.0"
+    },
+    {
+      "id": "DegradationVolumes",
+      "version": "0.1.0"
+    },
+    {
+      "id": "AirSimFCTeleporter",
+      "version": "0.1.0"
+    },
+    {
+      "id": "MetricsEmitter",
+      "version": "0.1.0"
+    },
+    {
+      "id": "MetricsVehicleTelemetry",
+      "version": "0.1.0"
+    },
+    {
+      "id": "PCG",
+      "version": "engine"
+    },
+    {
+      "id": "InterchangeAssets",
+      "version": "engine"
+    },
+    {
+      "id": "ChaosVehiclesPlugin",
+      "version": "engine"
+    },
+    {
+      "id": "SunPosition",
+      "version": "engine"
+    },
+    {
+      "id": "GeoReferencing",
+      "version": "engine"
+    }
+  ],
+  "runtime_capabilities": [
+    "tevv.environment-definition.v1",
+    "tevv.whole-world-level-pack.v1",
+    "tevv.environment.uds.v1"
+  ]
+}

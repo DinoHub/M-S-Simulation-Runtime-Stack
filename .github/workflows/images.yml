@@ -82,6 +82,10 @@ jobs:
           tools/pull-all-images.sh --dry-run > /dev/null
           tools/pull-all-images.sh --dry-run --all-catalog > /dev/null
           tools/install-demo-packs.sh --all --dry-run > /dev/null
+          tools/install-demo-packs.sh --missing --all --dry-run > /dev/null
+          # A runner has no pack store, so --check reports every pack missing
+          # and exits 1; the point is that the offline path runs at all.
+          tools/install-demo-packs.sh --check --all > /dev/null || true
 
       - name: --dry-run must refuse --refresh-moving
         # Guards the ordering bug where the bump ran BEFORE the dry-run exit

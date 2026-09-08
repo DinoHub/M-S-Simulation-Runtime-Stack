@@ -23,15 +23,29 @@
 #   --env-file product-images.env \
 #   --env-file images/platform-images.generated.env
 #
+# Locally built dashboard images (a backend/frontend built from a
+# TEVV-Web-Dashboard branch, before it is published and pinned): put
+#   DASHBOARD_BACKEND_IMAGE=local/tevv-web-dashboard-backend:v2-dev
+#   DASHBOARD_FRONTEND_IMAGE=local/tevv-web-dashboard-frontend:v2-dev
+# in ./.env. tools/load-images-env.sh never exports a key that is already set
+# in the shell or present in ./.env, so the generated env files lose to it,
+# and pull_policy `missing` below never re-pulls a tag that exists locally.
+# Precedence, highest first: shell environment, ./.env, the generated env
+# files in the order make loads them (first file to set a key wins).
+#
 # Frontend: http://localhost:3001  (3000 belongs to the monitoring Grafana)
 # Backend:  http://localhost:8001
 #
 # The backend generates stacks in DISTRIBUTION MODE: no platform checkout —
-# it runs ${MNS_STACK_GENERATOR_IMAGE} (from product-images.env) against
-# this repository's directory, mounted at its identical host path so the
-# generated stacks' bind mounts resolve on the host. Scenario specs land in
-# ./scenarios/<name>/, generated stacks in ./generated/<name>/ — the same
-# places ./product.sh and ./launch.sh use.
+# it runs ${MNS_STACK_GENERATOR_IMAGE} (from the standalone-v2 generated env
+# files above) against this repository's directory, mounted at its identical
+# host path so the generated stacks' bind mounts resolve on the host. Scenario
+# specs land in ./scenarios/<name>/, generated stacks in ./generated/<name>/ —
+# the same places ./product.sh and ./launch.sh use. Standalone-v2 level and
+# asset packs live in ./.mns/pack-store (installed by `make dashboard` via
+# tools/install-demo-packs.sh) and are staged for ScenarioLab under
+# ./.mns/authoring-data/ResolvedPacks; both paths are handed to the backend
+# below so the nested generator run and the editor see the same packs.
 #
 # TEVV_RUNS_DIR is the shared runs directory: the run director / bridge
 # record bags into it, the sim-real-eval worker (part of generated stacks
@@ -125,6 +139,24 @@ services:
       # production (digest-pinned) overlay; make dashboard overrides it with
       # an absolute host path chosen by IMAGE_MODE.
       - MNS_IMAGE_SET_FILE=${MNS_IMAGE_SET_FILE:-${MSRS_ROOT:-${PWD}}/images/image-set.generated.yaml}
+      # HOST paths, valid inside this container through the identical-path
+      # mount below. The backend forwards the pack store to the nested
+      # generator run -- without it the generator looks in its own baked
+      # /opt/mns/platform/.mns/pack-store and every v2 ScenarioSpec fails with
+      # "install the immutable archive in MNS_PACK_STORE_ROOT" -- and reads the
+      # staged ScenarioLab index under the data root for /api/scenario/catalog
+      # and /api/scenario/preflight. Same defaults product.sh and
+      # tools/stage-authoring-packs.sh use, so all three agree on one store.
+      - MNS_PACK_STORE_ROOT=${MNS_PACK_STORE_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/pack-store}
+      - MNS_AUTHORING_DATA_ROOT=${MNS_AUTHORING_DATA_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/authoring-data}
+      # The runtime host's frozen capability contract, forwarded to the
+      # generator the same way. The generator validates the pack variant it
+      # selects against this document, and the published generator image
+      # ships without one (its default path is empty), so a v2 generate
+      # failed with "host compatibility document does not exist". The file is
+      # the one baked into the pinned tevv_runtime_host image -- see
+      # packs/README.md for how it is refreshed.
+      - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.json}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
       # The backend owns the ros2-tools sidecar; select the same published

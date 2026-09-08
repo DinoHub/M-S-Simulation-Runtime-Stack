@@ -45,6 +45,42 @@ follow_ups:
     exist in this checkout. Nothing can start them. Drop the two services and
     their catalog rows unless someone still wants them, in which case they
     need a build context first.
+  - >-
+    dashboard_backend still bakes the v1 review pins (bakes: [mns_authoring,
+    mns_stack_generator]) while every compose deployment overrides them with
+    the standalone_v2 channel, and the pinned registry backend predates the
+    MNS_PACK_STORE_ROOT / MNS_IMAGE_SET_FILE passthrough that v2 generation
+    needs (TEVV-Web-Dashboard feat/v2-pack-store-passthrough; locally built
+    as local/tevv-web-dashboard-{backend,frontend}:v2-dev and selected via
+    ./.env). Closing it: publish that backend from TEVV-Web-Dashboard main
+    (tools/build-dashboard-images.sh --push, which must read the pins from
+    images/standalone-v2-images.generated.env rather than product-images.env),
+    `tools/images.sh bump --only dashboard_backend` (and dashboard_frontend),
+    `sync`, then move bakes: to [mns_authoring_v2, mns_stack_generator_v2] --
+    which also needs tools/images.py cmd_baked_pins to resolve keys through
+    consumers.release_channels, since today it only knows product_env.
+  - >-
+    mns_authoring_v2 (mns-authoring-20260826.3) ships no /opt/mns/default-packs,
+    so ScenarioLab starts without the mns_vehicle_models asset pack it needs to
+    add a drone ("required mns_vehicle_models pack is missing"). The v1 row
+    mns_authoring (mns-authoring-v0.2.0-zones-preview.4) is the only published
+    source of that pack, and tools/stage-authoring-packs.sh seeds the
+    PackLibrary from it -- which is why the v1 row must stay in the catalog
+    even though nothing else on the v2 path uses it. Also the pinned v2
+    product shell (mns-product-shell-20260826.2) stages level packs without
+    their mns_level_pack.json manifest, which the same script backfills.
+    Both go away once TEVV-Authoring publishes an authoring image with the
+    default packs and MnS-Integration-Platform publishes a shell with the
+    post-#89 stage_resolved_level_pack; then drop the seeding/backfill and,
+    if nothing else needs it, the v1 authoring row.
+  - >-
+    ardupilot_slim (ardupilot-slim-20260826.1, the same digest -latest
+    resolves to) has no SITL binary: its entrypoint execs
+    /ardupilot_workspace/ardupilot/build/sitl/bin/arducopter, which does not
+    exist in the image, so every generated stack's ardupilot-drone-N exits
+    127 right after start (seen 2026-09-08 on the condo-demo v2 stack; the
+    runtime host, bridge and ROS topics were fine). Rebuild/republish the
+    slim image with the SITL build, then bump the row.
 
 # One canonical image catalog. Every container image this repository refers to
 # is a row here, exactly once — see docs/adr/0002-one-image-catalog.md for the

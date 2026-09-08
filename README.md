@@ -17,10 +17,35 @@ make dashboard-down
 
 By default, `make dashboard` runs the transitional development workflow: it keeps any locally built matching image tags, pulls only tags absent from the Docker image store, and uses the tag-only development image-set overlay for generated stacks. It does not refresh an existing tag. Run `./product.sh setup` when you deliberately want the approved remote images refreshed; use `IMAGE_MODE=production` to test the immutable release pins.
 
-Dashboard startup also refreshes ScenarioLab's resolved pack index whenever
-`.mns/pack-store/index.json` changes. This keeps the dashboard and product-shell
-authoring paths on the same four-pack, immutable-content workflow without
-copying the pack payloads again on every launch.
+`make dashboard` also onboards the standalone-v2 content: on the first run it
+downloads the seven checksum-locked demo packs (four levels, three object packs;
+about 2.6 GB, XFS alone 1.17 GB) into the local `.mns/pack-store` through the
+product-shell image, then stages them for ScenarioLab, and seeds ScenarioLab's
+PackLibrary with the `mns_vehicle_models` and `scenario_runtime_basic` asset
+packs from the pinned v1 authoring image (the standalone-v2 authoring image
+ships no default packs, and the editor cannot add a drone without the vehicle
+models). Later runs only compare
+the lock against the store (`tools/install-demo-packs.sh --missing`) and
+re-stage when `.mns/pack-store/index.json` changed, so they cost nothing. The
+dashboard, the product shell and the generator all read that one store, and
+the generated stack's generic TEVVRuntimeHost loads the same immutable artifact
+ScenarioLab authored against.
+
+```bash
+make dashboard MNS_DEMO_PACKS="--condo --objects"   # a small subset (Condo is 9 MB)
+make dashboard MNS_SKIP_PACK_INSTALL=1              # offline, or v1-only work
+```
+
+The Author tab's preflight reports `pack_store` (what is installed) and
+`packs_staged` (whether ScenarioLab can see it); the wizard's Environment list
+is the staged level packs, and the spec it builds carries the pack's version
+and artifact digest.
+
+To run a dashboard backend or frontend you built locally from a
+TEVV-Web-Dashboard branch, put `DASHBOARD_BACKEND_IMAGE=` /
+`DASHBOARD_FRONTEND_IMAGE=` in `./.env`: a key set there (or in the shell) is
+never overridden by the generated image env files, and `pull_policy: missing`
+keeps a local tag.
 
 The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
 generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
@@ -63,15 +88,17 @@ Use the pull helper directly when you only want to refresh the image cache:
 
 `--refresh-moving` runs `tools/images.sh bump --channel moving`: it advances every `channel: moving` row — the legacy simulator, observability, and dashboard images, whose tags are republished in place — to whatever digest that tag resolves to now, regenerates the image files, and then pulls them. It deliberately does **not** touch the standalone-v2 rows: those are `channel: pinned`, and `bump` refuses pinned rows so a release pin only ever moves by hand. Because it rewrites `images/catalog.yaml`, it cannot be combined with `--dry-run`; use `tools/images.sh report` to preview instead. Commit and review those catalog changes before using them for a release. The normal command never silently changes a digest.
 
-Install the checksum-verified standalone-v2 demo catalog before authoring or generating a runtime:
+`make dashboard` installs the checksum-verified standalone-v2 demo catalog itself. For the product shell, or to install a subset by hand:
 
 ```bash
 tools/install-demo-packs.sh --all       # XFS, SAFTI, Condo, Pendleton + test objects
 tools/install-demo-packs.sh --condo --people
 tools/install-demo-packs.sh --objects   # market props, people, and object vehicles
+tools/install-demo-packs.sh --missing --all   # only what .mns/pack-store lacks (what make dashboard runs)
+tools/install-demo-packs.sh --check --all     # offline: list installed/missing, exit 1 if any is missing
 ```
 
-The installer downloads the assets declared in `packs/standalone-v2-review.1.lock.json`, verifies their full SHA-256 checksums, installs them into the local content-addressed `.mns/pack-store`, and refreshes ScenarioLab's resolved pack index. Individual environment selections are `--xfs`, `--safti`, `--condo`, and `--pendleton`; individual object selections are `--market`, `--people`, and `--vehicles`. Run with `--dry-run` to inspect the selected immutable assets without downloading them.
+The installer downloads the assets declared in `packs/standalone-v2-review.1.lock.json`, verifies their full SHA-256 checksums, installs them into the local content-addressed `.mns/pack-store`, and refreshes ScenarioLab's resolved pack index. Individual environment selections are `--xfs`, `--safti`, `--condo`, and `--pendleton`; individual object selections are `--market`, `--people`, and `--vehicles`. Run with `--dry-run` to inspect the selected immutable assets without downloading them. It refuses to start a download that cannot fit (archive plus store copy) and says how much room it needs; `MNS_DEMO_PACK_DOWNLOAD_DIR` moves the staging area. The product-shell image that performs the install is the lock's digest pin, or `MNS_PRODUCT_SHELL_IMAGE` when set, which is how `make dashboard` keeps install and staging on the selected `IMAGE_MODE`'s shell.
 
 Each generated ScenarioSpec selects an environment with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact. The specs committed under `scenarios/` predate this and carry only `environment.id`, so they cannot select a v2 level pack — each one now says so in its header, and `tools/images.sh drift` skips them by name rather than reporting a generation failure. They remain as a reference for the legacy static stacks under `compose/`; re-author them in ScenarioLab to migrate. The catalog includes six authoring vehicle models independently of the three placeable object-vehicle models.
 
