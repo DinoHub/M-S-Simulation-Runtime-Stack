@@ -53,7 +53,8 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def run(command: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
+def run(command: list[str], *, capture: bool = False,
+        stdin: str | None = None) -> subprocess.CompletedProcess[str]:
     """Run a command, surfacing its stderr when it fails.
 
     With capture_output=True, CalledProcessError swallows the child's stderr:
@@ -63,7 +64,8 @@ def run(command: list[str], *, capture: bool = False) -> subprocess.CompletedPro
     CalledProcessError but the operator sees the reason.
     """
     try:
-        return subprocess.run(command, check=True, text=True, capture_output=capture)
+        return subprocess.run(command, check=True, text=True, capture_output=capture,
+                              input=stdin)
     except subprocess.CalledProcessError as exc:
         if capture:
             for stream, label in ((exc.stdout, "stdout"), (exc.stderr, "stderr")):
@@ -173,14 +175,76 @@ def install_archive(image: str, archive: Path, expected_digest: str, store_root:
         )
 
 
-def pack_url(lock: dict, pack: dict) -> str:
+def pack_release(lock: dict, pack: dict) -> dict:
     """One release per lock (the 5.5.4 review set lives on this repository's
     release) or one release per pack (TEVV-Airsim publishes each pack under
     its own tag): a pack-level `release` overrides the lock-level one."""
-    release = pack.get("release") or lock["release"]
-    return (
-        f"https://github.com/{release['repository']}/releases/download/"
-        f"{quote(release['tag'], safe='')}/{quote(pack['asset_name'], safe='')}"
+    return pack.get("release") or lock["release"]
+
+
+def github_token() -> str | None:
+    """A token that can read the pack releases, or None.
+
+    GH_TOKEN / GITHUB_TOKEN first (how CI and a headless install supply one),
+    then the gh CLI's own token if gh happens to be installed and logged in.
+    """
+    for name in ("GH_TOKEN", "GITHUB_TOKEN"):
+        value = os.environ.get(name)
+        if value:
+            return value
+    if shutil.which("gh"):
+        found = subprocess.run(["gh", "auth", "token"], text=True, capture_output=True)
+        if found.returncode == 0 and found.stdout.strip():
+            return found.stdout.strip()
+    return None
+
+
+def asset_api_url(release: dict, pack: dict, token: str) -> str:
+    """Resolve asset_name to the API asset URL that can actually be fetched.
+
+    The obvious URL -- github.com/<repo>/releases/download/<tag>/<name> -- is
+    unauthenticated-only. Against a PRIVATE repository (TEVV-Airsim is one) it
+    returns 404 whether or not you send a token: that path ignores the
+    Authorization header entirely, and GitHub answers 404 rather than 401 so a
+    private asset's existence does not leak. Verified all three ways; only
+    api.github.com/repos/<repo>/releases/assets/<id> with
+    `Accept: application/octet-stream` returns the bytes.
+
+    The lock stores asset_name, not the numeric id, so the id is resolved here
+    with one authenticated call per release tag.
+    """
+    repo, tag = release["repository"], release["tag"]
+    listed = run(
+        ["curl", "--fail", "--silent", "--show-error", "--location",
+         "--config", "-",
+         f"https://api.github.com/repos/{repo}/releases/tags/{quote(tag, safe='')}"],
+        capture=True,
+        stdin=f'header = "Authorization: Bearer {token}"\n'
+              f'header = "Accept: application/vnd.github+json"\n',
+    )
+    try:
+        payload = json.loads(listed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{repo}@{tag}: release metadata was not JSON ({exc})") from exc
+    for asset in payload.get("assets") or []:
+        if asset.get("name") == pack["asset_name"]:
+            return asset["url"]
+    available = ", ".join(sorted(a.get("name", "?") for a in payload.get("assets") or []))
+    raise RuntimeError(
+        f"{repo}@{tag} has no asset named {pack['asset_name']!r}. "
+        f"Present: {available or '(none)'}"
+    )
+
+
+def download_asset(release: dict, pack: dict, token: str, target: Path) -> None:
+    """Fetch one release asset. The token goes in via a curl config on stdin,
+    not as -H on the command line, so it never appears in argv or `ps`."""
+    run(
+        ["curl", "--fail", "--location", "--retry", "3",
+         "--config", "-",
+         "--output", str(target), asset_api_url(release, pack, token)],
+        stdin=f'header = "Authorization: Bearer {token}"\n'
+              f'header = "Accept: application/octet-stream"\n',
     )
 
 
@@ -282,15 +346,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         return 0
 
-    # The product shell that runs `packs install` and `packs stage-authoring`.
-    # The lock pins the release's image so a standalone CLI run is exact; the
-    # Makefile exports the image of the selected channel/IMAGE_MODE instead,
-    # so the dashboard's install and staging steps use one shell and the
-    # ResolvedPacks/.staged-with stamp agrees with what
-    # tools/stage-authoring-packs.sh will check on the next start.
-    image = os.environ.get("MNS_PRODUCT_SHELL_IMAGE", "").strip() or lock["required_images"]["product_shell"]
-    print(f"Product shell: {image}")
-    ensure_image(image)
     # Stage downloads inside the repo, not $TMPDIR. --all fetches gigabytes
     # and on the common systemd layout /tmp is a tmpfs sized at half of RAM,
     # so the default location ENOSPC'd partway through and discarded
@@ -308,6 +363,29 @@ def main(argv: list[str] | None = None) -> int:
     to_download = [pack for pack in selected
                    if not (cache_dir / pack["asset_name"]).is_file()]
     check_disk_space(download_parent, to_download)
+    # Resolved once, before anything is fetched, so a missing credential fails
+    # immediately and by name instead of 404-ing on the first pack. Only needed
+    # when something actually has to be downloaded -- a fully cached run, and
+    # every --check/--dry-run run, stays credential-free.
+    token = github_token() if to_download else None
+    if to_download and not token:
+        repos = sorted({pack_release(lock, pack)["repository"] for pack in to_download})
+        raise RuntimeError(
+            "no GitHub credentials, and the pack releases are on private "
+            f"repositories ({', '.join(repos)}), which answer 404 rather than 401 "
+            "to an anonymous client. Set GH_TOKEN (or GITHUB_TOKEN) to a token with "
+            "read access, or run `gh auth login`."
+        )
+
+    # The product shell that runs `packs install` and `packs stage-authoring`.
+    # The lock pins the release's image so a standalone CLI run is exact; the
+    # Makefile exports the image of the selected channel/IMAGE_MODE instead,
+    # so the dashboard's install and staging steps use one shell and the
+    # ResolvedPacks/.staged-with stamp agrees with what
+    # tools/stage-authoring-packs.sh will check on the next start.
+    image = os.environ.get("MNS_PRODUCT_SHELL_IMAGE", "").strip() or lock["required_images"]["product_shell"]
+    print(f"Product shell: {image}")
+    ensure_image(image)
     with tempfile.TemporaryDirectory(prefix="mns-demo-packs-", dir=download_parent) as temporary:
         download_root = Path(temporary)
         for pack in selected:
@@ -319,10 +397,7 @@ def main(argv: list[str] | None = None) -> int:
                 archive = cached
             else:
                 print(f"Downloading {pack['display_name']} ({pack['size_bytes'] / 1e6:.0f} MB)...")
-                run([
-                    "curl", "--fail", "--location", "--retry", "3",
-                    "--output", str(archive), pack_url(lock, pack),
-                ])
+                download_asset(pack_release(lock, pack), pack, token, archive)
                 if archive.stat().st_size != pack["size_bytes"]:
                     raise RuntimeError(f"size mismatch for {archive.name}")
                 actual_sha256 = sha256_file(archive)
@@ -364,9 +439,13 @@ def _hint_for(exc: BaseException) -> str:
     if isinstance(exc, subprocess.CalledProcessError):
         tool = str(exc.cmd[0]) if exc.cmd else ""
         if tool == "curl":
-            return ("could not download from GitHub Releases: check network access to "
-                    "github.com, then re-run. MNS_SKIP_PACK_INSTALL=1 make dashboard starts "
-                    "the dashboard without packs.")
+            return ("could not fetch from GitHub Releases. The pack releases are on "
+                    "PRIVATE repositories, and GitHub answers 404 (not 401) to a client "
+                    "with no credentials -- so a 404 here usually means the token is "
+                    "missing, expired, or lacks access, NOT that the asset is gone. "
+                    "Check `gh auth status` or GH_TOKEN, then network access to "
+                    "github.com and api.github.com. MNS_SKIP_PACK_INSTALL=1 make dashboard "
+                    "starts the dashboard without packs.")
         if tool == "docker":
             return ("the product shell image could not be pulled or run: `docker login` "
                     "with an account that can read dhdevspace/auto_mns, or run "

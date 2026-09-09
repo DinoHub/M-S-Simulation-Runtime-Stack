@@ -15,6 +15,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from unittest import mock
+
 import install_demo_packs as installer
 
 HOST = "ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2"
@@ -70,11 +72,18 @@ class InstallerTests(unittest.TestCase):
     def test_pack_release_overrides_lock_release(self):
         lock = _lock()
         self.assertEqual(
-            installer.pack_url(lock, lock["packs"][0]),
-            "https://github.com/DinoHub/TEVV-Airsim/releases/download/pack-level-condo-level-1.0.0/condo_level-1_0_0.mnslevelpack")
+            installer.pack_release(lock, lock["packs"][0]),
+            {"repository": "DinoHub/TEVV-Airsim", "tag": "pack-level-condo-level-1.0.0"})
         self.assertEqual(
-            installer.pack_url(lock, lock["packs"][1]),
-            "https://github.com/DinoHub/M-S-Simulation-Runtime-Stack/releases/download/lock-release/office-props-1.0.1.mnsassetpack")
+            installer.pack_release(lock, lock["packs"][1])["tag"], "lock-release")
+
+    def test_download_needs_a_token_and_says_so(self):
+        """The releases are private, and GitHub answers 404 (not 401) to an
+        anonymous client -- so a credential-less run must fail by name, before
+        it fetches anything, rather than surfacing an unexplained 404."""
+        with mock.patch.object(installer, "github_token", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "no GitHub credentials"):
+                self._run("--all")
 
     def test_lock_and_contract_must_agree(self):
         self.contract.write_text(json.dumps({"id": HOST.replace("5.8.2", "5.5.4")}))
