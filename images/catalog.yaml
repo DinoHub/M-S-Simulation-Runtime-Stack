@@ -312,16 +312,16 @@ images:
   # ---------------------------------------------------------------------
   dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-backend-latest
-    digest: sha256:7a35a448630cf4e104b6996899a08b19205b4deececc4adf526b56abd313a75f
+    tag: "tevv-web-dashboard-backend-latest"
+    digest: sha256:65471c7fb8be4e1b643d6139e283ab3f7ed86be2c75e45f8043d24631e869cc1
     channel: moving
     bakes: [mns_authoring, mns_stack_generator]
     purpose: TEVV Web Dashboard backend API; bakes authoring/generator refs as defaults.
 
   dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-frontend-latest
-    digest: sha256:9823813753908199bbaca56f51d68e81ab9b225b38c7d0db74695d6392049bf3
+    tag: "tevv-web-dashboard-frontend-latest"
+    digest: sha256:4d6082f36dd89eef44ca367d8e1c49cd7a9d3d73b0374c5fa624a7b098dae078
     channel: moving
     purpose: TEVV Web Dashboard Next.js frontend, served at :3001.
 
@@ -566,8 +566,8 @@ images:
   # ---------------------------------------------------------------------
   dashboard_lichtblick:
     repo: ghcr.io/lichtblick-suite/lichtblick
-    tag: latest
-    digest: sha256:b469986d523b06500a04445933fde4b96ca3bd3def918844e3af47362106c75f
+    tag: "latest"
+    digest: sha256:230ed53813f11ab5d23c47380f94c6d358438ecf15c3a7e7de9625b07c437611
     channel: upstream
     resolver: imagetools
     purpose: Lichtblick instance embedded in the TEVV Web Dashboard (port 8082, URL baked into the frontend build).
