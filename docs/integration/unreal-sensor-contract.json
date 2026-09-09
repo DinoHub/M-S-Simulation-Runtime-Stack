@@ -1,0 +1,168 @@
+{
+  "gazebo_control": {
+    "camera_info": {
+      "d": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "distortion_model": "plumb_bob",
+      "height": 480,
+      "k": [
+        320.0,
+        0.0,
+        320.0,
+        0.0,
+        320.00000953674316,
+        240.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "width": 640
+    },
+    "camera_qos": {
+      "publishers": 1,
+      "reliable": true,
+      "transient_local": false
+    },
+    "clock": {
+      "monotonic": true,
+      "ratio": 0.9998703902632761,
+      "samples": 29996
+    },
+    "duration_s": 30.0,
+    "gravity": {
+      "magnitude": 9.82044280890064,
+      "tilt_deg": 0.48346702506996647,
+      "x": -0.036212433517088596,
+      "y": 0.07453345908663095,
+      "z": 9.820093196402143
+    },
+    "image": {
+      "count": 523,
+      "hz": 17.487437185929654,
+      "jitter_ms": 20.084130752880963,
+      "max_dt": 0.19999999999998863,
+      "median_hz": 19.999999999995453,
+      "min_dt": 0.04999999999998295
+    },
+    "imu": {
+      "count": 6000,
+      "hz": 199.99999999999997,
+      "jitter_ms": 1.0420273761025425e-11,
+      "max_dt": 0.005000000000023874,
+      "median_hz": 200.0000000001819,
+      "min_dt": 0.0049999999999954525
+    },
+    "label": "gazebo-control",
+    "mavlink": null,
+    "truth": {
+      "count": 1499,
+      "hz": 50.000000000000036,
+      "jitter_ms": 1.3646397459284336e-11,
+      "max_dt": 0.020000000000010232,
+      "median_hz": 49.99999999997442,
+      "min_dt": 0.01999999999998181
+    },
+    "truth_frames": {
+      "child_frame_id": "drone/base_link",
+      "frame_id": "world"
+    },
+    "verdict": {
+      "failures": [],
+      "go": true
+    }
+  },
+  "stack": {
+    "launch_override": "ENABLE_VIO=false (required: with VIO on, the camera leaves ROS for iceoryx SHM)",
+    "level_pack": "safti-level@1.0.1 sha256:601f1cf40609cf59a9cfb867c8d670b5cd3ad6195d2b962476cf3f0069a57eb8",
+    "repo_commit": "c5e8ddae100374d06ee4ba6c530a76a98de21fa0",
+    "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260826@sha256:e661e37f8639077401e56e23bd2c6a61e0e065cb0d93866904f1f0930a57e011",
+    "runtime_host_image": "dhdevspace/auto_mns:tevv-runtime-host-20260909.3",
+    "scenario": "scenarios/contract-probe-safti (v2 spec authored for this measurement)"
+  },
+  "unreal_ue582_safti": {
+    "camera_info": {
+      "d": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "distortion_model": "plumb_bob",
+      "height": 1344,
+      "k": [
+        405.0,
+        0.0,
+        672.0,
+        0.0,
+        405.0,
+        672.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "width": 1344
+    },
+    "camera_qos": {
+      "publishers": 1,
+      "reliable": true,
+      "transient_local": false
+    },
+    "clock": {
+      "monotonic": true,
+      "ratio": 1.0000225469263462,
+      "samples": 2856
+    },
+    "duration_s": 60.0,
+    "gravity": {
+      "magnitude": 9.806650161743164,
+      "tilt_deg": 0.0,
+      "x": 0.0,
+      "y": 0.0,
+      "z": 9.806650161743164
+    },
+    "image": {
+      "count": 1818,
+      "hz": 30.574945954797297,
+      "jitter_ms": 121.16038190719495,
+      "max_dt": 0.7498128414154053,
+      "median_hz": null,
+      "min_dt": 0.0
+    },
+    "imu": {
+      "count": 12001,
+      "hz": 200.00039657035626,
+      "jitter_ms": 1.4414951961060196,
+      "max_dt": 0.015000104904174805,
+      "median_hz": 166.67212398172063,
+      "min_dt": 0.0
+    },
+    "label": "unreal-ue582-safti",
+    "mavlink": {
+      "bytes_received": 0,
+      "error": "timeout",
+      "reachable": false
+    },
+    "truth": {
+      "count": 3000,
+      "hz": 49.9984329020937,
+      "jitter_ms": 4.508190955830939,
+      "max_dt": 0.042002201080322266,
+      "median_hz": 47.616552193903615,
+      "min_dt": 0.0
+    },
+    "truth_frames": {
+      "child_frame_id": "base_link",
+      "frame_id": "map"
+    },
+    "verdict": {
+      "failures": [],
+      "go": true
+    }
+  }
+}

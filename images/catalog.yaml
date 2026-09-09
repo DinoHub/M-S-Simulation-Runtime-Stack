@@ -231,16 +231,16 @@ images:
   # ---------------------------------------------------------------------
   tevv_runtime_host_ue582:
     repo: dhdevspace/auto_mns
-    tag: tevv-runtime-host-20260909.2
-    digest: sha256:2c9037839e4c6c557842bd102f263356a74527d48a81f5aeebd22e3a37c8fc00
+    tag: tevv-runtime-host-20260909.3
+    digest: sha256:42fdf7402c1100ff62283b23cc7033662fe4f949307b30eadbf7baf9b4225d9b
     channel: pinned
     purpose: >-
       Generic standalone-v2 runtime host built on UE 5.8.2 (label
       tevv.content_packs.host_compatibility_id = ue-5.8.2-cl56702186-...-v2).
-      20260909.2 is the slimmed host (2.55 GB, was 9.45 GB; content pak 681 MB,
-      was 7.2 GB): unreferenced Blocks-era content dropped, obstacle meshes and
-      materials moved next to their blueprints, same capability id and plugin
-      set as 20260908.
+      20260909.3 restores UltraDynamicSky to the slimmed 20260909.2 host: on .2
+      the safti level had no light source, so every scene capture rendered
+      exactly zero (depth still rendered) and VIO saw black frames. Slimming
+      from 20260909.2 kept (2.79 GB; content pak 681 MB, was 7.2 GB).
 
   mns_authoring_ue582:
     repo: dhdevspace/auto_mns
