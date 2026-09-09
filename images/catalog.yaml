@@ -457,8 +457,8 @@ images:
   # ---------------------------------------------------------------------
   dashboard_lichtblick:
     repo: ghcr.io/lichtblick-suite/lichtblick
-    tag: latest
-    digest: sha256:b469986d523b06500a04445933fde4b96ca3bd3def918844e3af47362106c75f
+    tag: "latest"
+    digest: sha256:230ed53813f11ab5d23c47380f94c6d358438ecf15c3a7e7de9625b07c437611
     channel: upstream
     resolver: imagetools
     purpose: Lichtblick instance embedded in the TEVV Web Dashboard (port 8082, URL baked into the frontend build).
