@@ -94,17 +94,49 @@ is sim-clock quantisation, bridge batching, or a genuine stall needs a look
 before OpenVINS is tuned. It is not a probe artifact: the Gazebo control on the
 same code produced clean non-zero intervals.
 
-## MAVLink: NOT reachable
+## MAVLink: reachable, and MAVROS works — corrected
+
+An earlier revision of this document reported MAVLink unreachable. **That was
+wrong**: it probed port 14555, taken from the LEGACY `compose/px4-xfs` stack.
+The generated stack's router listens elsewhere. Measured both:
 
 ```
-px4-drone-1:14555   reachable=false   error=timeout   bytes_received=0
+px4-drone-1:14555   reachable=false  timeout          <- wrong port
+px4-drone-1:14580   reachable=true   73 bytes back    <- AirSim_Inbound
 ```
 
-`MAVLINK_MODE=router` does not answer on `agent_internal-1`. This was pulled
-into A specifically because it was the one thing that could still make D
-expensive, and it has: D's MAVROS service is not the one-line `fcu_url` change
-the design predicted. Either `px4-drone-1` must expose 14555 on the container
-network, or MAVROS must reach PX4 another way.
+The router config (`/tmp/mavlink-router/mavlink-router-0.conf`) also carries a
+dedicated endpoint for MAVROS:
+
+```
+[UdpEndpoint MAVROS]  Mode=Normal  Address=127.0.0.1  Port=14560
+```
+
+`Mode=Normal` means the router actively STREAMS there, rather than waiting to
+be spoken to. `127.0.0.1` is why this worked in the legacy stack, where PX4 and
+`mavros_d1` were both `network_mode: host`, and why it fails for a MAVROS
+container on `agent_internal-N`: the address resolves inside px4-drone-1 only.
+
+MAVROS therefore has to share PX4's network namespace. Verified working:
+
+```
+docker run --network container:<px4-drone-1> ... \
+  ros2 launch airsim_mavros_bringup mavros_bringup.launch.py \
+    vehicle:=Drone1 fcu_url:=udp://:14560@127.0.0.1:14580 \
+    target_system_id:=1 mavros_config:=mavros_px4.yaml
+
+  /Drone1/mavros/state -> connected: true, mode: OFFBOARD
+```
+
+Two things this settles for D. The MAVROS namespace is `/Drone1/mavros`, not
+the `/mavros` that `tevv_ws/testing/README.md` defaults to. And the service
+must be emitted with `network_mode: service:px4-drone-N` rather than attached
+to `agent_internal-N` — the same netns-sharing shape the stack already uses
+elsewhere. Attempts that do NOT work, for the record: UDP direct to 14580 from
+another container completes a version exchange but never receives HEARTBEAT, so
+`connected` stays false; TCP to the router's `0.0.0.0:5760` QGroundControl
+endpoint times out entirely, and PX4 logs `TCP dynamic: Error sending tcp
+packet (Invalid argument)` continuously.
 
 The probe sends a well-formed MAVLink v1 HEARTBEAT (CRC computed, not
 hardcoded) and waits for any datagram, because PX4's router in udp-client mode
@@ -116,8 +148,10 @@ not a malformed-frame artifact.
 - **B** builds against `/imu/data`, `/front_Scene/image`, `/front_Scene/camera_info`,
   `/ground_truth/odom` — a **flat** namespace with renames, not `/<vehicle>/…`.
 - **C** pins whatever B publishes, and must pin a runtime host ≥ `.3`.
-- **D** emits services on `agent_internal-N` at the drone's domain, sets
-  `ENABLE_VIO=false`, and solves MAVLink reachability before any trajectory work.
+- **D** emits the bench services on `agent_internal-N` at the drone's domain and
+  sets `ENABLE_VIO=false`; MAVROS is the exception and must be emitted with
+  `network_mode: service:px4-drone-N`, `fcu_url: udp://:14560@127.0.0.1:14580`,
+  under the `/Drone1/mavros` namespace.
 
 ## Blockers outside this sub-project
 
