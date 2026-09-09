@@ -145,14 +145,14 @@
       "kind": "level",
       "id": "xfs-level",
       "display_name": "Xfs",
-      "version": "1.0.0",
-      "asset_name": "xfs_level-1_0_0.mnslevelpack",
-      "size_bytes": 1739749006,
-      "sha256": "a3ee7cd0746917555ddac2f6216a9b7e40894f3b5256588fc4f4982ba26e0c04",
-      "artifact_digest": "sha256:291547b7970f18046303023c5f28bf92e44fb677fb8a9131019527db4ab0e085",
-      "payload_digest": "sha256:d98053b653cfef5a847b19f5259e4055bff28c18c4faf5745361350837f3aad2",
-      "source_manifest_digest": "sha256:88e4e411abf3721f5d2ec2dfe573a01f6cd2efd2352100c1c62099477946c52a",
-      "map_path": "/MnsEnv_xfs_level_1_0_0/Xfs/Maps/L_Main_WP",
+      "version": "1.0.1",
+      "asset_name": "xfs-level-1.0.1.mnslevelpack",
+      "size_bytes": 1739969258,
+      "sha256": "e5a1073e1c5bde0df60200b74e02258e54c299e074311a9c5d1df2cd5175a8b5",
+      "artifact_digest": "sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9",
+      "payload_digest": "sha256:2eabf9aca9e06414790d0b7967978a5b17167ae2950b0da2f8391be3bbbf41be",
+      "source_manifest_digest": "sha256:53f2a174b3473e4a8856701f0ac3c25077945d8f2fd199ef591d3ba23d313daa",
+      "map_path": "/MnsEnv_Xfs_Level_1_0_1/Xfs/Maps/L_Main_WP",
       "required_plugins": [
         "AirSim",
         "InterchangeAssets",
@@ -164,9 +164,9 @@
       ],
       "release": {
         "repository": "DinoHub/TEVV-Airsim",
-        "tag": "pack-level-xfs-level-1.0.0"
+        "tag": "pack-level-xfs-level-1.0.1"
       },
-      "published_at": "2026-09-08T03:21:22Z"
+      "published_at": "2026-09-09T09:14:32Z"
     },
     {
       "selection": "fishermans-cabin-props",
