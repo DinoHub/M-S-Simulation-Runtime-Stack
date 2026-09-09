@@ -81,7 +81,7 @@
     "level_pack": "safti-level@1.0.1 sha256:601f1cf40609cf59a9cfb867c8d670b5cd3ad6195d2b962476cf3f0069a57eb8",
     "repo_commit": "c5e8ddae100374d06ee4ba6c530a76a98de21fa0",
     "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260826@sha256:e661e37f8639077401e56e23bd2c6a61e0e065cb0d93866904f1f0930a57e011",
-    "runtime_host_image": "dhdevspace/auto_mns:tevv-runtime-host-20260909.3 (override; catalog still pins .2)",
+    "runtime_host_image": "dhdevspace/auto_mns:tevv-runtime-host-20260909.3",
     "scenario": "scenarios/contract-probe-safti (v2 spec authored for this measurement)"
   },
   "unreal_ue582_safti": {

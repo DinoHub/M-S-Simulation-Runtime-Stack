@@ -9,7 +9,7 @@ Measured 2026-09-09 against a generated UE 5.8.2 stack:
 | | |
 | --- | --- |
 | level pack | `safti-level@1.0.1` `sha256:601f1cf4…` |
-| runtime host | `tevv-runtime-host-20260909.3` — **override**, the catalog still pins `.2` |
+| runtime host | `tevv-runtime-host-20260909.3` (catalog pin) |
 | ros2 bridge | `tevv-airsim-ros2-bridge-humble-20260826@sha256:e661e37f…` |
 | scenario | `scenarios/contract-probe-safti`, one drone, ROS domain 1 |
 | launch | `ENABLE_VIO=false` (mandatory, see below) |
@@ -245,9 +245,10 @@ not a malformed-frame artifact.
 
 ## Blockers outside this sub-project
 
-- **The catalog still pins `tevv-runtime-host-20260909.2`**, which cannot load
-  any pack: it ships no UltraDynamicSky and no `MPC_Landscape`. `.3` fixes both.
-  Repin with `tools/images.sh bump --only tevv_runtime_host_ue582 && sync`.
+- ~~The catalog pinned `tevv-runtime-host-20260909.2`~~ — repinned to `.3`
+  (catalog, generated image sets, `packs/standalone-v2-ue582.lock.json`). On `.2`
+  the level has no light: every scene capture renders exactly zero while depth
+  still renders, so a black camera with a live depth pass is the `.2` signature.
 - **Five of six levels lack a `PlayerStart` tagged `MnSScenarioOrigin`** and abort
   with `Generic pack host requires exactly one … found 0`. Only `safti-level`
   (and the VIO gauntlet) carry it — which is why this measurement used Safti.
