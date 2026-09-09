@@ -2,14 +2,16 @@
 """Build a packs/*.lock.json (schema mns.pack_release_lock.v1) from published
 MnS pack releases.
 
-    tools/build_pack_lock.py \
-        --release-repo DinoHub/TEVV-Airsim \
-        --release-tag pack-level-condo-level-1.0.0 --release-tag ... \
-        --host-contract packs/runtime-host-compatibility.ue582.json \
-        --images-env images/standalone-v2-ue582.generated.env \
-        --shell local/mns-product-shell:ue582-local.a1936b0a5f5f \
-        --cache .mns/downloads/ue582-cache \
+    tools/build_pack_lock.py --release-repo DinoHub/TEVV-Airsim --discover
+        --host-contract packs/runtime-host-compatibility.ue582.json
+        --images-env images/standalone-v2-ue582.generated.env
+        --shell local/mns-product-shell:ue582-local.a1936b0a5f5f
+        --cache .mns/downloads/pack-cache
         --output packs/standalone-v2-ue582.lock.json
+
+(`make pack-lock` runs exactly that for the selected channel.) --discover takes
+every pack-* release cooked for the contract's host id, newest version per
+pack; --release-tag names releases explicitly and can be combined with it.
 
 Each release (TEVV-Airsim tooling/scripts/publish_pack.py layout) carries the
 bundle, `<bundle>.sha256`, `artifact.json` (variants + payload digest) and the
@@ -95,6 +97,39 @@ def shell_verify(shell: str, archive: Path, host_id: str) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
+def discover_release_tags(repo: str, host_id: str, cache: Path) -> list[str]:
+    """Every `pack-<kind>-<id>-<version>` release on `repo` that carries a
+    variant cooked for `host_id`, newest version per (kind, id).
+
+    A lock is a snapshot; this is how it catches up with what packaging
+    published since. The filter is the release's own artifact.json (fetched
+    into the receipts cache, a few KB each), not the tag name, because the tag
+    does not say which engine the payload was cooked for.
+    """
+    releases = gh_json("release", "list", "-R", repo, "--limit", "200", "--json", "tagName,isDraft,isPrerelease")
+    tags = [r["tagName"] for r in releases if not r.get("isDraft") and r["tagName"].startswith("pack-")]
+    latest: dict[tuple[str, str], tuple[tuple[int, ...], str]] = {}
+    for tag in tags:
+        receipts = cache / "receipts" / tag
+        receipts.mkdir(parents=True, exist_ok=True)
+        if not (receipts / "artifact.json").is_file():
+            try:
+                gh_download(repo, tag, "artifact.json", receipts)
+            except subprocess.CalledProcessError:
+                print(f"skipping {tag}: no artifact.json", file=sys.stderr)
+                continue
+        artifact = json.loads((receipts / "artifact.json").read_text(encoding="utf-8"))
+        if not any(v.get("host_compatibility_id") == host_id for v in artifact.get("variants", [])):
+            print(f"skipping {tag}: no variant for {host_id}", file=sys.stderr)
+            continue
+        kind, pack_id, version = artifact["kind"], artifact["pack"]["id"], artifact["pack"]["version"]
+        key = tuple(int(x) if x.isdigit() else 0 for x in re.split(r"[.-]", version))
+        current = latest.get((kind, pack_id))
+        if current is None or key > current[0]:
+            latest[(kind, pack_id)] = (key, tag)
+    return [tag for _, tag in sorted(latest.values(), key=lambda item: item[1])]
+
+
 def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> dict[str, Any]:
     release = gh_json("release", "view", tag, "-R", repo, "--json", "assets,createdAt")
     assets = {asset["name"]: asset for asset in release["assets"]}
@@ -161,7 +196,11 @@ def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> d
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--release-repo", required=True)
-    parser.add_argument("--release-tag", action="append", required=True)
+    parser.add_argument("--release-tag", action="append", default=[],
+                        help="a pack release to include; repeatable. With --discover, added to the discovered set")
+    parser.add_argument("--discover", action="store_true",
+                        help="include every pack-* release on --release-repo cooked for the host contract's id "
+                             "(newest version per pack)")
     parser.add_argument("--host-contract", type=Path, required=True,
                         help="runtime host capability contract; its id is the lock's capability_id")
     parser.add_argument("--images-env", type=Path, required=True,
@@ -181,7 +220,13 @@ def main(argv: list[str] | None = None) -> int:
     shell = args.shell or env["MNS_PRODUCT_SHELL_IMAGE"]
     args.cache.mkdir(parents=True, exist_ok=True)
 
-    packs = [build_entry(args.release_repo, tag, args.cache, shell, host_id) for tag in args.release_tag]
+    tags = list(args.release_tag)
+    if args.discover:
+        tags += [t for t in discover_release_tags(args.release_repo, host_id, args.cache) if t not in tags]
+    if not tags:
+        raise SystemExit("no releases selected: pass --release-tag and/or --discover")
+    print(f"Releases: {', '.join(tags)}")
+    packs = [build_entry(args.release_repo, tag, args.cache, shell, host_id) for tag in tags]
     packs.sort(key=lambda p: (p["kind"] != "level", p["id"]))
     lock = {
         "schema": SCHEMA,

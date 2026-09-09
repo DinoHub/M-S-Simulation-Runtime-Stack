@@ -14,7 +14,8 @@ the source project.
 `make dashboard CHANNEL=ue582` selects the `standalone_v2_ue582` release channel
 from `images/catalog.yaml`: the UE 5.8.2 runtime host
 (`tevv-runtime-host-20260909.2`, the 2.55 GB slimmed host) and ScenarioLab
-(`mns-authoring-20260908`), pinned by digest and both labelled
+(`mns-authoring-20260909.1`, in-process level-pack switching), pinned by digest
+and both labelled
 `tevv.content_packs.host_compatibility_id =
 ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2`, a generator and
 product shell built locally on this engine line's pack contract (`channel:

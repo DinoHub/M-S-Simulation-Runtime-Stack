@@ -9,6 +9,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHANNEL="${MNS_CHANNEL:-ue582}"
 case "$CHANNEL" in
   v2)
+    CHANNEL_AUTHORING_CONTRACT=""
     CHANNEL_NAME=standalone_v2
     CHANNEL_ENV="$ROOT/images/standalone-v2-images.generated.env"
     CHANNEL_LOCK="$ROOT/packs/standalone-v2-review.1.lock.json"
@@ -20,6 +21,7 @@ case "$CHANNEL" in
     CHANNEL_ENV="$ROOT/images/standalone-v2-ue582.generated.env"
     CHANNEL_LOCK="$ROOT/packs/standalone-v2-ue582.lock.json"
     CHANNEL_CONTRACT="$ROOT/packs/runtime-host-compatibility.ue582.json"
+    CHANNEL_AUTHORING_CONTRACT="$ROOT/packs/authoring-host-compatibility.ue582.json"
     CHANNEL_DIR="$ROOT/.mns/ue582"
     ;;
   *) echo "ERROR: MNS_CHANNEL must be v2 or ue582; got: $CHANNEL" >&2; exit 2 ;;
@@ -44,6 +46,11 @@ container_path() {
 }
 CONTAINER_PACK_STORE="$(container_path "$PACK_STORE_ROOT")"
 CONTAINER_CONTRACT="$(container_path "$CHANNEL_CONTRACT")"
+authoring_contract_args=()
+if [[ -n "$CHANNEL_AUTHORING_CONTRACT" ]]; then
+  export MNS_AUTHORING_HOST_CONTRACT="$CHANNEL_AUTHORING_CONTRACT"
+  authoring_contract_args=(-e "MNS_AUTHORING_HOST_CONTRACT=$(container_path "$CHANNEL_AUTHORING_CONTRACT")")
+fi
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
 AUTHORING_AIRSIM_SETTINGS="$ROOT/config/unreal-airsim/authoring-preview.json"
@@ -90,6 +97,7 @@ run_shell() {
     -e MNS_WORKSPACE_ROOT=/workspace \
     -e MNS_GENERATED_STACKS_ROOT=/workspace/generated \
     -e "MNS_PACK_STORE_ROOT=$CONTAINER_PACK_STORE" \
+    "${authoring_contract_args[@]}" \
     -e "MNS_HOST_WORKSPACE_ROOT=$ROOT" \
     -e "MNS_HOST_UID=$(id -u)" \
     -e "MNS_HOST_GID=$(id -g)" \

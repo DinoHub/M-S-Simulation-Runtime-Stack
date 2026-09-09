@@ -62,7 +62,8 @@ MNS_CHANNEL=v2 ./product.sh start
 ```
 
 The 5.8.2 channel's runtime host (`tevv-runtime-host-20260909.2`, 2.55 GB) and
-ScenarioLab are published pins; its generator and product shell are `channel:
+ScenarioLab (`mns-authoring-20260909.1`, switches level packs in-process) are
+published pins; its generator and product shell are `channel:
 local` rows built on this machine until published (build steps in
 `packs/README.md`). `tools/ensure-images.sh` and `./product.sh doctor` refuse
 to start a channel whose local images are missing. The dashboard's Content

@@ -15,6 +15,9 @@
 #   MNS_AUTHORING_DATA_ROOT   (default .mns/ue582/authoring-data)
 #   MNS_PRODUCT_SHELL_IMAGE   the shell whose SDK stages (required once packs exist)
 #   MNS_IMAGE_PULL_POLICY     always|missing|never for that shell (default missing)
+#   MNS_AUTHORING_HOST_CONTRACT  ScenarioLab's host contract (host path under the
+#                             checkout); staging validates packs against it instead
+#                             of the shell's baked copy. Unset = baked copy.
 #   MNS_SEED_AUTHORING_DEFAULTS  1 to seed the v1 default asset packs (5.5.4 channel)
 # Both roots must be inside this checkout: the shell mounts the checkout at
 # /workspace and cannot see anything else.
@@ -176,12 +179,17 @@ fi
 
 # MNS_HOST_UID/GID: the dashboard backend runs this as root inside its
 # container; the staged files must stay owned by the operator on the host.
+contract_args=()
+if [[ -n "${MNS_AUTHORING_HOST_CONTRACT:-}" ]]; then
+  contract_args=(-e "MNS_AUTHORING_HOST_CONTRACT=$(container_path "$MNS_AUTHORING_HOST_CONTRACT")")
+fi
 docker run --pull "$PULL_POLICY" --rm \
   --user "$HOST_UID:$HOST_GID" \
   -e HOME=/tmp \
   -e MNS_WORKSPACE_ROOT=/workspace \
   -e "MNS_PACK_STORE_ROOT=$CONTAINER_STORE" \
   -e "MNS_AUTHORING_DATA_ROOT=$CONTAINER_DATA" \
+  "${contract_args[@]}" \
   -v "$ROOT:/workspace:rw" \
   "$IMAGE" packs stage-authoring
 

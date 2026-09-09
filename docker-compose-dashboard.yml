@@ -165,6 +165,12 @@ services:
       # the one baked into the pinned tevv_runtime_host image -- see
       # packs/README.md for how it is refreshed.
       - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.ue582.json}
+      # ScenarioLab's own contract (same id; its plugin set may lag the runtime
+      # host's). The Content phase compares each pack's required plugins to it
+      # and marks packs the editor cannot open as "runtime only"; the staging
+      # step validates against it too. Empty on a channel whose authoring
+      # image embeds none (5.5.4).
+      - MNS_AUTHORING_HOST_CONTRACT=${MNS_AUTHORING_HOST_CONTRACT-${MSRS_ROOT:-${PWD}}/packs/authoring-host-compatibility.ue582.json}
       # Content onboarding (the dashboard's Content phase, /api/content): the
       # pack lock the catalog is read from and the product shell that installs
       # and stages packs. Both come from the selected channel; `make dashboard

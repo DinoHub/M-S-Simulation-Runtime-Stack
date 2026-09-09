@@ -7,9 +7,9 @@
   "capability_id": "ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2",
   "host_contract": "packs/runtime-host-compatibility.ue582.json",
   "required_images": {
-    "product_shell": "local/mns-product-shell:ue582-local.a1936b0a5f5f",
-    "authoring": "dhdevspace/auto_mns:mns-authoring-20260908@sha256:f9156845c1dc9eea9a3e34d92412b8c90f5292ead1e9edd8f648c848c027fb7d",
-    "stack_generator": "local/mns-stack-generator:ue582-local.a1936b0a5f5f",
+    "product_shell": "local/mns-product-shell:ue582-local.30657d106667",
+    "authoring": "dhdevspace/auto_mns:mns-authoring-20260909.1@sha256:cd7e54e70079564210b33ebe6db85f364bb40b378a3163df5e6034ed8e8a893c",
+    "stack_generator": "local/mns-stack-generator:ue582-local.30657d106667",
     "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-20260909.2@sha256:2c9037839e4c6c557842bd102f263356a74527d48a81f5aeebd22e3a37c8fc00",
     "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260826@sha256:e661e37f8639077401e56e23bd2c6a61e0e065cb0d93866904f1f0930a57e011"
   },
@@ -38,6 +38,31 @@
         "tag": "pack-level-condo-level-1.0.0"
       },
       "published_at": "2026-09-08T03:21:22Z"
+    },
+    {
+      "selection": "fishermans-cabin",
+      "kind": "level",
+      "id": "fishermans-cabin",
+      "display_name": "Fisherman's Cabin",
+      "version": "1.0.0",
+      "asset_name": "fishermans-cabin-1.0.0.mnslevelpack",
+      "size_bytes": 1021871102,
+      "sha256": "18c224e597e177d05132dcfc801ea7d71b25a85b2abc2ded5e98eae073873b72",
+      "artifact_digest": "sha256:d821af9cfa979376928489201f4fcd2731ebb4b0a86b39c2ea43f8a5476002e4",
+      "payload_digest": "sha256:4ee07e7d7e4aef3b80c1b890634b04ab78f8197e57ddb0b48878a086483a8e60",
+      "source_manifest_digest": "sha256:c7133dace5f2feda1758cb9e719e01d4610c7c8aa524ec4e65d7379411d8919b",
+      "map_path": "/MnsEnv_Fishermans_Cabin_1_0_0/Fishermans_Cabin/Levels/Fishermans_Cabin",
+      "required_plugins": [
+        "CableComponent",
+        "Interchange",
+        "Niagara",
+        "TEVVContentPackSDK"
+      ],
+      "release": {
+        "repository": "DinoHub/TEVV-Airsim",
+        "tag": "pack-level-fishermans-cabin-1.0.0"
+      },
+      "published_at": "2026-09-08T15:08:19Z"
     },
     {
       "selection": "office",
@@ -142,6 +167,51 @@
         "tag": "pack-level-xfs-level-1.0.0"
       },
       "published_at": "2026-09-08T03:21:22Z"
+    },
+    {
+      "selection": "fishermans-cabin-props",
+      "kind": "asset",
+      "id": "fishermans-cabin-props",
+      "display_name": "Fisherman's Cabin Props",
+      "version": "1.0.0",
+      "asset_name": "fishermans-cabin-props-1.0.0.mnsassetpack",
+      "size_bytes": 281327715,
+      "sha256": "5f58b9c1efa633cd4e11cb6bea3ef58f23a1df0f05a88c0fc55f19455ad36fc9",
+      "artifact_digest": "sha256:c2e517b7d3e5d6d755b584d219d954e1db6985ed63b7d7f9f3ad18e694ba64ee",
+      "payload_digest": "sha256:c61387052b694adeab599f79ae7957b2b331b3db1f5771420f15273a8498f5a5",
+      "source_manifest_digest": "sha256:624114816df0dc23b74a3a1592f6a1e36dedbc4279bb59ef638d0cf879513ec3",
+      "map_path": "",
+      "required_plugins": [
+        "Interchange",
+        "TEVVContentPackSDK"
+      ],
+      "release": {
+        "repository": "DinoHub/TEVV-Airsim",
+        "tag": "pack-asset-fishermans-cabin-props-1.0.0"
+      },
+      "published_at": "2026-09-08T15:08:19Z"
+    },
+    {
+      "selection": "office-pack-vol-1",
+      "kind": "asset",
+      "id": "office-pack-vol-1",
+      "display_name": "Office Pack Vol 1",
+      "version": "1.0.0",
+      "asset_name": "office-pack-vol-1-1.0.0.mnsassetpack",
+      "size_bytes": 703164046,
+      "sha256": "55a60ed1676e9c410565c82f132594bb336147ffaf6fa89978d5dc91d43c4097",
+      "artifact_digest": "sha256:2293b805a7fb8df14bec9051850556a10bf2bfd86e00e36cd15c889332c7c63b",
+      "payload_digest": "sha256:9d0bb88f374d0be7fbf0b8109a82fa249bfb63374b8f473f54e23c75250487dd",
+      "source_manifest_digest": "sha256:e6307604e4d13dbb0986ef713a80a912545eaa22e1162772f1c685abaa3215e9",
+      "map_path": "",
+      "required_plugins": [
+        "TEVVContentPackSDK"
+      ],
+      "release": {
+        "repository": "DinoHub/TEVV-Airsim",
+        "tag": "pack-asset-office-pack-vol-1-1.0.0"
+      },
+      "published_at": "2026-09-08T15:08:19Z"
     },
     {
       "selection": "office-props",

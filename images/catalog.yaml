@@ -77,10 +77,11 @@ follow_ups:
   - >-
     standalone_v2_ue582 (the UE 5.8.2 channel) runs on two channel: local
     rows, mns_stack_generator_ue582 and mns_product_shell_ue582, built from
-    MnS-Integration-Platform a1936b0 with the TEVV-Authoring #15 (7fe22c7)
-    content-pack SDK and the 5.8.2 runtime host contract (packs/README.md).
-    No published generator or shell accepts the 5.8.2 packs' whole-level
-    contract yet. When MnS-Integration-Platform publishes ones that do:
+    MnS-Integration-Platform 30657d1 (main + PR #93: staging skips packs
+    ScenarioLab cannot mount) with the TEVV-Authoring #15 (7fe22c7)
+    content-pack SDK and the 5.8.2 contracts (packs/README.md). No published
+    generator or shell accepts the 5.8.2 packs' whole-level contract yet.
+    When MnS-Integration-Platform publishes ones that do (after #93):
     replace both rows with channel: pinned rows (tag + digest), sync,
     rebuild packs/standalone-v2-ue582.lock.json with tools/build_pack_lock.py
     so required_images follow, and drop the local build steps from
@@ -249,32 +250,38 @@ images:
 
   mns_authoring_ue582:
     repo: dhdevspace/auto_mns
-    tag: mns-authoring-20260908
-    digest: sha256:f9156845c1dc9eea9a3e34d92412b8c90f5292ead1e9edd8f648c848c027fb7d
+    tag: mns-authoring-20260909.1
+    digest: sha256:cd7e54e70079564210b33ebe6db85f364bb40b378a3163df5e6034ed8e8a893c
     channel: pinned
     purpose: >-
-      ScenarioLab on UE 5.8.2 (TEVV-Authoring #15 line). Like the 5.5.4 image
-      it ships no default asset packs; the PackLibrary is seeded from the v1
-      row (see the mns_authoring_v2 follow_up).
+      ScenarioLab on UE 5.8.2 (TEVV-Authoring #15 line at 2b3d67fd): switches
+      level packs in-process (mns.Authoring.SelectLevelPack, restart-request
+      fallback) and embeds the same 25-plugin contract as the runtime host, so
+      it mounts every pack in the ue582 lock. 20260908 lacked both and rejected
+      packs needing CableComponent/Niagara. Like the 5.5.4 image it ships no
+      default asset packs; the PackLibrary is seeded from the v1 row (see the
+      mns_authoring_v2 follow_up).
 
   mns_stack_generator_ue582:
     repo: local/mns-stack-generator
-    tag: ue582-local.a1936b0a5f5f
+    tag: ue582-local.30657d106667
     digest: null
     channel: local
     purpose: >-
-      Generator built locally from MnS-Integration-Platform a1936b0 (#90) with
-      the TEVV-Authoring 7fe22c7 (#15) content-pack SDK and the 5.8.2 runtime
-      host contract; not on the registry.
+      Generator built locally from MnS-Integration-Platform 30657d1 (main +
+      PR #93, the staging fix) with the TEVV-Authoring 7fe22c7 (#15)
+      content-pack SDK and the 5.8.2 runtime host contract; not on the registry.
 
   mns_product_shell_ue582:
     repo: local/mns-product-shell
-    tag: ue582-local.a1936b0a5f5f
+    tag: ue582-local.30657d106667
     digest: null
     channel: local
     purpose: >-
       Product shell built locally alongside mns_stack_generator_ue582 (same
-      sources); installs, verifies and stages the 5.8.2 packs.
+      sources) with ScenarioLab's 25-plugin contract baked in
+      (packs/authoring-host-compatibility.ue582.json); installs, verifies and
+      stages the 5.8.2 packs, skipping any ScenarioLab cannot mount.
 
   tevv_runtime_host:
     repo: dhdevspace/auto_mns

@@ -74,8 +74,14 @@ CHANNEL_DEV_ENV := images/standalone-v2-development.generated.env
 CHANNEL_IMAGE_SET := published
 CHANNEL_LOCK := packs/standalone-v2-review.1.lock.json
 CHANNEL_CONTRACT := packs/runtime-host-compatibility.json
+# The 5.5.4 authoring image embeds no contract and its shell ignores
+# MNS_AUTHORING_HOST_CONTRACT; empty = the shell's baked fixture.
+CHANNEL_AUTHORING_CONTRACT :=
 CHANNEL_STORE := .mns/pack-store
 CHANNEL_DATA := .mns/authoring-data
+# The 5.5.4 packs are one release of this repository, not per-pack releases;
+# its lock is not rebuilt by `make pack-lock`.
+PACK_RELEASE_REPO := DinoHub/M-S-Simulation-Runtime-Stack
 # Neither standalone-v2 authoring image ships the mns_vehicle_models /
 # scenario_runtime_basic default asset packs; seed them from the v1 image
 # (see tools/stage-authoring-packs.sh).
@@ -89,8 +95,12 @@ CHANNEL_DEV_ENV := images/standalone-v2-ue582.generated.env
 CHANNEL_IMAGE_SET := ue582
 CHANNEL_LOCK := packs/standalone-v2-ue582.lock.json
 CHANNEL_CONTRACT := packs/runtime-host-compatibility.ue582.json
+# ScenarioLab's own contract (same id, its plugin set): what staging validates
+# packs against, and what the Content phase uses to say "runtime only".
+CHANNEL_AUTHORING_CONTRACT := packs/authoring-host-compatibility.ue582.json
 CHANNEL_STORE := .mns/ue582/pack-store
 CHANNEL_DATA := .mns/ue582/authoring-data
+PACK_RELEASE_REPO := DinoHub/TEVV-Airsim
 # The 5.5.4-cooked vehicle-model pak mounts in the 5.8.2 ScenarioLab (verified
 # 2026-09-09: "Loaded asset pack: mns_vehicle_models (0 asset(s), 6 vehicle
 # model(s))"), so the same seed serves this channel until an authoring image
@@ -106,6 +116,7 @@ endif
 CHANNEL_ENV_EXPORTS := MNS_CHANNEL=$(CHANNEL) MNS_IMAGE_SET=$(CHANNEL_IMAGE_SET) \
 	MNS_DEMO_PACK_LOCK=$(CURDIR)/$(CHANNEL_LOCK) \
 	MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$(CURDIR)/$(CHANNEL_CONTRACT) \
+	MNS_AUTHORING_HOST_CONTRACT=$(if $(CHANNEL_AUTHORING_CONTRACT),$(CURDIR)/$(CHANNEL_AUTHORING_CONTRACT),) \
 	MNS_PACK_STORE_ROOT=$(CURDIR)/$(CHANNEL_STORE) \
 	MNS_AUTHORING_DATA_ROOT=$(CURDIR)/$(CHANNEL_DATA) \
 	MNS_SEED_AUTHORING_DEFAULTS=$(CHANNEL_SEED_DEFAULTS)
@@ -147,7 +158,7 @@ endif
 
 SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images ensure-demo-packs stage-authoring-packs dashboard dashboard-down
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images ensure-demo-packs pack-lock stage-authoring-packs dashboard dashboard-down
 
 ensure-images:  ## Use local image tags; pull only those that are missing
 	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
@@ -163,6 +174,17 @@ ensure-demo-packs: ensure-images  ## Install any standalone-v2 demo packs missin
 	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 	  ./tools/install-demo-packs.sh --missing $(MNS_DEMO_PACKS); \
 	fi
+
+# The lock is a snapshot of what packaging had published when it was built;
+# this catches it up (newest version of every pack cooked for the channel's
+# host id), downloading and verifying anything new through the channel's shell.
+# Review the diff, commit, then `make dashboard` installs what is new.
+pack-lock: ensure-images  ## Rebuild the channel's pack lock from every pack release cooked for its host id
+	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	python3 tools/build_pack_lock.py --release-repo $(PACK_RELEASE_REPO) --discover \
+	  --host-contract $(CHANNEL_CONTRACT) --images-env $(CHANNEL_ENV) \
+	  --shell "$$MNS_PRODUCT_SHELL_IMAGE" --cache .mns/downloads/pack-cache \
+	  --output $(CHANNEL_LOCK) --lock-tag $(notdir $(basename $(basename $(CHANNEL_LOCK))))
 
 stage-authoring-packs: ensure-demo-packs  ## Refresh ScenarioLab's view of installed immutable packs
 	@. ./tools/load-images-env.sh; \
