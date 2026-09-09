@@ -47,6 +47,7 @@ logic rather than meant for interactive use:
 from __future__ import annotations
 
 import argparse
+import copy
 import base64
 import json
 import os
@@ -247,8 +248,49 @@ def development_ref(images: dict[str, Any], key: str) -> str:
     return f"{row['repo']}:{row.get('latest_tag') or row['tag']}"
 
 
-def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, development: bool = False) -> list[str]:
-    """Return unique active refs in production or tag-only development form."""
+DEFAULT_CHANNEL = "standalone_v2_ue582"
+
+
+def release_channel(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> dict[str, Any]:
+    channels = catalog["consumers"].get("release_channels") or {}
+    if name not in channels:
+        raise CatalogError(
+            f"consumers.release_channels.{name} is not declared; known channels: "
+            + ", ".join(sorted(channels)) if channels else f"consumers.release_channels.{name} is not declared")
+    return channels[name]
+
+
+def channel_image_set(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> str:
+    """The image_sets entry generated stacks use under this channel (MNS_IMAGE_SET)."""
+    return str(release_channel(catalog, name).get("image_set") or "published")
+
+
+def channel_keys(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> set[str]:
+    """Every catalog key the product touches under one release channel: the
+    channel's own vars, its image set, and the channel-independent dashboard
+    and tooling rows."""
+    consumers = catalog["consumers"]
+    keys = set(release_channel(catalog, name)["vars"].values())
+    image_set = channel_image_set(catalog, name)
+    if image_set not in consumers["image_sets"]:
+        raise CatalogError(f"consumers.release_channels.{name}.image_set {image_set!r} is not an image_sets entry")
+    keys |= _flatten_leaf_keys(resolved_image_set_keys(catalog, image_set))
+    for group in ("dashboard", "tools"):
+        keys |= set(consumers["product_env"].get(group, {}).values())
+    keys |= set(consumers["compose_env"].get("dashboard", {}).values())
+    return keys
+
+
+def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, development: bool = False,
+                  channel: str = DEFAULT_CHANNEL) -> list[str]:
+    """Return unique active refs in production or tag-only development form.
+
+    `channel: local` rows are built on this machine and have no registry
+    counterpart, so they are never pullable: they are left out here and
+    `tools/ensure-images.sh` / `product.sh doctor` check they exist locally
+    (`local-refs`). `channel: unpublished` rows are refused: something the
+    product needs that nobody has, anywhere.
+    """
     images = catalog["images"]
     if all_catalog:
         keys = {
@@ -256,21 +298,25 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, develop
             if row["channel"] not in ("local", "unpublished")
         }
     else:
-        consumers = catalog["consumers"]
-        keys = set(consumers["release_channels"]["standalone_v2"]["vars"].values())
-        keys |= _flatten_leaf_keys(consumers["image_sets"]["published"]["images"])
-        for group in ("dashboard", "tools"):
-            keys |= set(consumers["product_env"].get(group, {}).values())
-        keys |= set(consumers["compose_env"].get("dashboard", {}).values())
+        keys = channel_keys(catalog, channel)
         unavailable = sorted(
-            key for key in keys
-            if images[key]["channel"] in ("local", "unpublished")
+            key for key in keys if images[key]["channel"] == "unpublished"
         )
         if unavailable:
             raise CatalogError(
                 "active product references unavailable image(s): " + ", ".join(unavailable))
+        keys = {key for key in keys if images[key]["channel"] != "local"}
     ref_for = development_ref if development else image_ref
     return sorted({ref_for(images, key) for key in keys})
+
+
+def local_refs(catalog: dict[str, Any], channel: str = DEFAULT_CHANNEL) -> list[str]:
+    """`channel: local` rows a release channel depends on — images that must
+    already exist in the local Docker store because nothing can pull them.
+    Empty for a fully published channel (standalone_v2)."""
+    images = catalog["images"]
+    return sorted(image_ref(images, key) for key in channel_keys(catalog, channel)
+                  if images[key]["channel"] == "local")
 
 
 
@@ -309,7 +355,11 @@ def _resolve_image_set(images: dict[str, Any], raw: dict[str, Any],
     """
     def merge(base_node: Any, overlay_keys: Any) -> Any:
         if isinstance(overlay_keys, dict):
-            result = dict(base_node) if isinstance(base_node, dict) else {}
+            # deepcopy, not dict(): a shallow copy shares the untouched nested
+            # mappings (autopilots: ...) with the inherited set, and
+            # yaml.safe_dump then emits them as `*id001` aliases instead of
+            # repeating the refs — valid YAML, unreadable generated file.
+            result = copy.deepcopy(base_node) if isinstance(base_node, dict) else {}
             for k, v in overlay_keys.items():
                 result[k] = merge(result.get(k), v)
             return result
@@ -398,7 +448,7 @@ def render_development_env(catalog: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def render_standalone_v2_env(catalog: dict[str, Any]) -> str:
+def render_standalone_v2_env(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> str:
     """images/standalone-v2-images.generated.env — the coordinated v2 set.
 
     A separate file rather than another group in product-images.env, because
@@ -412,25 +462,37 @@ def render_standalone_v2_env(catalog: dict[str, Any]) -> str:
     runs remain reproducible until the catalog is advanced and regenerated.
     """
     images = catalog["images"]
-    channel = catalog["consumers"]["release_channels"].get("standalone_v2")
+    channel = catalog["consumers"]["release_channels"].get(name)
     if not channel or not channel.get("vars"):
         raise CatalogError(
-            "consumers.release_channels.standalone_v2.vars is missing; "
-            "images/standalone-v2-images.generated.env has nothing to emit")
+            f"consumers.release_channels.{name}.vars is missing; "
+            f"{channel.get('emits') if channel else name} has nothing to emit")
     group = channel["vars"]
     lines = [
         GENERATED_MARKER,
         "",
-        "# Coordinated standalone-v2 production pins. Sourced INSTEAD of",
+        f"# Coordinated {name.replace('_', '-')} production pins. Sourced INSTEAD of",
         "# product-images.env by the v2 product shell, not alongside it.",
         "#",
         "# Every ref uses an immutable date/version tag and manifest digest.",
         "# The corresponding -latest aliases are for discovery and publishing;",
         "# production runs the exact refs below. Edit images/catalog.yaml and",
         "# re-run tools/images.sh sync to advance the approved release.",
-        "",
     ]
+    local_rows = [key for key in group.values() if images[key]["channel"] == "local"]
+    if local_rows:
+        lines += [
+            "#",
+            "# channel: local rows below carry no digest: they are built on this",
+            "# machine (see the row's purpose in images/catalog.yaml) and nothing",
+            "# can pull them. tools/images.sh refs --channel " + name + " lists what",
+            "# IS pullable; the Makefile checks the local tags exist before launch.",
+        ]
+    lines.append("")
     lines += [f"{var}={image_ref(images, key)}" for var, key in group.items()]
+    if channel.get("image_set"):
+        lines += ["", "# The image_sets entry generated stacks select under this channel.",
+                  f"MNS_IMAGE_SET={channel['image_set']}"]
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
@@ -524,8 +586,8 @@ def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
         PLATFORM_ENV_PATH: render_platform_env(catalog),
         LEGACY_ENV_PATH: render_legacy_env(catalog),
     }
-    if (catalog["consumers"].get("release_channels") or {}).get("standalone_v2"):
-        out[STANDALONE_V2_ENV_PATH] = render_standalone_v2_env(catalog)
+    for name, spec in (catalog["consumers"].get("release_channels") or {}).items():
+        out[ROOT / spec["emits"]] = render_standalone_v2_env(catalog, name)
     return out
 
 
@@ -650,6 +712,16 @@ def _flatten_leaf_keys(node: Any) -> set[str]:
     elif isinstance(node, str):
         out.add(node)
     return out
+
+
+def resolved_image_set_keys(catalog: dict[str, Any], name: str) -> dict[str, Any]:
+    """The catalog KEYS (not refs) an image set resolves to, `inherits` applied.
+
+    `resolved_image_sets` turns keys into refs as it merges; this is the same
+    merge with the identity resolver, so channel_keys() can ask "which rows
+    does image set X touch" without parsing refs back into keys.
+    """
+    return resolved_image_sets(catalog, lambda _images, key: key)[name]["images"]
 
 
 # --------------------------------------------------------------------------
@@ -1381,7 +1453,18 @@ def cmd_status(args: argparse.Namespace) -> int:
 def cmd_refs(args: argparse.Namespace) -> int:
     catalog = load_catalog()
     assert_invariants(catalog)
-    for ref in pullable_refs(catalog, all_catalog=args.all_catalog, development=args.development):
+    for ref in pullable_refs(catalog, all_catalog=args.all_catalog, development=args.development,
+                             channel=args.channel):
+        print(ref)
+    return 0
+
+
+def cmd_local_refs(args: argparse.Namespace) -> int:
+    """`channel: local` images a release channel needs present in the Docker
+    store; empty for a fully published channel."""
+    catalog = load_catalog()
+    assert_invariants(catalog)
+    for ref in local_refs(catalog, channel=args.channel):
         print(ref)
     return 0
 
@@ -1455,7 +1538,13 @@ def main(argv: list[str]) -> int:
     p_refs = sub.add_parser("refs")
     p_refs.add_argument("--all-catalog", action="store_true")
     p_refs.add_argument("--development", action="store_true")
+    p_refs.add_argument("--channel", default=DEFAULT_CHANNEL,
+                        help=f"release channel whose active set to list (default: {DEFAULT_CHANNEL})")
     p_refs.set_defaults(fn=cmd_refs)
+
+    p_local = sub.add_parser("local-refs")
+    p_local.add_argument("--channel", default=DEFAULT_CHANNEL)
+    p_local.set_defaults(fn=cmd_local_refs)
 
     p_rv = sub.add_parser("resolve-var")
     p_rv.add_argument("var")

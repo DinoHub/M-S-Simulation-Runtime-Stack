@@ -45,6 +45,53 @@ follow_ups:
     exist in this checkout. Nothing can start them. Drop the two services and
     their catalog rows unless someone still wants them, in which case they
     need a build context first.
+  - >-
+    dashboard_backend still bakes the v1 review pins (bakes: [mns_authoring,
+    mns_stack_generator]) while every compose deployment overrides them with
+    the standalone_v2 channel, and the pinned registry backend predates the
+    MNS_PACK_STORE_ROOT / MNS_IMAGE_SET_FILE passthrough that v2 generation
+    needs (TEVV-Web-Dashboard feat/v2-pack-store-passthrough; locally built
+    as local/tevv-web-dashboard-{backend,frontend}:v2-dev and selected via
+    ./.env). Closing it: publish that backend from TEVV-Web-Dashboard main
+    (tools/build-dashboard-images.sh --push, which must read the pins from
+    images/standalone-v2-images.generated.env rather than product-images.env),
+    `tools/images.sh bump --only dashboard_backend` (and dashboard_frontend),
+    `sync`, then move bakes: to [mns_authoring_v2, mns_stack_generator_v2] --
+    which also needs tools/images.py cmd_baked_pins to resolve keys through
+    consumers.release_channels, since today it only knows product_env.
+  - >-
+    mns_authoring_v2 (mns-authoring-20260826.3) and mns_authoring_ue582
+    (mns-authoring-20260908) ship no /opt/mns/default-packs, so ScenarioLab
+    starts without the mns_vehicle_models asset pack it needs to add a drone
+    ("required mns_vehicle_models pack is missing"). The v1 row
+    mns_authoring (mns-authoring-v0.2.0-zones-preview.4) is the only published
+    source of that pack, and tools/stage-authoring-packs.sh seeds the
+    PackLibrary from it -- which is why the v1 row must stay in the catalog
+    even though nothing else on the v2 path uses it. Also the pinned v2
+    product shell (mns-product-shell-20260826.2) stages level packs without
+    their mns_level_pack.json manifest, which the same script backfills.
+    Both go away once TEVV-Authoring publishes an authoring image with the
+    default packs and MnS-Integration-Platform publishes a shell with the
+    post-#89 stage_resolved_level_pack; then drop the seeding/backfill and,
+    if nothing else needs it, the v1 authoring row.
+  - >-
+    standalone_v2_ue582's generator and product shell (mns-stack-generator-20260909,
+    mns-product-shell-20260909) were built on a developer machine from
+    MnS-Integration-Platform 30657d1 (main + PR #93) with the TEVV-Authoring #15
+    (7fe22c7) SDK and pushed by hand, because no published generator or shell
+    accepted the 5.8.2 packs' whole-level contract. Once MnS-Integration-Platform
+    merges #93 and publishes its own: bump both rows to that release, `sync`,
+    `make pack-lock` so required_images follow. Also ros2_bridge on that channel
+    is the 5.5.4-era 20260826 build until TEVV-Airsim-ROS2-Bridge #45 publishes a
+    5.8.2 one; add a ros2_bridge_ue582 row and point the channel at it then.
+  - >-
+    ardupilot_slim (ardupilot-slim-20260826.1, the same digest -latest
+    resolves to) has no SITL binary: its entrypoint execs
+    /ardupilot_workspace/ardupilot/build/sitl/bin/arducopter, which does not
+    exist in the image, so every generated stack's ardupilot-drone-N exits
+    127 right after start (seen 2026-09-08 on the condo-demo v2 stack; the
+    runtime host, bridge and ROS topics were fine). Rebuild/republish the
+    slim image with the SITL build, then bump the row.
 
 # One canonical image catalog. Every container image this repository refers to
 # is a row here, exactly once — see docs/adr/0002-one-image-catalog.md for the
@@ -169,6 +216,68 @@ images:
     digest: sha256:634052453fe72b14ca53681b732bc4e47f1cf44d80348be54bfe5ff4fe0496e9
     channel: pinned
     purpose: Generator that resolves content packs from the shared PackStore.
+
+  # ---------------------------------------------------------------------
+  # standalone-v2 on UE 5.8.2 (candidate channel standalone_v2_ue582)
+  #
+  # Same product, next engine line. Host capability
+  # ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2; packs cooked
+  # for it are on TEVV-Airsim GitHub Releases (packs/standalone-v2-ue582.lock.json).
+  # All five roles are published digest pins. The generator and shell were
+  # built from MnS-Integration-Platform main + PR #93 with the TEVV-Authoring
+  # #15 SDK and pushed by hand on 2026-09-09, because the published 20260826
+  # ones reject the new pack contract ("level pack must declare a supported
+  # strict, whole-level, or actor-selection contract"); see the follow_up.
+  # ---------------------------------------------------------------------
+  tevv_runtime_host_ue582:
+    repo: dhdevspace/auto_mns
+    tag: tevv-runtime-host-20260909.2
+    digest: sha256:2c9037839e4c6c557842bd102f263356a74527d48a81f5aeebd22e3a37c8fc00
+    channel: pinned
+    purpose: >-
+      Generic standalone-v2 runtime host built on UE 5.8.2 (label
+      tevv.content_packs.host_compatibility_id = ue-5.8.2-cl56702186-...-v2).
+      20260909.2 is the slimmed host (2.55 GB, was 9.45 GB; content pak 681 MB,
+      was 7.2 GB): unreferenced Blocks-era content dropped, obstacle meshes and
+      materials moved next to their blueprints, same capability id and plugin
+      set as 20260908.
+
+  mns_authoring_ue582:
+    repo: dhdevspace/auto_mns
+    tag: mns-authoring-20260909.1
+    digest: sha256:cd7e54e70079564210b33ebe6db85f364bb40b378a3163df5e6034ed8e8a893c
+    channel: pinned
+    purpose: >-
+      ScenarioLab on UE 5.8.2 (TEVV-Authoring #15 line at 2b3d67fd): switches
+      level packs in-process (mns.Authoring.SelectLevelPack, restart-request
+      fallback) and embeds the same 25-plugin contract as the runtime host, so
+      it mounts every pack in the ue582 lock. 20260908 lacked both and rejected
+      packs needing CableComponent/Niagara. Like the 5.5.4 image it ships no
+      default asset packs; the PackLibrary is seeded from the v1 row (see the
+      mns_authoring_v2 follow_up).
+
+  mns_stack_generator_ue582:
+    repo: dhdevspace/auto_mns
+    tag: mns-stack-generator-20260909
+    digest: sha256:59b7974232a8c1038218fac18c3bc5c64aac96ecbcf648608a052018636561ce
+    channel: pinned
+    purpose: >-
+      Generator for the 5.8.2 packs: MnS-Integration-Platform 30657d1 (main +
+      PR #93, the staging fix) with the TEVV-Authoring 7fe22c7 (#15)
+      content-pack SDK and the 5.8.2 runtime host contract baked. Built and
+      pushed from a developer machine on 2026-09-09 (packs/README.md); repin
+      when the integration repo publishes its own after #93 merges.
+
+  mns_product_shell_ue582:
+    repo: dhdevspace/auto_mns
+    tag: mns-product-shell-20260909
+    digest: sha256:062c8081374fa378413686766ebb010007e0c70b325b6adef5096f2bfcc5072f
+    channel: pinned
+    purpose: >-
+      Product shell built alongside mns_stack_generator_ue582 (same sources)
+      with ScenarioLab's 25-plugin contract baked in
+      (packs/authoring-host-compatibility.ue582.json); installs, verifies and
+      stages the 5.8.2 packs, skipping any ScenarioLab cannot mount.
 
   tevv_runtime_host:
     repo: dhdevspace/auto_mns
@@ -601,11 +710,27 @@ consumers:
   release_channels:
     standalone_v2:
       emits: images/standalone-v2-images.generated.env
+      image_set: published
       vars:
         MNS_PRODUCT_SHELL_IMAGE: mns_product_shell_v2
         MNS_AUTHORING_IMAGE: mns_authoring_v2
         MNS_STACK_GENERATOR_IMAGE: mns_stack_generator_v2
         MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host
+        MNS_ROS2_BRIDGE_IMAGE: ros2_bridge
+    # UE 5.8.2 -- the DEFAULT channel since 2026-09-09 (`make dashboard`,
+    # `./product.sh`). `CHANNEL=v2` selects the 5.5.4 set above instead. Installs
+    # packs/standalone-v2-ue582.lock.json into its own store (.mns/ue582/) and
+    # generates against image set ue582.
+    # The ros2 bridge is the 5.5.4-era build until
+    # TEVV-Airsim-ROS2-Bridge #45 publishes one built against the 5.8.2 AirLib.
+    standalone_v2_ue582:
+      emits: images/standalone-v2-ue582.generated.env
+      image_set: ue582
+      vars:
+        MNS_PRODUCT_SHELL_IMAGE: mns_product_shell_ue582
+        MNS_AUTHORING_IMAGE: mns_authoring_ue582
+        MNS_STACK_GENERATOR_IMAGE: mns_stack_generator_ue582
+        MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host_ue582
         MNS_ROS2_BRIDGE_IMAGE: ros2_bridge
 
   # A pack release lock (packs/*.lock.json) restates a few image pins because
@@ -622,6 +747,12 @@ consumers:
       stack_generator: mns_stack_generator_v2
       runtime_host: tevv_runtime_host
       ros2_bridge: ros2_bridge
+    packs/standalone-v2-ue582.lock.json:
+      product_shell: mns_product_shell_ue582
+      authoring: mns_authoring_ue582
+      stack_generator: mns_stack_generator_ue582
+      runtime_host: tevv_runtime_host_ue582
+      ros2_bridge: ros2_bridge
 
   image_sets:
     published:
@@ -635,6 +766,14 @@ consumers:
         ros2_bridge: ros2_bridge
         qgroundcontrol: qgroundcontrol
         sim_real_eval: sim_real_eval
+    # Same stack, 5.8.2 runtime host. Selected by MNS_IMAGE_SET=ue582 (the
+    # standalone_v2_ue582 channel's env file sets it).
+    ue582:
+      inherits: published
+      pull_policy: missing
+      images:
+        simulators:
+          tevv_runtime_host: tevv_runtime_host_ue582
 
 
   compose_env:

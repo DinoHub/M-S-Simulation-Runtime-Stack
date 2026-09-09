@@ -31,6 +31,25 @@ SCENARIO        ?=
 # Transitional image workflow: development is local-first and tag-only;
 # production keeps the immutable catalog pins.
 IMAGE_MODE ?= development
+# Which standalone-v2 release channel the dashboard runs (images/catalog.yaml
+# consumers.release_channels). Each channel owns a pack lock, a runtime-host
+# capability contract, and its own pack store + authoring data root under
+# .mns/, because packs cooked for one engine line never mount on the other
+# and the product shell stages everything in its store for ONE contract.
+#   ue582  UE 5.8.2 (default):  packs/standalone-v2-ue582.lock.json,      .mns/ue582/{pack-store,authoring-data}
+#   v2     UE 5.5.4 (previous): packs/standalone-v2-review.1.lock.json, .mns/{pack-store,authoring-data}
+CHANNEL ?= ue582
+# Standalone-v2 demo packs `make dashboard` guarantees are installed before
+# ScenarioLab opens, as tools/install-demo-packs.sh selections. Only packs
+# MISSING from .mns/pack-store are downloaded (--missing), so a re-run costs one
+# offline lock/index comparison. The 5.8.2 set is ~5.7 GB (Office 1.93 GB,
+# XFS 1.74 GB, SAFTI 0.86 GB, Warehouse 0.8 GB, Warehouse Props 0.25 GB,
+# Office Props 95 MB, Condo 6 MB); the 5.5.4 set ~2.6 GB. Selections are the
+# lock's (tools/install-demo-packs.sh --help lists them).
+#   make dashboard MNS_DEMO_PACKS="--safti --office-props"   # a small subset
+#   make dashboard MNS_SKIP_PACK_INSTALL=1             # offline / v1-only
+MNS_DEMO_PACKS ?= --all
+MNS_SKIP_PACK_INSTALL ?= 0
 # Fixed rather than derived from the checkout directory. The dashboard services
 # carry daemon-global container_names (airsim-dashboard-api, ...), so two
 # projects could never run side by side anyway; a stable project name at least
@@ -48,14 +67,68 @@ LEGACY_DASHBOARD_PROJECT = $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lowe
 # always- always recreate (the pre-existing behaviour)
 # never - never touch it
 RECREATE_ROS2_TOOLS ?= auto
+ifeq ($(CHANNEL),v2)
+CHANNEL_NAME := standalone_v2
+CHANNEL_ENV := images/standalone-v2-images.generated.env
+CHANNEL_DEV_ENV := images/standalone-v2-development.generated.env
+CHANNEL_IMAGE_SET := published
+CHANNEL_LOCK := packs/standalone-v2-review.1.lock.json
+CHANNEL_CONTRACT := packs/runtime-host-compatibility.json
+# The 5.5.4 authoring image embeds no contract and its shell ignores
+# MNS_AUTHORING_HOST_CONTRACT; empty = the shell's baked fixture.
+CHANNEL_AUTHORING_CONTRACT :=
+CHANNEL_STORE := .mns/pack-store
+CHANNEL_DATA := .mns/authoring-data
+# The 5.5.4 packs are one release of this repository, not per-pack releases;
+# its lock is not rebuilt by `make pack-lock`.
+PACK_RELEASE_REPO := DinoHub/M-S-Simulation-Runtime-Stack
+# Neither standalone-v2 authoring image ships the mns_vehicle_models /
+# scenario_runtime_basic default asset packs; seed them from the v1 image
+# (see tools/stage-authoring-packs.sh).
+CHANNEL_SEED_DEFAULTS := 1
+else ifeq ($(CHANNEL),ue582)
+CHANNEL_NAME := standalone_v2_ue582
+CHANNEL_ENV := images/standalone-v2-ue582.generated.env
+# No -latest aliases exist on this line yet: development and production
+# source the same pinned/local file.
+CHANNEL_DEV_ENV := images/standalone-v2-ue582.generated.env
+CHANNEL_IMAGE_SET := ue582
+CHANNEL_LOCK := packs/standalone-v2-ue582.lock.json
+CHANNEL_CONTRACT := packs/runtime-host-compatibility.ue582.json
+# ScenarioLab's own contract (same id, its plugin set): what staging validates
+# packs against, and what the Content phase uses to say "runtime only".
+CHANNEL_AUTHORING_CONTRACT := packs/authoring-host-compatibility.ue582.json
+CHANNEL_STORE := .mns/ue582/pack-store
+CHANNEL_DATA := .mns/ue582/authoring-data
+PACK_RELEASE_REPO := DinoHub/TEVV-Airsim
+# The 5.5.4-cooked vehicle-model pak mounts in the 5.8.2 ScenarioLab (verified
+# 2026-09-09: "Loaded asset pack: mns_vehicle_models (0 asset(s), 6 vehicle
+# model(s))"), so the same seed serves this channel until an authoring image
+# ships its own.
+CHANNEL_SEED_DEFAULTS := 1
+else
+$(error CHANNEL must be v2 or ue582)
+endif
+
+# Exported to every script on the dashboard chain and interpolated by
+# docker-compose-dashboard.yml, so the installer, the staging step, the
+# backend and the nested generator all resolve packs from one place.
+CHANNEL_ENV_EXPORTS := MNS_CHANNEL=$(CHANNEL) MNS_IMAGE_SET=$(CHANNEL_IMAGE_SET) \
+	MNS_DEMO_PACK_LOCK=$(CURDIR)/$(CHANNEL_LOCK) \
+	MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$(CURDIR)/$(CHANNEL_CONTRACT) \
+	MNS_AUTHORING_HOST_CONTRACT=$(if $(CHANNEL_AUTHORING_CONTRACT),$(CURDIR)/$(CHANNEL_AUTHORING_CONTRACT),) \
+	MNS_PACK_STORE_ROOT=$(CURDIR)/$(CHANNEL_STORE) \
+	MNS_AUTHORING_DATA_ROOT=$(CURDIR)/$(CHANNEL_DATA) \
+	MNS_SEED_AUTHORING_DEFAULTS=$(CHANNEL_SEED_DEFAULTS)
+
 ifeq ($(IMAGE_MODE),development)
 DASHBOARD_IMAGE_SET_FILE := images/image-set.development.generated.yaml
-ENSURE_IMAGES_FLAG := --development
-LOAD_DASHBOARD_IMAGES := load_images_env ./images/standalone-v2-development.generated.env
+ENSURE_IMAGES_FLAG := --development --channel $(CHANNEL_NAME)
+LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_DEV_ENV); load_images_env ./images/standalone-v2-development.generated.env
 else ifeq ($(IMAGE_MODE),production)
 DASHBOARD_IMAGE_SET_FILE := images/image-set.generated.yaml
-ENSURE_IMAGES_FLAG := --production
-LOAD_DASHBOARD_IMAGES := load_images_env ./images/standalone-v2-images.generated.env; load_images_env ./product-images.env; load_images_env ./images/platform-images.generated.env
+ENSURE_IMAGES_FLAG := --production --channel $(CHANNEL_NAME)
+LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_ENV); load_images_env ./product-images.env; load_images_env ./images/platform-images.generated.env
 else
 $(error IMAGE_MODE must be development or production)
 endif
@@ -85,12 +158,35 @@ endif
 
 SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images stage-authoring-packs dashboard dashboard-down
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images ensure-demo-packs pack-lock stage-authoring-packs dashboard dashboard-down
 
 ensure-images:  ## Use local image tags; pull only those that are missing
 	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
 
-stage-authoring-packs: ensure-images  ## Refresh ScenarioLab's view of installed immutable packs
+# The product-shell image comes from the selected IMAGE_MODE's env (the
+# -latest alias in development, the digest pin in production), not from the
+# pack lock's pin, so install and the staging step right after it use ONE
+# shell image and stage-authoring-packs.sh's .staged-with stamp stays current.
+ensure-demo-packs: ensure-images  ## Install any standalone-v2 demo packs missing from .mns/pack-store
+	@if [ "$(MNS_SKIP_PACK_INSTALL)" = "1" ]; then \
+	  echo "MNS_SKIP_PACK_INSTALL=1: not installing demo packs."; \
+	else \
+	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	  ./tools/install-demo-packs.sh --missing $(MNS_DEMO_PACKS); \
+	fi
+
+# The lock is a snapshot of what packaging had published when it was built;
+# this catches it up (newest version of every pack cooked for the channel's
+# host id), downloading and verifying anything new through the channel's shell.
+# Review the diff, commit, then `make dashboard` installs what is new.
+pack-lock: ensure-images  ## Rebuild the channel's pack lock from every pack release cooked for its host id
+	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	python3 tools/build_pack_lock.py --release-repo $(PACK_RELEASE_REPO) --discover \
+	  --host-contract $(CHANNEL_CONTRACT) --images-env $(CHANNEL_ENV) \
+	  --shell "$$MNS_PRODUCT_SHELL_IMAGE" --cache .mns/downloads/pack-cache \
+	  --output $(CHANNEL_LOCK) --lock-tag $(notdir $(basename $(basename $(CHANNEL_LOCK))))
+
+stage-authoring-packs: ensure-demo-packs  ## Refresh ScenarioLab's view of installed immutable packs
 	@. ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
 	./tools/stage-authoring-packs.sh

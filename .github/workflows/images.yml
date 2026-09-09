@@ -16,6 +16,10 @@ on:
       - "tools/stage-authoring-packs.sh"
       - "tools/install-demo-packs.sh"
       - "tools/install_demo_packs.py"
+      - "tools/test_install_demo_packs.py"
+      - "tools/build_pack_lock.py"
+      - "tools/check_ue_candidate.py"
+      - "tools/test_check_ue_candidate.py"
       - "tools/load-images-env.sh"
       - "packs/**"
       - "docker-compose-dashboard.yml"
@@ -71,7 +75,14 @@ jobs:
             tests/full-product-e2e/run.sh
 
       - name: python syntax
-        run: python -m compileall -q tools/images.py tools/install_demo_packs.py
+        run: python -m compileall -q tools/images.py tools/install_demo_packs.py tools/build_pack_lock.py tools/check_ue_candidate.py
+
+      - name: tooling unit tests
+        # Offline: the installer's lock/store/contract logic and the UE
+        # candidate gate, both against synthetic fixtures.
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_install_demo_packs.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_check_ue_candidate.py'
 
       - name: offline dry-run smoke
         # Every one of these resolves the catalog and prints; none contacts a
@@ -82,6 +93,18 @@ jobs:
           tools/pull-all-images.sh --dry-run > /dev/null
           tools/pull-all-images.sh --dry-run --all-catalog > /dev/null
           tools/install-demo-packs.sh --all --dry-run > /dev/null
+          tools/install-demo-packs.sh --missing --all --dry-run > /dev/null
+          # A runner has no pack store, so --check reports every pack missing
+          # and exits 1; the point is that the offline path runs at all.
+          tools/install-demo-packs.sh --check --all > /dev/null || true
+          # The defaults above are the UE 5.8.2 channel; the 5.5.4 lock still
+          # resolves against its own contract.
+          MNS_DEMO_PACK_LOCK=packs/standalone-v2-review.1.lock.json \
+          MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=packs/runtime-host-compatibility.json \
+            tools/install-demo-packs.sh --all --dry-run > /dev/null
+          tools/images.sh refs --channel standalone_v2 > /dev/null
+          tools/images.sh local-refs --channel standalone_v2_ue582 > /dev/null
+          tools/ensure-images.sh --dry-run > /dev/null || true
 
       - name: --dry-run must refuse --refresh-moving
         # Guards the ordering bug where the bump ran BEFORE the dry-run exit

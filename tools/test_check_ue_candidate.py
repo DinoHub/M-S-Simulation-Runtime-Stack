@@ -186,8 +186,9 @@ class CandidateTests(unittest.TestCase):
             script.parent.mkdir(parents=True)
             script.write_text(source.read_text())
             script.chmod(0o755)
-            (workspace / ".mns/pack-store").mkdir(parents=True)
-            (workspace / ".mns/pack-store/index.json").write_text("{}\n")
+            # The script's default store is the default channel's (UE 5.8.2).
+            (workspace / ".mns/ue582/pack-store").mkdir(parents=True)
+            (workspace / ".mns/ue582/pack-store/index.json").write_text("{}\n")
             bin_dir = workspace / "bin"
             bin_dir.mkdir()
             docker = bin_dir / "docker"

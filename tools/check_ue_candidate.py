@@ -36,6 +36,24 @@ def docker_json(*arguments: str):
     return json.loads(result.stdout)
 
 
+def host_id_from_image(reference: str) -> str:
+    """The frozen host id a runtime-host/ScenarioLab image was packaged with.
+
+    The label is written at packaging time from the engine's own
+    Build.version (TEVV-Airsim packaging), so on a machine that only runs the
+    images -- every customer machine -- it is the same fact
+    host_id_from_engine() reads from an installed engine, without needing
+    one. The image must already be present locally (--local-images
+    candidates always are; pinned ones are pulled by the product setup).
+    """
+    metadata = docker_json("image", "inspect", reference)[0]
+    host_id = (metadata.get("Config", {}).get("Labels") or {}).get(HOST_LABEL)
+    if not isinstance(host_id, str) or not re.fullmatch(
+            r"ue-\d+\.\d+\.\d+-cl\d+-linux-development-vulkan-sm6-iostore-v2", host_id):
+        raise CandidateError(f"{reference} carries no usable {HOST_LABEL} label: {host_id!r}")
+    return host_id
+
+
 def host_id_from_engine(engine_root: Path, expected_version: str) -> str:
     build = read_json(engine_root / "Engine/Build/Build.version")
     fields = ("MajorVersion", "MinorVersion", "PatchVersion", "Changelist")
@@ -214,12 +232,12 @@ def write_local_override(path: Path, environment: dict, images: dict, expected_i
     path.chmod(0o600)
 
 
-def write_local_rerun(path: Path, engine_root: Path, engine_version: str, lock: Path,
+def write_local_rerun(path: Path, engine_root: Path | None, engine_version: str, lock: Path,
                       pack_store: Path, workspace: Path) -> None:
     """Persist a revalidating command, never a catalog/Makefile shortcut."""
     command = [
         sys.executable, str(ROOT / "tools/check_ue_candidate.py"),
-        "--engine-root", str(engine_root.resolve()),
+        *(["--engine-root", str(engine_root.resolve())] if engine_root is not None else []),
         "--engine-version", engine_version,
         "--lock", str(lock.resolve()),
         "--pack-store", str(pack_store.resolve()),
@@ -281,7 +299,9 @@ def start_dashboard(workspace: Path, store: Path, images: dict, local_images: bo
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine-root", type=Path, required=True)
+    parser.add_argument("--engine-root", type=Path,
+                        help="an installed Unreal engine whose Build.version defines the host id; "
+                             "without it the id is read from the lock's runtime_host image label")
     parser.add_argument("--engine-version", default="5.8.2")
     parser.add_argument("--lock", type=Path, required=True)
     parser.add_argument("--pack-store", type=Path, default=ROOT / ".mns/pack-store")
@@ -293,8 +313,20 @@ def main(argv=None) -> int:
                         help="allow explicit local tags only with exact required_image_ids; never pull them")
     args = parser.parse_args(argv)
     try:
-        host_id = host_id_from_engine(args.engine_root.expanduser(), args.engine_version)
         lock = read_json(args.lock)
+        if args.engine_root is not None:
+            host_id = host_id_from_engine(args.engine_root.expanduser(), args.engine_version)
+        else:
+            # No engine on this machine (the normal customer case): the
+            # runtime host image's packaging label is the frozen id, and
+            # verify_images() below re-checks that authoring agrees with it.
+            runtime_host = (lock.get("required_images") or {}).get("runtime_host")
+            if not isinstance(runtime_host, str):
+                raise CandidateError("lock has no required_images.runtime_host to read the host id from; "
+                                     "pass --engine-root")
+            host_id = host_id_from_image(runtime_host)
+            if not host_id.startswith(f"ue-{args.engine_version}-"):
+                raise CandidateError(f"{runtime_host} is packaged for {host_id}, not UE {args.engine_version}")
         validate_lock(lock, host_id, local_images=args.local_images)
         expected_ids = lock.get("required_image_ids") if args.local_images else None
         images = verify_images(lock["required_images"], host_id, expected_ids=expected_ids)
@@ -309,8 +341,9 @@ def main(argv=None) -> int:
             if args.local_images:
                 local_rerun = args.workspace.resolve() / ".mns/ue-candidate/rerun.sh"
                 write_local_rerun(
-                    local_rerun, args.engine_root.expanduser(), args.engine_version,
-                    args.lock.expanduser(), args.pack_store.expanduser(), args.workspace,
+                    local_rerun, args.engine_root.expanduser() if args.engine_root else None,
+                    args.engine_version, args.lock.expanduser(), args.pack_store.expanduser(),
+                    args.workspace,
                 )
         if args.dashboard_container:
             verify_dashboard(args.dashboard_container, args.workspace, lock["required_images"], images)
