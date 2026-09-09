@@ -78,7 +78,80 @@ actual sensor and that Gazebo's must not be copied. This is that warning, made
 concrete: the calibration must be authored, and the bridge should publish the
 fisheye model rather than a pinhole placeholder.
 
-### 3. Timestamps are bursty, and duplicated
+### 3. The camera delivers ~3.5 new frames per second, not 30 — corrected
+
+An earlier revision reported the image rate as 30.57 Hz. **That was 8x
+inflated.** Recording header stamps with a content hash per message
+(`tevv_ws/testing/stamp_capture.py`) showed 606 messages in 20 s carrying only
+74 distinct frames: the bridge polls AirSim at `POLL_RATE_HZ=30` and re-emits
+the last frame under its original stamp. Real new-frame rate: median ~6 Hz,
+mean ~3.5 Hz, gaps up to 0.95 s. The `median_hz: null` in the raw JSON was the
+tell. `camera_info` — bytes, no transport cost — shows the same 68-74 distinct
+stamps, so the bridge itself received that few captures: capture-bound, not
+transport-bound.
+
+Eliminated by experiment, each a sim restart: fisheye resolution (1344 → 672,
+no change), main viewport (1920x1080 → 640x360, no change), and
+`FisheyeMotionAdaptive` (applies only when face-slicing is on; `slicing=0`
+here). The scheduler in `FisheyeCubeCaptureComponent::TickComponent` renders
+once per game tick when the tick is slower than the target interval, so the
+capture rate simply IS the game tick rate. The sim ticks at ~3.5-6 Hz on this
+level with the GPU at 96-97%, and the log shows 545 pipeline-state objects
+compiled on first use (`r.PSOPrecaching=0`, no binary cache), which is where
+the ~0.9 s stalls come from. The capture-perf keys (`FisheyeCaptureFPS`,
+`FisheyeMaxStalenessMs`, `FisheyeMotionAdaptive`,
+`FisheyeMotionThresholdRadS`) are read from **`CaptureSettings[i]`**
+(`AirSimSettings.hpp:1990`), not the camera object, and the stack generator
+does not expose any of them. Raising them cannot beat the tick rate anyway.
+Owner: TEVV-Airsim (level cost, PSO precaching) and MnS-Integration-Platform
+(expose the keys).
+
+One real stamp defect on top: 1-2 of ~75 stamps carry two DIFFERENT frames.
+Rare; noted for the bridge.
+
+### 4. Exposure is spec-controllable, and -1.5 was not enough
+
+`exposure_compensation` on the camera's capture settings reaches
+`ExposureCompensation` in settings.json. At the default the frame centre was
+255; at -1.5, median 163 with 6.6% saturated; at **-11**, median 62, p95 193,
+0.0% saturated, 5.2% black, with ground, buildings and cloud edges all
+textured. -11 is the value the VIO work below used.
+
+### 5. What OpenVINS did on the corrected inputs
+
+With mask, calibration and exposure right, OpenVINS runs and, on the
+climb-and-yaw variant of the square (`square_yawkick.yaml`), initialises —
+inconsistently. Across otherwise identical flights: static init once (at rest,
+velocity 0, final position 1.70, -0.19, -0.04 m — plausible for the 1 m
+square), dynamic init once (bad initial velocity, 2 m/s constant drift, ATE
+63 m), and no init twice. Static init cannot see the still-to-moving
+transition at 3.5 frames/s (each 1 s half-window holds ~3 frames), and
+dynamic init sits at its feature floor (32-37 tracked; gate is
+`0.75 * init_max_features`).
+
+Even when initialised, every update reports **`MSCKF update (0 feats)`** —
+the filter is dead-reckoning on a noise-free IMU, not doing VIO. At this frame
+rate on an open level the per-frame baseline is ~6 cm and features are tens of
+metres away (parallax f*b/D: 4 px at 50 m), so triangulation has nothing to
+work with. That is a property of frame rate x scene scale, and tuning will not
+recover it. **B should not start until the capture rate is fixed at the
+source.**
+
+### 6. Operational: log rotation, or this stack fills a disk
+
+The generated stack's services use Docker's `json-file` driver with **no
+rotation**. `px4-drone-1`'s mavlink-router emits `TCP dynamic: Error sending
+tcp packet (Invalid argument)` plus an ANSI-redrawn `pxh>` prompt at
+~1.6 GB/min; over one afternoon that log reached **239 GB** and filled a
+1.8 TB root filesystem to the ext4 reserve. `tevv_ws/results/diag/
+compose.logrotate.yaml` is the override used since (`max-size: 50m`); stackgen
+should emit it. Two side effects worth knowing: Docker creates a missing
+bind-mount SOURCE as a root-owned directory, so a launch attempted with an
+incomplete config copy leaves `settings.json` as a directory that a later
+launch mounts silently; and every Unreal segfault under `restart:
+unless-stopped` is a core dump plus a relaunch.
+
+### 7. Timestamps on the truth stream
 
 `min_dt` is exactly **0.0** on all three streams — IMU, image and truth — so
 multiple messages share a header stamp.
@@ -146,7 +219,8 @@ not a malformed-frame artifact.
 ## What this obliges
 
 - **B** builds against `/imu/data`, `/front_Scene/image`, `/front_Scene/camera_info`,
-  `/ground_truth/odom` — a **flat** namespace with renames, not `/<vehicle>/…`.
+  `/ground_truth/odom` — a **flat** namespace with renames, not `/<vehicle>/…` —
+  and does not start until the camera delivers real frames at a VIO-usable rate (section 3).
 - **C** pins whatever B publishes, and must pin a runtime host ≥ `.3`.
 - **D** emits the bench services on `agent_internal-N` at the drone's domain and
   sets `ENABLE_VIO=false`; MAVROS is the exception and must be emitted with
