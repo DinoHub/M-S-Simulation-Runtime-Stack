@@ -35,7 +35,7 @@ r2() { docker exec "$BRIDGE" bash -lc "source /opt/ros/humble/setup.bash 2>/dev/
   Expect: http://localhost:3001 loads in a browser; JSON has `"ready": true`. Note: backend can take ~2 min on first boot if the telemetry DB is absent (it retries postgres before starting).
 
 - [ ] **P0-2 Preflight checks green**
-  Inspect the JSON from P0-1. Expect: `docker_daemon`, `authoring_image`, `generator_image`, `exports_writable`, `display` all `"ok"`; `xauthority` at worst `"warn"` after running:
+  Inspect the JSON from P0-1. Expect: `docker_daemon`, `authoring_image`, `generator_image`, `exports_writable`, `authoring_data_writable`, `pack_store`, `packs_staged`, `display` all `"ok"` (`pack_store` lists 4 level / 3 asset packs and `packs_staged` names the `…-iostore-v2` capability; both are `"warn"` only when the dashboard was started with `MNS_SKIP_PACK_INSTALL=1`, and `packs_staged` is `"fail"` if packs exist that ScenarioLab cannot see — re-run `make dashboard`); `xauthority` at worst `"warn"` after running:
   ```bash
   DISPLAY=:0 xhost +si:localuser:$USER
   ```

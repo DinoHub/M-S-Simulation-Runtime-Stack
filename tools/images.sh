@@ -38,7 +38,7 @@ MODE="${1:-}"
 [[ $# -gt 0 ]] && shift || true
 
 case "$MODE" in
-  sync|verify|report|bump|selftest|status|refs)
+  sync|verify|report|bump|selftest|status|refs|local-refs)
     # product.sh setup/doctor/pull-images reach these subcommands, so this is
     # on the customer path: fail with the fix rather than "python3: command
     # not found". images.py carries the matching pyyaml guard.
@@ -54,7 +54,7 @@ case "$MODE" in
   baked)
     ;;
   *)
-    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest|refs> [args...]" >&2
+    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest|refs|local-refs> [args...]" >&2
     exit 2
     ;;
 esac

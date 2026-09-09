@@ -11,8 +11,12 @@
 #
 #   docker compose -f docker-compose-dashboard.yml \
 #     --env-file .env \
+#     --env-file images/standalone-v2-ue582.generated.env \
 #     --env-file images/standalone-v2-development.generated.env \
 #     up -d
+#
+# (the ue582 file first: it is the default channel's pins, the development
+# file then supplies the dashboard/tooling -latest tags it does not bind)
 #
 # That is the development (tag-only) set. The production (digest-pinned) set
 # is spread over three files, the same ones make's IMAGE_MODE=production
@@ -23,15 +27,29 @@
 #   --env-file product-images.env \
 #   --env-file images/platform-images.generated.env
 #
+# Locally built dashboard images (a backend/frontend built from a
+# TEVV-Web-Dashboard branch, before it is published and pinned): put
+#   DASHBOARD_BACKEND_IMAGE=local/tevv-web-dashboard-backend:v2-dev
+#   DASHBOARD_FRONTEND_IMAGE=local/tevv-web-dashboard-frontend:v2-dev
+# in ./.env. tools/load-images-env.sh never exports a key that is already set
+# in the shell or present in ./.env, so the generated env files lose to it,
+# and pull_policy `missing` below never re-pulls a tag that exists locally.
+# Precedence, highest first: shell environment, ./.env, the generated env
+# files in the order make loads them (first file to set a key wins).
+#
 # Frontend: http://localhost:3001  (3000 belongs to the monitoring Grafana)
 # Backend:  http://localhost:8001
 #
 # The backend generates stacks in DISTRIBUTION MODE: no platform checkout —
-# it runs ${MNS_STACK_GENERATOR_IMAGE} (from product-images.env) against
-# this repository's directory, mounted at its identical host path so the
-# generated stacks' bind mounts resolve on the host. Scenario specs land in
-# ./scenarios/<name>/, generated stacks in ./generated/<name>/ — the same
-# places ./product.sh and ./launch.sh use.
+# it runs ${MNS_STACK_GENERATOR_IMAGE} (from the standalone-v2 generated env
+# files above) against this repository's directory, mounted at its identical
+# host path so the generated stacks' bind mounts resolve on the host. Scenario
+# specs land in ./scenarios/<name>/, generated stacks in ./generated/<name>/ —
+# the same places ./product.sh and ./launch.sh use. Standalone-v2 level and
+# asset packs live in ./.mns/pack-store (installed by `make dashboard` via
+# tools/install-demo-packs.sh) and are staged for ScenarioLab under
+# ./.mns/authoring-data/ResolvedPacks; both paths are handed to the backend
+# below so the nested generator run and the editor see the same packs.
 #
 # TEVV_RUNS_DIR is the shared runs directory: the run director / bridge
 # record bags into it, the sim-real-eval worker (part of generated stacks
@@ -118,13 +136,56 @@ services:
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:-${PWD}}
       # The dashboard passes this through to the nested stack-generator run.
       # Development uses the tag-only overlay; production selects the pinned one.
-      - MNS_IMAGE_SET=published
+      # The image_sets entry generated stacks select from MNS_IMAGE_SET_FILE.
+      # `ue582` is the default channel's; `make dashboard CHANNEL=v2` selects
+      # `published` (the UE 5.5.4 set). Both are rendered into the same file
+      # from images/catalog.yaml.
+      - MNS_IMAGE_SET=${MNS_IMAGE_SET:-ue582}
       # A repo-owned path, not an image pin, so a default carries no drift
       # risk -- and a required var here broke `down`/`ps`/`logs` too, since
       # compose interpolates every service at parse time. The default is the
       # production (digest-pinned) overlay; make dashboard overrides it with
       # an absolute host path chosen by IMAGE_MODE.
       - MNS_IMAGE_SET_FILE=${MNS_IMAGE_SET_FILE:-${MSRS_ROOT:-${PWD}}/images/image-set.generated.yaml}
+      # HOST paths, valid inside this container through the identical-path
+      # mount below. The backend forwards the pack store to the nested
+      # generator run -- without it the generator looks in its own baked
+      # /opt/mns/platform/.mns/pack-store and every v2 ScenarioSpec fails with
+      # "install the immutable archive in MNS_PACK_STORE_ROOT" -- and reads the
+      # staged ScenarioLab index under the data root for /api/scenario/catalog
+      # and /api/scenario/preflight. Same defaults product.sh and
+      # tools/stage-authoring-packs.sh use, so all three agree on one store.
+      - MNS_PACK_STORE_ROOT=${MNS_PACK_STORE_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/ue582/pack-store}
+      - MNS_AUTHORING_DATA_ROOT=${MNS_AUTHORING_DATA_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/ue582/authoring-data}
+      # The runtime host's frozen capability contract, forwarded to the
+      # generator the same way. The generator validates the pack variant it
+      # selects against this document, and the published generator image
+      # ships without one (its default path is empty), so a v2 generate
+      # failed with "host compatibility document does not exist". The file is
+      # the one baked into the pinned tevv_runtime_host image -- see
+      # packs/README.md for how it is refreshed.
+      - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.ue582.json}
+      # ScenarioLab's own contract (same id; its plugin set may lag the runtime
+      # host's). The Content phase compares each pack's required plugins to it
+      # and marks packs the editor cannot open as "runtime only"; the staging
+      # step validates against it too. Empty on a channel whose authoring
+      # image embeds none (5.5.4).
+      - MNS_AUTHORING_HOST_CONTRACT=${MNS_AUTHORING_HOST_CONTRACT-${MSRS_ROOT:-${PWD}}/packs/authoring-host-compatibility.ue582.json}
+      # Content onboarding (the dashboard's Content phase, /api/content): the
+      # pack lock the catalog is read from and the product shell that installs
+      # and stages packs. Both come from the selected channel; `make dashboard
+      # CHANNEL=` exports them, and the defaults are the UE 5.8.2 channel.
+      # The backend runs the runtime stack's own tools/install-demo-packs.sh
+      # against this checkout, so a pack installed from the browser is exactly
+      # a pack installed by `make dashboard`.
+      - MNS_CHANNEL=${MNS_CHANNEL:-ue582}
+      - MNS_DEMO_PACK_LOCK=${MNS_DEMO_PACK_LOCK:-${MSRS_ROOT:-${PWD}}/packs/standalone-v2-ue582.lock.json}
+      - MNS_PRODUCT_SHELL_IMAGE=${MNS_PRODUCT_SHELL_IMAGE:-}
+      # Reported (presence + host label) by the Content phase; the generated
+      # stacks take the runtime host from MNS_IMAGE_SET_FILE, not from this.
+      - MNS_RUNTIME_HOST_IMAGE=${MNS_RUNTIME_HOST_IMAGE:-}
+      - MNS_SEED_AUTHORING_DEFAULTS=${MNS_SEED_AUTHORING_DEFAULTS:-1}
+      - MNS_IMAGE_PULL_POLICY=${MNS_IMAGE_PULL_POLICY:-missing}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
       # The backend owns the ros2-tools sidecar; select the same published
