@@ -27,7 +27,47 @@ The integration is four sub-projects, not one.
 | **A** | Measured sensor contract | investigation only | — |
 | **B** | Image production: home repo for the three `tevv_ws` Dockerfiles, CI build, traced tags, push | new / TBD | A |
 | **C** | Catalog rows and a `vio_bench` image-set role | M-S-Simulation-Runtime-Stack | A, B |
-| **D** | stackgen emission: a `vio_bench` feature flag, services on `agent_internal-N`, and a MAVROS service generated stacks do not currently have | MnS-Integration-Platform (possibly MnS-ScenarioSpec) | A, C |
+| **D** | stackgen emission: a `vio_bench` feature flag, services on `agent_internal-N`, and a MAVROS service (see "MAVROS is nearly free" below) | MnS-Integration-Platform (possibly MnS-ScenarioSpec) | A, C |
+
+### MAVROS is nearly free
+
+An earlier draft of this document treated the missing MAVROS service as a
+substantial part of D. That was wrong, and the correction matters because it
+changes what D costs.
+
+The MAVROS launch package `airsim_mavros_bringup` is already inside
+`tevv-airsim-ros2-bridge-humble-20260826` — the same image the generated stack
+already resolves for `airsim_bridge_d1`, in both the `published` and `ue582`
+image sets. Verified by listing `/ws/install` in that image. Nothing has to be
+built or integrated.
+
+The legacy `mavros_d1` service in `compose/px4-xfs` runs:
+
+```
+ros2 launch airsim_mavros_bringup mavros_bringup.launch.py \
+  vehicle:=Copter1 fcu_url:=udp://:0@127.0.0.1:14555 \
+  target_system_id:=1 mavros_config:=mavros_px4.yaml enable_dds_cleanup:=true
+```
+
+Every part of that transfers to a generated stack except one. `127.0.0.1`
+works there only because the service is `network_mode: host`. In a generated
+stack `px4-drone-1` sits on both `sim_network` and `agent_internal-1` with
+`ipc: host`, exactly like the bridge, so the same launch reaches it by service
+name:
+
+```
+fcu_url:=udp://:0@px4-drone-1:14555
+```
+
+D's MAVROS work is therefore a stackgen service template that re-points one
+URL and reuses the already-resolved `ros2_bridge` image, matching its
+neighbours on network, `ipc`, `/dev/shm`, domain and `depends_on`. It is not an
+integration project.
+
+Two things remain unverified and are measured in A rather than assumed in D:
+whether `MAVLINK_MODE=router` in `px4-drone-1` exposes 14555 on the container
+network as well as on loopback, and whether `target_system_id:=1` still
+addresses the right vehicle in a generated single-drone stack.
 
 Each gets its own spec. This one covers A.
 
@@ -66,9 +106,10 @@ Established by reading the stack, not assumed:
   so 1. `tevv_ws` defaults to 42 and to `ROS_LOCALHOST_ONLY=1`.
 - **The two runtime paths are not equivalent.** Legacy `compose/px4-xfs` has a
   `mavros_d1` service on `network_mode: host`. Generated stackgen output
-  (`generated/xfs-scenario`) has no MAVROS service at all, and its bridge sits
-  on an internal `agent_internal-1` bridge network. The target is the
-  generated path, so D has to add MAVROS; A does not need it.
+  (`generated/xfs-scenario`) emits no MAVROS service, and its bridge sits on an
+  internal `agent_internal-1` bridge network. The target is the generated path,
+  so D adds the service — cheaply, since the launch package already ships in
+  the image it uses. See "MAVROS is nearly free" above.
 - **There is no precedent for a live ROS consumer in a generated stack.**
   `sim-real-eval-worker` is the only evaluation container, and it attaches to
   `sim_network` with no ROS environment at all — it consumes bags from
@@ -142,6 +183,14 @@ It reuses `probe.py`'s subscription set and adds:
 | Truth `frame_id` / `child_frame_id` | frame contract |
 | Truth gravity alignment while stationary | metres, ROS quaternions, IMU body origin |
 | Timestamp skew across all three | shared time base (already in `probe.py`) |
+| MAVLink reachability: is `px4-drone-1:14555` open on `agent_internal-1` | decides whether D's MAVROS service is a one-line URL change or a `px4-drone-1` change too |
+
+The last row is a late addition. It was originally excluded because MAVROS was
+believed to be substantial work deferred to D. Once that turned out false, the
+check became cheap — a UDP probe against a service name on a network the
+prober is already joined to — and it is the one thing that could still make D
+expensive. Measuring it here costs minutes; discovering it in D costs a
+redesign. It is a reachability probe only: no arming, no offboard, no motion.
 
 Output is JSON, so C and D can consume it, plus a human-readable summary.
 
@@ -188,8 +237,9 @@ for A; it is the cheap discovery this sub-project exists to make.
 
 ## Out of scope
 
-No MAVROS, offboard or arming — the generated path has no MAVROS service and
-adding one is D. No stackgen changes. No images published. No catalog rows. No
+No offboard, no arming, no commanded motion. A probes whether the MAVLink port
+is reachable on `agent_internal-1`; standing up the MAVROS service and flying
+anything is D. No stackgen changes. No images published. No catalog rows. No
 OpenVINS tuning or calibration authoring: A measures what the intrinsics *are*,
 it does not produce a calibrated `estimator_config.yaml`.
 
