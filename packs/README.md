@@ -70,54 +70,55 @@ re-downloaded.
 
 ## The 5.8.2 channel today (2026-09-09)
 
-Published and pinned by digest: `tevv-runtime-host-20260909.2` (the slimmed
-host, 2.55 GB; same capability id as 20260908, contract adds the CableComponent
-and Niagara engine plugins) and `mns-authoring-20260909.1` (TEVV-Authoring #15
-at 2b3d67fd: in-process level-pack switching via `mns.Authoring.SelectLevelPack`
-with a restart-request fallback, and the same 25-plugin contract as the runtime
-host). Both carry the 5.8.2 host id. `mns-authoring-20260908` predates both the
-switching work and the two plugins, so it needed a restart to change packs and
-rejected the Fisherman's Cabin level; `mns-authoring-20260909` (no suffix) is a
-superseded early push of the same day and can be deleted from the registry. Not published:
-a generator or product shell that accepts the 5.8.2 packs. The 20260826 shell
-rejects them with `level pack must declare a supported strict, whole-level, or
-actor-selection contract`; the parser that accepts the new `mns.whole-level.v1`
-contract is on TEVV-Authoring #15. Both are therefore `channel: local` catalog
-rows built on this machine:
+All five images are published and pinned by digest:
+
+| role | image | notes |
+|---|---|---|
+| runtime host | `tevv-runtime-host-20260909.2` | slim host, 2.55 GB; 25-plugin contract |
+| ScenarioLab | `mns-authoring-20260909.1` | TEVV-Authoring #15 at 2b3d67fd: in-process level-pack switching, same 25-plugin contract |
+| generator | `mns-stack-generator-20260909` | MnS-Integration-Platform main + PR #93 (30657d1) with the TEVV-Authoring #15 (7fe22c7) content-pack SDK; runtime contract baked |
+| product shell | `mns-product-shell-20260909` | same sources; ScenarioLab's contract baked, so staging validates against what the editor can mount and skips what it cannot (#93) |
+| ROS 2 bridge | `tevv-airsim-ros2-bridge-humble-20260826` | 5.5.4-era build until TEVV-Airsim-ROS2-Bridge #45 publishes a 5.8.2 one |
+
+The generator and shell were built on this machine and pushed on 2026-09-09
+(the published 20260826 ones reject the 5.8.2 packs' `mns.whole-level.v1`
+contract, and MnS-Integration-Platform had published nothing newer). Once #93
+merges, an integration-side publish supersedes them; repin then. To rebuild
+them locally (a newer integration commit, a new authoring contract):
 
 ```bash
-# MnS-Integration-Platform at fix/stage-authoring-skips-unmountable-packs (main + the staging
-# fix) with services/tevv-authoring at TEVV-Authoring #15 (7fe22c7). The generator gets the
-# RUNTIME contract, the shell the AUTHORING contract: the shell stages for ScenarioLab.
+# MnS-Integration-Platform at the commit to publish, with services/tevv-authoring at TEVV-Authoring #15 (7fe22c7).
+# The generator gets the RUNTIME contract, the shell the AUTHORING contract: the shell stages for ScenarioLab.
 cd ~/Coding-Projects/MnS-Integration-Platform
 git -C services/tevv-authoring checkout 7fe22c7f9cabe2bb46b6eeca982d1a97bde26b67
+SHA=$(git rev-parse --short=12 HEAD); DATE=$(date +%Y%m%d)
 C=$(mktemp -d) && cp ~/M-S-Simulation-Runtime-Stack/packs/runtime-host-compatibility.ue582.json $C/host-compatibility.json
-SHA=$(git rev-parse --short=12 HEAD)
 docker build -f docker/stack-generator.Dockerfile --build-context "mns_authoring_contract=$C" \
-  -t local/mns-stack-generator:ue582-local.$SHA .
+  -t dhdevspace/auto_mns:mns-stack-generator-$DATE .
 A=$(mktemp -d) && cp ~/M-S-Simulation-Runtime-Stack/packs/authoring-host-compatibility.ue582.json $A/host-compatibility.json
 docker build -f docker/product-shell.Dockerfile --build-context "mns_authoring_contract=$A" \
-  --build-arg DEFAULT_AUTHORING_IMAGE=dhdevspace/auto_mns:mns-authoring-20260909.1@sha256:cd7e54e70079564210b33ebe6db85f364bb40b378a3163df5e6034ed8e8a893c \
-  --build-arg DEFAULT_STACK_GENERATOR_IMAGE=local/mns-stack-generator:ue582-local.$SHA \
-  -t local/mns-product-shell:ue582-local.$SHA .
+  --build-arg DEFAULT_AUTHORING_IMAGE=<the mns_authoring_ue582 pin> \
+  --build-arg DEFAULT_STACK_GENERATOR_IMAGE=dhdevspace/auto_mns:mns-stack-generator-$DATE \
+  -t dhdevspace/auto_mns:mns-product-shell-$DATE .
+docker push dhdevspace/auto_mns:mns-stack-generator-$DATE && docker push dhdevspace/auto_mns:mns-product-shell-$DATE
 ```
 
-Then update the two `local/` rows in `images/catalog.yaml` to the new tag,
-`tools/images.sh sync`, and rebuild the lock (below) so its `required_images`
-follow. When MnS-Integration-Platform publishes a generator and shell built on
-the #15 SDK, replace the local rows with `channel: pinned` rows and the
-`--shell` argument below with the published pin.
+Then set the two rows' `tag`/`digest` in `images/catalog.yaml` (`docker buildx
+imagetools inspect <ref>` gives the digest), `tools/images.sh sync`, and
+`make pack-lock` so the lock's `required_images` follow.
 
-The ROS 2 bridge on this channel is still the 5.5.4-era build
-(TEVV-Airsim-ROS2-Bridge #45 is open). ScenarioLab's `mns_vehicle_models`
-default pack is seeded from the v1 authoring image on this channel too: the
-5.8.2 image ships none, and the 5.5.4-cooked pak mounts in the 5.8.2 editor.
+ScenarioLab's `mns_vehicle_models` default pack is still seeded from the v1
+authoring image on this channel: no authoring image ships it yet (TEVV-Authoring
+`tooling/asset_packs/provision_default_packs.sh` builds it, and the #15
+Dockerfile copies `ScenarioLab/AssetPacks` when present, so the fix is to run
+the provisioning before the image build).
 
 Known content defect: `condo-level@1.0.0` has no `PlayerStart` tagged
-`MnSScenarioOrigin` (9 selected actors), so the generic runtime host aborts on
+`MnSScenarioOrigin` (the Condo `L_Main.umap` on TEVV-Airsim `feat/ue5.8-migration`
+carries four PlayerStarts, none tagged), so the generic runtime host aborts on
 it with `Generic pack host requires exactly one PlayerStart tagged
-MnSScenarioOrigin; found 0`. It authors fine; use `safti-level@1.0.1` or
-another level for a runtime run until a condo-level 1.0.1 is published.
+MnSScenarioOrigin; found 0`. It authors fine; use another level for a runtime
+run until a condo-level 1.0.1 with the tagged PlayerStart is published.
 
 ## Building or refreshing a lock
 

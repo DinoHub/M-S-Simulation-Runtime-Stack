@@ -75,19 +75,15 @@ follow_ups:
     post-#89 stage_resolved_level_pack; then drop the seeding/backfill and,
     if nothing else needs it, the v1 authoring row.
   - >-
-    standalone_v2_ue582 (the UE 5.8.2 channel) runs on two channel: local
-    rows, mns_stack_generator_ue582 and mns_product_shell_ue582, built from
-    MnS-Integration-Platform 30657d1 (main + PR #93: staging skips packs
-    ScenarioLab cannot mount) with the TEVV-Authoring #15 (7fe22c7)
-    content-pack SDK and the 5.8.2 contracts (packs/README.md). No published
-    generator or shell accepts the 5.8.2 packs' whole-level contract yet.
-    When MnS-Integration-Platform publishes ones that do (after #93):
-    replace both rows with channel: pinned rows (tag + digest), sync,
-    rebuild packs/standalone-v2-ue582.lock.json with tools/build_pack_lock.py
-    so required_images follow, and drop the local build steps from
-    packs/README.md. Also ros2_bridge on that channel is the 5.5.4-era
-    20260826 build until TEVV-Airsim-ROS2-Bridge #45 publishes a 5.8.2 one;
-    add a ros2_bridge_ue582 row and point the channel at it then.
+    standalone_v2_ue582's generator and product shell (mns-stack-generator-20260909,
+    mns-product-shell-20260909) were built on a developer machine from
+    MnS-Integration-Platform 30657d1 (main + PR #93) with the TEVV-Authoring #15
+    (7fe22c7) SDK and pushed by hand, because no published generator or shell
+    accepted the 5.8.2 packs' whole-level contract. Once MnS-Integration-Platform
+    merges #93 and publishes its own: bump both rows to that release, `sync`,
+    `make pack-lock` so required_images follow. Also ros2_bridge on that channel
+    is the 5.5.4-era 20260826 build until TEVV-Airsim-ROS2-Bridge #45 publishes a
+    5.8.2 one; add a ros2_bridge_ue582 row and point the channel at it then.
   - >-
     ardupilot_slim (ardupilot-slim-20260826.1, the same digest -latest
     resolves to) has no SITL binary: its entrypoint execs
@@ -227,13 +223,11 @@ images:
   # Same product, next engine line. Host capability
   # ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2; packs cooked
   # for it are on TEVV-Airsim GitHub Releases (packs/standalone-v2-ue582.lock.json).
-  # The runtime host and ScenarioLab are published; the generator and product
-  # shell are NOT -- the published 20260826 ones reject the new pack contract
-  # ("level pack must declare a supported strict, whole-level, or
-  # actor-selection contract"), so both are channel: local builds from
-  # MnS-Integration-Platform main with the TEVV-Authoring #15 SDK and the
-  # runtime host's contract baked in (packs/README.md "Building the 5.8.2
-  # generator and shell"). Replace them with pinned rows once published.
+  # All five roles are published digest pins. The generator and shell were
+  # built from MnS-Integration-Platform main + PR #93 with the TEVV-Authoring
+  # #15 SDK and pushed by hand on 2026-09-09, because the published 20260826
+  # ones reject the new pack contract ("level pack must declare a supported
+  # strict, whole-level, or actor-selection contract"); see the follow_up.
   # ---------------------------------------------------------------------
   tevv_runtime_host_ue582:
     repo: dhdevspace/auto_mns
@@ -263,23 +257,25 @@ images:
       mns_authoring_v2 follow_up).
 
   mns_stack_generator_ue582:
-    repo: local/mns-stack-generator
-    tag: ue582-local.30657d106667
-    digest: null
-    channel: local
+    repo: dhdevspace/auto_mns
+    tag: mns-stack-generator-20260909
+    digest: sha256:59b7974232a8c1038218fac18c3bc5c64aac96ecbcf648608a052018636561ce
+    channel: pinned
     purpose: >-
-      Generator built locally from MnS-Integration-Platform 30657d1 (main +
+      Generator for the 5.8.2 packs: MnS-Integration-Platform 30657d1 (main +
       PR #93, the staging fix) with the TEVV-Authoring 7fe22c7 (#15)
-      content-pack SDK and the 5.8.2 runtime host contract; not on the registry.
+      content-pack SDK and the 5.8.2 runtime host contract baked. Built and
+      pushed from a developer machine on 2026-09-09 (packs/README.md); repin
+      when the integration repo publishes its own after #93 merges.
 
   mns_product_shell_ue582:
-    repo: local/mns-product-shell
-    tag: ue582-local.30657d106667
-    digest: null
-    channel: local
+    repo: dhdevspace/auto_mns
+    tag: mns-product-shell-20260909
+    digest: sha256:062c8081374fa378413686766ebb010007e0c70b325b6adef5096f2bfcc5072f
+    channel: pinned
     purpose: >-
-      Product shell built locally alongside mns_stack_generator_ue582 (same
-      sources) with ScenarioLab's 25-plugin contract baked in
+      Product shell built alongside mns_stack_generator_ue582 (same sources)
+      with ScenarioLab's 25-plugin contract baked in
       (packs/authoring-host-compatibility.ue582.json); installs, verifies and
       stages the 5.8.2 packs, skipping any ScenarioLab cannot mount.
 

@@ -17,9 +17,9 @@ from `images/catalog.yaml`: the UE 5.8.2 runtime host
 (`mns-authoring-20260909.1`, in-process level-pack switching), pinned by digest
 and both labelled
 `tevv.content_packs.host_compatibility_id =
-ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2`, a generator and
-product shell built locally on this engine line's pack contract (`channel:
-local` rows; `packs/README.md` has the build), the `ue582` image set for
+ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2`, the generator
+and product shell (`mns-stack-generator-20260909`, `mns-product-shell-20260909`;
+`packs/README.md` says what they were built from), the `ue582` image set for
 generated stacks, and `packs/standalone-v2-ue582.lock.json` installed into
 `.mns/ue582/`. It is the default channel since 2026-09-09; `CHANNEL=v2`
 selects the untouched 5.5.4 set.
@@ -44,14 +44,20 @@ introduced. Without `--engine-root` the host id is read from the lock's
 
 ```bash
 python3 tools/check_ue_candidate.py --lock packs/standalone-v2-ue582.lock.json \
-  --pack-store .mns/ue582/pack-store --local-images
+  --pack-store .mns/ue582/pack-store
 ```
 
-`--local-images` permits the two `local/` tags only when the lock records their
-exact image IDs (`required_image_ids`); the generated lock does not carry those
-because `tools/build_pack_lock.py` records what the catalog pins, so add them by
-hand for a gated candidate run, or use the Makefile path, which checks local
-image presence through `tools/ensure-images.sh --channel standalone_v2_ue582`.
+The gate wants more roles than the channel lock carries: `required_images`
+must also pin `dashboard_backend`, `dashboard_frontend` and `timescaledb`, and
+`--start-dashboard` additionally `ardupilot`, `px4`, `qgroundcontrol`,
+`sim_real_eval` and `lichtblick`. `tools/build_pack_lock.py` records the five
+channel roles the installer needs, so a gate run needs a copy of the lock with
+those roles added by hand. Every channel image is a registry digest, so the
+default (strict) mode applies to them; the dashboard images are still local
+builds (`local/tevv-web-dashboard-*:v2-dev`), which strict mode rejects, so
+until they are published the gate can only run in `--local-images` mode with
+their exact IDs in `required_image_ids`. The Makefile path (`make dashboard`)
+is the check that runs today.
 
 The check rejects engine/host mismatches, unpinned images, missing or invalid
 packs, and bad bundle receipts. Pack integrity uses the Authoring-owned
@@ -103,7 +109,7 @@ Once the backend is healthy, verify its actual selections:
 
 ```bash
 python3 tools/check_ue_candidate.py --lock packs/standalone-v2-ue582.lock.json \
-  --pack-store .mns/ue582/pack-store --local-images --dashboard-container airsim-dashboard-api
+  --pack-store .mns/ue582/pack-store --dashboard-container airsim-dashboard-api
 ```
 
 ## Runtime gate
@@ -133,9 +139,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools -p 'test_install
 
 ## Known gaps on this channel
 
-- Generator and product shell are local builds (MnS-Integration-Platform main
-  + TEVV-Authoring #15 SDK); publish them, then replace the `local/` catalog
-  rows with digest pins and rebuild the lock.
+- Generator and product shell were built and pushed from a developer machine
+  (MnS-Integration-Platform main + PR #93, TEVV-Authoring #15 SDK); repin once
+  MnS-Integration-Platform publishes its own after #93 merges.
 - The ROS 2 bridge is the 5.5.4-era `tevv-airsim-ros2-bridge-humble-20260826`
   until TEVV-Airsim-ROS2-Bridge #45 publishes a 5.8.2 build.
 - `ardupilot-slim-20260826.1` has no SITL binary (catalog follow-up); the drone

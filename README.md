@@ -61,14 +61,14 @@ make dashboard CHANNEL=v2      # the previous UE 5.5.4 set: 4 level + 3 object p
 MNS_CHANNEL=v2 ./product.sh start
 ```
 
-The 5.8.2 channel's runtime host (`tevv-runtime-host-20260909.2`, 2.55 GB) and
-ScenarioLab (`mns-authoring-20260909.1`, switches level packs in-process) are
-published pins; its generator and product shell are `channel:
-local` rows built on this machine until published (build steps in
-`packs/README.md`). `tools/ensure-images.sh` and `./product.sh doctor` refuse
-to start a channel whose local images are missing. The dashboard's Content
-phase shows the active engine line, the packs published for it, and installs
-the missing ones.
+Every image on the 5.8.2 channel is a published digest pin: runtime host
+`tevv-runtime-host-20260909.2` (2.55 GB), ScenarioLab `mns-authoring-20260909.1`
+(switches level packs in-process), generator `mns-stack-generator-20260909` and
+shell `mns-product-shell-20260909` (`packs/README.md` says what they were built
+from). A channel may also carry `channel: local` rows for images built on this
+machine; `tools/ensure-images.sh` and `./product.sh doctor` refuse to start a
+channel whose local images are missing. The dashboard's Content phase shows the
+active engine line, the packs published for it, and installs the missing ones.
 
 The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
 generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
