@@ -137,6 +137,22 @@ work with. That is a property of frame rate x scene scale, and tuning will not
 recover it. **B should not start until the capture rate is fixed at the
 source.**
 
+### 5b. One camera, five faces — and what the spec CAN shed
+
+The spec has one fisheye camera; the sim renders it as a cubemap (five faces
+at 190 deg, the back face is already skipped). Two other GPU consumers ship on
+by default and VIO needs neither: the SHM fisheye publisher
+(`fisheye_shm_publish_enabled`) and the GPU LiDAR (`gpu_lidars`). With both
+removed from the ScenarioSpec: mean real frame rate 3.5 -> 4.5 Hz and the
+longest gap 0.91 -> 0.28 s (the near-second stalls are gone). GPU stays at
+96%, so the tick is scene-bound; that is the ceiling reachable from a spec.
+
+At that cadence dynamic init engages every flight and clears its feature
+floor at `init_max_features: 30`; static init engages too, but on the landing
+transient after the flight rather than the t=8 climb+yaw, because a 1 s
+half-window still holds only ~4 frames. Either way, updates use 0 features and
+the estimate drifts at ~1.3 m/s. Section 5's conclusion stands.
+
 ### 6. Operational: log rotation, or this stack fills a disk
 
 The generated stack's services use Docker's `json-file` driver with **no
