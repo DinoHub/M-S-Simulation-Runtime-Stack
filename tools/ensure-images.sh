@@ -4,13 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE=development
 DRY_RUN=false
-CHANNEL=standalone_v2
+CHANNEL=standalone_v2_ue582
 
 usage() {
   echo "Usage: tools/ensure-images.sh [--development|--production] [--channel NAME] [--dry-run]"
   echo
   echo "Uses an existing local image and pulls only when the selected ref is absent."
-  echo "--channel selects a release channel from images/catalog.yaml (default standalone_v2);"
+  echo "--channel selects a release channel from images/catalog.yaml (default standalone_v2_ue582);"
   echo "  a channel's locally built (channel: local) images are checked for presence, never pulled."
 }
 

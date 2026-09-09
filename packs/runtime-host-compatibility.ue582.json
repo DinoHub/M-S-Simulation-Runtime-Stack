@@ -14,27 +14,55 @@
       "version": "2.0.0"
     },
     {
-      "id": "TEVVContentPackSDK",
+      "id": "AirSimFCTeleporter",
       "version": "0.1.0"
     },
     {
-      "id": "ScenarioRunner",
+      "id": "CableComponent",
+      "version": "engine"
+    },
+    {
+      "id": "ChaosVehiclesPlugin",
+      "version": "engine"
+    },
+    {
+      "id": "DatasmithContent",
+      "version": "engine"
+    },
+    {
+      "id": "DegradationVolumes",
       "version": "0.1.0"
     },
     {
-      "id": "ScenarioContracts",
+      "id": "GeoReferencing",
+      "version": "engine"
+    },
+    {
+      "id": "Interchange",
+      "version": "engine"
+    },
+    {
+      "id": "InterchangeAssets",
+      "version": "engine"
+    },
+    {
+      "id": "MetricsEmitter",
       "version": "0.1.0"
     },
     {
-      "id": "ScenarioEnvironment",
+      "id": "MetricsVehicleTelemetry",
       "version": "0.1.0"
+    },
+    {
+      "id": "Niagara",
+      "version": "engine"
+    },
+    {
+      "id": "PCG",
+      "version": "engine"
     },
     {
       "id": "ScenarioAssets",
-      "version": "0.1.0"
-    },
-    {
-      "id": "ScenarioProcedural",
       "version": "0.1.0"
     },
     {
@@ -42,7 +70,11 @@
       "version": "0.1.0"
     },
     {
-      "id": "ScenarioObstacles",
+      "id": "ScenarioContracts",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioDegradation",
       "version": "0.1.0"
     },
     {
@@ -54,52 +86,28 @@
       "version": "0.1.0"
     },
     {
-      "id": "ScenarioDegradation",
+      "id": "ScenarioEnvironment",
       "version": "0.1.0"
     },
     {
-      "id": "DegradationVolumes",
+      "id": "ScenarioObstacles",
       "version": "0.1.0"
     },
     {
-      "id": "AirSimFCTeleporter",
+      "id": "ScenarioProcedural",
       "version": "0.1.0"
     },
     {
-      "id": "MetricsEmitter",
+      "id": "ScenarioRunner",
       "version": "0.1.0"
-    },
-    {
-      "id": "MetricsVehicleTelemetry",
-      "version": "0.1.0"
-    },
-    {
-      "id": "PCG",
-      "version": "engine"
-    },
-    {
-      "id": "InterchangeAssets",
-      "version": "engine"
-    },
-    {
-      "id": "ChaosVehiclesPlugin",
-      "version": "engine"
     },
     {
       "id": "SunPosition",
       "version": "engine"
     },
     {
-      "id": "GeoReferencing",
-      "version": "engine"
-    },
-    {
-      "id": "Interchange",
-      "version": "engine"
-    },
-    {
-      "id": "DatasmithContent",
-      "version": "engine"
+      "id": "TEVVContentPackSDK",
+      "version": "0.1.0"
     }
   ],
   "runtime_capabilities": [

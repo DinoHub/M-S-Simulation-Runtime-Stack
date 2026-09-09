@@ -4,15 +4,15 @@
 The lock (packs/*.lock.json, schema mns.pack_release_lock.v1) is the whole
 catalog: which packs exist, where each one is published, its size and
 checksum, the artifact digest the store indexes on, and the host capability
-every pack was cooked for. Two locks are shipped -- the UE 5.5.4 review set and
-the UE 5.8.2 candidate -- and `make dashboard CHANNEL=...` picks one together
+every pack was cooked for. Two locks are shipped -- the UE 5.8.2 set (default)
+and the previous UE 5.5.4 review set -- and `make dashboard CHANNEL=...` picks one together
 with its own pack store, authoring data root and host contract.
 
 Roots come from the environment so the Makefile, product.sh and the dashboard
 backend all point the installer at the same directories:
 
-    MNS_DEMO_PACK_LOCK                     lock file (default: the 5.5.4 review lock)
-    MNS_PACK_STORE_ROOT                    content-addressed store (default .mns/pack-store)
+    MNS_DEMO_PACK_LOCK                     lock file (default: the UE 5.8.2 lock)
+    MNS_PACK_STORE_ROOT                    content-addressed store (default .mns/ue582/pack-store)
     MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT contract whose id must equal the lock's
     MNS_PRODUCT_SHELL_IMAGE                shell used for `packs install` / staging
     MNS_DEMO_PACK_DOWNLOAD_DIR             scratch space for downloads
@@ -32,9 +32,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_LOCK_PATH = ROOT / "packs" / "standalone-v2-review.1.lock.json"
-DEFAULT_STORE_ROOT = ROOT / ".mns" / "pack-store"
-DEFAULT_HOST_CONTRACT = ROOT / "packs" / "runtime-host-compatibility.json"
+DEFAULT_LOCK_PATH = ROOT / "packs" / "standalone-v2-ue582.lock.json"
+DEFAULT_STORE_ROOT = ROOT / ".mns" / "ue582" / "pack-store"
+DEFAULT_HOST_CONTRACT = ROOT / "packs" / "runtime-host-compatibility.ue582.json"
 # Archive on disk plus the copy `packs install` writes into the store, and
 # some slack for the index and temporary files.
 DISK_HEADROOM_BYTES = 512 * 1024 * 1024
@@ -190,7 +190,7 @@ def build_parser(lock: dict | None) -> argparse.ArgumentParser:
         epilog="Selections come from the lock; --lock or MNS_DEMO_PACK_LOCK picks it.",
     )
     result.add_argument("--lock", type=Path, default=env_path("MNS_DEMO_PACK_LOCK", DEFAULT_LOCK_PATH),
-                        help="pack lock to install from (default: MNS_DEMO_PACK_LOCK or the 5.5.4 review lock)")
+                        help="pack lock to install from (default: MNS_DEMO_PACK_LOCK or the UE 5.8.2 lock)")
     result.add_argument("--all", action="store_true", help="Install every level and object pack in the lock")
     result.add_argument("--objects", action="store_true", help="Install every object (asset) pack in the lock")
     for pack in (lock or {}).get("packs", []):

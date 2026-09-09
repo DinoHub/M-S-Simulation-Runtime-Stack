@@ -11,8 +11,8 @@
 # Roots come from the environment, the same variables the Makefile hands the
 # dashboard backend and product.sh, so one channel's packs are staged into that
 # channel's authoring data root:
-#   MNS_PACK_STORE_ROOT       (default .mns/pack-store)
-#   MNS_AUTHORING_DATA_ROOT   (default .mns/authoring-data)
+#   MNS_PACK_STORE_ROOT       (default .mns/ue582/pack-store)
+#   MNS_AUTHORING_DATA_ROOT   (default .mns/ue582/authoring-data)
 #   MNS_PRODUCT_SHELL_IMAGE   the shell whose SDK stages (required once packs exist)
 #   MNS_IMAGE_PULL_POLICY     always|missing|never for that shell (default missing)
 #   MNS_SEED_AUTHORING_DEFAULTS  1 to seed the v1 default asset packs (5.5.4 channel)
@@ -21,8 +21,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STORE_ROOT="${MNS_PACK_STORE_ROOT:-$ROOT/.mns/pack-store}"
-DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$ROOT/.mns/authoring-data}"
+STORE_ROOT="${MNS_PACK_STORE_ROOT:-$ROOT/.mns/ue582/pack-store}"
+DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$ROOT/.mns/ue582/authoring-data}"
 STORE_ROOT="$(mkdir -p "$STORE_ROOT" && cd "$STORE_ROOT" && pwd)"
 DATA_ROOT="$(mkdir -p "$DATA_ROOT" && cd "$DATA_ROOT" && pwd)"
 STORE_INDEX="$STORE_ROOT/index.json"

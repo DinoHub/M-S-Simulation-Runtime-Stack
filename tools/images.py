@@ -248,7 +248,7 @@ def development_ref(images: dict[str, Any], key: str) -> str:
     return f"{row['repo']}:{row.get('latest_tag') or row['tag']}"
 
 
-DEFAULT_CHANNEL = "standalone_v2"
+DEFAULT_CHANNEL = "standalone_v2_ue582"
 
 
 def release_channel(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> dict[str, Any]:
@@ -286,10 +286,10 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, develop
     """Return unique active refs in production or tag-only development form.
 
     `channel: local` rows are built on this machine and have no registry
-    counterpart, so they are never pullable: the default channel refuses to
-    reference one at all (its whole point is that everything is published),
-    while a candidate channel simply leaves them out here and relies on
-    `tools/ensure-images.sh` / the Makefile to check they exist locally.
+    counterpart, so they are never pullable: they are left out here and
+    `tools/ensure-images.sh` / `product.sh doctor` check they exist locally
+    (`local-refs`). `channel: unpublished` rows are refused: something the
+    product needs that nobody has, anywhere.
     """
     images = catalog["images"]
     if all_catalog:
@@ -300,9 +300,7 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, develop
     else:
         keys = channel_keys(catalog, channel)
         unavailable = sorted(
-            key for key in keys
-            if images[key]["channel"] == "unpublished"
-            or (images[key]["channel"] == "local" and channel == DEFAULT_CHANNEL)
+            key for key in keys if images[key]["channel"] == "unpublished"
         )
         if unavailable:
             raise CatalogError(
@@ -314,7 +312,8 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, develop
 
 def local_refs(catalog: dict[str, Any], channel: str = DEFAULT_CHANNEL) -> list[str]:
     """`channel: local` rows a release channel depends on — images that must
-    already exist in the local Docker store because nothing can pull them."""
+    already exist in the local Docker store because nothing can pull them.
+    Empty for a fully published channel (standalone_v2)."""
     images = catalog["images"]
     return sorted(image_ref(images, key) for key in channel_keys(catalog, channel)
                   if images[key]["channel"] == "local")
@@ -1462,8 +1461,7 @@ def cmd_refs(args: argparse.Namespace) -> int:
 
 def cmd_local_refs(args: argparse.Namespace) -> int:
     """`channel: local` images a release channel needs present in the Docker
-    store. Empty for the default channel by construction (it refuses local
-    rows); a candidate channel lists the tags it was built with."""
+    store; empty for a fully published channel."""
     catalog = load_catalog()
     assert_invariants(catalog)
     for ref in local_refs(catalog, channel=args.channel):
@@ -1541,7 +1539,7 @@ def main(argv: list[str]) -> int:
     p_refs.add_argument("--all-catalog", action="store_true")
     p_refs.add_argument("--development", action="store_true")
     p_refs.add_argument("--channel", default=DEFAULT_CHANNEL,
-                        help="release channel whose active set to list (default: standalone_v2)")
+                        help=f"release channel whose active set to list (default: {DEFAULT_CHANNEL})")
     p_refs.set_defaults(fn=cmd_refs)
 
     p_local = sub.add_parser("local-refs")

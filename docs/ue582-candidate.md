@@ -12,13 +12,16 @@ the source project.
 ## What the channel is
 
 `make dashboard CHANNEL=ue582` selects the `standalone_v2_ue582` release channel
-from `images/catalog.yaml`: the UE 5.8.2 runtime host and ScenarioLab (pinned
-by digest, both labelled `tevv.content_packs.host_compatibility_id =
-ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2`), a generator and
+from `images/catalog.yaml`: the UE 5.8.2 runtime host
+(`tevv-runtime-host-20260909.2`, the 2.55 GB slimmed host) and ScenarioLab
+(`mns-authoring-20260908`), pinned by digest and both labelled
+`tevv.content_packs.host_compatibility_id =
+ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2`, a generator and
 product shell built locally on this engine line's pack contract (`channel:
 local` rows; `packs/README.md` has the build), the `ue582` image set for
 generated stacks, and `packs/standalone-v2-ue582.lock.json` installed into
-`.mns/ue582/`. The 5.5.4 channel is untouched and stays the default.
+`.mns/ue582/`. It is the default channel since 2026-09-09; `CHANNEL=v2`
+selects the untouched 5.5.4 set.
 
 Everything is keyed by the one host id. It comes from the runtime host image's
 packaging label, which the packaging step wrote from the engine's own
@@ -30,8 +33,8 @@ variant cooked for it. Never relabel old cooked payloads.
 ## Candidate inputs
 
 ```bash
-make dashboard CHANNEL=ue582                       # installs the 7 packs (~5.7 GB) on first run
-make dashboard CHANNEL=ue582 MNS_DEMO_PACKS="--condo --office-props"
+make dashboard                                     # ue582 is the default; installs the 7 packs (~5.7 GB) on first run
+make dashboard MNS_DEMO_PACKS="--safti --office-props"
 ```
 
 Or verify the candidate explicitly before launching, with the gate PR #57

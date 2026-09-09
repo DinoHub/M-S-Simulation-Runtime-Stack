@@ -36,15 +36,17 @@ IMAGE_MODE ?= development
 # capability contract, and its own pack store + authoring data root under
 # .mns/, because packs cooked for one engine line never mount on the other
 # and the product shell stages everything in its store for ONE contract.
-#   v2     UE 5.5.4 (default): packs/standalone-v2-review.1.lock.json, .mns/{pack-store,authoring-data}
-#   ue582  UE 5.8.2 candidate: packs/standalone-v2-ue582.lock.json,      .mns/ue582/{pack-store,authoring-data}
-CHANNEL ?= v2
+#   ue582  UE 5.8.2 (default):  packs/standalone-v2-ue582.lock.json,      .mns/ue582/{pack-store,authoring-data}
+#   v2     UE 5.5.4 (previous): packs/standalone-v2-review.1.lock.json, .mns/{pack-store,authoring-data}
+CHANNEL ?= ue582
 # Standalone-v2 demo packs `make dashboard` guarantees are installed before
 # ScenarioLab opens, as tools/install-demo-packs.sh selections. Only packs
 # MISSING from .mns/pack-store are downloaded (--missing), so a re-run costs one
-# offline lock/index comparison. The full set is ~2.6 GB (XFS 1.17 GB, SAFTI
-# 0.83 GB, Pendleton 0.6 GB, Condo 9 MB, three object packs ~30 MB).
-#   make dashboard MNS_DEMO_PACKS="--condo --objects"   # a small subset
+# offline lock/index comparison. The 5.8.2 set is ~5.7 GB (Office 1.93 GB,
+# XFS 1.74 GB, SAFTI 0.86 GB, Warehouse 0.8 GB, Warehouse Props 0.25 GB,
+# Office Props 95 MB, Condo 6 MB); the 5.5.4 set ~2.6 GB. Selections are the
+# lock's (tools/install-demo-packs.sh --help lists them).
+#   make dashboard MNS_DEMO_PACKS="--safti --office-props"   # a small subset
 #   make dashboard MNS_SKIP_PACK_INSTALL=1             # offline / v1-only
 MNS_DEMO_PACKS ?= --all
 MNS_SKIP_PACK_INSTALL ?= 0

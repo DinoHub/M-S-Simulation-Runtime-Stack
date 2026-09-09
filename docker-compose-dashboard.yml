@@ -11,8 +11,12 @@
 #
 #   docker compose -f docker-compose-dashboard.yml \
 #     --env-file .env \
+#     --env-file images/standalone-v2-ue582.generated.env \
 #     --env-file images/standalone-v2-development.generated.env \
 #     up -d
+#
+# (the ue582 file first: it is the default channel's pins, the development
+# file then supplies the dashboard/tooling -latest tags it does not bind)
 #
 # That is the development (tag-only) set. The production (digest-pinned) set
 # is spread over three files, the same ones make's IMAGE_MODE=production
@@ -133,10 +137,10 @@ services:
       # The dashboard passes this through to the nested stack-generator run.
       # Development uses the tag-only overlay; production selects the pinned one.
       # The image_sets entry generated stacks select from MNS_IMAGE_SET_FILE.
-      # `published` is the standalone-v2 default; a candidate channel (make
-      # dashboard CHANNEL=ue582) names its own entry, rendered into the same
-      # file from images/catalog.yaml.
-      - MNS_IMAGE_SET=${MNS_IMAGE_SET:-published}
+      # `ue582` is the default channel's; `make dashboard CHANNEL=v2` selects
+      # `published` (the UE 5.5.4 set). Both are rendered into the same file
+      # from images/catalog.yaml.
+      - MNS_IMAGE_SET=${MNS_IMAGE_SET:-ue582}
       # A repo-owned path, not an image pin, so a default carries no drift
       # risk -- and a required var here broke `down`/`ps`/`logs` too, since
       # compose interpolates every service at parse time. The default is the
@@ -151,8 +155,8 @@ services:
       # staged ScenarioLab index under the data root for /api/scenario/catalog
       # and /api/scenario/preflight. Same defaults product.sh and
       # tools/stage-authoring-packs.sh use, so all three agree on one store.
-      - MNS_PACK_STORE_ROOT=${MNS_PACK_STORE_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/pack-store}
-      - MNS_AUTHORING_DATA_ROOT=${MNS_AUTHORING_DATA_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/authoring-data}
+      - MNS_PACK_STORE_ROOT=${MNS_PACK_STORE_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/ue582/pack-store}
+      - MNS_AUTHORING_DATA_ROOT=${MNS_AUTHORING_DATA_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/ue582/authoring-data}
       # The runtime host's frozen capability contract, forwarded to the
       # generator the same way. The generator validates the pack variant it
       # selects against this document, and the published generator image
@@ -160,16 +164,16 @@ services:
       # failed with "host compatibility document does not exist". The file is
       # the one baked into the pinned tevv_runtime_host image -- see
       # packs/README.md for how it is refreshed.
-      - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.json}
+      - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.ue582.json}
       # Content onboarding (the dashboard's Content phase, /api/content): the
       # pack lock the catalog is read from and the product shell that installs
       # and stages packs. Both come from the selected channel; `make dashboard
-      # CHANNEL=` exports them, and the defaults are the 5.5.4 review set.
+      # CHANNEL=` exports them, and the defaults are the UE 5.8.2 channel.
       # The backend runs the runtime stack's own tools/install-demo-packs.sh
       # against this checkout, so a pack installed from the browser is exactly
       # a pack installed by `make dashboard`.
-      - MNS_CHANNEL=${MNS_CHANNEL:-v2}
-      - MNS_DEMO_PACK_LOCK=${MNS_DEMO_PACK_LOCK:-${MSRS_ROOT:-${PWD}}/packs/standalone-v2-review.1.lock.json}
+      - MNS_CHANNEL=${MNS_CHANNEL:-ue582}
+      - MNS_DEMO_PACK_LOCK=${MNS_DEMO_PACK_LOCK:-${MSRS_ROOT:-${PWD}}/packs/standalone-v2-ue582.lock.json}
       - MNS_PRODUCT_SHELL_IMAGE=${MNS_PRODUCT_SHELL_IMAGE:-}
       # Reported (presence + host label) by the Content phase; the generated
       # stacks take the runtime host from MNS_IMAGE_SET_FILE, not from this.

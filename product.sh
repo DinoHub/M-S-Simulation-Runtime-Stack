@@ -2,19 +2,21 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Which standalone-v2 release channel to run (same knob as `make dashboard
-# CHANNEL=`): v2 is UE 5.5.4, ue582 the UE 5.8.2 candidate. Each channel has
+# CHANNEL=`): ue582 is UE 5.8.2 (default), v2 the previous UE 5.5.4 set. Each channel has
 # its own generated image env, pack lock, runtime-host contract and, because
 # packs cooked for one engine never mount on the other, its own pack store
 # and authoring data root under .mns/.
-CHANNEL="${MNS_CHANNEL:-v2}"
+CHANNEL="${MNS_CHANNEL:-ue582}"
 case "$CHANNEL" in
   v2)
+    CHANNEL_NAME=standalone_v2
     CHANNEL_ENV="$ROOT/images/standalone-v2-images.generated.env"
     CHANNEL_LOCK="$ROOT/packs/standalone-v2-review.1.lock.json"
     CHANNEL_CONTRACT="$ROOT/packs/runtime-host-compatibility.json"
     CHANNEL_DIR="$ROOT/.mns"
     ;;
   ue582)
+    CHANNEL_NAME=standalone_v2_ue582
     CHANNEL_ENV="$ROOT/images/standalone-v2-ue582.generated.env"
     CHANNEL_LOCK="$ROOT/packs/standalone-v2-ue582.lock.json"
     CHANNEL_CONTRACT="$ROOT/packs/runtime-host-compatibility.ue582.json"
@@ -24,11 +26,24 @@ case "$CHANNEL" in
 esac
 # shellcheck disable=SC1090
 source "$CHANNEL_ENV"
+# The generated env names the channel's image_sets entry (MNS_IMAGE_SET);
+# `published` is the 5.5.4 set's name and the fallback for an older file.
+IMAGE_SET="${MNS_IMAGE_SET:-published}"
 export MNS_DEMO_PACK_LOCK="$CHANNEL_LOCK"
 export MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT="$CHANNEL_CONTRACT"
 DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$CHANNEL_DIR/authoring-data}"
 PACK_STORE_ROOT="${MNS_PACK_STORE_ROOT:-$CHANNEL_DIR/pack-store}"
 export MNS_PACK_STORE_ROOT="$PACK_STORE_ROOT"
+# Paths the shell sees: the checkout is mounted at /workspace, so anything
+# under $ROOT maps 1:1 and anything outside is unreachable from the container.
+container_path() {
+  case "$1" in
+    "$ROOT"/*) printf '/workspace/%s' "${1#"$ROOT"/}" ;;
+    *) echo "ERROR: $1 is outside the checkout $ROOT; the product shell cannot see it" >&2; exit 2 ;;
+  esac
+}
+CONTAINER_PACK_STORE="$(container_path "$PACK_STORE_ROOT")"
+CONTAINER_CONTRACT="$(container_path "$CHANNEL_CONTRACT")"
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
 AUTHORING_AIRSIM_SETTINGS="$ROOT/config/unreal-airsim/authoring-preview.json"
@@ -74,7 +89,7 @@ run_shell() {
     -e MNS_LAUNCH_BACKEND=docker \
     -e MNS_WORKSPACE_ROOT=/workspace \
     -e MNS_GENERATED_STACKS_ROOT=/workspace/generated \
-    -e MNS_PACK_STORE_ROOT=/workspace/.mns/pack-store \
+    -e "MNS_PACK_STORE_ROOT=$CONTAINER_PACK_STORE" \
     -e "MNS_HOST_WORKSPACE_ROOT=$ROOT" \
     -e "MNS_HOST_UID=$(id -u)" \
     -e "MNS_HOST_GID=$(id -g)" \
@@ -84,8 +99,8 @@ run_shell() {
     -e "MNS_AUTHORING_DOCKER_ARGS=$AUTHORING_DOCKER_ARGS" \
     -e "MNS_AUTHORING_DOCKER_GPU_ARGS=${MNS_AUTHORING_DOCKER_GPU_ARGS:-}" \
     -e "MNS_STACK_GENERATOR_IMAGE=$MNS_STACK_GENERATOR_IMAGE" \
-    -e "MNS_STACK_GENERATOR_DOCKER_ARGS=-e MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=/workspace/packs/runtime-host-compatibility.json${MNS_STACK_GENERATOR_DOCKER_ARGS:+ $MNS_STACK_GENERATOR_DOCKER_ARGS}" \
-    -e MNS_IMAGE_SET=published \
+    -e "MNS_STACK_GENERATOR_DOCKER_ARGS=-e MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$CONTAINER_CONTRACT${MNS_STACK_GENERATOR_DOCKER_ARGS:+ $MNS_STACK_GENERATOR_DOCKER_ARGS}" \
+    -e "MNS_IMAGE_SET=$IMAGE_SET" \
     -e MNS_IMAGE_SET_FILE=/workspace/images/image-set.generated.yaml \
     -e "DISPLAY=${DISPLAY:-:0}" \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
@@ -110,7 +125,7 @@ case "${1:-}" in
     # pyyaml, unreadable catalog) left `images` empty, skipped the loop
     # entirely, and printed "Product prerequisites are ready." on a machine
     # with zero images pulled. Capture first, check the status, then split.
-    if ! images_out="$("$ROOT/tools/images.sh" refs)"; then
+    if ! images_out="$("$ROOT/tools/images.sh" refs --channel "$CHANNEL_NAME")"; then
       echo "ERROR: could not enumerate product images (tools/images.sh refs failed)." >&2
       echo "       See the Requirements section of README.md." >&2
       exit 1
@@ -120,9 +135,19 @@ case "${1:-}" in
       echo "ERROR: tools/images.sh refs returned no images; refusing to report success." >&2
       exit 1
     fi
+    # channel: local rows are excluded from refs (nothing can pull them) but the
+    # product still needs them present; a fully published channel lists none.
+    mapfile -t local_images < <("$ROOT/tools/images.sh" local-refs --channel "$CHANNEL_NAME")
     failed=0
-    for image in "${images[@]}"; do docker image inspect "$image" >/dev/null 2>&1 || { echo "MISSING IMAGE: $image"; failed=1; }; done
-    [[ "$failed" == 0 ]] && echo "Product prerequisites are ready."
+    for image in "${images[@]}" "${local_images[@]}"; do
+      [[ -n "$image" ]] || continue
+      docker image inspect "$image" >/dev/null 2>&1 || { echo "MISSING IMAGE: $image"; failed=1; }
+    done
+    if [[ "$failed" == 0 ]]; then
+      echo "Product prerequisites are ready (channel $CHANNEL, ${#images[@]} pulled + ${#local_images[@]} local image(s))."
+    else
+      echo "Missing local/ images are built on this machine, not pulled: see packs/README.md." >&2
+    fi
     exit "$failed"
     ;;
   start) prepare_dirs; docker rm -f mns-product-shell >/dev/null 2>&1 || true; run_shell serve --host 0.0.0.0 --port 8765; echo "MnS product shell: http://127.0.0.1:$PORT" ;;

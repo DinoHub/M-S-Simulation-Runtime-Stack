@@ -236,12 +236,16 @@ images:
   # ---------------------------------------------------------------------
   tevv_runtime_host_ue582:
     repo: dhdevspace/auto_mns
-    tag: tevv-runtime-host-20260908
-    digest: sha256:d81518000c80ec4ed492922ed0ce08aa7f943cd9a0aa26f0fdcb09d6888bbcb5
+    tag: tevv-runtime-host-20260909.2
+    digest: sha256:2c9037839e4c6c557842bd102f263356a74527d48a81f5aeebd22e3a37c8fc00
     channel: pinned
     purpose: >-
       Generic standalone-v2 runtime host built on UE 5.8.2 (label
       tevv.content_packs.host_compatibility_id = ue-5.8.2-cl56702186-...-v2).
+      20260909.2 is the slimmed host (2.55 GB, was 9.45 GB; content pak 681 MB,
+      was 7.2 GB): unreferenced Blocks-era content dropped, obstacle meshes and
+      materials moved next to their blueprints, same capability id and plugin
+      set as 20260908.
 
   mns_authoring_ue582:
     repo: dhdevspace/auto_mns
@@ -710,9 +714,10 @@ consumers:
         MNS_STACK_GENERATOR_IMAGE: mns_stack_generator_v2
         MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host
         MNS_ROS2_BRIDGE_IMAGE: ros2_bridge
-    # UE 5.8.2 candidate. `make dashboard CHANNEL=ue582` sources this file
-    # instead of the one above, installs packs/standalone-v2-ue582.lock.json
-    # into its own store (.mns/ue582/) and generates against image set ue582.
+    # UE 5.8.2 -- the DEFAULT channel since 2026-09-09 (`make dashboard`,
+    # `./product.sh`). `CHANNEL=v2` selects the 5.5.4 set above instead. Installs
+    # packs/standalone-v2-ue582.lock.json into its own store (.mns/ue582/) and
+    # generates against image set ue582.
     # The ros2 bridge is the 5.5.4-era build until
     # TEVV-Airsim-ROS2-Bridge #45 publishes one built against the 5.8.2 AirLib.
     standalone_v2_ue582:

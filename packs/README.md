@@ -13,8 +13,8 @@ own pack store and authoring data root under `.mns/`.
 
 | Channel | Host capability | Lock | Contract | Store / data root |
 |---|---|---|---|---|
-| `v2` (default) | `ue-5.5.4-cl40574608-linux-development-vulkan-sm6-iostore-v2` | `standalone-v2-review.1.lock.json` | `runtime-host-compatibility.json` | `.mns/pack-store`, `.mns/authoring-data` |
-| `ue582` | `ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2` | `standalone-v2-ue582.lock.json` | `runtime-host-compatibility.ue582.json` | `.mns/ue582/pack-store`, `.mns/ue582/authoring-data` |
+| `ue582` (default) | `ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2` | `standalone-v2-ue582.lock.json` | `runtime-host-compatibility.ue582.json` | `.mns/ue582/pack-store`, `.mns/ue582/authoring-data` |
+| `v2` | `ue-5.5.4-cl40574608-linux-development-vulkan-sm6-iostore-v2` | `standalone-v2-review.1.lock.json` | `runtime-host-compatibility.json` | `.mns/pack-store`, `.mns/authoring-data` |
 
 ## Files
 
@@ -52,14 +52,14 @@ the selected contract's `id`.
 store lacks, then stages it for ScenarioLab. By hand:
 
 ```bash
-tools/install-demo-packs.sh --all                          # 5.5.4 set (default lock)
-MNS_DEMO_PACK_LOCK=packs/standalone-v2-ue582.lock.json \
-MNS_PACK_STORE_ROOT=.mns/ue582/pack-store \
-MNS_AUTHORING_DATA_ROOT=.mns/ue582/authoring-data \
-MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=packs/runtime-host-compatibility.ue582.json \
-MNS_PRODUCT_SHELL_IMAGE=local/mns-product-shell:ue582-local.a1936b0a5f5f \
-  tools/install-demo-packs.sh --condo --office-props      # 5.8.2 subset
+tools/install-demo-packs.sh --all                          # 5.8.2 set (default lock)
+tools/install-demo-packs.sh --safti --office-props         # a subset
 tools/install-demo-packs.sh --check --all                  # offline: what is installed
+MNS_DEMO_PACK_LOCK=packs/standalone-v2-review.1.lock.json \
+MNS_PACK_STORE_ROOT=.mns/pack-store \
+MNS_AUTHORING_DATA_ROOT=.mns/authoring-data \
+MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=packs/runtime-host-compatibility.json \
+  tools/install-demo-packs.sh --all                        # the 5.5.4 set into its own store
 ```
 
 Selections are read from the lock (`--condo`, `--xfs`, `--office-props`, ...;
@@ -69,7 +69,9 @@ re-downloaded.
 
 ## The 5.8.2 channel today (2026-09-09)
 
-Published and pinned by digest: `tevv-runtime-host-20260908` and
+Published and pinned by digest: `tevv-runtime-host-20260909.2` (the slimmed
+host, 2.55 GB; same capability id as 20260908, contract adds the CableComponent
+and Niagara engine plugins) and
 `mns-authoring-20260908`, both labelled with the 5.8.2 host id. Not published:
 a generator or product shell that accepts the 5.8.2 packs. The 20260826 shell
 rejects them with `level pack must declare a supported strict, whole-level, or
