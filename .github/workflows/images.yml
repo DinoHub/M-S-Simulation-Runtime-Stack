@@ -135,9 +135,20 @@ jobs:
           rm -f .env
 
   # Weekly drift watch. Online, so it CAN fail for reasons that are not a
-  # code problem (Docker Hub rate limits an unauthenticated runner). That is
-  # why it is a separate job from the PR gate: a flaky registry must never be
-  # able to block a merge.
+  # code problem (a flaky registry, or Docker Hub throttling). That is why it
+  # is a separate job from the PR gate: a bad registry day must never be able
+  # to block a merge.
+  #
+  # It also needs credentials. Every pin resolves against dhdevspace/auto_mns,
+  # which is a private Docker Hub repository: anonymously the registry answers
+  # 401 and the Hub API 404, so images.py reports every row UNRESOLVABLE and
+  # the run goes red with dozens of "stale pins" that are nothing of the kind.
+  # Authenticated, the same command returns the real handful.
+  #
+  # Note the trigger split above is load-bearing now that this job holds
+  # secrets: `status` runs only on schedule and workflow_dispatch, never on
+  # pull_request, so a fork's pull request cannot reach these credentials.
+  # Keep the offline `verify` gate credential-free.
   status:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -150,6 +161,34 @@ jobs:
 
       - name: Install tooling deps
         run: pip install -r tools/requirements.txt
+
+      # Fail with the name of what is missing. Without this, an absent
+      # secret surfaces as login-action's generic "Username and password
+      # required", which does not tell the next person which secret to add.
+      - name: Check the Docker Hub credentials are configured
+        env:
+          HUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          HUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${HUB_USERNAME:-}" ] || missing="DOCKERHUB_USERNAME"
+          [ -n "${HUB_TOKEN:-}" ] || missing="${missing:+$missing and }DOCKERHUB_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "::error title=Missing Docker Hub credentials::This job resolves pins against the private dhdevspace/auto_mns repository and cannot do so anonymously. Add the repository secret(s): $missing. Use a Docker Hub access token with read-only (public_repo:read + repo:read) scope, not an account password."
+            exit 1
+          fi
+
+      # images.py reads ~/.docker/config.json for both of its resolvers: the
+      # imagetools rows shell out to `docker buildx imagetools inspect`, and
+      # the hub rows (35 of 46) take the username and token out of that file
+      # to call hub.docker.com/v2/users/login. This action writes exactly that
+      # file, so one login covers both paths.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: images.sh status
         # Exits nonzero when something needs a human, which is exactly what a
