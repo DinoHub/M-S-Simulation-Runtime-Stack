@@ -13,7 +13,7 @@ image_sets:
       autopilots:
         ardupilot: dhdevspace/auto_mns:ardupilot-slim-20260826.1@sha256:0ba679fed0309e3004def725acb003b286d4cd99587618533f5d120760039bd9
         px4: dhdevspace/auto_mns:px4-airsim-px4@sha256:cd5a87467c73a0f8f506bca38a6f5d8df0779cf3c21a99dd0f4384784d40588a
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260910.1@sha256:9f16fce5a352fb49f0f7d70c11c6a9e852bea063fe363559db9726f8c2eb3fdc
+      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260911.1@sha256:78909e36980faee2c82c8d3cd5b94e97636bf221733dcd3ff85128043a5e6445
       qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
       sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest@sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb
   ue582:
@@ -24,6 +24,6 @@ image_sets:
       autopilots:
         ardupilot: dhdevspace/auto_mns:ardupilot-slim-20260826.1@sha256:0ba679fed0309e3004def725acb003b286d4cd99587618533f5d120760039bd9
         px4: dhdevspace/auto_mns:px4-airsim-px4@sha256:cd5a87467c73a0f8f506bca38a6f5d8df0779cf3c21a99dd0f4384784d40588a
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260910.1@sha256:9f16fce5a352fb49f0f7d70c11c6a9e852bea063fe363559db9726f8c2eb3fdc
+      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260911.1@sha256:78909e36980faee2c82c8d3cd5b94e97636bf221733dcd3ff85128043a5e6445
       qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
       sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest@sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb
