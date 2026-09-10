@@ -61,7 +61,43 @@
       "sha256": "8ab20a6686f4211be8bc6e318c7c81a5e68a7be44cda9c51e1f9d60f76beeb41",
       "payload_digest": "sha256:2f639e0746543afedc6f04cd27158bc07ac5b5e26c6a622713d0ecb2d34f91ed",
       "source_manifest_digest": "sha256:d0c50cd18ea8ae874e8783bd2acb4e90da6f20622ba23d395aa913396eae0716"
+    },
+    {
+      "id": "origin_acceptance_zero",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:7dc1b805604665955f3dbfbfd0735b58d382505ed1c33397317f766fd2364d44",
+      "required_plugins": [
+        "TEVVContentPackSDK"
+      ],
+      "selection": "origin_acceptance_zero",
+      "display_name": "Origin acceptance: Zero PlayerStarts",
+      "asset_name": "origin_acceptance_zero-1.0.0.mnslevelpack",
+      "size_bytes": 15349,
+      "sha256": "eee44dd9863f035fd73ac4de1d5af14e0ac7a4bf33408c5f542be436aa641b02",
+      "payload_digest": "sha256:a05c7ff5707de418d71c08e3b1cbc967eea132ead091018c2d126a28d8f8dce7",
+      "source_manifest_digest": "sha256:46d7a38410d1e16204c40356ada37beaa4a1eb730b9081402743c7d145c129f4",
+      "map_path": "/MnsEnv_Origin_Acceptance_Zero_1_0_0/OriginAcceptance/L_Zero",
+      "purpose": "origin acceptance test level (transient cooked-pack evidence, not a product pack)"
+    },
+    {
+      "id": "origin_acceptance_multiple",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:14c5c0f22375a5b0755be25ccbfa9875ebf23df9fd390685e055865c64514460",
+      "required_plugins": [
+        "TEVVContentPackSDK"
+      ],
+      "selection": "origin_acceptance_multiple",
+      "display_name": "Origin acceptance: Multiple PlayerStarts",
+      "asset_name": "origin_acceptance_multiple-1.0.0.mnslevelpack",
+      "size_bytes": 17501,
+      "sha256": "99c4b5da150b8d61fdaa9d547e322734868236a083f118983c6faa8a2e626bb5",
+      "payload_digest": "sha256:d2bf53c68f803339416600363f75a19a9f4f064ea7a270d4236d7ce1993de4b7",
+      "source_manifest_digest": "sha256:fb4443063bc81581800b8281aca64d5727e2756c23028ebb0966bb97f06c2cd2",
+      "map_path": "/MnsEnv_Origin_Acceptance_Multiple_1_0_0/OriginAcceptance/L_Multiple",
+      "purpose": "origin acceptance test level (transient cooked-pack evidence, not a product pack)"
     }
   ],
-  "status": "Locally assembled immutable packs; live E2E acceptance in progress; no release upload claimed."
+  "status": "Locally assembled immutable packs; live E2E acceptance observed 2026-09-10 for Electric Dreams with PX4 and ArduPilot; origin_acceptance_* are cooked test levels for the zero/multiple PlayerStart cases; no release upload claimed."
 }
