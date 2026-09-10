@@ -231,8 +231,8 @@ images:
   # ---------------------------------------------------------------------
   tevv_runtime_host_ue582:
     repo: dhdevspace/auto_mns
-    tag: tevv-runtime-host-20260909.3
-    digest: sha256:42fdf7402c1100ff62283b23cc7033662fe4f949307b30eadbf7baf9b4225d9b
+    tag: tevv-runtime-host-20260910.1
+    digest: sha256:3a5de227f3ab8a2ac81b0a2cda3262283fedc731b46438395a51e8a376e2cfb8
     channel: pinned
     purpose: >-
       Generic standalone-v2 runtime host built on UE 5.8.2 (label
@@ -388,9 +388,9 @@ images:
 
   ros2_bridge:
     repo: dhdevspace/auto_mns
-    tag: tevv-airsim-ros2-bridge-humble-20260826
+    tag: tevv-airsim-ros2-bridge-humble-20260910
     latest_tag: tevv-airsim-ros2-bridge-humble-latest
-    digest: sha256:e661e37f8639077401e56e23bd2c6a61e0e065cb0d93866904f1f0930a57e011
+    digest: sha256:c07474f9dcb53b022e52e3f66ff30191664312af670034f131c2ad4c2ebf6a63
     channel: pinned
     purpose: AirSim<->ROS2 bridge, the published ros2_bridge role.
 
