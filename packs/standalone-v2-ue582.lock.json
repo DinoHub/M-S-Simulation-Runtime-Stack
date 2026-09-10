@@ -92,14 +92,14 @@
       "kind": "level",
       "id": "safti-level",
       "display_name": "Safti Unclassified",
-      "version": "1.0.1",
-      "asset_name": "safti_level-1_0_1.mnslevelpack",
-      "size_bytes": 857975172,
-      "sha256": "b74a483a493786a79491131432553bb951b1847b9fba49e3ac457c6d12a2c8be",
-      "artifact_digest": "sha256:601f1cf40609cf59a9cfb867c8d670b5cd3ad6195d2b962476cf3f0069a57eb8",
-      "payload_digest": "sha256:326715e691e3273175f80be34a8d215575aef7d39383cb766dfd450b6cce1515",
-      "source_manifest_digest": "sha256:88fd5a4bde8313527d59953c7fbb066d35934ab6cb27f43304d37d99cdb5d084",
-      "map_path": "/MnsEnv_Safti_Level_1_0_1/safticitymain_subset_unclassed",
+      "version": "1.0.3",
+      "asset_name": "safti-level-1.0.3.mnslevelpack",
+      "size_bytes": 858499917,
+      "sha256": "7d2bf8ed5baf57195648817296f852e05997191849947019f0cd884f28325dab",
+      "artifact_digest": "sha256:1dbd30834a4c96654ea20a7f011b74399891bd0331abcf2ab3aae4157f03c9c2",
+      "payload_digest": "sha256:94f910c935183ee1a16944884b13a1e65ac4dff0a1babc1cfaea4d5087cca4c2",
+      "source_manifest_digest": "sha256:d0dfe8d4b01687cfbde8db663ffc78923a043afb2778c96a40b49d4db40ee6c8",
+      "map_path": "/MnsEnv_Safti_Level_1_0_3/safticitymain_subset_unclassed",
       "required_plugins": [
         "AirSim",
         "DatasmithContent",
@@ -113,9 +113,9 @@
       ],
       "release": {
         "repository": "DinoHub/TEVV-Airsim",
-        "tag": "pack-level-safti-level-1.0.1"
+        "tag": "pack-level-safti-level-1.0.3"
       },
-      "published_at": "2026-09-08T03:21:22Z"
+      "published_at": "2026-09-08T15:08:19Z"
     },
     {
       "selection": "warehouse",
