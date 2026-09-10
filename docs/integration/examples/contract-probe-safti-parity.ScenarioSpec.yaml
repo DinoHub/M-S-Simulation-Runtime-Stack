@@ -11,8 +11,8 @@ name: contract-probe-safti-parity
 # the trial overlays a patched settings.json for them.
 environment:
   id: safti-level
-  version: 1.0.1
-  artifact_digest: sha256:601f1cf40609cf59a9cfb867c8d670b5cd3ad6195d2b962476cf3f0069a57eb8
+  version: 1.0.3
+  artifact_digest: sha256:1dbd30834a4c96654ea20a7f011b74399891bd0331abcf2ab3aae4157f03c9c2
 runtime:
   profile: airsim_unreal_px4_docker
   features:
