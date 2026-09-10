@@ -47,3 +47,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools -p 'test_*.py' -
 Tests exercise stale environment overrides, both legacy/channel store paths,
 missing/mismatched/outside-workspace contracts, fingerprinted engine IDs, staged
 index mismatches and live-dashboard selection inspection using mocked Docker.
+
+Use `--compose-project origin-e2e` to give a candidate its own Compose project
+and container names. The normal frontend/API ports still need to be available.
+Existing containers can be stopped and retained while the candidate uses those
+ports; a different project never adopts or removes them.

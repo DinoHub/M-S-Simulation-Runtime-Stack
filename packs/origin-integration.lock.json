@@ -1,0 +1,67 @@
+{
+  "schema": "mns.pack_release_lock.v1",
+  "capability_id": "ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2-render-35e7a9a52ee2ef15",
+  "host_contract": "packs/runtime-host-compatibility.origin-integration.json",
+  "authoring_host_contract": "packs/authoring-host-compatibility.origin-integration.json",
+  "required_images": {
+    "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-v0.4.0-origin.1@sha256:604400d8d9f9ec0d0a5f8df6eb090acbc8dda3fd6f1d66a666ec46d9ddba5a21",
+    "authoring": "dhdevspace/auto_mns:mns-authoring-v0.4.0-origin.5@sha256:3fe4f5b80e510b8c2f88f9a8e4ead6dbcb7c048889d2681e27c504665cb559a0",
+    "stack_generator": "dhdevspace/auto_mns:mns-stack-generator-v0.4.0-origin.1@sha256:016373d2281fa2f2cd6a835ea3416546f1bf046d33191aa47fd86ed99c499e80",
+    "product_shell": "dhdevspace/auto_mns:mns-product-shell-v0.4.0-origin.1@sha256:3fc42441b6442a9ae6f5427b43ceae5c5450360337490d0ee871417e21e89e33",
+    "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v0.4.0-origin.1@sha256:24be9ec9c70412f09de251aae201f6d1a70d5d7569205a3268739982f729b4f6",
+    "px4": "dhdevspace/auto_mns:px4-airsim-px4-v0.4.0-origin.3@sha256:70d3fdf1f44f973f4ad36f11eb1560cada2b1aefccadcf5ed1b0dcd198be23bc",
+    "ardupilot": "dhdevspace/auto_mns:ardupilot-slim-v0.4.0-origin.1@sha256:aa77cd67258cb5f11c17d327cc78833eb959145e4c54778313117c2b0c645920",
+    "dashboard_backend": "dhdevspace/auto_mns:tevv-web-dashboard-backend-v0.2.0-gfeb7600@sha256:094533c3195e83a0b7d6f77f5cab81935980933f174e7ba8395539806c8c3f1e",
+    "dashboard_frontend": "dhdevspace/auto_mns:tevv-web-dashboard-frontend-v0.2.0-g39de41e@sha256:0f82cfd54fe546999ccc7ae14239f7b8a326e648cba7a201bd2041011c412e36",
+    "timescaledb": "timescale/timescaledb:2.17.2-pg16@sha256:4e459e217f00cbb09920c34d245501e63427e6767a495de57ce76823ff280f12",
+    "lichtblick": "ghcr.io/lichtblick-suite/lichtblick:latest@sha256:230ed53813f11ab5d23c47380f94c6d358438ecf15c3a7e7de9625b07c437611",
+    "qgroundcontrol": "dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804",
+    "sim_real_eval": "dhdevspace/auto_mns:sim-real-eval-worker-latest@sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb"
+  },
+  "packs": [
+    {
+      "id": "electric_dreams",
+      "version": "1.0.4",
+      "kind": "level",
+      "artifact_digest": "sha256:648c91bbe6daf97ddde95bdc0febd9531b2af8283f321212cb3a7a0efec6ff8a",
+      "required_plugins": [
+        "AnimationSharing",
+        "AudioGameplayVolume",
+        "AudioModulation",
+        "ChaosNiagara",
+        "Interchange",
+        "Metasound",
+        "Niagara",
+        "PCG",
+        "Soundscape",
+        "Synthesis",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "electric_dreams",
+      "display_name": "ElectricDreams",
+      "asset_name": "electric_dreams-1.0.4-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 12325081316,
+      "sha256": "3a957105d32db4df098e956805fa5e35edfc25de16acd245be1081522e9a2ab4",
+      "payload_digest": "sha256:0c4b7c23b4ec16a30eb23a30491481cf13c3a15e6278aac31530b651bd0e7093",
+      "source_manifest_digest": "sha256:d296e442dacdf803a8c6c544b37e5915ea6ba79d08c6bc702ca1f7659d1963bc",
+      "map_path": "/MnsEnv_ElectricDreams_1_0_3/Levels/ElectricDreams_Env"
+    },
+    {
+      "id": "mns_vehicle_models",
+      "version": "1.0.2",
+      "kind": "asset",
+      "artifact_digest": "sha256:264ae1cef2aed709a1b8d4561a7c79b01f2c416b878a174775b658b112647c07",
+      "required_plugins": [
+        "TEVVContentPackSDK"
+      ],
+      "selection": "mns_vehicle_models",
+      "display_name": "MnS Vehicle Models",
+      "asset_name": "mns_vehicle_models-1.0.2.mnsassetpack",
+      "size_bytes": 470284,
+      "sha256": "8ab20a6686f4211be8bc6e318c7c81a5e68a7be44cda9c51e1f9d60f76beeb41",
+      "payload_digest": "sha256:2f639e0746543afedc6f04cd27158bc07ac5b5e26c6a622713d0ecb2d34f91ed",
+      "source_manifest_digest": "sha256:d0c50cd18ea8ae874e8783bd2acb4e90da6f20622ba23d395aa913396eae0716"
+    }
+  ],
+  "status": "Locally assembled immutable packs; live E2E acceptance in progress; no release upload claimed."
+}
