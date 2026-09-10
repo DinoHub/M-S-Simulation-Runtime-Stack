@@ -1,0 +1,59 @@
+schema: mns.scenario.v1
+id: contract-probe-cabin-vio
+name: contract-probe-cabin-vio
+# Pinhole VIO probe on fishermans-cabin: same camera, IMU noise model and vehicle as the
+# XFS/SAFTI parity probes, so only the level changes.
+# XFS variant of contract-probe-safti-parity: same camera (640x480, 80 deg,
+# -11 EV), same 0.15 m forward mount and the same OpenVINS-matched IMU noise,
+# on the xfs-level pack. xfs-level 1.0.0 has no PlayerStart tagged
+# MnSScenarioOrigin, which the generic pack host requires; 1.0.1 adds 15
+# actors over 1.0.0, so this probe is also the check of whether that fixed it.
+#
+# Camera Z is -0.25 (0.25 m above the IMU), not the bench's 0: at Z=0 the
+# camera sits inside the airframe and the rotor arms fill about a third of
+# every frame. The Gazebo bench body is invisible to its camera, so matching
+# its offset exactly is not matching what its camera sees.
+environment:
+  id: fishermans-cabin
+  version: 1.0.1
+  artifact_digest: sha256:511c66a698855fe9552fb28f968082934ecff2c0fd877e28b8a978a62d74c33a
+runtime:
+  profile: airsim_unreal_px4_docker
+  features:
+    sim_real_eval: true
+    ros2_bridge: true
+    qgroundcontrol: false
+    mavros: false
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  ros_domain_id: 1
+  start:
+    x: 0
+    y: 0
+    z: 0
+    yaw: 0
+  cameras:
+    front:
+      position:
+        x: 0.15
+        y: 0
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
