@@ -11,7 +11,7 @@
     "authoring": "dhdevspace/auto_mns:mns-authoring-20260909.1@sha256:cd7e54e70079564210b33ebe6db85f364bb40b378a3163df5e6034ed8e8a893c",
     "stack_generator": "dhdevspace/auto_mns:mns-stack-generator-20260909@sha256:59b7974232a8c1038218fac18c3bc5c64aac96ecbcf648608a052018636561ce",
     "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-20260910.1@sha256:3a5de227f3ab8a2ac81b0a2cda3262283fedc731b46438395a51e8a376e2cfb8",
-    "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260911.1@sha256:78909e36980faee2c82c8d3cd5b94e97636bf221733dcd3ff85128043a5e6445"
+    "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260911.2@sha256:872aa66a0c12a7ab3b2bbd70cecb5f7021aefaea2235ab8a6387c3437ffef57a"
   },
   "packs": [
     {
