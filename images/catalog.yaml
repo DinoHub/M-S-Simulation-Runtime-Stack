@@ -685,6 +685,67 @@ images:
       zenoh-bridge-N sidecars for /shared/* topic routing); third-party
       image, never auto-bumped.
 
+  # Isolated whole-product origin candidate; no compatible pack release is claimed.
+  origin_runtime_host:
+    repo: dhdevspace/auto_mns
+    tag: tevv-runtime-host-v0.4.0-origin.1
+    digest: sha256:604400d8d9f9ec0d0a5f8df6eb090acbc8dda3fd6f1d66a666ec46d9ddba5a21
+    channel: pinned
+    purpose: Origin integration runtime_host; mounted-pack and autopilot acceptance
+      pending.
+  origin_authoring:
+    repo: dhdevspace/auto_mns
+    tag: mns-authoring-v0.4.0-origin.1
+    digest: sha256:77018f623f87ec985bda0a534e0a24a35a5760e0a5b37f57bf5cb1095b7a59b3
+    channel: pinned
+    purpose: Origin integration authoring; mounted-pack and autopilot acceptance pending.
+  origin_stack_generator:
+    repo: dhdevspace/auto_mns
+    tag: mns-stack-generator-v0.4.0-origin.1
+    digest: sha256:016373d2281fa2f2cd6a835ea3416546f1bf046d33191aa47fd86ed99c499e80
+    channel: pinned
+    purpose: Origin integration stack_generator; mounted-pack and autopilot acceptance
+      pending.
+  origin_product_shell:
+    repo: dhdevspace/auto_mns
+    tag: mns-product-shell-v0.4.0-origin.1
+    digest: sha256:3fc42441b6442a9ae6f5427b43ceae5c5450360337490d0ee871417e21e89e33
+    channel: pinned
+    purpose: Origin integration product_shell; mounted-pack and autopilot acceptance
+      pending.
+  origin_ros2_bridge:
+    repo: dhdevspace/auto_mns
+    tag: tevv-airsim-ros2-bridge-humble-v0.4.0-origin.1
+    digest: sha256:24be9ec9c70412f09de251aae201f6d1a70d5d7569205a3268739982f729b4f6
+    channel: pinned
+    purpose: Origin integration ros2_bridge; mounted-pack and autopilot acceptance pending.
+  origin_px4:
+    repo: dhdevspace/auto_mns
+    tag: px4-airsim-px4-v0.4.0-origin.1
+    digest: sha256:59aaa3a3e992317ed92de69ad7fc2b5221faaf97a79d6b426be07b2e1af605cc
+    channel: pinned
+    purpose: Origin integration px4; mounted-pack and autopilot acceptance pending.
+  origin_ardupilot:
+    repo: dhdevspace/auto_mns
+    tag: ardupilot-slim-v0.4.0-origin.1
+    digest: sha256:aa77cd67258cb5f11c17d327cc78833eb959145e4c54778313117c2b0c645920
+    channel: pinned
+    purpose: Origin integration ardupilot; mounted-pack and autopilot acceptance pending.
+  origin_dashboard_backend:
+    repo: dhdevspace/auto_mns
+    tag: tevv-web-dashboard-backend-v0.2.0-g1b74c70
+    digest: sha256:d9d13b56343b99c025d53c2504a8cb46d04ed1bb824cffa3191d0353fa7931c2
+    channel: pinned
+    purpose: Origin integration dashboard_backend; mounted-pack and autopilot acceptance
+      pending.
+  origin_dashboard_frontend:
+    repo: dhdevspace/auto_mns
+    tag: tevv-web-dashboard-frontend-v0.2.0-g1b74c70
+    digest: sha256:026eac57ea8c737d3abaebeb3412d5a0b37bc50f7e34c09dfaa14e9f5d51bc77
+    channel: pinned
+    purpose: Origin integration dashboard_frontend; mounted-pack and autopilot acceptance
+      pending.
+
 consumers:
   product_env:
     review:
@@ -733,6 +794,18 @@ consumers:
         MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host_ue582
         MNS_ROS2_BRIDGE_IMAGE: ros2_bridge
 
+    origin_integration:
+      emits: images/origin-integration.generated.env
+      image_set: origin-integration
+      vars:
+        MNS_PRODUCT_SHELL_IMAGE: origin_product_shell
+        MNS_AUTHORING_IMAGE: origin_authoring
+        MNS_STACK_GENERATOR_IMAGE: origin_stack_generator
+        MNS_RUNTIME_HOST_IMAGE: origin_runtime_host
+        MNS_ROS2_BRIDGE_IMAGE: origin_ros2_bridge
+        DASHBOARD_BACKEND_IMAGE: origin_dashboard_backend
+        DASHBOARD_FRONTEND_IMAGE: origin_dashboard_frontend
+
   # A pack release lock (packs/*.lock.json) restates a few image pins because
   # tools/install_demo_packs.py has to pull the product shell before anything
   # in this repo has resolved an image set. That is a second copy of a pin, and
@@ -775,6 +848,17 @@ consumers:
         simulators:
           tevv_runtime_host: tevv_runtime_host_ue582
 
+
+    origin-integration:
+      inherits: published
+      pull_policy: missing
+      images:
+        simulators:
+          tevv_runtime_host: origin_runtime_host
+        autopilots:
+          px4: origin_px4
+          ardupilot: origin_ardupilot
+        ros2_bridge: origin_ros2_bridge
 
   compose_env:
     monitoring:

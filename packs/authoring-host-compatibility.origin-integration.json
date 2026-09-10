@@ -1,0 +1,113 @@
+{
+  "schema": "mns.host_compatibility.v1",
+  "id": "ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2-render-35e7a9a52ee2ef15",
+  "consumer": "scenariolab",
+  "engine": "5.8.2",
+  "platform": "Linux",
+  "configuration": "Development",
+  "container_format": "iostore",
+  "renderer_settings": {
+    "r.Substrate": "True",
+    "r.Substrate.ProjectGBufferFormat": "1",
+    "r.Substrate.BytesPerPixel": "170",
+    "r.VirtualTextures": "True",
+    "bEnableVirtualTextureOpacityMask": "True"
+  },
+  "sdk_abi": 1,
+  "content_api": 1,
+  "plugins": [
+    {
+      "id": "AnimationSharing",
+      "version": "engine"
+    },
+    {
+      "id": "AudioGameplayVolume",
+      "version": "engine"
+    },
+    {
+      "id": "AudioModulation",
+      "version": "engine"
+    },
+    {
+      "id": "ChaosNiagara",
+      "version": "engine"
+    },
+    {
+      "id": "Metasound",
+      "version": "engine"
+    },
+    {
+      "id": "Niagara",
+      "version": "engine"
+    },
+    {
+      "id": "Soundscape",
+      "version": "engine"
+    },
+    {
+      "id": "Synthesis",
+      "version": "engine"
+    },
+    {
+      "id": "TEVVContentPackSDK",
+      "version": "0.1.0"
+    },
+    {
+      "id": "InterchangeAssets",
+      "version": "engine"
+    },
+    {
+      "id": "PCG",
+      "version": "engine"
+    },
+    {
+      "id": "ScenarioContracts",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioEnvironment",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioAssets",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioRunner",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioAuthored",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioProcedural",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioObstacles",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioDynamic",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioDynamicAerial",
+      "version": "0.1.0"
+    },
+    {
+      "id": "Interchange",
+      "version": "engine"
+    },
+    {
+      "id": "DatasmithContent",
+      "version": "engine"
+    }
+  ],
+  "runtime_capabilities": [
+    "tevv.environment-definition.v1",
+    "tevv.whole-world-level-pack.v1",
+    "tevv.environment.uds.v1"
+  ]
+}
