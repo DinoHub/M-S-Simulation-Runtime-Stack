@@ -388,9 +388,9 @@ images:
 
   ros2_bridge:
     repo: dhdevspace/auto_mns
-    tag: tevv-airsim-ros2-bridge-humble-20260911.1
+    tag: tevv-airsim-ros2-bridge-humble-20260911.2
     latest_tag: tevv-airsim-ros2-bridge-humble-latest
-    digest: sha256:78909e36980faee2c82c8d3cd5b94e97636bf221733dcd3ff85128043a5e6445
+    digest: sha256:872aa66a0c12a7ab3b2bbd70cecb5f7021aefaea2235ab8a6387c3437ffef57a
     channel: pinned
     purpose: AirSim<->ROS2 bridge, the published ros2_bridge role.
 
