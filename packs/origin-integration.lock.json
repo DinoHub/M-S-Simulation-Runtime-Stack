@@ -97,6 +97,107 @@
       "source_manifest_digest": "sha256:fb4443063bc81581800b8281aca64d5727e2756c23028ebb0966bb97f06c2cd2",
       "map_path": "/MnsEnv_Origin_Acceptance_Multiple_1_0_0/OriginAcceptance/L_Multiple",
       "purpose": "origin acceptance test level (transient cooked-pack evidence, not a product pack)"
+    },
+    {
+      "id": "blocks",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:0d2dd6201e4e2d48ea85eef4a82ca217c5c3ae6ee7c9a7049acbef2eb1018571",
+      "required_plugins": [
+        "TEVVContentPackSDK"
+      ],
+      "selection": "blocks",
+      "display_name": "Blocks",
+      "asset_name": "blocks-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 303353,
+      "sha256": "ab2217abb41860cea94a96fb1026e96a41be783df6dfd5ee2cfc29e521798291",
+      "payload_digest": "sha256:40726d7223dc46554d6996fe65ac385650183e71c69c02a2ddee5026dc2948b5",
+      "source_manifest_digest": "sha256:df65ef6dcf14500cd8ab15747bdf67e6eeea22287cee86d567081793022e7991",
+      "map_path": "/MnsEnv_Blocks_1_0_0/Maps/BlocksDefault",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
+    },
+    {
+      "id": "condo",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:158a57821952cbd7364207f2f5339d2172552273862001ae00694e944c4178ff",
+      "required_plugins": [
+        "InterchangeAssets",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "condo",
+      "display_name": "Condo",
+      "asset_name": "condo-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 7423426,
+      "sha256": "400a1ee51f1fde8e44f8510c4ecd1670eb9341aa11fe296e2541204673f803f3",
+      "payload_digest": "sha256:1fda3a78f6675314554b058e236bf3586a2bfd7e6ffa105bce7698b13d7b72cf",
+      "source_manifest_digest": "sha256:3c069a522bcc8ae4acd55c9f61590bf97df84a8565c285f5f22c08e5caa2ae71",
+      "map_path": "/MnsEnv_Condo_1_0_0/Condo/Levels/L_Main",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
+    },
+    {
+      "id": "pendleton",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:fbbeb13dc98dd19e2a0a499c6ab8e9a4ca8c000842389e53180a86a5f85bba98",
+      "required_plugins": [
+        "Interchange",
+        "PCG",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "pendleton",
+      "display_name": "Pendleton",
+      "asset_name": "pendleton-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 700416038,
+      "sha256": "1d37a558bb9a80891420537a9745347c58c8e27f0bf2c35834498ff7124547e2",
+      "payload_digest": "sha256:2c8e1d4ec7454c82b4dab34c5bbaa67a0090faa02c093969450650e2d0b0ed62",
+      "source_manifest_digest": "sha256:79b426c134cacae7948559ec4f5ca708e74bf305c710e8a8f2c69f821f2f2dfd",
+      "map_path": "/MnsEnv_Pendleton_1_0_0/Pendleton/Maps/L_Main_WP",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
+    },
+    {
+      "id": "safticity",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:a1e50b45ff331469ac69594fd8c6f813b98799c79db7844199aba29069cc545f",
+      "required_plugins": [
+        "DatasmithContent",
+        "ScenarioAssets",
+        "ScenarioRunner",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "safticity",
+      "display_name": "Safticity",
+      "asset_name": "safticity-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 257023272,
+      "sha256": "73b447e724d85f152d001fd5c05999bb81da7e57728a0698a38a64f714ea2c72",
+      "payload_digest": "sha256:c425fa1a8dd1f4df77988ef8a1c7507f80e2d210800d2a1c1bf0e841b93cb8e2",
+      "source_manifest_digest": "sha256:24692ab890126504c93c5f0a83c83594b86ad212dbc15383982d7c648fa5ea5c",
+      "map_path": "/MnsEnv_Safticity_1_0_0/safticitymain_subset_unclassed",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
+    },
+    {
+      "id": "xfs",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:95f8305e57dd730cd89c954caaacdcb291f40233311ccee57faf043b9398e016",
+      "required_plugins": [
+        "InterchangeAssets",
+        "PCG",
+        "ScenarioAssets",
+        "ScenarioAuthored",
+        "ScenarioRunner",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "xfs",
+      "display_name": "Xfs",
+      "asset_name": "xfs-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 1760215938,
+      "sha256": "8aba0cc38c25ee22fd49c114deeffb0ed16d6e55b84d23cd25cdb39e7370b5ea",
+      "payload_digest": "sha256:41788a53e6201b9aa72b5a43f46a6b808a5daf2ac9afb93528a08dd0eba2eca3",
+      "source_manifest_digest": "sha256:5b27088b59327969bd14c160df29db28b8556e3bac3549ae916dc5c58ad79923",
+      "map_path": "/MnsEnv_Xfs_1_0_0/Xfs/Maps/L_Main_WP",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
     }
   ],
   "status": "Locally assembled immutable packs; live E2E acceptance observed 2026-09-10 for Electric Dreams with PX4 and ArduPilot; origin_acceptance_* are cooked test levels for the zero/multiple PlayerStart cases; no release upload claimed."
