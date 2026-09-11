@@ -44,7 +44,12 @@
       "sha256": "3a957105d32db4df098e956805fa5e35edfc25de16acd245be1081522e9a2ab4",
       "payload_digest": "sha256:0c4b7c23b4ec16a30eb23a30491481cf13c3a15e6278aac31530b651bd0e7093",
       "source_manifest_digest": "sha256:d296e442dacdf803a8c6c544b37e5915ea6ba79d08c6bc702ca1f7659d1963bc",
-      "map_path": "/MnsEnv_ElectricDreams_1_0_3/Levels/ElectricDreams_Env"
+      "map_path": "/MnsEnv_ElectricDreams_1_0_3/Levels/ElectricDreams_Env",
+      "release": {
+        "repo": "DinoHub/TEVV-Airsim",
+        "tag": "pack-level-electric_dreams-1.0.4",
+        "parts": 7
+      }
     },
     {
       "id": "mns_vehicle_models",
@@ -200,5 +205,5 @@
       "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
     }
   ],
-  "status": "Locally assembled immutable packs; live E2E acceptance observed 2026-09-10 for Electric Dreams with PX4 and ArduPilot; origin_acceptance_* are cooked test levels for the zero/multiple PlayerStart cases; no release upload claimed."
+  "status": "Locally assembled immutable packs; live E2E acceptance observed 2026-09-10 for Electric Dreams with PX4 and ArduPilot; electric_dreams 1.0.4 published 2026-09-11 as DinoHub/TEVV-Airsim release pack-level-electric_dreams-1.0.4 (7 parts, bundle sha256 3a957105...); origin_acceptance_* are cooked test levels; the five UE 5.8.2 project packs are local, unpublished."
 }
