@@ -52,9 +52,14 @@ SR0_RC_CHAN     2       # RC channels (2 Hz)
 FS_GCS_ENABLE   0       # Disable GCS failsafe for SITL
 FS_THR_ENABLE   0       # Disable throttle failsafe for SITL
 
-# Logging Configuration - Enable for GPS diagnostics
+# Logging Configuration
+# LOG_DISARMED 1 made SITL write a dataflash log for every second the container was
+# up, armed or not, into the instance volume that outlives `compose down`:
+# ardupilot_condo_instance_0 reached 10 GB, ardupilot_xfs_instance_0 6.7 GB
+# (2026-09-11). Log while armed only; set LOG_DISARMED 1 for a GPS diagnosis
+# session and put it back.
 LOG_BACKEND_TYPE    1       # Enable logging (DataFlash)
-LOG_DISARMED    1       # Log while disarmed to capture GPS data for diagnostics
+LOG_DISARMED    0       # Log while armed only
 
 # Simulation-specific Parameters
 SIM_SPEEDUP     1.0     # Real-time simulation (1.0 = no speedup)
