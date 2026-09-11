@@ -11,7 +11,7 @@
     "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v0.4.0-origin.1@sha256:24be9ec9c70412f09de251aae201f6d1a70d5d7569205a3268739982f729b4f6",
     "px4": "dhdevspace/auto_mns:px4-airsim-px4-v0.4.0-origin.3@sha256:70d3fdf1f44f973f4ad36f11eb1560cada2b1aefccadcf5ed1b0dcd198be23bc",
     "ardupilot": "dhdevspace/auto_mns:ardupilot-slim-v0.4.0-origin.1@sha256:aa77cd67258cb5f11c17d327cc78833eb959145e4c54778313117c2b0c645920",
-    "dashboard_backend": "dhdevspace/auto_mns:tevv-web-dashboard-backend-v0.2.0-g47c8fcd@sha256:8fdf8588aeb20404a6db40d7c075e07521d542a82d1675d76c650ab962781917",
+    "dashboard_backend": "dhdevspace/auto_mns:tevv-web-dashboard-backend-v0.2.0-g92908bd@sha256:1e466b9092be6dbd482fb78c662220a1ae9aa50acf4d11821931c53af8be3a39",
     "dashboard_frontend": "dhdevspace/auto_mns:tevv-web-dashboard-frontend-v0.2.0-g39de41e@sha256:0f82cfd54fe546999ccc7ae14239f7b8a326e648cba7a201bd2041011c412e36",
     "timescaledb": "timescale/timescaledb:2.17.2-pg16@sha256:4e459e217f00cbb09920c34d245501e63427e6767a495de57ce76823ff280f12",
     "lichtblick": "ghcr.io/lichtblick-suite/lichtblick:latest@sha256:230ed53813f11ab5d23c47380f94c6d358438ecf15c3a7e7de9625b07c437611",

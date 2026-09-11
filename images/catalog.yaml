@@ -733,8 +733,8 @@ images:
     purpose: Origin integration ardupilot; mounted-pack and autopilot acceptance pending.
   origin_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-backend-v0.2.0-g47c8fcd
-    digest: sha256:8fdf8588aeb20404a6db40d7c075e07521d542a82d1675d76c650ab962781917
+    tag: tevv-web-dashboard-backend-v0.2.0-g92908bd
+    digest: sha256:1e466b9092be6dbd482fb78c662220a1ae9aa50acf4d11821931c53af8be3a39
     channel: pinned
     purpose: Origin integration dashboard_backend; mounted-pack and autopilot acceptance
       pending.
