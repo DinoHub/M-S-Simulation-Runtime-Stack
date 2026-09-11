@@ -13,6 +13,14 @@ environment:
   id: safti-level
   version: 1.0.3
   artifact_digest: sha256:1dbd30834a4c96654ea20a7f011b74399891bd0331abcf2ab3aae4157f03c9c2
+# Render override for this level (MnS-Integration-Platform stackgen, conditions.render):
+# SAFTI ships with virtual shadow maps off and re-renders its Nanite scene into an
+# 8192x2048 cascaded shadow atlas once per view (viewport + each camera) -- 31 of a
+# 46 ms GPU frame with two cameras. VSM: 20 ms frame, camera delivery doubled.
+# XFS does not want this (no atlas cost, +2.5 ms with VSM), so it lives here, not on the host.
+conditions:
+  render:
+    virtual_shadow_maps: true
 runtime:
   profile: airsim_unreal_px4_docker
   features:
