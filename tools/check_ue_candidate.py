@@ -49,12 +49,13 @@ def host_id_from_image(reference: str) -> str:
     metadata = docker_json("image", "inspect", reference)[0]
     host_id = (metadata.get("Config", {}).get("Labels") or {}).get(HOST_LABEL)
     if not isinstance(host_id, str) or not re.fullmatch(
-            r"ue-\d+\.\d+\.\d+-cl\d+-linux-development-vulkan-sm6-iostore-v2", host_id):
+            r"ue-\d+\.\d+\.\d+-cl\d+-linux-development-vulkan-sm6-iostore-v2(?:-render-[0-9a-f]{16})?", host_id):
         raise CandidateError(f"{reference} carries no usable {HOST_LABEL} label: {host_id!r}")
     return host_id
 
 
-def host_id_from_engine(engine_root: Path, expected_version: str) -> str:
+def host_id_from_engine(engine_root: Path, expected_version: str,
+                        candidate_id: str | None = None) -> str:
     build = read_json(engine_root / "Engine/Build/Build.version")
     fields = ("MajorVersion", "MinorVersion", "PatchVersion", "Changelist")
     if not isinstance(build, dict) or any(type(build.get(key)) is not int for key in fields):
@@ -62,7 +63,16 @@ def host_id_from_engine(engine_root: Path, expected_version: str) -> str:
     actual = ".".join(str(build[key]) for key in fields[:3])
     if actual != expected_version or build["Changelist"] <= 0:
         raise CandidateError(f"engine is {actual} CL{build['Changelist']}; expected {expected_version} with a release changelist")
-    return f"ue-{actual}-cl{build['Changelist']}-linux-development-vulkan-sm6-iostore-v2"
+    base = f"ue-{actual}-cl{build['Changelist']}-linux-development-vulkan-sm6-iostore-v2"
+    # Build.version proves the engine, not the renderer. Image labels and the
+    # frozen contracts independently verify the full candidate identity.
+    if candidate_id is not None:
+        if not isinstance(candidate_id, str) or not re.fullmatch(
+            re.escape(base) + r"(?:-render-[0-9a-f]{16})?", candidate_id
+        ):
+            raise CandidateError(f"candidate capability does not match observed engine {base}")
+        return candidate_id
+    return base
 
 
 def is_local_candidate_reference(reference: object) -> bool:
@@ -176,7 +186,8 @@ def verify_packs(lock: dict, store: Path, host_id: str, local_images: bool = Fal
     return receipts
 
 
-def verify_dashboard(container: str, workspace: Path, images: dict, receipts: dict) -> None:
+def verify_dashboard(container: str, workspace: Path, images: dict, receipts: dict,
+                     selection: dict | None = None) -> None:
     metadata = docker_json("inspect", container)[0]
     if not metadata.get("State", {}).get("Running"):
         raise CandidateError("dashboard container is not running")
@@ -186,6 +197,8 @@ def verify_dashboard(container: str, workspace: Path, images: dict, receipts: di
     expected = {"MNS_WORKSPACE_ROOT": str(workspace.resolve()),
                 "MNS_AUTHORING_IMAGE": images["authoring"],
                 "MNS_STACK_GENERATOR_IMAGE": images["stack_generator"]}
+    if selection is not None:
+        expected.update(selection)
     for key, value in expected.items():
         if environment.get(key) != value:
             raise CandidateError(f"running dashboard {key} differs from the candidate: {environment.get(key)!r}")
@@ -206,6 +219,7 @@ def dashboard_configuration(images: dict, local_images: bool = False) -> tuple[d
              "dashboard_frontend": "DASHBOARD_FRONTEND_IMAGE", "lichtblick": "DASHBOARD_LICHTBLICK_IMAGE",
              "timescaledb": "DASHBOARD_TIMESCALEDB_IMAGE"}
     environment = {name: images[role] for role, name in names.items()}
+    environment["MNS_IMAGE_SET"] = "published"
     overlay = {"schema": "mns.image_sets.v1", "image_sets": {"published": {
         "pull_policy": "never" if local_images else "missing", "images": {
             "simulators": {"tevv_runtime_host": images["runtime_host"]},
@@ -233,7 +247,8 @@ def write_local_override(path: Path, environment: dict, images: dict, expected_i
 
 
 def write_local_rerun(path: Path, engine_root: Path | None, engine_version: str, lock: Path,
-                      pack_store: Path, workspace: Path) -> None:
+                      pack_store: Path, workspace: Path, selection: dict | None = None,
+                      compose_project: str | None = None) -> None:
     """Persist a revalidating command, never a catalog/Makefile shortcut."""
     command = [
         sys.executable, str(ROOT / "tools/check_ue_candidate.py"),
@@ -244,6 +259,15 @@ def write_local_rerun(path: Path, engine_root: Path | None, engine_version: str,
         "--workspace", str(workspace.resolve()),
         "--local-images", "--start-dashboard",
     ]
+    if compose_project:
+        command += ["--compose-project", compose_project]
+    if selection is not None:
+        for flag, key in (
+            ("--authoring-data-root", "MNS_AUTHORING_DATA_ROOT"),
+            ("--runtime-host-contract", "MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT"),
+            ("--authoring-host-contract", "MNS_AUTHORING_HOST_CONTRACT"),
+        ):
+            command += [flag, selection[key]]
     override = path.parent / "local-images.env"
     path.write_text(
         "#!/usr/bin/env bash\n"
@@ -257,21 +281,86 @@ def write_local_rerun(path: Path, engine_root: Path | None, engine_version: str,
     path.chmod(0o700)
 
 
-def start_dashboard(workspace: Path, store: Path, images: dict, local_images: bool = False,
-                    expected_ids: dict | None = None) -> Path | None:
+def candidate_selection(workspace: Path, store: Path, lock_path: Path, lock: dict,
+                        *, authoring_data: Path | None = None,
+                        runtime_contract: Path | None = None,
+                        authoring_contract: Path | None = None) -> dict:
+    """Resolve once; the same selection feeds staging, compose and inspection."""
     workspace = workspace.resolve(strict=True)
-    if store.resolve() != workspace / ".mns/pack-store":
-        raise CandidateError("dashboard launch must use the workspace's .mns/pack-store")
+
+    def inside(value: Path | str | None, label: str, *, file: bool = False) -> Path:
+        if not value:
+            raise CandidateError(f"candidate requires {label}; supply it explicitly or in the lock")
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = workspace / path
+        path = path.resolve()
+        if path == workspace or not path.is_relative_to(workspace):
+            raise CandidateError(f"{label} must be inside the selected workspace: {path}")
+        if any(character in str(path) for character in ("\n", "\r", ",", ":")):
+            raise CandidateError(f"{label} cannot be represented safely as a container bind")
+        if file and not path.is_file():
+            raise CandidateError(f"{label} does not exist: {path}")
+        return path
+
+    selected_store = inside(store, "pack store")
+    data = inside(authoring_data or ".mns/ue-candidate/authoring-data", "authoring data root")
+    selected_lock = inside(lock_path, "candidate lock", file=True)
+    runtime = inside(runtime_contract or lock.get("host_contract"), "runtime host contract", file=True)
+    authoring = inside(authoring_contract or lock.get("authoring_host_contract"),
+                       "authoring host contract", file=True)
+    for path in (runtime, authoring):
+        contract = read_json(path)
+        if contract.get("schema") != "mns.host_compatibility.v1" or contract.get("id") != lock["capability_id"]:
+            raise CandidateError(f"host contract does not match candidate capability: {path}")
+    return {
+        "MNS_IMAGE_SET": "published",
+        "MNS_IMAGE_SET_FILE": str(workspace / ".mns/ue-candidate/image-set.json"),
+        "MNS_PACK_STORE_ROOT": str(selected_store),
+        "MNS_AUTHORING_DATA_ROOT": str(data),
+        "MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT": str(runtime),
+        "MNS_AUTHORING_HOST_CONTRACT": str(authoring),
+        "MNS_DEMO_PACK_LOCK": str(selected_lock),
+        "MNS_CHANNEL": "candidate",
+        # A verified candidate never seeds unrelated defaults or skips staging.
+        "MNS_SEED_AUTHORING_DEFAULTS": "0",
+        "MNS_IMAGE_PULL_POLICY": "never",
+    }
+
+
+def verify_staged_selection(selection: dict) -> None:
+    lock = read_json(Path(selection["MNS_DEMO_PACK_LOCK"]))
+    index_path = Path(selection["MNS_AUTHORING_DATA_ROOT"]) / "ResolvedPacks/index.json"
+    index = read_json(index_path)
+    if index.get("cook_capability_id") != lock["capability_id"]:
+        raise CandidateError("staged authoring index differs from the verified candidate capability")
+    staged = {pack.get("artifact_digest") for kind in ("level_packs", "asset_packs")
+              for pack in index.get(kind, [])}
+    missing = [pack["id"] for pack in lock["packs"] if pack["artifact_digest"] not in staged]
+    if missing:
+        raise CandidateError(f"candidate packs were not staged for authoring: {missing}")
+
+
+def start_dashboard(workspace: Path, store: Path, images: dict, local_images: bool = False,
+                    expected_ids: dict | None = None, *, selection: dict,
+                    compose_project: str | None = None) -> Path | None:
+    if compose_project is not None and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", compose_project):
+        raise CandidateError("compose project must contain lowercase letters, digits, hyphens or underscores")
+    workspace = workspace.resolve(strict=True)
+    if store.resolve() != Path(selection["MNS_PACK_STORE_ROOT"]):
+        raise CandidateError("dashboard launch store differs from the verified selection")
     environment, overlay = dashboard_configuration(images, local_images=local_images)
     config = workspace / ".mns/ue-candidate"
     config.mkdir(parents=True, exist_ok=True)
     image_set = config / "image-set.json"
     image_set.write_text(json.dumps(overlay, indent=2) + "\n")
     # Explicit environment takes precedence over old machine-local .env pins.
-    overrides = {**environment, "MSRS_ROOT": str(workspace),
+    overrides = {**environment, **selection, "MSRS_ROOT": str(workspace),
                  "MNS_IMAGE_SET_FILE": str(image_set), "HOST_UID": str(os.getuid()),
                  "HOST_GID": str(os.getgid()), "DASHBOARD_PULL_POLICY": "never",
-                 "MNS_IMAGE_PULL_POLICY": "never"}
+                 "MNS_IMAGE_PULL_POLICY": "never", "MNS_SKIP_PACK_STAGING": "0"}
+    if compose_project:
+        overrides["DASHBOARD_CONTAINER_PREFIX"] = compose_project + "-"
     for key in ("DISPLAY", "XAUTHORITY"):
         if os.environ.get(key):
             overrides[key] = os.environ[key]
@@ -291,7 +380,8 @@ def start_dashboard(workspace: Path, store: Path, images: dict, local_images: bo
         }
     subprocess.run([str(workspace / "tools/stage-authoring-packs.sh")],
                    cwd=workspace, env=stage_environment, check=True)
-    subprocess.run(["docker", "compose", "-p", "m-s-simulation-runtime-stack", "-f",
+    verify_staged_selection(selection)
+    subprocess.run(["docker", "compose", "-p", compose_project or "m-s-simulation-runtime-stack", "-f",
                     "docker-compose-dashboard.yml", "up", "-d", "--pull", "never"],
                    cwd=workspace, env=environment, check=True)
     return local_override
@@ -307,15 +397,22 @@ def main(argv=None) -> int:
     parser.add_argument("--pack-store", type=Path, default=ROOT / ".mns/pack-store")
     parser.add_argument("--dashboard-container", help="also check the live dashboard's actual workspace and image selections")
     parser.add_argument("--workspace", type=Path, default=ROOT)
+    parser.add_argument("--authoring-data-root", type=Path)
+    parser.add_argument("--runtime-host-contract", type=Path,
+                        help="Frozen runtime contract; otherwise lock.host_contract")
+    parser.add_argument("--authoring-host-contract", type=Path,
+                        help="Frozen authoring contract; otherwise lock.authoring_host_contract")
     parser.add_argument("--start-dashboard", action="store_true",
                         help="after verification, stage packs and launch the dashboard with this exact candidate")
+    parser.add_argument("--compose-project", help="isolated Compose project and dashboard container-name prefix")
     parser.add_argument("--local-images", action="store_true",
                         help="allow explicit local tags only with exact required_image_ids; never pull them")
     args = parser.parse_args(argv)
     try:
         lock = read_json(args.lock)
         if args.engine_root is not None:
-            host_id = host_id_from_engine(args.engine_root.expanduser(), args.engine_version)
+            host_id = host_id_from_engine(args.engine_root.expanduser(), args.engine_version,
+                                         lock.get("capability_id"))
         else:
             # No engine on this machine (the normal customer case): the
             # runtime host image's packaging label is the frozen id, and
@@ -328,6 +425,14 @@ def main(argv=None) -> int:
             if not host_id.startswith(f"ue-{args.engine_version}-"):
                 raise CandidateError(f"{runtime_host} is packaged for {host_id}, not UE {args.engine_version}")
         validate_lock(lock, host_id, local_images=args.local_images)
+        selection = None
+        if args.start_dashboard or args.dashboard_container:
+            selection = candidate_selection(
+                args.workspace, args.pack_store, args.lock, lock,
+                authoring_data=args.authoring_data_root,
+                runtime_contract=args.runtime_host_contract,
+                authoring_contract=args.authoring_host_contract,
+            )
         expected_ids = lock.get("required_image_ids") if args.local_images else None
         images = verify_images(lock["required_images"], host_id, expected_ids=expected_ids)
         packs = verify_packs(lock, args.pack_store, host_id, local_images=args.local_images)
@@ -337,16 +442,18 @@ def main(argv=None) -> int:
             local_override = start_dashboard(
                 args.workspace, args.pack_store, lock["required_images"],
                 local_images=args.local_images, expected_ids=expected_ids,
+                selection=selection, compose_project=args.compose_project,
             )
             if args.local_images:
                 local_rerun = args.workspace.resolve() / ".mns/ue-candidate/rerun.sh"
                 write_local_rerun(
                     local_rerun, args.engine_root.expanduser() if args.engine_root else None,
                     args.engine_version, args.lock.expanduser(), args.pack_store.expanduser(),
-                    args.workspace,
+                    args.workspace, selection, compose_project=args.compose_project,
                 )
         if args.dashboard_container:
-            verify_dashboard(args.dashboard_container, args.workspace, lock["required_images"], images)
+            verify_dashboard(args.dashboard_container, args.workspace, lock["required_images"], images,
+                             selection)
         print(json.dumps({"status": "preflight_passed", "e2e_verified": False,
                           "host_compatibility_id": host_id, "images": images, "packs": packs,
                           "local_override": str(local_override) if local_override else None,
