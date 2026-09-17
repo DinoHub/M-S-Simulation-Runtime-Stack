@@ -12,7 +12,7 @@
 #   python <cosys-airsim>/rpc-clients/python/tools/run.py <name>
 # (set AIRSIM_HOST / AIRSIM_PORT if the simulator isn't on localhost:41451.)
 #
-# Image override: AIRSIM_TOOLS_IMAGE in .env (default dhdevspace/auto_mns:airsim-tools-latest).
+# Image override: AIRSIM_TOOLS_IMAGE in .env (default dhdevspace/auto_mns:airsim-tools-v0.2.0-retag.2026-08-26).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
