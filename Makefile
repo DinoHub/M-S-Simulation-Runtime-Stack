@@ -266,6 +266,9 @@ help:
 	@echo "  generate   render compose files from templates [SCENARIO=name]"
 	@echo "  check      exit nonzero when rendered files drift from .env+templates"
 	@echo "  self-test  generator invariant checks"
+	@echo "  campaign   fly a run matrix over one scenario, scored [CAMPAIGN=name]"
+	@echo "             or any subcommand: ARGS=\"status vio-reference\""
+	@echo "  campaign-status  one row per flight: recording verdict and accuracy [CAMPAIGN=name]"
 	@echo "  verify-images  CI gate: images/catalog.yaml matches generated artifacts"
 	@echo "  ensure-images  use local tags and pull only missing images [IMAGE_MODE=development|production]"
 	@echo "  pull-images    explicitly refresh every exact published remote image pin"
@@ -335,6 +338,25 @@ check:
 
 self-test:
 	python3 tools/generate_scenario.py --self-test
+
+# Campaigns: a run matrix over one scenario, flown, recorded, checked and
+# scored. Runs the product shell's CLI, so it needs no platform checkout --
+# the same tevv-campaign a developer has on PATH.
+#
+#   make campaign                                  # the reference campaign
+#   make campaign CAMPAIGN=my-test                 # yours
+#   make campaign ARGS="status vio-reference"      # any subcommand
+#
+# A campaign is hours long and holds the GPU, the simulator ports and the X
+# display, so only one runs at a time; it refuses to start a second.
+CAMPAIGN ?= vio-reference
+ARGS ?= run $(CAMPAIGN)
+campaign: ensure-images  ## Fly a campaign (CAMPAIGN=<name>, or ARGS="<subcommand> ...")
+	@mkdir -p generated scenarios
+	./product.sh cli campaign $(ARGS)
+
+campaign-status:  ## One row per flight of a campaign (CAMPAIGN=<name>)
+	./product.sh cli campaign status $(CAMPAIGN)
 
 # CI gate for the image catalog (images/catalog.yaml): regenerates
 # product-images.env / images/*.generated.* into a temp location and diffs

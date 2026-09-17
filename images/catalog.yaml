@@ -408,6 +408,24 @@ images:
     channel: moving
     purpose: Sim-to-real evaluation worker, the published sim_real_eval role.
 
+  vio_estimator_openvins:
+    repo: dhdevspace/auto_mns
+    tag: vio-estimator-openvins-69488123
+    digest: sha256:ac48f34984863b159c0bf805e4f8ea2daecff4c23539aac00afd89c4d3a48078
+    channel: pinned
+    purpose: >-
+      OpenVINS (ov_msckf) on ROS 2 Humble, the published vio_estimator role --
+      the estimator scenarios/vio-reference flies, and the default any scenario
+      gets from extensions."mns.vio_estimator" with kind: openvins.
+
+      The tag carries the upstream commit it was built from
+      (rpng/open_vins @ 69488123ed9362dd44b6f28e7f4680abbff1442b), because a
+      moving tag would let a rebuild at a different ref reuse the name and a
+      campaign could then not say which estimator produced its numbers. Built by
+      MnS-Integration-Platform docker/build_vio_estimator_image.sh; rebuild at
+      another ref and the tag changes, so this row misses loudly rather than
+      running the wrong estimator quietly.
+
 
   # ---------------------------------------------------------------------
   # Platform images — docker-compose-monitoring.yml (14 rows)
@@ -766,6 +784,7 @@ consumers:
         ros2_bridge: ros2_bridge
         qgroundcontrol: qgroundcontrol
         sim_real_eval: sim_real_eval
+        vio_estimator: vio_estimator_openvins
     # Same stack, 5.8.2 runtime host. Selected by MNS_IMAGE_SET=ue582 (the
     # standalone_v2_ue582 channel's env file sets it).
     ue582:
