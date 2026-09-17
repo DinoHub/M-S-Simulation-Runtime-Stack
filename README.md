@@ -140,6 +140,42 @@ ScenarioLab launches mount authoring-only AirSim settings that select `ComputerV
 
 If Docker Hub is temporarily unreachable, `setup` retries each exact pull three times with backoff. Once all pins are cached, `./product.sh doctor` confirms the active set without contacting the registry. Generated stacks default to `MNS_IMAGE_PULL_POLICY=missing`, so they use cached, digest-verified images and pull only when a pin is absent. Set it to `always` only for a deliberate per-run registry check; use `./product.sh pull-images` for the normal refresh workflow.
 
+## Characterise an algorithm (campaigns)
+
+A campaign is a run matrix over one scenario: the same stack flown many times with one
+difference at a time, each flight recorded, gated and scored. The reference campaign ships
+in this repository and is meant to be copied.
+
+```bash
+./product.sh setup            # once: images, including the estimator and the shell
+make campaign                 # 12 flights: 4 wind strengths x 3 repeats, scored
+make campaign-status          # one row per flight
+```
+
+`make campaign` runs the product shell's CLI, so it needs no platform checkout. Anything the
+CLI accepts can go through it:
+
+```bash
+make campaign ARGS="validate vio-reference"   # spec, route and calibration; flies nothing
+make campaign ARGS="preflight vio-reference"  # + disk, ports, images
+make campaign ARGS="init my-test"             # your own copy of the reference campaign
+make campaign CAMPAIGN=my-test                # fly yours
+```
+
+A campaign is hours long and holds the GPU, the simulator ports and the X display, so only
+one runs at a time; a second is refused and told which one holds the machine. `make campaign
+ARGS="cancel <name>"` stops one cleanly — the flight in the air is finished and bundled,
+nothing further starts.
+
+To test your own estimator, copy the reference campaign and change one block in its
+`ScenarioSpec.yaml`. `scenarios/vio-reference/README.md` covers it, including the two things
+checked before anything flies: your calibration against the rig the scenario declares, and
+the topics your estimator subscribes to against the ones the stack publishes.
+
+Reading the result: the `valid` column is the recording's own verdict and sits left of the
+accuracy columns deliberately — a number computed from a recording that failed its gates is
+worse than no number.
+
 ## What will this stack publish?
 
 The bridges' topic names are the product of four inputs that only meet at
