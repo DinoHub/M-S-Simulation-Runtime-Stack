@@ -48,6 +48,11 @@ TEVV-Web-Dashboard branch, put `DASHBOARD_BACKEND_IMAGE=` /
 never overridden by the generated image env files, and `pull_policy: missing`
 keeps a local tag.
 
+The full route an image takes through the dashboard -- `ensure-images`, the
+`IMAGE_MODE` env layering, what the backend passes to generated stacks, the
+credentials mount and the `MNS_IMAGE_PULL_POLICY` override -- is in
+[docs/dashboard-images.md](docs/dashboard-images.md).
+
 ### Engine lines
 
 `CHANNEL` picks which Unreal line the whole dashboard runs, from the images to

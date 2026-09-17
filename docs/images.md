@@ -101,6 +101,11 @@ works on the machine you tested and fails everywhere else).
 
 ## Three things the catalog does not control
 
+All three meet in the dashboard. How `make dashboard` layers the generated
+files, which images the backend hands to generated stacks, and why the
+backend needs a credentials mount to pull anything at all is in
+[How the dashboard gets its images](dashboard-images.md).
+
 **1. Local development overrides.** `make dashboard` defaults to the generated tag-only development image set. A matching locally built tag wins, while an absent tag is pulled from the registry. Shell/.env image overrides still take precedence through `tools/load-images-env.sh` — that is how a dashboard backend/frontend built locally from a TEVV-Web-Dashboard branch runs before it is published: `DASHBOARD_BACKEND_IMAGE=local/tevv-web-dashboard-backend:v2-dev` in `./.env`, and `tools/images.sh status` lists it under FYI. `IMAGE_MODE=production make dashboard` selects the immutable digest-pinned artifacts instead.
 
 **2. Baked backend defaults.** The dashboard-backend image carries
