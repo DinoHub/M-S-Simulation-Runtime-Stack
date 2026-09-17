@@ -247,7 +247,8 @@ def write_local_override(path: Path, environment: dict, images: dict, expected_i
 
 
 def write_local_rerun(path: Path, engine_root: Path | None, engine_version: str, lock: Path,
-                      pack_store: Path, workspace: Path, selection: dict | None = None) -> None:
+                      pack_store: Path, workspace: Path, selection: dict | None = None,
+                      compose_project: str | None = None) -> None:
     """Persist a revalidating command, never a catalog/Makefile shortcut."""
     command = [
         sys.executable, str(ROOT / "tools/check_ue_candidate.py"),
@@ -258,6 +259,8 @@ def write_local_rerun(path: Path, engine_root: Path | None, engine_version: str,
         "--workspace", str(workspace.resolve()),
         "--local-images", "--start-dashboard",
     ]
+    if compose_project:
+        command += ["--compose-project", compose_project]
     if selection is not None:
         for flag, key in (
             ("--authoring-data-root", "MNS_AUTHORING_DATA_ROOT"),
@@ -339,7 +342,10 @@ def verify_staged_selection(selection: dict) -> None:
 
 
 def start_dashboard(workspace: Path, store: Path, images: dict, local_images: bool = False,
-                    expected_ids: dict | None = None, *, selection: dict) -> Path | None:
+                    expected_ids: dict | None = None, *, selection: dict,
+                    compose_project: str | None = None) -> Path | None:
+    if compose_project is not None and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", compose_project):
+        raise CandidateError("compose project must contain lowercase letters, digits, hyphens or underscores")
     workspace = workspace.resolve(strict=True)
     if store.resolve() != Path(selection["MNS_PACK_STORE_ROOT"]):
         raise CandidateError("dashboard launch store differs from the verified selection")
@@ -353,6 +359,8 @@ def start_dashboard(workspace: Path, store: Path, images: dict, local_images: bo
                  "MNS_IMAGE_SET_FILE": str(image_set), "HOST_UID": str(os.getuid()),
                  "HOST_GID": str(os.getgid()), "DASHBOARD_PULL_POLICY": "never",
                  "MNS_IMAGE_PULL_POLICY": "never", "MNS_SKIP_PACK_STAGING": "0"}
+    if compose_project:
+        overrides["DASHBOARD_CONTAINER_PREFIX"] = compose_project + "-"
     for key in ("DISPLAY", "XAUTHORITY"):
         if os.environ.get(key):
             overrides[key] = os.environ[key]
@@ -373,7 +381,7 @@ def start_dashboard(workspace: Path, store: Path, images: dict, local_images: bo
     subprocess.run([str(workspace / "tools/stage-authoring-packs.sh")],
                    cwd=workspace, env=stage_environment, check=True)
     verify_staged_selection(selection)
-    subprocess.run(["docker", "compose", "-p", "m-s-simulation-runtime-stack", "-f",
+    subprocess.run(["docker", "compose", "-p", compose_project or "m-s-simulation-runtime-stack", "-f",
                     "docker-compose-dashboard.yml", "up", "-d", "--pull", "never"],
                    cwd=workspace, env=environment, check=True)
     return local_override
@@ -396,6 +404,7 @@ def main(argv=None) -> int:
                         help="Frozen authoring contract; otherwise lock.authoring_host_contract")
     parser.add_argument("--start-dashboard", action="store_true",
                         help="after verification, stage packs and launch the dashboard with this exact candidate")
+    parser.add_argument("--compose-project", help="isolated Compose project and dashboard container-name prefix")
     parser.add_argument("--local-images", action="store_true",
                         help="allow explicit local tags only with exact required_image_ids; never pull them")
     args = parser.parse_args(argv)
@@ -433,14 +442,14 @@ def main(argv=None) -> int:
             local_override = start_dashboard(
                 args.workspace, args.pack_store, lock["required_images"],
                 local_images=args.local_images, expected_ids=expected_ids,
-                selection=selection,
+                selection=selection, compose_project=args.compose_project,
             )
             if args.local_images:
                 local_rerun = args.workspace.resolve() / ".mns/ue-candidate/rerun.sh"
                 write_local_rerun(
                     local_rerun, args.engine_root.expanduser() if args.engine_root else None,
                     args.engine_version, args.lock.expanduser(), args.pack_store.expanduser(),
-                    args.workspace, selection,
+                    args.workspace, selection, compose_project=args.compose_project,
                 )
         if args.dashboard_container:
             verify_dashboard(args.dashboard_container, args.workspace, lock["required_images"], images,

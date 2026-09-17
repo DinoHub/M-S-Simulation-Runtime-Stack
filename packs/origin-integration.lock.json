@@ -1,0 +1,209 @@
+{
+  "schema": "mns.pack_release_lock.v1",
+  "capability_id": "ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2-render-35e7a9a52ee2ef15",
+  "host_contract": "packs/runtime-host-compatibility.origin-integration.json",
+  "authoring_host_contract": "packs/authoring-host-compatibility.origin-integration.json",
+  "required_images": {
+    "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-v0.4.0-origin.1@sha256:604400d8d9f9ec0d0a5f8df6eb090acbc8dda3fd6f1d66a666ec46d9ddba5a21",
+    "authoring": "dhdevspace/auto_mns:mns-authoring-v0.4.0-origin.5@sha256:3fe4f5b80e510b8c2f88f9a8e4ead6dbcb7c048889d2681e27c504665cb559a0",
+    "stack_generator": "dhdevspace/auto_mns:mns-stack-generator-v0.4.0-origin.1@sha256:016373d2281fa2f2cd6a835ea3416546f1bf046d33191aa47fd86ed99c499e80",
+    "product_shell": "dhdevspace/auto_mns:mns-product-shell-v0.4.0-origin.1@sha256:3fc42441b6442a9ae6f5427b43ceae5c5450360337490d0ee871417e21e89e33",
+    "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v0.4.0-origin.1@sha256:24be9ec9c70412f09de251aae201f6d1a70d5d7569205a3268739982f729b4f6",
+    "px4": "dhdevspace/auto_mns:px4-airsim-px4-v0.4.0-origin.3@sha256:70d3fdf1f44f973f4ad36f11eb1560cada2b1aefccadcf5ed1b0dcd198be23bc",
+    "ardupilot": "dhdevspace/auto_mns:ardupilot-slim-v0.4.0-origin.1@sha256:aa77cd67258cb5f11c17d327cc78833eb959145e4c54778313117c2b0c645920",
+    "dashboard_backend": "dhdevspace/auto_mns:tevv-web-dashboard-backend-v0.2.0-g92908bd@sha256:1e466b9092be6dbd482fb78c662220a1ae9aa50acf4d11821931c53af8be3a39",
+    "dashboard_frontend": "dhdevspace/auto_mns:tevv-web-dashboard-frontend-v0.2.0-g39de41e@sha256:0f82cfd54fe546999ccc7ae14239f7b8a326e648cba7a201bd2041011c412e36",
+    "timescaledb": "timescale/timescaledb:2.17.2-pg16@sha256:4e459e217f00cbb09920c34d245501e63427e6767a495de57ce76823ff280f12",
+    "lichtblick": "ghcr.io/lichtblick-suite/lichtblick:latest@sha256:230ed53813f11ab5d23c47380f94c6d358438ecf15c3a7e7de9625b07c437611",
+    "qgroundcontrol": "dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804",
+    "sim_real_eval": "dhdevspace/auto_mns:sim-real-eval-worker-latest@sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb"
+  },
+  "packs": [
+    {
+      "id": "electric_dreams",
+      "version": "1.0.4",
+      "kind": "level",
+      "artifact_digest": "sha256:648c91bbe6daf97ddde95bdc0febd9531b2af8283f321212cb3a7a0efec6ff8a",
+      "required_plugins": [
+        "AnimationSharing",
+        "AudioGameplayVolume",
+        "AudioModulation",
+        "ChaosNiagara",
+        "Interchange",
+        "Metasound",
+        "Niagara",
+        "PCG",
+        "Soundscape",
+        "Synthesis",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "electric_dreams",
+      "display_name": "ElectricDreams",
+      "asset_name": "electric_dreams-1.0.4-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 12325081316,
+      "sha256": "3a957105d32db4df098e956805fa5e35edfc25de16acd245be1081522e9a2ab4",
+      "payload_digest": "sha256:0c4b7c23b4ec16a30eb23a30491481cf13c3a15e6278aac31530b651bd0e7093",
+      "source_manifest_digest": "sha256:d296e442dacdf803a8c6c544b37e5915ea6ba79d08c6bc702ca1f7659d1963bc",
+      "map_path": "/MnsEnv_ElectricDreams_1_0_3/Levels/ElectricDreams_Env",
+      "release": {
+        "repo": "DinoHub/TEVV-Airsim",
+        "tag": "pack-level-electric_dreams-1.0.4",
+        "parts": 7
+      }
+    },
+    {
+      "id": "mns_vehicle_models",
+      "version": "1.0.2",
+      "kind": "asset",
+      "artifact_digest": "sha256:264ae1cef2aed709a1b8d4561a7c79b01f2c416b878a174775b658b112647c07",
+      "required_plugins": [
+        "TEVVContentPackSDK"
+      ],
+      "selection": "mns_vehicle_models",
+      "display_name": "MnS Vehicle Models",
+      "asset_name": "mns_vehicle_models-1.0.2.mnsassetpack",
+      "size_bytes": 470284,
+      "sha256": "8ab20a6686f4211be8bc6e318c7c81a5e68a7be44cda9c51e1f9d60f76beeb41",
+      "payload_digest": "sha256:2f639e0746543afedc6f04cd27158bc07ac5b5e26c6a622713d0ecb2d34f91ed",
+      "source_manifest_digest": "sha256:d0c50cd18ea8ae874e8783bd2acb4e90da6f20622ba23d395aa913396eae0716"
+    },
+    {
+      "id": "origin_acceptance_zero",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:7dc1b805604665955f3dbfbfd0735b58d382505ed1c33397317f766fd2364d44",
+      "required_plugins": [
+        "TEVVContentPackSDK"
+      ],
+      "selection": "origin_acceptance_zero",
+      "display_name": "Origin acceptance: Zero PlayerStarts",
+      "asset_name": "origin_acceptance_zero-1.0.0.mnslevelpack",
+      "size_bytes": 15349,
+      "sha256": "eee44dd9863f035fd73ac4de1d5af14e0ac7a4bf33408c5f542be436aa641b02",
+      "payload_digest": "sha256:a05c7ff5707de418d71c08e3b1cbc967eea132ead091018c2d126a28d8f8dce7",
+      "source_manifest_digest": "sha256:46d7a38410d1e16204c40356ada37beaa4a1eb730b9081402743c7d145c129f4",
+      "map_path": "/MnsEnv_Origin_Acceptance_Zero_1_0_0/OriginAcceptance/L_Zero",
+      "purpose": "origin acceptance test level (transient cooked-pack evidence, not a product pack)"
+    },
+    {
+      "id": "origin_acceptance_multiple",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:14c5c0f22375a5b0755be25ccbfa9875ebf23df9fd390685e055865c64514460",
+      "required_plugins": [
+        "TEVVContentPackSDK"
+      ],
+      "selection": "origin_acceptance_multiple",
+      "display_name": "Origin acceptance: Multiple PlayerStarts",
+      "asset_name": "origin_acceptance_multiple-1.0.0.mnslevelpack",
+      "size_bytes": 17501,
+      "sha256": "99c4b5da150b8d61fdaa9d547e322734868236a083f118983c6faa8a2e626bb5",
+      "payload_digest": "sha256:d2bf53c68f803339416600363f75a19a9f4f064ea7a270d4236d7ce1993de4b7",
+      "source_manifest_digest": "sha256:fb4443063bc81581800b8281aca64d5727e2756c23028ebb0966bb97f06c2cd2",
+      "map_path": "/MnsEnv_Origin_Acceptance_Multiple_1_0_0/OriginAcceptance/L_Multiple",
+      "purpose": "origin acceptance test level (transient cooked-pack evidence, not a product pack)"
+    },
+    {
+      "id": "blocks",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:0d2dd6201e4e2d48ea85eef4a82ca217c5c3ae6ee7c9a7049acbef2eb1018571",
+      "required_plugins": [
+        "TEVVContentPackSDK"
+      ],
+      "selection": "blocks",
+      "display_name": "Blocks",
+      "asset_name": "blocks-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 303353,
+      "sha256": "ab2217abb41860cea94a96fb1026e96a41be783df6dfd5ee2cfc29e521798291",
+      "payload_digest": "sha256:40726d7223dc46554d6996fe65ac385650183e71c69c02a2ddee5026dc2948b5",
+      "source_manifest_digest": "sha256:df65ef6dcf14500cd8ab15747bdf67e6eeea22287cee86d567081793022e7991",
+      "map_path": "/MnsEnv_Blocks_1_0_0/Maps/BlocksDefault",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
+    },
+    {
+      "id": "condo",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:158a57821952cbd7364207f2f5339d2172552273862001ae00694e944c4178ff",
+      "required_plugins": [
+        "InterchangeAssets",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "condo",
+      "display_name": "Condo",
+      "asset_name": "condo-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 7423426,
+      "sha256": "400a1ee51f1fde8e44f8510c4ecd1670eb9341aa11fe296e2541204673f803f3",
+      "payload_digest": "sha256:1fda3a78f6675314554b058e236bf3586a2bfd7e6ffa105bce7698b13d7b72cf",
+      "source_manifest_digest": "sha256:3c069a522bcc8ae4acd55c9f61590bf97df84a8565c285f5f22c08e5caa2ae71",
+      "map_path": "/MnsEnv_Condo_1_0_0/Condo/Levels/L_Main",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
+    },
+    {
+      "id": "pendleton",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:fbbeb13dc98dd19e2a0a499c6ab8e9a4ca8c000842389e53180a86a5f85bba98",
+      "required_plugins": [
+        "Interchange",
+        "PCG",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "pendleton",
+      "display_name": "Pendleton",
+      "asset_name": "pendleton-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 700416038,
+      "sha256": "1d37a558bb9a80891420537a9745347c58c8e27f0bf2c35834498ff7124547e2",
+      "payload_digest": "sha256:2c8e1d4ec7454c82b4dab34c5bbaa67a0090faa02c093969450650e2d0b0ed62",
+      "source_manifest_digest": "sha256:79b426c134cacae7948559ec4f5ca708e74bf305c710e8a8f2c69f821f2f2dfd",
+      "map_path": "/MnsEnv_Pendleton_1_0_0/Pendleton/Maps/L_Main_WP",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
+    },
+    {
+      "id": "safticity",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:a1e50b45ff331469ac69594fd8c6f813b98799c79db7844199aba29069cc545f",
+      "required_plugins": [
+        "DatasmithContent",
+        "ScenarioAssets",
+        "ScenarioRunner",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "safticity",
+      "display_name": "Safticity",
+      "asset_name": "safticity-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 257023272,
+      "sha256": "73b447e724d85f152d001fd5c05999bb81da7e57728a0698a38a64f714ea2c72",
+      "payload_digest": "sha256:c425fa1a8dd1f4df77988ef8a1c7507f80e2d210800d2a1c1bf0e841b93cb8e2",
+      "source_manifest_digest": "sha256:24692ab890126504c93c5f0a83c83594b86ad212dbc15383982d7c648fa5ea5c",
+      "map_path": "/MnsEnv_Safticity_1_0_0/safticitymain_subset_unclassed",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
+    },
+    {
+      "id": "xfs",
+      "version": "1.0.0",
+      "kind": "level",
+      "artifact_digest": "sha256:95f8305e57dd730cd89c954caaacdcb291f40233311ccee57faf043b9398e016",
+      "required_plugins": [
+        "InterchangeAssets",
+        "PCG",
+        "ScenarioAssets",
+        "ScenarioAuthored",
+        "ScenarioRunner",
+        "TEVVContentPackSDK"
+      ],
+      "selection": "xfs",
+      "display_name": "Xfs",
+      "asset_name": "xfs-1.0.0-render-35e7a9a52ee2ef15.mnslevelpack",
+      "size_bytes": 1760215938,
+      "sha256": "8aba0cc38c25ee22fd49c114deeffb0ed16d6e55b84d23cd25cdb39e7370b5ea",
+      "payload_digest": "sha256:41788a53e6201b9aa72b5a43f46a6b808a5daf2ac9afb93528a08dd0eba2eca3",
+      "source_manifest_digest": "sha256:5b27088b59327969bd14c160df29db28b8556e3bac3549ae916dc5c58ad79923",
+      "map_path": "/MnsEnv_Xfs_1_0_0/Xfs/Maps/L_Main_WP",
+      "purpose": "UE 5.8.2 level pack produced 2026-09-11 from services/tevv-airsim/projects (local, unpublished)"
+    }
+  ],
+  "status": "Locally assembled immutable packs; live E2E acceptance observed 2026-09-10 for Electric Dreams with PX4 and ArduPilot; electric_dreams 1.0.4 published 2026-09-11 as DinoHub/TEVV-Airsim release pack-level-electric_dreams-1.0.4 (7 parts, bundle sha256 3a957105...); origin_acceptance_* are cooked test levels; the five UE 5.8.2 project packs are local, unpublished."
+}

@@ -63,7 +63,7 @@ services:
     # starts use those cached pins and pull only when an image is absent.
     # Set DASHBOARD_PULL_POLICY=always for a deliberate registry re-check.
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
-    container_name: airsim-dashboard-api
+    container_name: ${DASHBOARD_CONTAINER_PREFIX:-}airsim-dashboard-api
     ports:
       - "8001:8001"
     environment:
@@ -194,6 +194,8 @@ services:
       # be exactly the drift images/catalog.yaml exists to prevent. It ships in
       # both generated env files -- pass one with --env-file (see the header).
       - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?add --env-file images/standalone-v2-development.generated.env (or the -images- variant), or use make dashboard}
+      - ROS2_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}ros2-tools
+      - MNS_AUTHORING_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}mns-scenariolab-editor
       - MNS_AUTHORING_DOCKER_ARGS=-v "${MSRS_ROOT:-${PWD}}/config/unreal-airsim/authoring-preview.json:/tmp/Documents/AirSim/settings.json:ro" ${MNS_AUTHORING_DOCKER_ARGS:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}
@@ -282,7 +284,7 @@ services:
   dashboard-frontend:
     image: ${DASHBOARD_FRONTEND_IMAGE:?source product-images.env}
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
-    container_name: airsim-dashboard-frontend
+    container_name: ${DASHBOARD_CONTAINER_PREFIX:-}airsim-dashboard-frontend
     ports:
       # The image bakes PORT=3001, so Next.js listens on 3001 inside the
       # container, not the standalone default of 3000. Mapping 3001:3000 hit a
@@ -298,7 +300,7 @@ services:
   dashboard-lichtblick:
     image: ${DASHBOARD_LICHTBLICK_IMAGE:?source images/platform-images.generated.env}
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
-    container_name: dashboard-lichtblick
+    container_name: ${DASHBOARD_CONTAINER_PREFIX:-}dashboard-lichtblick
     ports:
       # This one is stuck on 8082: the frontend is a Next.js production build,
       # so NEXT_PUBLIC_LICHTBLICK_URL was inlined into the client bundle at
@@ -316,7 +318,7 @@ services:
     profiles: ["db"]
     image: ${DASHBOARD_TIMESCALEDB_IMAGE:?source images/platform-images.generated.env}
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
-    container_name: postgres-telemetry
+    container_name: ${DASHBOARD_CONTAINER_PREFIX:-}postgres-telemetry
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-drone_telemetry}
       - POSTGRES_USER=${POSTGRES_USER:-airsim_user}
@@ -347,7 +349,7 @@ services:
   db-init:
     profiles: ["db"]
     image: ${DASHBOARD_BACKEND_IMAGE:?source product-images.env}
-    container_name: dashboard-db-init
+    container_name: ${DASHBOARD_CONTAINER_PREFIX:-}dashboard-db-init
     environment:
       - INIT_DB_SCHEMA=true
       - POSTGRES_HOST=postgres-telemetry

@@ -172,6 +172,27 @@ class CandidateTests(unittest.TestCase):
             self.assertEqual(selected["autopilots"]["ardupilot"], images["ardupilot"])
             self.assertEqual(selected["ros2_bridge"], images["ros2_bridge"])
 
+    def test_isolated_launch_uses_project_and_distinct_container_names(self):
+        images = dict(self.lock["required_images"])
+        for role in ("ardupilot", "px4", "qgroundcontrol", "sim_real_eval", "lichtblick"):
+            images[role] = f"example.invalid/{role}:candidate@sha256:" + "c" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            store = workspace / ".mns/pack-store"
+            store.mkdir(parents=True)
+            selection = self.selection(workspace, store)
+            with patch.object(candidate.subprocess, "run") as run:
+                candidate.start_dashboard(workspace, store, images, selection=selection,
+                                          compose_project="origin-e2e")
+            command = run.call_args.args[0]
+            self.assertEqual(command[command.index("-p") + 1], "origin-e2e")
+            self.assertEqual(run.call_args.kwargs["env"]["DASHBOARD_CONTAINER_PREFIX"], "origin-e2e-")
+            with patch.object(candidate.subprocess, "run") as run:
+                with self.assertRaisesRegex(candidate.CandidateError, "compose project"):
+                    candidate.start_dashboard(workspace, store, images, selection=selection,
+                                              compose_project="../wrong")
+                run.assert_not_called()
+
     def test_local_launch_persists_pull_never_override_and_receipts(self):
         images = self.lock["required_images"]
         for role in ("ardupilot", "px4", "qgroundcontrol", "sim_real_eval", "lichtblick"):
