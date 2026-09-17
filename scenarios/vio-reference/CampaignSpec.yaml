@@ -1,0 +1,114 @@
+schema: mns.campaign.v1
+id: vio-reference
+name: Reference VIO campaign
+
+# The reference campaign: does a visual-inertial estimator hold up as wind
+# increases?
+#
+# Twelve flights -- four wind strengths, three repeats each -- over one scenario,
+# each recorded, checked and scored. Copy it and make it yours:
+#
+#     tevv-campaign init my-test --from vio-reference
+#
+# Three repeats per variant is not padding. Two campaigns run from an identical
+# configuration have differed by roughly a factor of two on the same case, so a
+# single flight per condition cannot tell a real effect from that spread. Read
+# the repeats before you read the differences.
+
+scenario: ./ScenarioSpec.yaml
+
+evaluation:
+  evaluator: vio-stress
+  inputs:
+    est_topic: /ov_msckf/odomimu
+
+# Wind as a declared condition rather than a runtime command. The tevv_ws
+# harness sent `wind N 0 0` over RPC once the stack was up, which worked but
+# left no trace in the generated stack: the setting lived in the shell that
+# sent it. As a variant override it is part of the materialized spec for each
+# run, so the manifest can say what each run was flown in.
+#
+# Three, six and ten metres per second are calm, brisk and strong against a one
+# metre per second flight. The case measures error against the vehicle's actual
+# attitude and gyroscope peaks, which the recording carries, not against the
+# setting.
+variants:
+  - id: calm
+    name: No wind
+  - id: wind-3
+    name: Wind 3 m/s
+    overrides:
+      environment:
+        conditions:
+          weather:
+            wind: 3.0
+  - id: wind-6
+    name: Wind 6 m/s
+    overrides:
+      environment:
+        conditions:
+          weather:
+            wind: 6.0
+  - id: wind-10
+    name: Wind 10 m/s
+    overrides:
+      environment:
+        conditions:
+          weather:
+            wind: 10.0
+
+repeats: 3
+
+# What each run records, and how much of it survives.
+#
+# Without this block a run records every topic and nothing is ever dropped.
+# Twelve stereo runs recording everything is well over a hundred gigabytes, and
+# the disk fills part-way through, which destroys the runs already flown as
+# well as the one in flight. Preflight now refuses that up front.
+#
+# The topics are the sensor contract the estimator and the scorer need: the
+# stereo pair with their calibration, the inertial stream, ground truth from
+# the physics body, and the clock everything is stamped against.
+#
+# Name them as the stack PUBLISHES them, which is after the rename layer in
+# config/topic_names.yaml, not as the bridge names them natively. This list
+# first read `/front_right_Scene/image`, the native name, and rosbag2 recorded
+# an absent topic in silence: the run completed, the bundle looked whole, and
+# the declared stereo pair reached the scorer with one camera in it. The runner
+# now rewrites a native name it can recognise and says so, but the spec should
+# say what is true.
+recording:
+  keep: first
+  topics:
+    - /camera/front/image_raw
+    - /camera/front/camera_info
+    - /camera/front_right/image_raw
+    - /camera/front_right/camera_info
+    - /imu/data
+    - /ground_truth/odom
+    - /clock
+    - /ov_msckf/odomimu
+
+# The route is declared, not commanded. A start_cmd is an opaque shell string:
+# nothing can hash it into the manifest, compare two campaigns' routes, plot the
+# intended path, or survey it against the level before flying. This names a
+# route file instead, and the runner compiles it into the same flight.
+#
+# The vehicle is flown through MAVROS inside the bridge container rather than
+# over MAVLink from the host: a generated stack's flight controller streams to
+# its own loopback and publishes no port, so there is no host endpoint to talk
+# to. That is also why `done: landed` is not used here -- it watches MAVLink
+# EXTENDED_SYS_STATE, which needs that endpoint.
+#
+# --autopilot px4 matters: PX4 flies this in OFFBOARD, which it enters only
+# while setpoints are already arriving and leaves the moment they stop. The
+# route's prestream_seconds primes the stream before the mode change, and its
+# finish_hold_seconds keeps it up through the landing call.
+mission:
+  source: external
+  trajectory: ./routes/reference-flight.yaml
+  # The flight blocks until the vehicle is down, so this cap is the tail after
+  # it rather than the flight's own budget.
+  done: timeout
+  timeout_s: 10
+  autopilot: px4

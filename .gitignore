@@ -33,3 +33,9 @@ generated/
 !/scenarios/xfs-ardupilot/ScenarioSpec.yaml
 !/scenarios/xfs-scenario/
 !/scenarios/xfs-scenario/ScenarioSpec.yaml
+# The reference campaign, unlike the scenarios above, is a whole directory:
+# the spec, the campaign over it, the route it flies and the estimator
+# calibration are one committed unit, because a campaign that ships half of
+# itself cannot be copied and run.
+!/scenarios/vio-reference/
+!/scenarios/vio-reference/**
