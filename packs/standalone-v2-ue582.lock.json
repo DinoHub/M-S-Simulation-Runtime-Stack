@@ -11,7 +11,7 @@
     "authoring": "dhdevspace/auto_mns:mns-authoring-20260909.1@sha256:cd7e54e70079564210b33ebe6db85f364bb40b378a3163df5e6034ed8e8a893c",
     "stack_generator": "dhdevspace/auto_mns:mns-stack-generator-20260909@sha256:59b7974232a8c1038218fac18c3bc5c64aac96ecbcf648608a052018636561ce",
     "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-20260910.1@sha256:3a5de227f3ab8a2ac81b0a2cda3262283fedc731b46438395a51e8a376e2cfb8",
-    "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260910@sha256:c07474f9dcb53b022e52e3f66ff30191664312af670034f131c2ad4c2ebf6a63"
+    "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260915.1@sha256:2f5c20e7d3283386162f4dc0d88254c97d3c81e95e96b97d583e4faed869464d"
   },
   "packs": [
     {
@@ -19,14 +19,14 @@
       "kind": "level",
       "id": "condo-level",
       "display_name": "Condo",
-      "version": "1.0.0",
-      "asset_name": "condo_level-1_0_0.mnslevelpack",
-      "size_bytes": 5576061,
-      "sha256": "3bc5000714b81c54b6d20d33a9303d327c9640e8a7a5c9409d25c59bd42930da",
-      "artifact_digest": "sha256:4b00c0ea117f94f8f50a336bb73e65f0f18a1ceebc4a082be5eb191364688903",
-      "payload_digest": "sha256:0ee8a12cffc3acde58a1d9ff6fde9343ecea5f8146ec9eb9d580b4d1641614a8",
-      "source_manifest_digest": "sha256:7a2f1d9bfb73f2659f5516b989432033a969b07ac963b3fce7d52e87f3bfedbb",
-      "map_path": "/MnsEnv_condo_level_1_0_0/Condo/Levels/L_Main",
+      "version": "1.0.1",
+      "asset_name": "condo-level-1.0.1.mnslevelpack",
+      "size_bytes": 5576493,
+      "sha256": "3cceb2fc31c6f7b7d501a2d7d837a985599df526b070397f08d56209ba56eda0",
+      "artifact_digest": "sha256:f41caf8f80fa0814e724fbfa1e94c89f7576fb3f1d4054e259e07144cfbffbb9",
+      "payload_digest": "sha256:0edfa6541aebe153089ae76c1b4ac4283a4f37e8ed4d08db98514e0776b6f284",
+      "source_manifest_digest": "sha256:7fff46a6f2c1160f3fcf182129b2a7ad9359571a19b83e7f749115f824431b4b",
+      "map_path": "/MnsEnv_Condo_Level_1_0_1/Condo/Levels/L_Main",
       "required_plugins": [
         "AirSim",
         "GeoReferencing",
@@ -35,23 +35,23 @@
       ],
       "release": {
         "repository": "DinoHub/TEVV-Airsim",
-        "tag": "pack-level-condo-level-1.0.0"
+        "tag": "pack-level-condo-level-1.0.1"
       },
-      "published_at": "2026-09-08T03:21:22Z"
+      "published_at": "2026-09-09T09:14:32Z"
     },
     {
       "selection": "fishermans-cabin",
       "kind": "level",
       "id": "fishermans-cabin",
       "display_name": "Fisherman's Cabin",
-      "version": "1.0.0",
-      "asset_name": "fishermans-cabin-1.0.0.mnslevelpack",
-      "size_bytes": 1021871102,
-      "sha256": "18c224e597e177d05132dcfc801ea7d71b25a85b2abc2ded5e98eae073873b72",
-      "artifact_digest": "sha256:d821af9cfa979376928489201f4fcd2731ebb4b0a86b39c2ea43f8a5476002e4",
-      "payload_digest": "sha256:4ee07e7d7e4aef3b80c1b890634b04ab78f8197e57ddb0b48878a086483a8e60",
-      "source_manifest_digest": "sha256:c7133dace5f2feda1758cb9e719e01d4610c7c8aa524ec4e65d7379411d8919b",
-      "map_path": "/MnsEnv_Fishermans_Cabin_1_0_0/Fishermans_Cabin/Levels/Fishermans_Cabin",
+      "version": "1.0.1",
+      "asset_name": "fishermans-cabin-1.0.1.mnslevelpack",
+      "size_bytes": 1022462202,
+      "sha256": "eee29d771846fb7c17a79973a7723c2c43d34400bbce24daceac2b64534e69dd",
+      "artifact_digest": "sha256:511c66a698855fe9552fb28f968082934ecff2c0fd877e28b8a978a62d74c33a",
+      "payload_digest": "sha256:395656257006cfc4ad6b45d5fa293219267b77304564910e22143d8949e1aaf4",
+      "source_manifest_digest": "sha256:2a87f01bba6e34ef4f2c644ee8262e436e308ef0035d6d8729dd3ea45fabb274",
+      "map_path": "/MnsEnv_Fishermans_Cabin_1_0_1/Fishermans_Cabin/Levels/Fishermans_Cabin",
       "required_plugins": [
         "CableComponent",
         "Interchange",
@@ -60,9 +60,9 @@
       ],
       "release": {
         "repository": "DinoHub/TEVV-Airsim",
-        "tag": "pack-level-fishermans-cabin-1.0.0"
+        "tag": "pack-level-fishermans-cabin-1.0.1"
       },
-      "published_at": "2026-09-08T15:08:19Z"
+      "published_at": "2026-09-09T09:14:32Z"
     },
     {
       "selection": "office",
@@ -92,14 +92,14 @@
       "kind": "level",
       "id": "safti-level",
       "display_name": "Safti Unclassified",
-      "version": "1.0.1",
-      "asset_name": "safti_level-1_0_1.mnslevelpack",
-      "size_bytes": 857975172,
-      "sha256": "b74a483a493786a79491131432553bb951b1847b9fba49e3ac457c6d12a2c8be",
-      "artifact_digest": "sha256:601f1cf40609cf59a9cfb867c8d670b5cd3ad6195d2b962476cf3f0069a57eb8",
-      "payload_digest": "sha256:326715e691e3273175f80be34a8d215575aef7d39383cb766dfd450b6cce1515",
-      "source_manifest_digest": "sha256:88fd5a4bde8313527d59953c7fbb066d35934ab6cb27f43304d37d99cdb5d084",
-      "map_path": "/MnsEnv_Safti_Level_1_0_1/safticitymain_subset_unclassed",
+      "version": "1.0.3",
+      "asset_name": "safti-level-1.0.3.mnslevelpack",
+      "size_bytes": 858499917,
+      "sha256": "7d2bf8ed5baf57195648817296f852e05997191849947019f0cd884f28325dab",
+      "artifact_digest": "sha256:1dbd30834a4c96654ea20a7f011b74399891bd0331abcf2ab3aae4157f03c9c2",
+      "payload_digest": "sha256:94f910c935183ee1a16944884b13a1e65ac4dff0a1babc1cfaea4d5087cca4c2",
+      "source_manifest_digest": "sha256:d0dfe8d4b01687cfbde8db663ffc78923a043afb2778c96a40b49d4db40ee6c8",
+      "map_path": "/MnsEnv_Safti_Level_1_0_3/safticitymain_subset_unclassed",
       "required_plugins": [
         "AirSim",
         "DatasmithContent",
@@ -113,32 +113,32 @@
       ],
       "release": {
         "repository": "DinoHub/TEVV-Airsim",
-        "tag": "pack-level-safti-level-1.0.1"
+        "tag": "pack-level-safti-level-1.0.3"
       },
-      "published_at": "2026-09-08T03:21:22Z"
+      "published_at": "2026-09-08T15:08:19Z"
     },
     {
       "selection": "warehouse",
       "kind": "level",
       "id": "warehouse",
       "display_name": "Warehouse",
-      "version": "1.0.0",
-      "asset_name": "warehouse-1.0.0.mnslevelpack",
-      "size_bytes": 800130981,
-      "sha256": "a1305249fb3ceb9cf7196d9bb8786198054c46bd68c15c9eb57c3734f821628b",
-      "artifact_digest": "sha256:7d23094b6d36df3a97ff541dd47627ab655374f574a422a28d10439bd62f4e1c",
-      "payload_digest": "sha256:c5e5129bcb0e9017d4682a6d10868c0feed51137f13320c32d4a9705d52398a7",
-      "source_manifest_digest": "sha256:34523471aa5c86bb1e4d5c72b38a7dfc083b3f33d484c6ec8335f1b9cb587fb4",
-      "map_path": "/MnsEnv_Warehouse_1_0_0/Warehouse/Scene/Scene",
+      "version": "1.0.1",
+      "asset_name": "warehouse-1.0.1.mnslevelpack",
+      "size_bytes": 800262469,
+      "sha256": "1fecb89d004d04d6576b0c5bed7ccda61e7ffe25fb17d4d7dc80bbba8962d8ef",
+      "artifact_digest": "sha256:ea39d4c4d48607e808b7f8be696295c38ee779ebb91c70084d99350d2a654dda",
+      "payload_digest": "sha256:2029d5d6f61708122c33efd39ca0a9f133471c925831198b3fff667bc6a7bf8c",
+      "source_manifest_digest": "sha256:4e100017180304087dece6d4737db77c1e92766fadb3b9872c54146f8aefe768",
+      "map_path": "/MnsEnv_Warehouse_1_0_1/Warehouse/Scene/Scene",
       "required_plugins": [
         "Interchange",
         "TEVVContentPackSDK"
       ],
       "release": {
         "repository": "DinoHub/TEVV-Airsim",
-        "tag": "pack-level-warehouse-1.0.0"
+        "tag": "pack-level-warehouse-1.0.1"
       },
-      "published_at": "2026-09-08T08:23:42Z"
+      "published_at": "2026-09-09T09:14:32Z"
     },
     {
       "selection": "xfs",

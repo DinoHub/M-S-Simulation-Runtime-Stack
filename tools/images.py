@@ -49,12 +49,14 @@ from __future__ import annotations
 import argparse
 import copy
 import base64
+import fnmatch
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import urllib.error
 import urllib.parse
@@ -178,6 +180,19 @@ def _validate_catalog(data: Any) -> None:
                 f"images.{key} is channel pinned but has no digest — a pinned row exists "
                 f"precisely to name one exact image; without a digest it names nothing."
             )
+        # published_by is an ownership claim. Until the product's stable
+        # release/tag policy is settled, owned rows use a deliberately frozen
+        # pinned tag rather than a mutable publishing alias.
+        publisher = row.get("published_by")
+        if publisher is not None:
+            if not isinstance(publisher, str) or not publisher.strip():
+                raise CatalogError(f"images.{key}.published_by must be a non-empty string")
+            if row["channel"] != "pinned":
+                raise CatalogError(
+                    f"images.{key} is published_by {publisher!r} but sits on channel "
+                    f"{row['channel']!r}. An image we publish ourselves must use an "
+                    f"immutable pinned tag until the stable release policy is defined."
+                )
     follow_ups = data.get("follow_ups")
     if follow_ups is not None and (
         not isinstance(follow_ups, list)
@@ -644,6 +659,76 @@ def dotenv_overrides(catalog: dict[str, Any]) -> list[tuple[str, str, str]]:
     return out
 
 
+_MUTABLE_SCAN_GLOBS = ("*.yml", "*.yaml", "*.sh", "*.md", "Makefile")
+_MUTABLE_SCAN_SKIP_DIRS = {
+    ".git", "graphify-out", "generated", "images", "docs/superpowers", "docs/adr",
+}
+
+
+def owned_tag_prefixes(images: dict[str, Any]) -> set[str]:
+    """Return ``repo:component`` prefixes for images this project publishes."""
+    out: set[str] = set()
+    for key, row in images.items():
+        if not row.get("published_by"):
+            continue
+        tag = row["tag"]
+        component = re.sub(r"-(v\d+\.\d+\.\d+|latest|review)\b.*$", "", tag)
+        if component == tag:
+            raise CatalogError(
+                f"images.{key}: published_by tag {tag!r} does not match "
+                "-v<x.y.z>, -latest or -review<N>, so the mutable-tag guard "
+                "cannot derive its component prefix"
+            )
+        out.add(f"{row['repo']}:{component}")
+    return out
+
+
+def _tracked_files(root: Path) -> list[Path] | None:
+    """Return files Git tracks below root, or None when Git is unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    names = result.stdout.decode("utf-8", "surrogateescape").split("\0")
+    return [root / name for name in names if name]
+
+
+def scan_for_mutable_refs(root: Path, prefixes: set[str]) -> list[tuple[str, int, str]]:
+    """Find tracked text references to a mutable ``-latest`` owned tag."""
+    if not prefixes:
+        return []
+    tracked = _tracked_files(root)
+    if tracked is not None:
+        candidates = [
+            path for path in tracked
+            if any(fnmatch.fnmatch(path.name, pattern) for pattern in _MUTABLE_SCAN_GLOBS)
+        ]
+    else:
+        candidates = [path for pattern in _MUTABLE_SCAN_GLOBS for path in root.rglob(pattern)]
+
+    hits: list[tuple[str, int, str]] = []
+    for path in sorted(set(candidates)):
+        rel = path.relative_to(root).as_posix()
+        if any(rel == directory or rel.startswith(f"{directory}/")
+               for directory in _MUTABLE_SCAN_SKIP_DIRS):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for prefix in prefixes:
+                if f"{prefix}-latest" in line:
+                    hits.append((rel, line_number, line.strip()))
+    return hits
+
+
 def assert_invariants(catalog: dict[str, Any]) -> None:
     images = catalog["images"]
     all_vars = _all_env_vars(catalog)
@@ -702,6 +787,17 @@ def assert_invariants(catalog: dict[str, Any]) -> None:
                 "image_sets.published must use pull_policy: missing for standalone_v2; "
                 "refresh images explicitly with tools/pull-all-images.sh"
             )
+
+    # 5. A fallback naming an owned mutable alias bypasses the catalog's exact
+    # tag+digest pin on a fresh checkout. Scan only tracked authored files so
+    # untracked review notes cannot make verification machine-dependent.
+    hits = scan_for_mutable_refs(ROOT, owned_tag_prefixes(images))
+    if hits:
+        detail = "; ".join(f"{path}:{line}" for path, line, _ in hits[:5])
+        raise CatalogError(
+            f"{len(hits)} reference(s) to a mutable -latest tag for an image we publish: "
+            f"{detail}. Point them at the catalog's immutable pinned tag instead."
+        )
 
 
 def _flatten_leaf_keys(node: Any) -> set[str]:
@@ -882,10 +978,75 @@ def run_selftest() -> None:
         f"({type(tag_value).__name__}), expected the string '3.4'"
     )
 
+    # 4. An owned row must not return to a mutable publishing channel.
+    owned_fixture = {
+        "schema": "mns.images.v1",
+        "images": {
+            "fixture": {
+                "repo": "example/repo",
+                "tag": "thing-v0.2.0-retag.2026-08-26",
+                "digest": "sha256:" + "0" * 64,
+                "channel": "moving",
+                "published_by": "example-repo/tools/build.sh",
+                "purpose": "selftest fixture, not a real image.",
+            },
+        },
+        "consumers": {
+            "product_env": {}, "image_sets": {}, "compose_env": {}, "legacy_env": {},
+        },
+    }
+    try:
+        _validate_catalog(owned_fixture)
+    except CatalogError:
+        pass
+    else:
+        raise AssertionError("selftest FAILED: a published_by row used channel moving")
+    owned_fixture["images"]["fixture"]["channel"] = "pinned"
+    _validate_catalog(owned_fixture)
+
+    # 5. The mutable-reference guard scans tracked files, ignores untracked
+    # scratch, and falls back to a filesystem walk when Git is unavailable.
+    prefixes = owned_tag_prefixes(owned_fixture["images"])
+    assert prefixes == {"example/repo:thing"}
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        tracked_path = root / "docker-compose-tools.yml"
+        tracked_path.write_text("image: example/repo:thing-latest\n", encoding="utf-8")
+        subprocess.run(["git", "add", tracked_path.name], cwd=root, check=True)
+        (root / "scratch.md").write_text(
+            "image: example/repo:thing-latest\n", encoding="utf-8")
+        hits = scan_for_mutable_refs(root, prefixes)
+        assert [(path, line) for path, line, _ in hits] == [
+            ("docker-compose-tools.yml", 1)
+        ], f"selftest FAILED: expected only the tracked mutable ref, got {hits}"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "docker-compose-tools.yml").write_text(
+            "image: example/repo:thing-latest\n", encoding="utf-8")
+        hits = scan_for_mutable_refs(root, prefixes)
+        assert [(path, line) for path, line, _ in hits] == [
+            ("docker-compose-tools.yml", 1)
+        ], f"selftest FAILED: filesystem fallback missed mutable ref: {hits}"
+
+    # 6. An unparseable owned tag must fail loudly instead of silently making
+    # the mutable-reference guard ineffective.
+    try:
+        owned_tag_prefixes({
+            "fixture": {
+                "repo": "example/repo", "tag": "thing-20260901",
+                "published_by": "x/tools/build.sh",
+            },
+        })
+    except CatalogError:
+        pass
+    else:
+        raise AssertionError("selftest FAILED: unparseable owned tag did not raise")
+
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
     run_selftest()
-    print("selftest: ok (tag-must-be-string invariant + bump always-quotes-tags)")
+    print("selftest: ok (tag quoting + immutable owned-image guards)")
     return 0
 
 

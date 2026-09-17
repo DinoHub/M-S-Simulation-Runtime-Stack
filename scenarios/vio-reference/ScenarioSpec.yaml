@@ -1,0 +1,98 @@
+schema: mns.scenario.v1
+id: vio-reference
+name: Stereo VIO under wind
+stack_name: vio-reference
+
+# The reference VIO rig: a stereo pair on a quadrotor over the XFS level.
+#
+# This is the scenario half of the reference campaign. It describes the thing
+# under test -- the world, the vehicle, its sensors, and the estimator running
+# on board. CampaignSpec.yaml beside it describes the experiment over it.
+#
+# To test YOUR estimator, change one block: extensions."mns.vio_estimator".
+# Everything else here is a rig that is known to fly and known to be calibrated
+# against the cameras it declares, which is what makes it a reference.
+#
+# The environment names a level pack by id, version and digest. Those three
+# fields are what the runtime host loads at startup, and they match the entry
+# in packs/standalone-v2-ue582.lock.json, so this scenario runs against the
+# same XFS level `./product.sh setup` installed and no other.
+
+environment:
+  id: xfs-level
+  version: 1.0.1
+  artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+
+runtime:
+  profile: airsim_unreal_px4_docker
+  features:
+    sim_real_eval: true
+    ros2_bridge: true
+    qgroundcontrol: false
+    # Required, not optional. The flight goes through MAVROS inside the bridge
+    # container, because a generated stack's flight controller streams to its
+    # own loopback and publishes no host port. With this false the bridge starts
+    # without MAVROS and the pilot waits out its timeout on a flight controller
+    # that was never connected.
+    mavros: true
+
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  ros_domain_id: 1
+  start:
+    x: 0
+    y: 0
+    z: 0
+    yaw: 0
+  # Stereo pair, 0.12 m baseline. Camera Z is 0.25 m above the IMU: at zero the
+  # camera sits inside the airframe and the rotor arms fill about a third of
+  # every frame.
+  cameras:
+    front:
+      position:
+        x: 0.15
+        y: 0
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+    front_right:
+      position:
+        x: 0.15
+        y: 0.12
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+
+extensions:
+  mns.vio_estimator:
+    enabled: true
+    kind: openvins
+    # The frozen calibration, vendored beside this spec so a run is not tied to
+    # one workstation's checkout. Stereo: two cameras in the kalibr chain, the
+    # right one on the bridge's second-camera topic.
+    config_dir: ./openvins
+    odom_topic: /ov_msckf/odomimu
+    launch_args:
+      use_stereo: "true"
+      max_cameras: "2"

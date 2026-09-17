@@ -16,6 +16,7 @@ image_sets:
       ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-latest
       qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
       sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest
+      vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123
   ue582:
     pull_policy: missing
     images:
@@ -27,6 +28,7 @@ image_sets:
       ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-latest
       qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
       sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest
+      vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123
   origin-integration:
     pull_policy: missing
     images:
@@ -38,3 +40,4 @@ image_sets:
       ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v0.4.0-origin.1
       qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
       sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest
+      vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123
