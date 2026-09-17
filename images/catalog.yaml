@@ -270,14 +270,21 @@ images:
 
   mns_product_shell_ue582:
     repo: dhdevspace/auto_mns
-    tag: mns-product-shell-20260909
-    digest: sha256:062c8081374fa378413686766ebb010007e0c70b325b6adef5096f2bfcc5072f
+    tag: mns-product-shell-20260917
+    digest: sha256:c4a0b62da00c9f3e727c3260fb07a7d534a9ad54a04352ea3ea339292b8068c3
     channel: pinned
     purpose: >-
       Product shell built alongside mns_stack_generator_ue582 (same sources)
       with ScenarioLab's 25-plugin contract baked in
       (packs/authoring-host-compatibility.ue582.json); installs, verifies and
       stages the 5.8.2 packs, skipping any ScenarioLab cannot mount.
+
+      20260917 adds the campaign CLI: tools/tevv-campaign and the campaign
+      command group behind it (init, validate, plan, run, watch, status,
+      cancel). Before it, `./product.sh cli campaign ...` reached a shell that
+      had no such command and this repository had no campaign to run.
+      Campaign names resolve against the mounted workspace, so
+      scenarios/vio-reference is found from inside the container.
 
   tevv_runtime_host:
     repo: dhdevspace/auto_mns
