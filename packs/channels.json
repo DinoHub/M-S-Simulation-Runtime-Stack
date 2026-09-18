@@ -1,0 +1,43 @@
+{
+  "schema": "mns.pack_channels.v1",
+  "_comment": "The channels the Makefile and product.sh can select, declared once so a reader (the dashboard's Content phase) does not have to parse either. The Makefile's ifeq blocks and product.sh's case statement remain the authority for what a channel *does*; tools/test_channels.py asserts this file agrees with them.",
+  "default": "v1",
+  "channels": [
+    {
+      "name": "v1",
+      "display_name": "MnS v1.0 (UE 5.8.2, Substrate)",
+      "lock": "packs/v1.0.0.lock.json",
+      "contract": "packs/runtime-host-compatibility.v1.json",
+      "authoring_contract": "packs/authoring-host-compatibility.v1.json",
+      "store": ".mns/v1/pack-store",
+      "authoring_data": ".mns/v1/authoring-data",
+      "packs_dir": ".mns/v1/packs",
+      "image_set": "v1",
+      "seed_authoring_defaults": false
+    },
+    {
+      "name": "ue582",
+      "display_name": "Standalone v2 (UE 5.8.2)",
+      "lock": "packs/standalone-v2-ue582.lock.json",
+      "contract": "packs/runtime-host-compatibility.ue582.json",
+      "authoring_contract": "packs/authoring-host-compatibility.ue582.json",
+      "store": ".mns/ue582/pack-store",
+      "authoring_data": ".mns/ue582/authoring-data",
+      "packs_dir": ".mns/ue582/packs",
+      "image_set": "ue582",
+      "seed_authoring_defaults": true
+    },
+    {
+      "name": "v2",
+      "display_name": "Standalone v2 (UE 5.5.4)",
+      "lock": "packs/standalone-v2-review.1.lock.json",
+      "contract": "packs/runtime-host-compatibility.json",
+      "authoring_contract": null,
+      "store": ".mns/pack-store",
+      "authoring_data": ".mns/authoring-data",
+      "packs_dir": ".mns/v2/packs",
+      "image_set": "published",
+      "seed_authoring_defaults": true
+    }
+  ]
+}

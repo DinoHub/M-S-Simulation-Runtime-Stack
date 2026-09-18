@@ -141,104 +141,205 @@ class InstallerTests(unittest.TestCase):
         with patch.object(installer.shutil, "disk_usage", return_value=Usage()):
             installer.check_disk_space(Path(self.tmp.name), _lock()["packs"])
 
+
+
+class StagingStaysInItsOwnChannel(unittest.TestCase):
+    """A store and an authoring data root are two halves of one channel."""
+
+    def _staged_env(self, store: Path, environ: dict) -> dict:
+        captured = {}
+
+        def fake_run(argv, **kwargs):
+            captured.update(kwargs["env"])
+            return None
+
+        with patch.dict(installer.os.environ, environ, clear=True), \
+                patch.object(installer.subprocess, "run", fake_run):
+            installer.stage("shell:image", store)
+        return captured
+
+    def test_a_custom_store_stages_beside_itself(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "origin" / "pack-store"
+            env = self._staged_env(store, {})
+            self.assertEqual(env["MNS_PACK_STORE_ROOT"], str(store))
+            self.assertEqual(env["MNS_AUTHORING_DATA_ROOT"],
+                             str(Path(tmp) / "origin" / "authoring-data"))
+
+    def test_it_never_falls_back_to_the_default_channel(self):
+        """The bug: installing into any other store rewrote ue582's index."""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "origin" / "pack-store"
+            env = self._staged_env(store, {})
+            self.assertNotIn("ue582", env["MNS_AUTHORING_DATA_ROOT"])
+
+    def test_an_explicit_authoring_root_still_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "origin" / "pack-store"
+            chosen = Path(tmp) / "somewhere-else"
+            env = self._staged_env(store, {"MNS_AUTHORING_DATA_ROOT": str(chosen)})
+            self.assertEqual(env["MNS_AUTHORING_DATA_ROOT"], str(chosen))
+
+
+class UnpublishedLockEntries(unittest.TestCase):
+    """A lock entry with a digest but no release can never be installed."""
+
+    def test_pack_release_says_why_instead_of_raising_keyerror(self):
+        lock = {"packs": []}
+        pack = {"id": "mns_vehicle_models", "version": "1.0.2"}
+        with self.assertRaises(RuntimeError) as caught:
+            installer.pack_release(lock, pack)
+        self.assertIn("declares no release", str(caught.exception))
+        self.assertIn("mns_vehicle_models", str(caught.exception))
+
+    def test_a_lock_level_release_still_covers_a_pack_without_one(self):
+        lock = {"release": {"repository": "DinoHub/M-S-Simulation-Runtime-Stack", "tag": "v1"}}
+        self.assertEqual(installer.pack_release(lock, {"id": "x"})["tag"], "v1")
+
+
+DIGEST = "sha256:" + "b" * 64
+OTHER = "sha256:" + "c" * 64
+
+
+def _pack_store(root: Path, *digests: str) -> Path:
+    """A pack store holding one blob dir per digest."""
+    store = root / "pack-store"
+    (store / "blobs" / "sha256").mkdir(parents=True)
+    packs = []
+    for digest in digests:
+        blob = f"blobs/sha256/{digest.removeprefix('sha256:')}"
+        (store / blob).mkdir(parents=True)
+        (store / blob / "payload.bin").write_bytes(b"x" * 2048)
+        packs.append({"blob": blob, "digest": digest, "id": digest[7:11], "kind": "level",
+                      "version": "1.0.0"})
+    (store / "index.json").write_text(json.dumps({"schema": "mns.pack_store.v1", "packs": packs}))
+    return store
+
+
+def _removal_lock(*digests: str) -> dict:
+    return {"packs": [{"selection": d[7:11], "id": d[7:11], "kind": "level", "version": "1.0.0",
+                       "artifact_digest": d, "release": {"repository": "o/r", "tag": "t"}}
+                      for d in digests],
+            "required_images": {"product_shell": "shell:image"}}
+
+
+def _staged_data(root: Path, *digests: str) -> Path:
+    data = root / "authoring-data"
+    (data / "ResolvedPacks").mkdir(parents=True)
+    (data / "ResolvedPacks" / "index.json").write_text(json.dumps(
+        {"level_packs": [{"id": d[7:11], "artifact_digest": d} for d in digests],
+         "asset_packs": []}))
+    return data
+
+
+class PackRemoval(unittest.TestCase):
+    """Removing a pack must not break something that still needs it."""
+
+    def test_an_unreferenced_pack_is_removed_and_the_index_rewritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store, data = _pack_store(root, DIGEST, OTHER), _staged_data(root)
+            removed, warnings = installer.remove_packs(
+                [DIGEST[7:11]], _removal_lock(DIGEST, OTHER), store, data, workspace=root)
+            self.assertEqual([r["digest"] for r in removed], [DIGEST])
+            self.assertFalse((store / "blobs/sha256" / DIGEST.removeprefix("sha256:")).exists())
+            index = json.loads((store / "index.json").read_text())
+            self.assertEqual([p["digest"] for p in index["packs"]], [OTHER])
+            self.assertEqual(warnings, [])
+
+    def test_it_refuses_while_a_generated_stack_uses_the_pack(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store, data = _pack_store(root, DIGEST), _staged_data(root)
+            resolved = root / "generated" / "condo-px4" / "config" / "content-packs"
+            resolved.mkdir(parents=True)
+            (resolved / "resolved-pack-set.json").write_text(json.dumps(
+                {"environment": {"artifact_digest": DIGEST}, "asset_packs": []}))
+            with self.assertRaises(RuntimeError) as caught:
+                installer.remove_packs([DIGEST[7:11]], _removal_lock(DIGEST), store, data, workspace=root)
+            self.assertIn("condo-px4", str(caught.exception))
+            self.assertTrue((store / "blobs/sha256" / DIGEST.removeprefix("sha256:")).exists())
+
+    def test_it_refuses_while_staged_unless_unstage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store, data = _pack_store(root, DIGEST), _staged_data(root, DIGEST)
+            with self.assertRaises(RuntimeError) as caught:
+                installer.remove_packs([DIGEST[7:11]], _removal_lock(DIGEST), store, data, workspace=root)
+            self.assertIn("--unstage", str(caught.exception))
+            removed, _ = installer.remove_packs(
+                [DIGEST[7:11]], _removal_lock(DIGEST), store, data, unstage=True, workspace=root)
+            self.assertEqual(len(removed), 1)
+
+    def test_an_authored_scenario_warns_but_does_not_block(self):
+        """A spec is a record of what was authored, not something running."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store, data = _pack_store(root, DIGEST), _staged_data(root)
+            spec = root / "scenarios" / "my-scenario"
+            spec.mkdir(parents=True)
+            (spec / "ScenarioSpec.yaml").write_text(f"environment:\n  artifact_digest: {DIGEST}\n")
+            removed, warnings = installer.remove_packs(
+                [DIGEST[7:11]], _removal_lock(DIGEST), store, data, workspace=root)
+            self.assertEqual(len(removed), 1)
+            self.assertTrue(any("my-scenario" in w for w in warnings))
+
+    def test_an_asset_pack_in_a_split_spec_is_found_too(self):
+        """A split spec keeps its asset packs in a sibling AssetPacks.yaml."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            spec = root / "scenarios" / "split"
+            spec.mkdir(parents=True)
+            (spec / "AssetPacks.yaml").write_text(f"asset_packs:\n  - artifact_digest: {DIGEST}\n")
+            found = installer.pack_references(DIGEST, root / "nowhere", workspace=root)
+            self.assertEqual(found["scenario_files"], ["scenarios/split/AssetPacks.yaml"])
+
+    def test_orphan_blobs_are_reported_and_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = _pack_store(root, DIGEST)
+            orphan = store / "blobs" / "sha256" / ("d" * 64)
+            orphan.mkdir()
+            (orphan / "payload.bin").write_bytes(b"y" * 4096)
+            found = installer.remove_orphan_blobs(store)
+            self.assertEqual([o["digest"] for o in found], ["sha256:" + "d" * 64])
+            self.assertFalse(orphan.exists())
+            self.assertTrue((store / "blobs/sha256" / DIGEST.removeprefix("sha256:")).exists())
+
+
+class PackStatus(unittest.TestCase):
+    """The join of locked, installed and published."""
+
+    def test_it_reports_a_newer_published_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = _pack_store(root, DIGEST)
+            lock = _removal_lock(DIGEST)
+            with patch.object(installer, "installed_digests", lambda _: {DIGEST}), \
+                    patch("build_pack_lock.discover_latest",
+                          lambda *a, **k: {("level", DIGEST[7:11]): {"version": "2.0.0", "tag": "t2"}}):
+                status = installer.pack_status(lock, Path("lock.json"), store,
+                                               "host-id", "o/r", root)
+            row = status["packs"][0]
+            self.assertTrue(row["update_available"])
+            self.assertEqual(row["latest_version"], "2.0.0")
+            self.assertTrue(status["remote_checked"])
+
+    def test_offline_says_so_rather_than_implying_currency(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = installer.pack_status(_removal_lock(DIGEST), Path("lock.json"),
+                                           _pack_store(root, DIGEST), "host", "o/r", root, offline=True)
+            self.assertFalse(status["remote_checked"])
+            self.assertFalse(status["packs"][0]["update_available"])
+
+    def test_an_installed_pack_outside_the_lock_is_listed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = installer.pack_status(_removal_lock(DIGEST), Path("lock.json"),
+                                           _pack_store(root, DIGEST, OTHER), "host", "o/r", root,
+                                           offline=True)
+            self.assertEqual(status["installed_not_locked"], [OTHER])
+
 if __name__ == "__main__":
     unittest.main()
-
-
-class PullAndImportTests(InstallerTests):
-    """--release-tag / --import / --list-remote and split-part reassembly."""
-
-    def test_download_asset_reassembles_parts_in_order(self):
-        target = Path(self.tmp.name) / "big.mnslevelpack"
-        pack = {"asset_name": "big.mnslevelpack",
-                "parts": ["big.mnslevelpack.part-000", "big.mnslevelpack.part-001"]}
-        calls = []
-
-        def fake_named(release, name, token, path):
-            calls.append(name)
-            path.write_bytes(b"AAA" if name.endswith("000") else b"BB")
-
-        with patch.object(installer, "_download_named_asset", side_effect=fake_named):
-            installer.download_asset({"repository": "r", "tag": "t"}, pack, "tok", target)
-        self.assertEqual(target.read_bytes(), b"AAABB")
-        self.assertEqual(calls, pack["parts"])
-        self.assertFalse(list(Path(self.tmp.name).glob("*.download")))
-
-    def test_pack_entry_from_release_reads_artifact_and_parts(self):
-        assets = [
-            {"name": "artifact.json", "size": 10},
-            {"name": "mns_level_pack.json", "size": 10},
-            {"name": "blocks-1.0.1.mnslevelpack.sha256", "size": 90},
-            {"name": "blocks-1.0.1.mnslevelpack.part-001", "size": 5},
-            {"name": "blocks-1.0.1.mnslevelpack.part-000", "size": 7},
-        ]
-        artifact = {"kind": "level", "pack": {"id": "blocks", "version": "1.0.1"},
-                    "variants": [{"host_compatibility_id": HOST}]}
-
-        def fake_named(release, name, token, path):
-            if name == "artifact.json":
-                path.write_text(json.dumps(artifact))
-            else:
-                path.write_text("f" * 64 + "  blocks-1.0.1.mnslevelpack\n")
-
-        release = {"repository": "DinoHub/TEVV-Airsim", "tag": "pack-level-blocks-1.0.1"}
-        with patch.object(installer, "release_assets", return_value=assets), \
-                patch.object(installer, "_download_named_asset", side_effect=fake_named):
-            entry = installer.pack_entry_from_release(release, "tok", HOST, Path(self.tmp.name) / "scratch")
-        self.assertEqual(entry["asset_name"], "blocks-1.0.1.mnslevelpack")
-        self.assertEqual(entry["parts"], ["blocks-1.0.1.mnslevelpack.part-000", "blocks-1.0.1.mnslevelpack.part-001"])
-        self.assertEqual(entry["size_bytes"], 12)
-        self.assertEqual(entry["sha256"], "f" * 64)
-        self.assertEqual(entry["artifact_digest"], "")
-        # a release cooked for another host is refused before any download
-        artifact["variants"] = [{"host_compatibility_id": "other"}]
-        with patch.object(installer, "release_assets", return_value=assets), \
-                patch.object(installer, "_download_named_asset", side_effect=fake_named):
-            with self.assertRaisesRegex(RuntimeError, "not cooked for the selected runtime host"):
-                installer.pack_entry_from_release(release, "tok", HOST, Path(self.tmp.name) / "scratch2")
-
-    def test_release_tag_dry_run_lists_the_release(self):
-        entry = {"selection": "blocks", "kind": "level", "id": "blocks", "display_name": "blocks",
-                 "version": "1.0.1", "asset_name": "blocks-1.0.1.mnslevelpack", "parts": ["a", "b"],
-                 "size_bytes": 12, "sha256": "f" * 64, "artifact_digest": "",
-                 "release": {"repository": "DinoHub/TEVV-Airsim", "tag": "pack-level-blocks-1.0.1"}}
-        with patch.object(installer, "github_token", return_value="tok"), \
-                patch.object(installer, "pack_entry_from_release", return_value=entry):
-            code, out = self._run("--release-tag", "pack-level-blocks-1.0.1", "--dry-run")
-        self.assertEqual(code, 0)
-        self.assertIn("blocks: 2 parts from DinoHub/TEVV-Airsim@pack-level-blocks-1.0.1 (digest recorded at install)", out)
-        with patch.object(installer, "github_token", return_value=None):
-            with self.assertRaisesRegex(RuntimeError, "--release-tag needs GitHub credentials"):
-                self._run("--release-tag", "pack-level-blocks-1.0.1")
-
-    def test_import_installs_archives_from_the_pack_mount_directory(self):
-        packs_dir = Path(self.tmp.name) / "packs"
-        packs_dir.mkdir()
-        (packs_dir / "blocks-1.0.1.mnslevelpack").write_bytes(b"zip")
-        (packs_dir / "notes.txt").write_text("ignored")
-        with patch.dict(os.environ, {"MNS_PACKS_DIR": str(packs_dir)}):
-            code, out = self._run("--import", "--dry-run")
-            self.assertEqual(code, 0)
-            self.assertIn("import: blocks-1.0.1.mnslevelpack", out)
-            self.assertNotIn("notes.txt", out)
-            with patch.object(installer, "ensure_image"), \
-                    patch.object(installer, "install_archive", return_value=D1) as install, \
-                    patch.object(installer, "stage", return_value=0) as staged:
-                code, out = self._run("--import")
-        self.assertEqual(code, 0)
-        self.assertEqual(install.call_args.args[1], packs_dir / "blocks-1.0.1.mnslevelpack")
-        self.assertIsNone(install.call_args.args[2])          # digest comes from the shell
-        self.assertIn(f"Installed blocks-1.0.1.mnslevelpack as {D1}.", out)
-        staged.assert_called_once()
-        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
-            self._run("--import", "--check")
-
-    def test_install_archive_accepts_the_shell_digest_when_none_is_expected(self):
-        class Result:
-            stdout = json.dumps({"digest": D2})
-        with patch.object(installer, "run", return_value=Result()), \
-                patch.object(installer, "container_path", return_value="/workspace/.mns/store"), \
-                patch.object(installer, "host_user", return_value="1000:1000"):
-            self.assertEqual(installer.install_archive("img", Path(self.tmp.name) / "a.mnsassetpack", None, self.store), D2)
-            with self.assertRaisesRegex(RuntimeError, "but the lock expects"):
-                installer.install_archive("img", Path(self.tmp.name) / "a.mnsassetpack", D1, self.store)

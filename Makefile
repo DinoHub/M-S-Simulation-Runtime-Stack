@@ -194,6 +194,13 @@ ensure-demo-packs: ensure-images  ## Install any standalone-v2 demo packs missin
 # this catches it up (newest version of every pack cooked for the channel's
 # host id), downloading and verifying anything new through the channel's shell.
 # Review the diff, commit, then `make dashboard` installs what is new.
+# The script exits nonzero when its NEEDS YOU list is non-empty, so CI can gate
+# on it the way it gates on `tools/images.sh verify`. That is a report, not a
+# build failure, so this target swallows it: call the script directly to gate.
+pack-status:  ## What is locked, what is installed, and what has been published since
+	-@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	tools/pull-packs.sh --status --json
+
 pack-lock: ensure-images  ## Rebuild the channel's pack lock from every pack release cooked for its host id
 	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 	python3 tools/build_pack_lock.py --release-repo $(PACK_RELEASE_REPO) --discover \
@@ -287,6 +294,8 @@ help:
 	@echo "  verify-images  CI gate: images/catalog.yaml matches generated artifacts"
 	@echo "  ensure-images  use local tags and pull only missing images [IMAGE_MODE=development|production]"
 	@echo "  pull-images    explicitly refresh every exact published remote image pin"
+	@echo "  pack-status    what is locked, installed, and published since [CHANNEL=v1|ue582|v2]"
+	@echo "  pack-lock      rebuild the channel's pack lock from published releases"
 	@echo "Current flags: $(if $(LAUNCH_FLAGS),$(LAUNCH_FLAGS),(none))"
 
 $(SCENARIOS):
