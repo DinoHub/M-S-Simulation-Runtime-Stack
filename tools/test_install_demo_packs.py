@@ -192,3 +192,57 @@ class SplitReleaseAssets(unittest.TestCase):
         lock = {"packs": []}
         pack = {"release": {"repo": "DinoHub/TEVV-Airsim", "tag": "t", "parts": 7}}
         self.assertEqual(installer.pack_release(lock, pack)["repository"], "DinoHub/TEVV-Airsim")
+
+
+class StagingStaysInItsOwnChannel(unittest.TestCase):
+    """A store and an authoring data root are two halves of one channel."""
+
+    def _staged_env(self, store: Path, environ: dict) -> dict:
+        captured = {}
+
+        def fake_run(argv, **kwargs):
+            captured.update(kwargs["env"])
+            return None
+
+        with patch.dict(installer.os.environ, environ, clear=True), \
+                patch.object(installer.subprocess, "run", fake_run):
+            installer.stage("shell:image", store)
+        return captured
+
+    def test_a_custom_store_stages_beside_itself(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "origin" / "pack-store"
+            env = self._staged_env(store, {})
+            self.assertEqual(env["MNS_PACK_STORE_ROOT"], str(store))
+            self.assertEqual(env["MNS_AUTHORING_DATA_ROOT"],
+                             str(Path(tmp) / "origin" / "authoring-data"))
+
+    def test_it_never_falls_back_to_the_default_channel(self):
+        """The bug: installing into any other store rewrote ue582's index."""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "origin" / "pack-store"
+            env = self._staged_env(store, {})
+            self.assertNotIn("ue582", env["MNS_AUTHORING_DATA_ROOT"])
+
+    def test_an_explicit_authoring_root_still_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "origin" / "pack-store"
+            chosen = Path(tmp) / "somewhere-else"
+            env = self._staged_env(store, {"MNS_AUTHORING_DATA_ROOT": str(chosen)})
+            self.assertEqual(env["MNS_AUTHORING_DATA_ROOT"], str(chosen))
+
+
+class UnpublishedLockEntries(unittest.TestCase):
+    """A lock entry with a digest but no release can never be installed."""
+
+    def test_pack_release_says_why_instead_of_raising_keyerror(self):
+        lock = {"packs": []}
+        pack = {"id": "mns_vehicle_models", "version": "1.0.2"}
+        with self.assertRaises(RuntimeError) as caught:
+            installer.pack_release(lock, pack)
+        self.assertIn("declares no release", str(caught.exception))
+        self.assertIn("mns_vehicle_models", str(caught.exception))
+
+    def test_a_lock_level_release_still_covers_a_pack_without_one(self):
+        lock = {"release": {"repository": "DinoHub/M-S-Simulation-Runtime-Stack", "tag": "v1"}}
+        self.assertEqual(installer.pack_release(lock, {"id": "x"})["tag"], "v1")

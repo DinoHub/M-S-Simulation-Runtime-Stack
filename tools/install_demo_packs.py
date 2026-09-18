@@ -179,7 +179,16 @@ def pack_release(lock: dict, pack: dict) -> dict:
     """One release per lock (the 5.5.4 review set lives on this repository's
     release) or one release per pack (TEVV-Airsim publishes each pack under
     its own tag): a pack-level `release` overrides the lock-level one."""
-    release = dict(pack.get("release") or lock["release"])
+    declared = pack.get("release") or lock.get("release")
+    if not declared:
+        raise RuntimeError(
+            f"{pack['id']}@{pack['version']} declares no release, and neither does "
+            f"the lock, so there is nothing to download it from. A lock entry "
+            f"without a release describes an archive that was assembled by hand "
+            f"and never published; install it into the store directly, or publish "
+            f"it and rebuild the lock with `make pack-lock`."
+        )
+    release = dict(declared)
     # The UE 5.8.2 lock writes `repository`; the origin-integration lock,
     # assembled by a different tool, writes `repo`. Same meaning, so accept
     # both here rather than fail later with a bare KeyError.
@@ -351,7 +360,19 @@ def main(argv: list[str] | None = None) -> int:
         for pack in present:
             print(f"  installed: {pack['id']}@{pack['version']} ({pack['selection']})")
         for pack in missing:
-            print(f"  missing:   {pack['id']}@{pack['version']} ({pack['selection']})")
+            fetchable = bool(pack.get("release") or lock.get("release"))
+            note = "" if fetchable else "  [no release - cannot be downloaded]"
+            print(f"  missing:   {pack['id']}@{pack['version']} ({pack['selection']}){note}")
+        unpublished = [pack for pack in missing
+                       if not (pack.get("release") or lock.get("release"))]
+        if unpublished:
+            # A lock entry with a digest but no release can never be satisfied by
+            # this installer: it names an archive that was assembled by hand and
+            # never published. Saying so here is the difference between "run the
+            # installer again" and "someone has to publish this pack".
+            print(f"  {len(unpublished)} of {len(missing)} missing pack(s) declare no "
+                  f"release and can never be downloaded: "
+                  f"{', '.join(pack['id'] for pack in unpublished)}")
         if args.check:
             return 0 if not missing else 1
         if not missing:
@@ -450,12 +471,32 @@ def main(argv: list[str] | None = None) -> int:
     return stage(image, store_root)
 
 
+def authoring_data_root_for(store_root: Path) -> Path:
+    """Where ScenarioLab's resolved index belongs for this store.
+
+    A store and an authoring data root are two halves of one channel -- the
+    Makefile's CHANNEL_ENV_EXPORTS always sets MNS_PACK_STORE_ROOT and
+    MNS_AUTHORING_DATA_ROOT together -- but stage-authoring-packs.sh defaults
+    them independently, each to its own hardcoded `.mns/ue582/...`. Passing
+    only the store therefore staged into the ue582 channel whatever store was
+    installed into, rewriting that channel's index to describe packs it does
+    not have. So derive the sibling root here rather than letting the two
+    defaults disagree: `<channel>/pack-store` pairs with
+    `<channel>/authoring-data`.
+    """
+    configured = os.environ.get("MNS_AUTHORING_DATA_ROOT", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return store_root.parent / "authoring-data"
+
+
 def stage(image: str, store_root: Path) -> int:
     """Refresh ScenarioLab's resolved index for the store with the same shell
     that installed into it (tools/stage-authoring-packs.sh)."""
     environment = os.environ.copy()
     environment["MNS_PRODUCT_SHELL_IMAGE"] = image
     environment["MNS_PACK_STORE_ROOT"] = str(store_root)
+    environment["MNS_AUTHORING_DATA_ROOT"] = str(authoring_data_root_for(store_root))
     subprocess.run(
         [str(ROOT / "tools" / "stage-authoring-packs.sh")],
         check=True,
