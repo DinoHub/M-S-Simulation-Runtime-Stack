@@ -29,6 +29,41 @@ these selections. `packs/origin-integration.lock.json` records the locally assem
 Its archives have not been uploaded to a release; install those exact archives
 into the selected store before launching the candidate.
 
+## What of this candidate is actually reachable today
+
+Only one of the lock's nine packs was ever published: `electric_dreams` 1.0.4,
+as `pack-level-electric_dreams-1.0.4` on `DinoHub/TEVV-Airsim`, split across
+seven `.part-NNN` release assets because it is 12.3 GB and a GitHub release
+asset caps at 2 GiB. The other eight — `mns_vehicle_models`,
+`origin_acceptance_zero`, `origin_acceptance_multiple`, `blocks`, `condo`,
+`pendleton`, `safticity`, `xfs` — carry an `artifact_digest` and no `release`,
+so the installer cannot fetch them; `tools/install-demo-packs.sh --check` now
+names them rather than failing on the first one. The archives are not on this
+machine either. Reproducing this candidate elsewhere therefore needs those
+archives from whoever assembled them, or a rebuild.
+
+That lock was hand-assembled, which is why its one published entry writes
+`release.repo` where every generated lock writes `release.repository`.
+`tools/build_pack_lock.py` (`make pack-lock`) only ever emits entries for
+releases it could download and the product shell could verify, so a lock it
+produces cannot contain an unfetchable pack.
+
+A run of just the published level pack is possible with a lock trimmed to it,
+but it is **not** this candidate: without `mns_vehicle_models` ScenarioLab
+cannot place a drone, and seeding the v1 PackLibrary copy in its place makes
+the editor accept the drone and the export refuse the scene — the v1 pack has
+no immutable digest, which is exactly what `check_ue_candidate.py` now blocks
+on. Authoring on this candidate needs a published `mns_vehicle_models` cooked
+for `ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2-render-35e7a9a52ee2ef15`;
+the only capability kit installed with ScenarioLab is the plain `...-iostore-v2`
+one, so that pack cannot be cooked here.
+
+The 15 packs in `.mns/ue582/pack-store` are not a substitute. Pack payloads are
+keyed by capability id and carry exactly one: theirs is `...-iostore-v2`,
+Electric Dreams' is `...-iostore-v2-render-35e7a9a52ee2ef15`. The store schema
+records no capability, so merging the two stores would bypass that check rather
+than satisfy it.
+
 Frozen actual image contracts are in
 `packs/runtime-host-compatibility.origin-integration.json` and
 `packs/authoring-host-compatibility.origin-integration.json`.
