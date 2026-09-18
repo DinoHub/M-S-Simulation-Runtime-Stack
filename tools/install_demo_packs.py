@@ -11,8 +11,8 @@ with its own pack store, authoring data root and host contract.
 Roots come from the environment so the Makefile, product.sh and the dashboard
 backend all point the installer at the same directories:
 
-    MNS_DEMO_PACK_LOCK                     lock file (default: the UE 5.8.2 lock)
-    MNS_PACK_STORE_ROOT                    content-addressed store (default .mns/ue582/pack-store)
+    MNS_DEMO_PACK_LOCK                     lock file (default: the v1 (MnS 1.0) lock)
+    MNS_PACK_STORE_ROOT                    content-addressed store (default .mns/v1/pack-store)
     MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT contract whose id must equal the lock's
     MNS_PRODUCT_SHELL_IMAGE                shell used for `packs install` / staging
     MNS_DEMO_PACK_DOWNLOAD_DIR             scratch space for downloads
@@ -32,9 +32,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_LOCK_PATH = ROOT / "packs" / "standalone-v2-ue582.lock.json"
-DEFAULT_STORE_ROOT = ROOT / ".mns" / "ue582" / "pack-store"
-DEFAULT_HOST_CONTRACT = ROOT / "packs" / "runtime-host-compatibility.ue582.json"
+DEFAULT_LOCK_PATH = ROOT / "packs" / "v1.0.0.lock.json"
+DEFAULT_STORE_ROOT = ROOT / ".mns" / "v1" / "pack-store"
+DEFAULT_HOST_CONTRACT = ROOT / "packs" / "runtime-host-compatibility.v1.json"
 # Archive on disk plus the copy `packs install` writes into the store, and
 # some slack for the index and temporary files.
 DISK_HEADROOM_BYTES = 512 * 1024 * 1024
