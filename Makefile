@@ -235,16 +235,16 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	# RECREATE_ROS2_TOOLS=always restores the old behaviour, =never skips it.
 	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 	desired="$${MNS_ROS2_BRIDGE_IMAGE:-}"; \
-	current=$$(docker inspect -f '{{.Config.Image}}' ros2-tools 2>/dev/null || true); \
+	current=$$(docker inspect -f '{{.Config.Image}}' $(DASHBOARD_CONTAINER_PREFIX)ros2-tools 2>/dev/null || true); \
 	if [ "$(RECREATE_ROS2_TOOLS)" = "never" ]; then \
 	  echo "RECREATE_ROS2_TOOLS=never: leaving ros2-tools as it is."; \
 	elif [ "$(RECREATE_ROS2_TOOLS)" = "always" ] || [ -z "$$current" ] || [ "$$current" != "$$desired" ]; then \
 	  [ -n "$$current" ] && [ "$$current" != "$$desired" ] && echo "ros2-tools image changed ($$current -> $$desired); recreating."; \
-	  docker rm -f ros2-tools >/dev/null 2>&1 || true; \
+	  docker rm -f $(DASHBOARD_CONTAINER_PREFIX)ros2-tools >/dev/null 2>&1 || true; \
 	else \
 	  echo "ros2-tools already running $$desired; leaving it (Foxglove :8764 and any bag recording stay up)."; \
 	fi; \
-	docker restart airsim-dashboard-api >/dev/null
+	docker restart $(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api >/dev/null
 	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082), image mode: $(IMAGE_MODE))"
 
