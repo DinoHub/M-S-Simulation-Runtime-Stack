@@ -179,7 +179,13 @@ def pack_release(lock: dict, pack: dict) -> dict:
     """One release per lock (the 5.5.4 review set lives on this repository's
     release) or one release per pack (TEVV-Airsim publishes each pack under
     its own tag): a pack-level `release` overrides the lock-level one."""
-    return pack.get("release") or lock["release"]
+    release = dict(pack.get("release") or lock["release"])
+    # The UE 5.8.2 lock writes `repository`; the origin-integration lock,
+    # assembled by a different tool, writes `repo`. Same meaning, so accept
+    # both here rather than fail later with a bare KeyError.
+    if "repository" not in release and "repo" in release:
+        release["repository"] = release["repo"]
+    return release
 
 
 def github_token() -> str | None:
@@ -199,7 +205,7 @@ def github_token() -> str | None:
     return None
 
 
-def asset_api_url(release: dict, pack: dict, token: str) -> str:
+def asset_api_url(release: dict, pack: dict, token: str, asset_name: str | None = None) -> str:
     """Resolve asset_name to the API asset URL that can actually be fetched.
 
     The obvious URL -- github.com/<repo>/releases/download/<tag>/<name> -- is
@@ -214,6 +220,7 @@ def asset_api_url(release: dict, pack: dict, token: str) -> str:
     with one authenticated call per release tag.
     """
     repo, tag = release["repository"], release["tag"]
+    wanted = asset_name or pack["asset_name"]
     listed = run(
         ["curl", "--fail", "--silent", "--show-error", "--location",
          "--config", "-",
@@ -227,25 +234,48 @@ def asset_api_url(release: dict, pack: dict, token: str) -> str:
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"{repo}@{tag}: release metadata was not JSON ({exc})") from exc
     for asset in payload.get("assets") or []:
-        if asset.get("name") == pack["asset_name"]:
+        if asset.get("name") == wanted:
             return asset["url"]
     available = ", ".join(sorted(a.get("name", "?") for a in payload.get("assets") or []))
     raise RuntimeError(
-        f"{repo}@{tag} has no asset named {pack['asset_name']!r}. "
+        f"{repo}@{tag} has no asset named {wanted!r}. "
         f"Present: {available or '(none)'}"
     )
 
 
+def part_names(pack: dict, parts: int) -> list[str]:
+    """The release assets a split archive was published as, in order.
+
+    GitHub caps one release asset at 2 GiB, so a level pack above that is
+    published as `<asset_name>.part-000`, `.part-001`, ... and the lock records
+    how many under `release.parts`. Concatenated in this order they are the
+    archive whose size and sha256 the lock states; the lock knows nothing about
+    the parts beyond their count.
+    """
+    return [f"{pack['asset_name']}.part-{index:03d}" for index in range(parts)]
+
+
 def download_asset(release: dict, pack: dict, token: str, target: Path) -> None:
-    """Fetch one release asset. The token goes in via a curl config on stdin,
-    not as -H on the command line, so it never appears in argv or `ps`."""
-    run(
-        ["curl", "--fail", "--location", "--retry", "3",
-         "--config", "-",
-         "--output", str(target), asset_api_url(release, pack, token)],
-        stdin=f'header = "Authorization: Bearer {token}"\n'
-              f'header = "Accept: application/octet-stream"\n',
-    )
+    """Fetch one release asset, reassembling it when it was published in parts.
+    The token goes in via a curl config on stdin, not as -H on the command
+    line, so it never appears in argv or `ps`."""
+    parts = int(release.get("parts") or 0)
+    names = part_names(pack, parts) if parts > 1 else [None]
+    with target.open("wb") as assembled:
+        for name in names:
+            piece = target if name is None else target.with_name(name)
+            run(
+                ["curl", "--fail", "--location", "--retry", "3",
+                 "--config", "-",
+                 "--output", str(piece), asset_api_url(release, pack, token, name)],
+                stdin=f'header = "Authorization: Bearer {token}"\n'
+                      f'header = "Accept: application/octet-stream"\n',
+            )
+            if name is None:
+                return
+            with piece.open("rb") as chunk:
+                shutil.copyfileobj(chunk, assembled, 16 * 1024 * 1024)
+            piece.unlink()
 
 
 def build_parser(lock: dict | None) -> argparse.ArgumentParser:
@@ -340,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Lock: {lock_path.name} -> {store_root}")
     for pack in selected:
-        release = pack.get("release") or lock["release"]
+        release = pack_release(lock, pack)
         print(f"  {pack['selection']}: {pack['asset_name']} from {release['repository']}@{release['tag']} "
               f"({pack['artifact_digest']})")
     if args.dry_run:

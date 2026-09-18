@@ -143,3 +143,52 @@ class InstallerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SplitReleaseAssets(unittest.TestCase):
+    """A pack above GitHub's 2 GiB asset cap is published as ordered parts."""
+
+    def test_parts_are_fetched_in_order_and_reassembled(self):
+        pack = {"asset_name": "big.mnslevelpack"}
+        release = {"repository": "DinoHub/TEVV-Airsim", "tag": "pack-level-big-1.0.0", "parts": 3}
+        fetched = []
+
+        def fake_url(release_, pack_, token, asset_name=None):
+            return f"https://api/{asset_name or pack_['asset_name']}"
+
+        def fake_run(argv, **kwargs):
+            url, target = argv[-1], Path(argv[argv.index("--output") + 1])
+            fetched.append(url.rsplit("/", 1)[1])
+            target.write_bytes(url[-1:].encode())  # "0", "1", "2"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "big.mnslevelpack"
+            with patch.object(installer, "asset_api_url", fake_url), \
+                    patch.object(installer, "run", fake_run):
+                installer.download_asset(release, pack, "tok", target)
+            self.assertEqual(fetched, ["big.mnslevelpack.part-000", "big.mnslevelpack.part-001",
+                                       "big.mnslevelpack.part-002"])
+            self.assertEqual(target.read_bytes(), b"012")
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["big.mnslevelpack"])
+
+    def test_a_single_asset_is_fetched_whole(self):
+        pack = {"asset_name": "small.mnslevelpack"}
+        release = {"repository": "DinoHub/TEVV-Airsim", "tag": "pack-level-small-1.0.0"}
+        fetched = []
+
+        def fake_run(argv, **kwargs):
+            fetched.append(argv[-1])
+            Path(argv[argv.index("--output") + 1]).write_bytes(b"whole")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "small.mnslevelpack"
+            with patch.object(installer, "asset_api_url", lambda *a, **k: "https://api/small.mnslevelpack"), \
+                    patch.object(installer, "run", fake_run):
+                installer.download_asset(release, pack, "tok", target)
+            self.assertEqual(fetched, ["https://api/small.mnslevelpack"])
+            self.assertEqual(target.read_bytes(), b"whole")
+
+    def test_the_origin_lock_release_key_is_accepted(self):
+        lock = {"packs": []}
+        pack = {"release": {"repo": "DinoHub/TEVV-Airsim", "tag": "t", "parts": 7}}
+        self.assertEqual(installer.pack_release(lock, pack)["repository"], "DinoHub/TEVV-Airsim")
