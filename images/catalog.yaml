@@ -722,11 +722,19 @@ images:
   # Isolated whole-product origin candidate; no compatible pack release is claimed.
   origin_runtime_host:
     repo: dhdevspace/auto_mns
-    tag: tevv-runtime-host-v0.4.0-origin.1
-    digest: sha256:604400d8d9f9ec0d0a5f8df6eb090acbc8dda3fd6f1d66a666ec46d9ddba5a21
+    tag: tevv-runtime-host-20260918.1
+    digest: sha256:72ef41b2040a2de6986068a303ce51f377fb21edf670b32819dd84ae84a8e3bd
     channel: pinned
-    purpose: Origin integration runtime_host; mounted-pack and autopilot acceptance
-      pending.
+    purpose: >-
+      Origin integration runtime_host. 20260918.1 is v0.4.0-origin.1 (TEVV-Airsim
+      9771b7c) with only the game executable replaced by a build of a6f514c58, the
+      ArduCopter state-getter fix (TEVV-Airsim #178): cooked content, base release
+      and host-compatibility contract are unchanged, so every pack in
+      packs/origin-integration.lock.json stays valid. Verified live 2026-09-12 on
+      electric_dreams 1.0.4 (origin applied, ArduPilot home on the origin, GUIDED
+      takeoff/hold/land, no "Not Implemented" lines, no RPC timeouts). Still not a
+      build of TEVV-Airsim main: neither this row nor tevv_runtime_host_ue582 carries
+      #152 (UltraDynamicSky) or anything after 9771b7c except #178.
   origin_authoring:
     repo: dhdevspace/auto_mns
     tag: mns-authoring-v0.4.0-origin.5
