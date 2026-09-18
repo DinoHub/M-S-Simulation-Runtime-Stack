@@ -784,7 +784,7 @@ images:
   v1_runtime_host:
     repo: dhdevspace/auto_mns
     tag: tevv-runtime-host-v1.0.0
-    digest: sha256:b876fc9ef95bee5259123b29850f5a8ff07d0a393c7c589aa417b8acc8398a8b
+    digest: sha256:00700883f527a6a4194b2143797b5e748d1b7c7cf46acf33f73b5f9ffc4d18cf
     channel: pinned
     purpose: >-
       MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim main 1961a51ce654); frozen contract ue-5.8.2 render-35e7a9a52ee2ef15, base release identical to the flown origin host.
