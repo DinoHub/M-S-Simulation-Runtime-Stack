@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -392,6 +393,21 @@ def build_parser(lock: dict | None) -> argparse.ArgumentParser:
     result.add_argument("--import", dest="import_dir", nargs="?", const="", default=None, metavar="DIR",
                         help="Install every .mnslevelpack/.mnsassetpack archive found in DIR "
                              "(default: the pack mount directory, MNS_PACKS_DIR)")
+    result.add_argument("--remove", action="append", default=[], metavar="SELECTION",
+                        help="Uninstall a pack from the store; repeatable. Refuses while a "
+                             "generated stack uses it, or while it is staged unless --unstage")
+    result.add_argument("--unstage", action="store_true",
+                        help="With --remove: also drop it from ScenarioLab's staged index")
+    result.add_argument("--remove-orphans", action="store_true",
+                        help="Delete blob directories the store index no longer lists")
+    result.add_argument("--status", action="store_true",
+                        help="One prioritised list: what is locked, what is installed, and "
+                             "what has been published since (needs GitHub credentials)")
+    result.add_argument("--json", dest="json_out", nargs="?", const="", default=None, metavar="PATH",
+                        help="With --status: write the report as JSON (default: "
+                             "<store>/../pack-status.json, which the dashboard reads)")
+    result.add_argument("--offline", action="store_true",
+                        help="With --status: skip the published-version check")
     result.add_argument("--list-remote", action="store_true",
                         help="List the pack releases on --repo cooked for the selected host and exit")
     result.add_argument(
@@ -433,6 +449,47 @@ def main(argv: list[str] | None = None) -> int:
     store_root = env_path("MNS_PACK_STORE_ROOT", DEFAULT_STORE_ROOT)
 
     packs_dir = env_path("MNS_PACKS_DIR", ROOT / ".mns" / "packs")
+    if args.remove or args.remove_orphans:
+        authoring_data = authoring_data_root_for(store_root)
+        removed, warnings = ([], [])
+        if args.remove:
+            removed, warnings = remove_packs(args.remove, lock, store_root, authoring_data,
+                                             unstage=args.unstage)
+        for warning in warnings:
+            print(f"WARNING: {warning}", file=sys.stderr)
+        for entry in removed:
+            print(f"Removed {entry['id']}@{entry['version']} "
+                  f"({entry['freed_bytes'] / 1e6:.1f} MB freed)")
+        if args.remove_orphans:
+            for orphan in remove_orphan_blobs(store_root):
+                print(f"Removed orphan blob {orphan['digest'][:19]}… "
+                      f"({orphan['bytes'] / 1e6:.1f} MB)")
+        if removed and args.unstage:
+            # Rebuild the staged index from what is left rather than editing it:
+            # an asset pack is materialised inside every staged environment, so
+            # a surgical delete would have to touch each one.
+            image = os.environ.get("MNS_PRODUCT_SHELL_IMAGE", "").strip() \
+                or lock["required_images"]["product_shell"]
+            ensure_image(image)
+            return stage(image, store_root)
+        return 0
+
+    if args.status:
+        cache = env_path("MNS_DEMO_PACK_CACHE_DIR",
+                         env_path("MNS_DEMO_PACK_DOWNLOAD_DIR", ROOT / ".mns" / "downloads") / "pack-cache")
+        cache.mkdir(parents=True, exist_ok=True)
+        status = pack_status(lock, lock_path, store_root, contract_id, args.repo, cache,
+                             offline=args.offline)
+        if args.json_out is not None:
+            # Default beside the store, i.e. inside the channel directory, so the
+            # dashboard backend finds it through the roots compose already hands it.
+            target = Path(args.json_out).expanduser() if args.json_out else store_root.parent / "pack-status.json"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+            own_by_host(target)
+            print(f"Wrote {target}")
+        return render_status(status)
+
     if args.list_remote:
         return list_remote(args.repo, contract_id)
 
@@ -607,6 +664,256 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Installed {pack['id']}@{pack['version']} ({digest}).")
 
     return stage(image, store_root)
+
+
+# ---------------------------------------------------------------------------
+# Removal
+# ---------------------------------------------------------------------------
+
+def pack_references(digest: str, authoring_data: Path, workspace: Path | None = None) -> dict:
+    """Everything that still points at a pack digest.
+
+    Liveness is read out of the index files, never inferred from inode link
+    counts: v1.0.0's product shell hard-links payloads out of the store, so a
+    link count says how the bytes are shared, not whether anything still needs
+    the pack.
+
+    Four holders, in descending order of how much a removal would hurt:
+    a generated stack (launchable now), ScenarioLab's staged tree (the editor
+    reads it on start), an exported ScenarioSpec or its AssetPacks.yaml (a
+    record of what was authored), and the channel lock (reinstallable).
+    """
+    workspace = workspace or ROOT
+    stacks = []
+    for resolved in sorted(workspace.glob("generated/*/config/content-packs/resolved-pack-set.json")):
+        try:
+            document = json.loads(resolved.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        entries = [document.get("environment") or {}, *(document.get("asset_packs") or [])]
+        if any(str(entry.get("artifact_digest")) == digest for entry in entries):
+            stacks.append(resolved.parents[2].name)
+
+    staged = False
+    index = authoring_data / "ResolvedPacks" / "index.json"
+    try:
+        document = json.loads(index.read_text(encoding="utf-8"))
+        staged = any(str(entry.get("artifact_digest")) == digest
+                     for kind in ("level_packs", "asset_packs")
+                     for entry in (document.get(kind) or []))
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    # A ScenarioSpec records the digest it was authored against, and a split
+    # spec keeps its asset packs in a sibling file. Substring search rather than
+    # a YAML parse: this only decides whether to warn, and it costs no new
+    # dependency in a script that has none.
+    specs = []
+    for candidate in sorted(workspace.glob("scenarios/*/*.yaml")):
+        try:
+            if digest in candidate.read_text(encoding="utf-8"):
+                specs.append(str(candidate.relative_to(workspace)))
+        except OSError:
+            continue
+
+    return {"generated_stacks": stacks, "staged": staged, "scenario_files": specs}
+
+
+def directory_size(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def remove_packs(selections: list[str], lock: dict, store_root: Path, authoring_data: Path,
+                 unstage: bool = False, workspace: Path | None = None) -> tuple[list[dict], list[str]]:
+    """Delete packs from the store, refusing while something still needs them.
+
+    The store format is the platform's: `apps/scenario_launcher/launcher.py`
+    owns `packs install` and `mns_contentpacks.registry.PackStore` owns the
+    layout. Removal lives here because the alternative is a platform change plus
+    a product-shell rebuild and republish, which only the release owner can do.
+    PackStore.remove() exists there but is unreachable and index-only, so it
+    would leave the blob behind as an orphan.
+    """
+    index_path = store_root / "index.json"
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"no readable pack store at {index_path}: {exc}") from exc
+
+    by_selection = {pack["selection"]: pack for pack in lock["packs"]}
+    removed, warnings = [], []
+    for selection in selections:
+        pack = by_selection.get(selection)
+        if pack is None:
+            raise RuntimeError(f"{selection!r} is not in {', '.join(sorted(by_selection))}")
+        digest = str(pack["artifact_digest"])
+        entry = next((e for e in index.get("packs") or [] if str(e.get("digest")) == digest), None)
+        if entry is None:
+            warnings.append(f"{pack['id']}@{pack['version']} is not installed; nothing to remove")
+            continue
+
+        references = pack_references(digest, authoring_data, workspace)
+        if references["generated_stacks"]:
+            raise RuntimeError(
+                f"{pack['id']}@{pack['version']} is used by generated stack(s) "
+                f"{', '.join(references['generated_stacks'])} — removing it would break a "
+                f"stack you can still launch. Delete the stack first, or keep the pack.")
+        if references["staged"] and not unstage:
+            raise RuntimeError(
+                f"{pack['id']}@{pack['version']} is staged for ScenarioLab — pass --unstage to "
+                f"remove it and re-stage what is left.")
+        for spec in references["scenario_files"]:
+            warnings.append(f"{spec} was authored against {pack['id']}@{pack['version']}; "
+                            f"it will not generate until the pack is reinstalled")
+
+        blob = store_root / str(entry.get("blob") or f"blobs/sha256/{digest.removeprefix('sha256:')}")
+        before = shutil.disk_usage(store_root).free
+        if blob.is_dir():
+            shutil.rmtree(blob)
+        index["packs"] = [e for e in index["packs"] if str(e.get("digest")) != digest]
+        index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        freed = max(0, shutil.disk_usage(store_root).free - before)
+        removed.append({"id": pack["id"], "version": pack["version"], "selection": selection,
+                        "digest": digest, "freed_bytes": freed})
+    return removed, warnings
+
+
+def remove_orphan_blobs(store_root: Path) -> list[dict]:
+    """Blob directories the index no longer lists.
+
+    Nothing has ever produced one, because nothing has ever removed a pack. The
+    platform's unreachable PackStore.remove() would start: it drops the index
+    row and leaves the blob. Report them here so that never goes unnoticed.
+    """
+    blobs = store_root / "blobs" / "sha256"
+    if not blobs.is_dir():
+        return []
+    try:
+        index = json.loads((store_root / "index.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    known = {str(e.get("digest", "")).removeprefix("sha256:") for e in index.get("packs") or []}
+    orphans = []
+    for candidate in sorted(blobs.iterdir()):
+        if candidate.is_dir() and candidate.name not in known:
+            size = directory_size(candidate)
+            shutil.rmtree(candidate)
+            orphans.append({"digest": f"sha256:{candidate.name}", "bytes": size})
+    return orphans
+
+
+# ---------------------------------------------------------------------------
+# Status: the join nothing else does
+# ---------------------------------------------------------------------------
+
+def pack_status(lock: dict, lock_path: Path, store_root: Path, host_id: str,
+                repo: str, cache: Path, offline: bool = False) -> dict:
+    """Join the three views of a pack: locked, installed, and published.
+
+    `--check` compares the lock against the store and never looks remotely;
+    `--list-remote` looks remotely and never reads the lock or the store.
+    Neither answers the question an operator actually has, which is whether
+    anything newer exists than what they are running. This joins all three.
+
+    The remote half needs GitHub credentials, which only a host shell has (the
+    dashboard backend and the product shell ship no `gh`), so `offline` drops
+    it and reports the two local views alone rather than implying currency.
+    """
+    installed = installed_digests(store_root)
+    latest: dict[tuple[str, str], dict[str, str]] = {}
+    remote_error = ""
+    if not offline:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import build_pack_lock
+            latest = build_pack_lock.discover_latest(repo, host_id, cache, quiet=True)
+        except Exception as exc:                      # noqa: BLE001 - reported, not raised
+            remote_error = f"{type(exc).__name__}: {exc}"
+
+    from build_pack_lock import version_key
+
+    rows = []
+    for pack in lock["packs"]:
+        digest = str(pack.get("artifact_digest") or "")
+        newest = latest.get((pack["kind"], pack["id"])) or {}
+        newer = bool(newest) and version_key(newest["version"]) > version_key(pack["version"])
+        rows.append({
+            "selection": pack["selection"],
+            "id": pack["id"],
+            "kind": pack["kind"],
+            "locked_version": str(pack["version"]),
+            "installed": digest in installed,
+            "fetchable": bool(pack.get("release") or lock.get("release")),
+            "latest_version": newest.get("version", ""),
+            "latest_tag": newest.get("tag", ""),
+            "update_available": newer,
+        })
+
+    locked_digests = {str(p.get("artifact_digest") or "") for p in lock["packs"]}
+    unlocked = sorted(d for d in installed if d not in locked_digests)
+    return {
+        "schema": "mns.pack_status.v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "channel": os.environ.get("MNS_CHANNEL", "").strip(),
+        "capability_id": host_id,
+        "lock": str(lock_path),
+        "store": str(store_root),
+        "remote_checked": not offline and not remote_error,
+        "remote_error": remote_error,
+        "packs": rows,
+        "installed_not_locked": unlocked,
+    }
+
+
+def render_status(status: dict) -> int:
+    """Print the status as one prioritised list, like tools/images.sh status.
+
+    Same shape on purpose: NEEDS YOU first with a remediation per line, FYI
+    after, and a nonzero exit when the first list is non-empty so CI can gate
+    on it the way `make verify-images` gates on the image catalog.
+    """
+    rows = status["packs"]
+    newer = [r for r in rows if r["update_available"]]
+    absent = [r for r in rows if not r["installed"] and r["fetchable"]]
+    unfetchable = [r for r in rows if not r["installed"] and not r["fetchable"]]
+    current = [r for r in rows if r["installed"] and not r["update_available"]]
+
+    print(f"Channel {status['channel'] or '(unset)'} -> {status['store']}")
+    print(f"Lock {status['lock']}")
+    if not status["remote_checked"]:
+        why = status["remote_error"] or "not checked (offline)"
+        print(f"Published versions NOT checked: {why}")
+
+    total = len(newer) + len(absent) + len(unfetchable)
+    print(f"\nNEEDS YOU ({total})")
+    if newer:
+        print(f"\n  newer published ({len(newer)}) - `make pack-lock`, review the diff, commit")
+        for r in newer:
+            print(f"    {r['id']}@{r['locked_version']} -> {r['latest_version']}  ({r['latest_tag']})")
+    if absent:
+        print(f"\n  locked but not installed ({len(absent)}) - tools/pull-packs.sh --all")
+        for r in absent:
+            print(f"    {r['id']}@{r['locked_version']} ({r['selection']})")
+    if unfetchable:
+        print(f"\n  no release ({len(unfetchable)}) - cannot be downloaded; import the "
+              f"archive or publish it and relock")
+        for r in unfetchable:
+            print(f"    {r['id']}@{r['locked_version']} ({r['selection']})")
+    if not total:
+        print("  nothing")
+
+    fyi = len(current) + len(status["installed_not_locked"])
+    print(f"\nFYI ({fyi}) - known and deliberate, no action")
+    if current:
+        print(f"\n  current ({len(current)})")
+        for r in current:
+            print(f"    {r['id']}@{r['locked_version']}")
+    if status["installed_not_locked"]:
+        print(f"\n  installed but not in this lock ({len(status['installed_not_locked'])}) - "
+              f"pulled by --release-tag or --import")
+        for digest in status["installed_not_locked"]:
+            print(f"    {digest}")
+    return 1 if total else 0
 
 
 def list_remote(repo: str, host_id: str) -> int:

@@ -97,18 +97,29 @@ def shell_verify(shell: str, archive: Path, host_id: str) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
-def discover_release_tags(repo: str, host_id: str, cache: Path) -> list[str]:
-    """Every `pack-<kind>-<id>-<version>` release on `repo` that carries a
-    variant cooked for `host_id`, newest version per (kind, id).
+def version_key(version: str) -> tuple[int, ...]:
+    """Sort key for a pack version, so 1.0.10 sorts above 1.0.9.
 
-    A lock is a snapshot; this is how it catches up with what packaging
-    published since. The filter is the release's own artifact.json (fetched
-    into the receipts cache, a few KB each), not the tag name, because the tag
-    does not say which engine the payload was cooked for.
+    Pack versions are dotted integers (`1.0.3`), occasionally with a hyphenated
+    suffix. There is no semver library in tools/requirements.txt and this does
+    not need one: split on both separators and compare numerically, treating a
+    non-numeric component as 0 so a malformed version sorts low rather than
+    raising.
+    """
+    return tuple(int(x) if x.isdigit() else 0 for x in re.split(r"[.-]", str(version)))
+
+
+def discover_latest(repo: str, host_id: str, cache: Path,
+                    quiet: bool = False) -> dict[tuple[str, str], dict[str, str]]:
+    """The newest published release per (kind, id) cooked for `host_id`.
+
+    The filter is the release's own artifact.json (fetched into the receipts
+    cache, a few KB each), not the tag name, because the tag does not say which
+    engine the payload was cooked for.
     """
     releases = gh_json("release", "list", "-R", repo, "--limit", "200", "--json", "tagName,isDraft,isPrerelease")
     tags = [r["tagName"] for r in releases if not r.get("isDraft") and r["tagName"].startswith("pack-")]
-    latest: dict[tuple[str, str], tuple[tuple[int, ...], str]] = {}
+    latest: dict[tuple[str, str], dict[str, str]] = {}
     for tag in tags:
         receipts = cache / "receipts" / tag
         receipts.mkdir(parents=True, exist_ok=True)
@@ -116,18 +127,29 @@ def discover_release_tags(repo: str, host_id: str, cache: Path) -> list[str]:
             try:
                 gh_download(repo, tag, "artifact.json", receipts)
             except subprocess.CalledProcessError:
-                print(f"skipping {tag}: no artifact.json", file=sys.stderr)
+                if not quiet:
+                    print(f"skipping {tag}: no artifact.json", file=sys.stderr)
                 continue
         artifact = json.loads((receipts / "artifact.json").read_text(encoding="utf-8"))
         if not any(v.get("host_compatibility_id") == host_id for v in artifact.get("variants", [])):
-            print(f"skipping {tag}: no variant for {host_id}", file=sys.stderr)
+            if not quiet:
+                print(f"skipping {tag}: no variant for {host_id}", file=sys.stderr)
             continue
         kind, pack_id, version = artifact["kind"], artifact["pack"]["id"], artifact["pack"]["version"]
-        key = tuple(int(x) if x.isdigit() else 0 for x in re.split(r"[.-]", version))
         current = latest.get((kind, pack_id))
-        if current is None or key > current[0]:
-            latest[(kind, pack_id)] = (key, tag)
-    return [tag for _, tag in sorted(latest.values(), key=lambda item: item[1])]
+        if current is None or version_key(version) > version_key(current["version"]):
+            latest[(kind, pack_id)] = {"version": str(version), "tag": tag}
+    return latest
+
+
+def discover_release_tags(repo: str, host_id: str, cache: Path) -> list[str]:
+    """Every pack release to put in a lock: newest version per (kind, id).
+
+    A lock is a snapshot; this is how it catches up with what packaging
+    published since.
+    """
+    latest = discover_latest(repo, host_id, cache)
+    return sorted(entry["tag"] for entry in latest.values())
 
 
 def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> dict[str, Any]:
