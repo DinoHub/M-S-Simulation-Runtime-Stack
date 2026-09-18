@@ -53,6 +53,10 @@ The full route an image takes through the dashboard -- `ensure-images`, the
 credentials mount and the `MNS_IMAGE_PULL_POLICY` override -- is in
 [docs/dashboard-images.md](docs/dashboard-images.md).
 
+How the phases, the files they leave under `scenarios/` and `generated/`, the
+backend and the product shell fit together -- and how a campaign flies that loop
+N times -- is in [docs/how-it-fits-together.md](docs/how-it-fits-together.md).
+
 ### Engine lines
 
 `CHANNEL` picks which Unreal line the whole dashboard runs, from the images to
