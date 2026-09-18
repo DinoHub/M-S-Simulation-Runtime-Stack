@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Which standalone-v2 release channel to run (same knob as `make dashboard
-# CHANNEL=`): ue582 is UE 5.8.2 (default), v2 the previous UE 5.5.4 set. Each channel has
+# Which release channel to run (same knob as `make dashboard CHANNEL=`): v1 is
+# the MnS 1.0 line (UE 5.8.2, frozen render contract; default), ue582 the earlier
+# 5.8.2 review set, v2 the previous UE 5.5.4 set. Each channel has
 # its own generated image env, pack lock, runtime-host contract and, because
 # packs cooked for one engine never mount on the other, its own pack store
 # and authoring data root under .mns/.
-CHANNEL="${MNS_CHANNEL:-ue582}"
+CHANNEL="${MNS_CHANNEL:-v1}"
 case "$CHANNEL" in
+  v1)
+    CHANNEL_NAME=v1
+    CHANNEL_ENV="$ROOT/images/v1.0.0.generated.env"
+    CHANNEL_LOCK="$ROOT/packs/v1.0.0.lock.json"
+    CHANNEL_CONTRACT="$ROOT/packs/runtime-host-compatibility.v1.json"
+    CHANNEL_AUTHORING_CONTRACT="$ROOT/packs/authoring-host-compatibility.v1.json"
+    CHANNEL_DIR="$ROOT/.mns/v1"
+    ;;
   v2)
     CHANNEL_AUTHORING_CONTRACT=""
     CHANNEL_NAME=standalone_v2
@@ -24,7 +33,7 @@ case "$CHANNEL" in
     CHANNEL_AUTHORING_CONTRACT="$ROOT/packs/authoring-host-compatibility.ue582.json"
     CHANNEL_DIR="$ROOT/.mns/ue582"
     ;;
-  *) echo "ERROR: MNS_CHANNEL must be v2 or ue582; got: $CHANNEL" >&2; exit 2 ;;
+  *) echo "ERROR: MNS_CHANNEL must be v1, ue582 or v2; got: $CHANNEL" >&2; exit 2 ;;
 esac
 # shellcheck disable=SC1090
 source "$CHANNEL_ENV"
@@ -36,6 +45,15 @@ export MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT="$CHANNEL_CONTRACT"
 DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$CHANNEL_DIR/authoring-data}"
 PACK_STORE_ROOT="${MNS_PACK_STORE_ROOT:-$CHANNEL_DIR/pack-store}"
 export MNS_PACK_STORE_ROOT="$PACK_STORE_ROOT"
+# The pack mount directory: drop .mnslevelpack/.mnsassetpack archives here (or
+# pull published ones into it with tools/pull-packs.sh) and `./product.sh setup`
+# / the dashboard's Content phase install them into the channel's PackStore.
+# Mounted read-only into the product shell at /mnt/mns/packs.
+PACKS_DIR="${MNS_PACKS_DIR:-$CHANNEL_DIR/packs}"
+export MNS_PACKS_DIR="$PACKS_DIR"
+# The v1 authoring image bakes mns_vehicle_models itself; older channels seed
+# it from the pinned v1 authoring image (tools/stage-authoring-packs.sh).
+if [[ "$CHANNEL" == "v1" ]]; then export MNS_SEED_AUTHORING_DEFAULTS="${MNS_SEED_AUTHORING_DEFAULTS:-0}"; fi
 # Paths the shell sees: the checkout is mounted at /workspace, so anything
 # under $ROOT maps 1:1 and anything outside is unreachable from the container.
 container_path() {
@@ -62,7 +80,7 @@ PORT="${MNS_SCENARIO_LAUNCHER_PORT:-8760}"
 
 usage() { echo "Usage: ./product.sh setup|pull-images|doctor|start|stop|cli [launcher args...]"; }
 
-prepare_dirs() { mkdir -p "$DATA_ROOT/PackLibrary/level_packs" "$DATA_ROOT/PackLibrary/asset_packs" "$PACK_STORE_ROOT" "$EXPORT_ROOT" "$GENERATED_ROOT"; }
+prepare_dirs() { mkdir -p "$DATA_ROOT/PackLibrary/level_packs" "$DATA_ROOT/PackLibrary/asset_packs" "$PACK_STORE_ROOT" "$PACKS_DIR" "$EXPORT_ROOT" "$GENERATED_ROOT"; }
 run_shell() {
   local mode=(--rm -d --name mns-product-shell)
   local port_args=(-p "$PORT:8765")
@@ -93,6 +111,8 @@ run_shell() {
     -v /var/run/docker.sock:/var/run/docker.sock \
     "${docker_config_args[@]}" \
     -v "$ROOT:/workspace:rw" \
+    -v "$PACKS_DIR:/mnt/mns/packs:ro" \
+    -e "MNS_PACKS_DIR=/mnt/mns/packs" \
     -e MNS_LAUNCH_BACKEND=docker \
     -e MNS_WORKSPACE_ROOT=/workspace \
     -e MNS_GENERATED_STACKS_ROOT=/workspace/generated \

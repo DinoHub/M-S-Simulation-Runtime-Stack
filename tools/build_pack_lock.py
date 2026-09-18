@@ -134,8 +134,18 @@ def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> d
     release = gh_json("release", "view", tag, "-R", repo, "--json", "assets,createdAt")
     assets = {asset["name"]: asset for asset in release["assets"]}
     bundle_name = next((n for n in assets if n.endswith((".mnslevelpack", ".mnsassetpack"))), None)
+    # publish_pack.py splits a bundle over 1900 MB into <bundle>.part-NNN and
+    # attaches only <bundle>.sha256 for the whole; the bundle name comes from
+    # that sidecar and the parts are reassembled locally before verification.
+    parts: list[str] = []
     if not bundle_name:
-        raise SystemExit(f"{repo}@{tag}: no .mnslevelpack/.mnsassetpack asset")
+        sha_names = [n for n in assets if n.endswith(".sha256")
+                     and n[:-len(".sha256")].endswith((".mnslevelpack", ".mnsassetpack"))]
+        if len(sha_names) == 1:
+            bundle_name = sha_names[0][:-len(".sha256")]
+            parts = sorted(n for n in assets if n.startswith(f"{bundle_name}.part-"))
+    if not bundle_name or (bundle_name not in assets and not parts):
+        raise SystemExit(f"{repo}@{tag}: no .mnslevelpack/.mnsassetpack asset (or its parts)")
     kind = "level" if bundle_name.endswith(".mnslevelpack") else "asset"
     manifest_name = "mns_level_pack.json" if kind == "level" else "mns_asset_pack.json"
     for name in ("artifact.json", manifest_name, f"{bundle_name}.sha256"):
@@ -150,7 +160,7 @@ def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> d
     artifact = json.loads((receipts / "artifact.json").read_text(encoding="utf-8"))
     manifest = json.loads((receipts / manifest_name).read_text(encoding="utf-8"))
     expected_sha = (receipts / f"{bundle_name}.sha256").read_text().split()[0].lower()
-    size = int(assets[bundle_name]["size"])
+    size = int(assets[bundle_name]["size"]) if not parts else sum(int(assets[n]["size"]) for n in parts)
 
     variants = [v for v in artifact.get("variants", []) if v.get("host_compatibility_id") == host_id]
     if not variants:
@@ -160,7 +170,18 @@ def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> d
     archive = cache / bundle_name
     if not archive.is_file() or sha256_file(archive) != expected_sha:
         print(f"Downloading {bundle_name} ({size / 1e6:.0f} MB) from {repo}@{tag}...", flush=True)
-        gh_download(repo, tag, bundle_name, cache)
+        if parts:
+            parts_dir = cache / "parts" / tag
+            parts_dir.mkdir(parents=True, exist_ok=True)
+            with archive.open("wb") as assembled:
+                for part in parts:
+                    gh_download(repo, tag, part, parts_dir)
+                    with (parts_dir / part).open("rb") as source:
+                        while chunk := source.read(8 * 1024 * 1024):
+                            assembled.write(chunk)
+                    (parts_dir / part).unlink()
+        else:
+            gh_download(repo, tag, bundle_name, cache)
     actual = sha256_file(archive)
     if actual != expected_sha:
         raise SystemExit(f"{bundle_name}: sha256 {actual} != release {expected_sha}")
@@ -181,6 +202,7 @@ def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> d
         "display_name": str(identity.get("display_name") or pack_id),
         "version": version,
         "asset_name": bundle_name,
+        **({"parts": parts} if parts else {}),
         "size_bytes": size,
         "sha256": expected_sha,
         "artifact_digest": verified["digest"],

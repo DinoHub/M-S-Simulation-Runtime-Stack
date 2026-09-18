@@ -780,6 +780,79 @@ images:
     purpose: Origin integration dashboard_frontend; mounted-pack and autopilot acceptance
       pending.
 
+  # ---- MnS 1.0 (channel v1): every image rebuilt from the merged default branches on 2026-09-18 ----
+  v1_runtime_host:
+    repo: dhdevspace/auto_mns
+    tag: tevv-runtime-host-v1.0.0
+    digest: sha256:b876fc9ef95bee5259123b29850f5a8ff07d0a393c7c589aa417b8acc8398a8b
+    channel: pinned
+    purpose: >-
+      MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim main 1961a51ce654); frozen contract ue-5.8.2 render-35e7a9a52ee2ef15, base release identical to the flown origin host.
+
+  v1_authoring:
+    repo: dhdevspace/auto_mns
+    tag: mns-authoring-v1.0.0
+    digest: sha256:7c25e946ca5ec2923800bd58aee48fbd1a5a6e339ea6e17ee49b966b0bcaf003
+    channel: pinned
+    purpose: >-
+      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0); bakes only the mns_vehicle_models asset pack, level packs are staged from the PackStore.
+
+  v1_stack_generator:
+    repo: dhdevspace/auto_mns
+    tag: mns-stack-generator-v1.0.0
+    digest: sha256:31ad01ed1a9d54d913b930ae4cf147cd223fa6243b43de607650d95cf1277f7a
+    channel: pinned
+    purpose: >-
+      MnS 1.0 stack generator (MnS-Integration-Platform release/v1.0.0) with the v1 runtime contract baked; stages pack payloads by hard link.
+
+  v1_product_shell:
+    repo: dhdevspace/auto_mns
+    tag: mns-product-shell-v1.0.0
+    digest: sha256:da5641bdd8185ddc7eed1a170159b6b8a3ea085fa7ebf4d7d7e1ab72d034f1f7
+    channel: pinned
+    purpose: >-
+      MnS 1.0 product shell (same sources) with ScenarioLab's v1 contract baked; owns the pack mount directory import.
+
+  v1_ros2_bridge:
+    repo: dhdevspace/auto_mns
+    tag: tevv-airsim-ros2-bridge-humble-v1.0.0
+    digest: sha256:b91e4b92d6a8ec538da33ab40758ab3d1c0af99cb9bdf853452561e44046530c
+    channel: pinned
+    purpose: >-
+      MnS 1.0 AirSim<->ROS 2 bridge (TEVV-Airsim-ROS2-Bridge main); 87 colcon tests green at build.
+
+  v1_px4:
+    repo: dhdevspace/auto_mns
+    tag: px4-airsim-px4-v1.0.0
+    digest: sha256:0f03b74335e92450efba7421782d7ca2986edef2c4b900c3350729c8a2e7deea
+    channel: pinned
+    purpose: >-
+      MnS 1.0 PX4 SITL v1.14.4 built from Dockerfile.px4 (TEVV-PX4-Autopilot master) with mavlink-router, pymavlink and the loopback UDP control endpoint.
+
+  v1_ardupilot:
+    repo: dhdevspace/auto_mns
+    tag: ardupilot-v1.0.0
+    digest: sha256:93b9e50b7b44e91aafd38b9a223100d7c67f971ebd9c246bce3582ed9ef015c1
+    channel: pinned
+    purpose: >-
+      MnS 1.0 ArduPilot SITL built from source (Dockerfile.ardupilotbuild, ref 142aece2) with mavlink-router and system pymavlink; arducopter binary identical to the flown origin image.
+
+  v1_dashboard_backend:
+    repo: dhdevspace/auto_mns
+    tag: tevv-web-dashboard-backend-v1.0.0-g339db86
+    digest: sha256:a57faa16aee2cf2900b818b5df5002327964186b6d063fd26036b77dc2d5ef2c
+    channel: pinned
+    purpose: >-
+      MnS 1.0 dashboard backend (TEVV-Web-Dashboard main) with the v1 authoring/generator pins baked.
+
+  v1_dashboard_frontend:
+    repo: dhdevspace/auto_mns
+    tag: tevv-web-dashboard-frontend-v1.0.0-g339db86
+    digest: sha256:ed44776a6ec4904caa2573c26de53d70bfbb2f52f119b9a414fa1425025f616c
+    channel: pinned
+    purpose: >-
+      MnS 1.0 dashboard frontend (TEVV-Web-Dashboard main).
+
 consumers:
   product_env:
     review:
@@ -828,6 +901,19 @@ consumers:
         MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host_ue582
         MNS_ROS2_BRIDGE_IMAGE: ros2_bridge
 
+    # MnS 1.0 -- the DEFAULT channel since 2026-09-18 (`make dashboard`, `./product.sh`).
+    v1:
+      emits: images/v1.0.0.generated.env
+      image_set: v1
+      vars:
+        MNS_PRODUCT_SHELL_IMAGE: v1_product_shell
+        MNS_AUTHORING_IMAGE: v1_authoring
+        MNS_STACK_GENERATOR_IMAGE: v1_stack_generator
+        MNS_RUNTIME_HOST_IMAGE: v1_runtime_host
+        MNS_ROS2_BRIDGE_IMAGE: v1_ros2_bridge
+        DASHBOARD_BACKEND_IMAGE: v1_dashboard_backend
+        DASHBOARD_FRONTEND_IMAGE: v1_dashboard_frontend
+
     origin_integration:
       emits: images/origin-integration.generated.env
       image_set: origin-integration
@@ -848,6 +934,12 @@ consumers:
   # and `tools/images.sh verify` asserts the JSON still agrees, offline. A bump
   # that advances one of these rows now fails CI until the lock is regenerated.
   pack_locks:
+    packs/v1.0.0.lock.json:
+      product_shell: v1_product_shell
+      authoring: v1_authoring
+      stack_generator: v1_stack_generator
+      runtime_host: v1_runtime_host
+      ros2_bridge: v1_ros2_bridge
     packs/standalone-v2-review.1.lock.json:
       product_shell: mns_product_shell_v2
       authoring: mns_authoring_v2
@@ -883,6 +975,17 @@ consumers:
         simulators:
           tevv_runtime_host: tevv_runtime_host_ue582
 
+
+    v1:
+      inherits: published
+      pull_policy: missing
+      images:
+        simulators:
+          tevv_runtime_host: v1_runtime_host
+        autopilots:
+          px4: v1_px4
+          ardupilot: v1_ardupilot
+        ros2_bridge: v1_ros2_bridge
 
     origin-integration:
       inherits: published

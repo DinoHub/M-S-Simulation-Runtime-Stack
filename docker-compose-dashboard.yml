@@ -155,8 +155,13 @@ services:
       # staged ScenarioLab index under the data root for /api/scenario/catalog
       # and /api/scenario/preflight. Same defaults product.sh and
       # tools/stage-authoring-packs.sh use, so all three agree on one store.
-      - MNS_PACK_STORE_ROOT=${MNS_PACK_STORE_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/ue582/pack-store}
-      - MNS_AUTHORING_DATA_ROOT=${MNS_AUTHORING_DATA_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/ue582/authoring-data}
+      - MNS_PACK_STORE_ROOT=${MNS_PACK_STORE_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/v1/pack-store}
+      - MNS_AUTHORING_DATA_ROOT=${MNS_AUTHORING_DATA_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/v1/authoring-data}
+      # The pack mount directory: archives dropped or pulled here
+      # (tools/pull-packs.sh) are what the Content phase and
+      # tools/install-demo-packs.sh --import install into the store. Mounted at
+      # its identical host path below so the installer sees it either way.
+      - MNS_PACKS_DIR=${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}
       # The runtime host's frozen capability contract, forwarded to the
       # generator the same way. The generator validates the pack variant it
       # selects against this document, and the published generator image
@@ -164,27 +169,27 @@ services:
       # failed with "host compatibility document does not exist". The file is
       # the one baked into the pinned tevv_runtime_host image -- see
       # packs/README.md for how it is refreshed.
-      - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.ue582.json}
+      - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.v1.json}
       # ScenarioLab's own contract (same id; its plugin set may lag the runtime
       # host's). The Content phase compares each pack's required plugins to it
       # and marks packs the editor cannot open as "runtime only"; the staging
       # step validates against it too. Empty on a channel whose authoring
       # image embeds none (5.5.4).
-      - MNS_AUTHORING_HOST_CONTRACT=${MNS_AUTHORING_HOST_CONTRACT-${MSRS_ROOT:-${PWD}}/packs/authoring-host-compatibility.ue582.json}
+      - MNS_AUTHORING_HOST_CONTRACT=${MNS_AUTHORING_HOST_CONTRACT-${MSRS_ROOT:-${PWD}}/packs/authoring-host-compatibility.v1.json}
       # Content onboarding (the dashboard's Content phase, /api/content): the
       # pack lock the catalog is read from and the product shell that installs
       # and stages packs. Both come from the selected channel; `make dashboard
-      # CHANNEL=` exports them, and the defaults are the UE 5.8.2 channel.
+      # CHANNEL=` exports them, and the defaults are the v1 (MnS 1.0) channel.
       # The backend runs the runtime stack's own tools/install-demo-packs.sh
       # against this checkout, so a pack installed from the browser is exactly
       # a pack installed by `make dashboard`.
-      - MNS_CHANNEL=${MNS_CHANNEL:-ue582}
-      - MNS_DEMO_PACK_LOCK=${MNS_DEMO_PACK_LOCK:-${MSRS_ROOT:-${PWD}}/packs/standalone-v2-ue582.lock.json}
+      - MNS_CHANNEL=${MNS_CHANNEL:-v1}
+      - MNS_DEMO_PACK_LOCK=${MNS_DEMO_PACK_LOCK:-${MSRS_ROOT:-${PWD}}/packs/v1.0.0.lock.json}
       - MNS_PRODUCT_SHELL_IMAGE=${MNS_PRODUCT_SHELL_IMAGE:-}
       # Reported (presence + host label) by the Content phase; the generated
       # stacks take the runtime host from MNS_IMAGE_SET_FILE, not from this.
       - MNS_RUNTIME_HOST_IMAGE=${MNS_RUNTIME_HOST_IMAGE:-}
-      - MNS_SEED_AUTHORING_DEFAULTS=${MNS_SEED_AUTHORING_DEFAULTS:-1}
+      - MNS_SEED_AUTHORING_DEFAULTS=${MNS_SEED_AUTHORING_DEFAULTS:-0}
       - MNS_IMAGE_PULL_POLICY=${MNS_IMAGE_PULL_POLICY:-missing}
       - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
@@ -232,6 +237,8 @@ services:
       - ${DOCKER_CONFIG:-${HOME}/.docker}:/root/.docker:ro
       # this repo at its identical host path (generator + stack lifecycle)
       - ${MSRS_ROOT:-${PWD}}:${MSRS_ROOT:-${PWD}}
+      # the pack mount directory (may live outside the checkout), read-only
+      - ${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}:${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}:ro
       - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
     # No depends_on the database, deliberately. It used to gate on
     # postgres-telemetry being healthy (required: false, so the db stayed
