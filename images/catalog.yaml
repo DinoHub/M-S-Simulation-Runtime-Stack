@@ -780,38 +780,38 @@ images:
     purpose: Origin integration dashboard_frontend; mounted-pack and autopilot acceptance
       pending.
 
-  # ---- MnS 1.0 (channel v1): every image rebuilt from the merged default branches on 2026-09-18 ----
+  # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
   v1_runtime_host:
     repo: dhdevspace/auto_mns
     tag: tevv-runtime-host-v1.0.0
-    digest: sha256:b876fc9ef95bee5259123b29850f5a8ff07d0a393c7c589aa417b8acc8398a8b
+    digest: sha256:303a5c84662a3fc420ce93e5f2e87198065798719884d48f679915cf22a29339
     channel: pinned
     purpose: >-
-      MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim main 1961a51ce654); frozen contract ue-5.8.2 render-35e7a9a52ee2ef15, base release identical to the flown origin host.
+      MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim release/v1.0.0 663cfeeef076); rebuilt with iceoryx2 v0.8.1 for SHM camera publishing. Non-Substrate iostore-v2 baseline; fisheye RGB captures inherit host GI/reflections.
 
   v1_authoring:
     repo: dhdevspace/auto_mns
     tag: mns-authoring-v1.0.0
-    digest: sha256:7c25e946ca5ec2923800bd58aee48fbd1a5a6e339ea6e17ee49b966b0bcaf003
+    digest: sha256:abaa02a6aa72588224b35ad9306110e9056754a3739e837575049311b0a35afc
     channel: pinned
     purpose: >-
-      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0); bakes only the mns_vehicle_models asset pack, level packs are staged from the PackStore.
+      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0); non-Substrate baseline with the matching baked vehicle pack and corrected preview package-root registration. Level packs are staged from the PackStore.
 
   v1_stack_generator:
     repo: dhdevspace/auto_mns
     tag: mns-stack-generator-v1.0.0
-    digest: sha256:31ad01ed1a9d54d913b930ae4cf147cd223fa6243b43de607650d95cf1277f7a
+    digest: sha256:e2710b8ad05ac431545c1f6454be28aa15e77b8e47346816ed04dca831f85c40
     channel: pinned
     purpose: >-
-      MnS 1.0 stack generator (MnS-Integration-Platform release/v1.0.0) with the v1 runtime contract baked; stages pack payloads by hard link.
+      MnS 1.0 stack generator (MnS-Integration-Platform release/v1.0.0) with the v1 runtime contract baked; stages pack payloads by hard link. Rebuilt with advisory base-cook validation; capability and integrity checks remain enforced.
 
   v1_product_shell:
     repo: dhdevspace/auto_mns
     tag: mns-product-shell-v1.0.0
-    digest: sha256:da5641bdd8185ddc7eed1a170159b6b8a3ea085fa7ebf4d7d7e1ab72d034f1f7
+    digest: sha256:21ed9bed74f7837213b8d149463bcc00534ada66139b2d90ba3f4875a92543a1
     channel: pinned
     purpose: >-
-      MnS 1.0 product shell (same sources) with ScenarioLab's v1 contract baked; owns the pack mount directory import.
+      MnS 1.0 product shell (same sources) with ScenarioLab's v1 contract baked; owns the pack mount directory import. Runtime and authoring staging both use advisory base-cook validation; matching non-Substrate authoring and generator digests are pinned.
 
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns

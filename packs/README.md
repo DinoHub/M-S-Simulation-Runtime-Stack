@@ -8,12 +8,14 @@ Unreal build, the packs cooked for that build, and the generator/shell that
 understand those packs' contract. `make dashboard CHANNEL=<name>` and
 `MNS_CHANNEL=<name> ./product.sh` select one; the catalog
 (`images/catalog.yaml` `consumers.release_channels`) renders its image env file.
-Packs cooked for one host id never mount on another, so each channel keeps its
+Capability mismatches remain rejected. Different base-cook names or registry digests
+warn during v1 runtime generation and authoring staging; matching them is no
+longer a prerequisite to attempting a load. Each channel keeps its
 own pack store and authoring data root under `.mns/`.
 
 | Channel | Host capability | Lock | Contract | Store / data root |
 |---|---|---|---|---|
-| `v1` (default) | `ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2-render-35e7a9a52ee2ef15` | `v1.0.0.lock.json` | `runtime-host-compatibility.v1.json` | `.mns/v1/pack-store`, `.mns/v1/authoring-data`, pack mount directory `.mns/v1/packs` |
+| `v1` (default) | `ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2` | `v1.0.0.lock.json` | `runtime-host-compatibility.v1.json` | `.mns/v1/pack-store`, `.mns/v1/authoring-data`, pack mount directory `.mns/v1/packs` |
 | `ue582` | `ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2` | `standalone-v2-ue582.lock.json` | `runtime-host-compatibility.ue582.json` | `.mns/ue582/pack-store`, `.mns/ue582/authoring-data` |
 | `v2` | `ue-5.5.4-cl40574608-linux-development-vulkan-sm6-iostore-v2` | `standalone-v2-review.1.lock.json` | `runtime-host-compatibility.json` | `.mns/pack-store`, `.mns/authoring-data` |
 
@@ -28,7 +30,7 @@ channel's content-addressed PackStore:
 
 ```bash
 tools/pull-packs.sh --list-remote                             # releases cooked for this channel's host
-tools/pull-packs.sh --release-tag pack-level-blocks-1.0.1     # pull one published pack (parts are reassembled)
+tools/pull-packs.sh --release-tag pack-level-warehouse-1.0.1     # pull one published pack (parts are reassembled)
 tools/pull-packs.sh --import                                  # install archives already in the mount directory
 tools/install-demo-packs.sh --all                             # the channel's locked set
 ```
@@ -46,7 +48,7 @@ also in the lock so generated stacks resolve it from the store.
 | File | What it is |
 |---|---|
 | `standalone-v2-review.1.lock.json` | UE 5.5.4 review set: seven packs (four `.mnslevelpack`, three `.mnsassetpack`) published as one GitHub release of this repository. |
-| `v1.0.0.lock.json` | MnS 1.0 (UE 5.8.2, frozen render contract): five level packs (Blocks, Condo, Safticity, Pendleton, XFS), Electric Dreams, and the `mns_vehicle_models` asset pack, each its own release on `DinoHub/TEVV-Airsim`; releases over 1900 MB are split into `.part-NNN` assets the installer reassembles. Built by `make pack-lock` / `tools/build_pack_lock.py --discover`. |
+| `v1.0.0.lock.json` | MnS 1.0 non-Substrate baseline: unchanged Aortz Warehouse 1.0.1 and the baseline `mns_vehicle_models` 1.0.3 asset pack, each published on `DinoHub/TEVV-Airsim`. Vehicle capability release: `pack-asset-mns_vehicle_models-1.0.3-iostore-v2`. |
 | `standalone-v2-ue582.lock.json` | UE 5.8.2: six level packs (XFS, SAFTI, Condo, Office Environment, Warehouse, Fisherman's Cabin) and four object packs (Office Props, Office Pack Vol 1, Warehouse Props, Fisherman's Cabin Props), each published as its own release on `DinoHub/TEVV-Airsim` (`pack-<kind>-<id>-<version>`; a pack-level `release` overrides the lock-level one). Built by `make pack-lock` / `tools/build_pack_lock.py --discover`. |
 | `runtime-host-compatibility.v1.json`, `authoring-host-compatibility.v1.json` | The v1 channel's frozen runtime and ScenarioLab contracts (same id; ScenarioLab's plugin set is smaller). |
 | `runtime-host-compatibility*.json` | The frozen host capability contract baked into the channel's runtime host image at `/app/TEVVRuntimeHost/TEVVRuntimeHost/Content/TEVVHost/host-compatibility.json`. Its `id` is the lock's `capability_id`; the generator validates every resolved pack against it. |
@@ -81,7 +83,7 @@ store lacks, then stages it for ScenarioLab. By hand:
 
 ```bash
 tools/install-demo-packs.sh --all                          # 5.8.2 set (default lock)
-tools/install-demo-packs.sh --safti --office-props         # a subset
+tools/install-demo-packs.sh --warehouse                    # baseline level
 tools/install-demo-packs.sh --check --all                  # offline: what is installed
 MNS_DEMO_PACK_LOCK=packs/standalone-v2-review.1.lock.json \
 MNS_PACK_STORE_ROOT=.mns/pack-store \
