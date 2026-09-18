@@ -38,7 +38,7 @@ IMAGE_MODE ?= development
 # and the product shell stages everything in its store for ONE contract.
 #   ue582  UE 5.8.2 (default):  packs/standalone-v2-ue582.lock.json,      .mns/ue582/{pack-store,authoring-data}
 #   v2     UE 5.5.4 (previous): packs/standalone-v2-review.1.lock.json, .mns/{pack-store,authoring-data}
-CHANNEL ?= ue582
+CHANNEL ?= v1
 # Standalone-v2 demo packs `make dashboard` guarantees are installed before
 # ScenarioLab opens, as tools/install-demo-packs.sh selections. Only packs
 # MISSING from .mns/pack-store are downloaded (--missing), so a re-run costs one
@@ -67,7 +67,21 @@ LEGACY_DASHBOARD_PROJECT = $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lowe
 # always- always recreate (the pre-existing behaviour)
 # never - never touch it
 RECREATE_ROS2_TOOLS ?= auto
-ifeq ($(CHANNEL),v2)
+ifeq ($(CHANNEL),v1)
+CHANNEL_NAME := v1
+CHANNEL_ENV := images/v1.0.0.generated.env
+CHANNEL_DEV_ENV := images/v1.0.0.generated.env
+CHANNEL_IMAGE_SET := v1
+CHANNEL_LOCK := packs/v1.0.0.lock.json
+CHANNEL_CONTRACT := packs/runtime-host-compatibility.v1.json
+CHANNEL_AUTHORING_CONTRACT := packs/authoring-host-compatibility.v1.json
+CHANNEL_STORE := .mns/v1/pack-store
+CHANNEL_DATA := .mns/v1/authoring-data
+PACK_RELEASE_REPO := DinoHub/TEVV-Airsim
+# The v1 authoring image bakes mns_vehicle_models; nothing is seeded from the
+# pinned v1 (5.5.4-era) authoring image on this channel.
+CHANNEL_SEED_DEFAULTS := 0
+else ifeq ($(CHANNEL),v2)
 CHANNEL_NAME := standalone_v2
 CHANNEL_ENV := images/standalone-v2-images.generated.env
 CHANNEL_DEV_ENV := images/standalone-v2-development.generated.env
@@ -107,7 +121,7 @@ PACK_RELEASE_REPO := DinoHub/TEVV-Airsim
 # ships its own.
 CHANNEL_SEED_DEFAULTS := 1
 else
-$(error CHANNEL must be v2 or ue582)
+$(error CHANNEL must be v1, ue582 or v2)
 endif
 
 # Exported to every script on the dashboard chain and interpolated by
@@ -119,6 +133,7 @@ CHANNEL_ENV_EXPORTS := MNS_CHANNEL=$(CHANNEL) MNS_IMAGE_SET=$(CHANNEL_IMAGE_SET)
 	MNS_AUTHORING_HOST_CONTRACT=$(if $(CHANNEL_AUTHORING_CONTRACT),$(CURDIR)/$(CHANNEL_AUTHORING_CONTRACT),) \
 	MNS_PACK_STORE_ROOT=$(CURDIR)/$(CHANNEL_STORE) \
 	MNS_AUTHORING_DATA_ROOT=$(CURDIR)/$(CHANNEL_DATA) \
+	MNS_PACKS_DIR=$(CURDIR)/.mns/$(CHANNEL)/packs \
 	MNS_SEED_AUTHORING_DEFAULTS=$(CHANNEL_SEED_DEFAULTS)
 
 ifeq ($(IMAGE_MODE),development)

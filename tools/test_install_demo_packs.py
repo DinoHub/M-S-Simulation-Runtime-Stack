@@ -143,3 +143,102 @@ class InstallerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PullAndImportTests(InstallerTests):
+    """--release-tag / --import / --list-remote and split-part reassembly."""
+
+    def test_download_asset_reassembles_parts_in_order(self):
+        target = Path(self.tmp.name) / "big.mnslevelpack"
+        pack = {"asset_name": "big.mnslevelpack",
+                "parts": ["big.mnslevelpack.part-000", "big.mnslevelpack.part-001"]}
+        calls = []
+
+        def fake_named(release, name, token, path):
+            calls.append(name)
+            path.write_bytes(b"AAA" if name.endswith("000") else b"BB")
+
+        with patch.object(installer, "_download_named_asset", side_effect=fake_named):
+            installer.download_asset({"repository": "r", "tag": "t"}, pack, "tok", target)
+        self.assertEqual(target.read_bytes(), b"AAABB")
+        self.assertEqual(calls, pack["parts"])
+        self.assertFalse(list(Path(self.tmp.name).glob("*.download")))
+
+    def test_pack_entry_from_release_reads_artifact_and_parts(self):
+        assets = [
+            {"name": "artifact.json", "size": 10},
+            {"name": "mns_level_pack.json", "size": 10},
+            {"name": "blocks-1.0.1.mnslevelpack.sha256", "size": 90},
+            {"name": "blocks-1.0.1.mnslevelpack.part-001", "size": 5},
+            {"name": "blocks-1.0.1.mnslevelpack.part-000", "size": 7},
+        ]
+        artifact = {"kind": "level", "pack": {"id": "blocks", "version": "1.0.1"},
+                    "variants": [{"host_compatibility_id": HOST}]}
+
+        def fake_named(release, name, token, path):
+            if name == "artifact.json":
+                path.write_text(json.dumps(artifact))
+            else:
+                path.write_text("f" * 64 + "  blocks-1.0.1.mnslevelpack\n")
+
+        release = {"repository": "DinoHub/TEVV-Airsim", "tag": "pack-level-blocks-1.0.1"}
+        with patch.object(installer, "release_assets", return_value=assets), \
+                patch.object(installer, "_download_named_asset", side_effect=fake_named):
+            entry = installer.pack_entry_from_release(release, "tok", HOST, Path(self.tmp.name) / "scratch")
+        self.assertEqual(entry["asset_name"], "blocks-1.0.1.mnslevelpack")
+        self.assertEqual(entry["parts"], ["blocks-1.0.1.mnslevelpack.part-000", "blocks-1.0.1.mnslevelpack.part-001"])
+        self.assertEqual(entry["size_bytes"], 12)
+        self.assertEqual(entry["sha256"], "f" * 64)
+        self.assertEqual(entry["artifact_digest"], "")
+        # a release cooked for another host is refused before any download
+        artifact["variants"] = [{"host_compatibility_id": "other"}]
+        with patch.object(installer, "release_assets", return_value=assets), \
+                patch.object(installer, "_download_named_asset", side_effect=fake_named):
+            with self.assertRaisesRegex(RuntimeError, "not cooked for the selected runtime host"):
+                installer.pack_entry_from_release(release, "tok", HOST, Path(self.tmp.name) / "scratch2")
+
+    def test_release_tag_dry_run_lists_the_release(self):
+        entry = {"selection": "blocks", "kind": "level", "id": "blocks", "display_name": "blocks",
+                 "version": "1.0.1", "asset_name": "blocks-1.0.1.mnslevelpack", "parts": ["a", "b"],
+                 "size_bytes": 12, "sha256": "f" * 64, "artifact_digest": "",
+                 "release": {"repository": "DinoHub/TEVV-Airsim", "tag": "pack-level-blocks-1.0.1"}}
+        with patch.object(installer, "github_token", return_value="tok"), \
+                patch.object(installer, "pack_entry_from_release", return_value=entry):
+            code, out = self._run("--release-tag", "pack-level-blocks-1.0.1", "--dry-run")
+        self.assertEqual(code, 0)
+        self.assertIn("blocks: 2 parts from DinoHub/TEVV-Airsim@pack-level-blocks-1.0.1 (digest recorded at install)", out)
+        with patch.object(installer, "github_token", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "--release-tag needs GitHub credentials"):
+                self._run("--release-tag", "pack-level-blocks-1.0.1")
+
+    def test_import_installs_archives_from_the_pack_mount_directory(self):
+        packs_dir = Path(self.tmp.name) / "packs"
+        packs_dir.mkdir()
+        (packs_dir / "blocks-1.0.1.mnslevelpack").write_bytes(b"zip")
+        (packs_dir / "notes.txt").write_text("ignored")
+        with patch.dict(os.environ, {"MNS_PACKS_DIR": str(packs_dir)}):
+            code, out = self._run("--import", "--dry-run")
+            self.assertEqual(code, 0)
+            self.assertIn("import: blocks-1.0.1.mnslevelpack", out)
+            self.assertNotIn("notes.txt", out)
+            with patch.object(installer, "ensure_image"), \
+                    patch.object(installer, "install_archive", return_value=D1) as install, \
+                    patch.object(installer, "stage", return_value=0) as staged:
+                code, out = self._run("--import")
+        self.assertEqual(code, 0)
+        self.assertEqual(install.call_args.args[1], packs_dir / "blocks-1.0.1.mnslevelpack")
+        self.assertIsNone(install.call_args.args[2])          # digest comes from the shell
+        self.assertIn(f"Installed blocks-1.0.1.mnslevelpack as {D1}.", out)
+        staged.assert_called_once()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            self._run("--import", "--check")
+
+    def test_install_archive_accepts_the_shell_digest_when_none_is_expected(self):
+        class Result:
+            stdout = json.dumps({"digest": D2})
+        with patch.object(installer, "run", return_value=Result()), \
+                patch.object(installer, "container_path", return_value="/workspace/.mns/store"), \
+                patch.object(installer, "host_user", return_value="1000:1000"):
+            self.assertEqual(installer.install_archive("img", Path(self.tmp.name) / "a.mnsassetpack", None, self.store), D2)
+            with self.assertRaisesRegex(RuntimeError, "but the lock expects"):
+                installer.install_archive("img", Path(self.tmp.name) / "a.mnsassetpack", D1, self.store)
