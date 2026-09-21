@@ -4,7 +4,7 @@
   "host_contract": "packs/runtime-host-compatibility.origin-integration.json",
   "authoring_host_contract": "packs/authoring-host-compatibility.origin-integration.json",
   "required_images": {
-    "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-v0.4.0-origin.1@sha256:604400d8d9f9ec0d0a5f8df6eb090acbc8dda3fd6f1d66a666ec46d9ddba5a21",
+    "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-20260918.1@sha256:72ef41b2040a2de6986068a303ce51f377fb21edf670b32819dd84ae84a8e3bd",
     "authoring": "dhdevspace/auto_mns:mns-authoring-v0.4.0-origin.5@sha256:3fe4f5b80e510b8c2f88f9a8e4ead6dbcb7c048889d2681e27c504665cb559a0",
     "stack_generator": "dhdevspace/auto_mns:mns-stack-generator-v0.4.0-origin.1@sha256:016373d2281fa2f2cd6a835ea3416546f1bf046d33191aa47fd86ed99c499e80",
     "product_shell": "dhdevspace/auto_mns:mns-product-shell-v0.4.0-origin.1@sha256:3fc42441b6442a9ae6f5427b43ceae5c5450360337490d0ee871417e21e89e33",
