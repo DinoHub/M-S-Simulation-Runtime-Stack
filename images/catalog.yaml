@@ -320,7 +320,7 @@ images:
   dashboard_backend:
     repo: dhdevspace/auto_mns
     tag: "tevv-web-dashboard-backend-latest"
-    digest: sha256:65471c7fb8be4e1b643d6139e283ab3f7ed86be2c75e45f8043d24631e869cc1
+    digest: sha256:63529359880d6a117b3bdf7822f47abfc212c8cd5f979b780f25e9f43d2e2548
     channel: moving
     bakes: [mns_authoring, mns_stack_generator]
     purpose: TEVV Web Dashboard backend API; bakes authoring/generator refs as defaults.
@@ -328,7 +328,7 @@ images:
   dashboard_frontend:
     repo: dhdevspace/auto_mns
     tag: "tevv-web-dashboard-frontend-latest"
-    digest: sha256:4d6082f36dd89eef44ca367d8e1c49cd7a9d3d73b0374c5fa624a7b098dae078
+    digest: sha256:9a779f5d5564333bfec145309bc7afde0e059a64b5c8b00183da7c0489c93259
     channel: moving
     purpose: TEVV Web Dashboard Next.js frontend, served at :3001.
 
@@ -775,18 +775,21 @@ images:
     purpose: Origin integration ardupilot; mounted-pack and autopilot acceptance pending.
   origin_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-backend-v0.2.0-g92908bd
-    digest: sha256:1e466b9092be6dbd482fb78c662220a1ae9aa50acf4d11821931c53af8be3a39
+    tag: tevv-web-dashboard-backend-v0.2.0-gee99b9d
+    digest: sha256:63529359880d6a117b3bdf7822f47abfc212c8cd5f979b780f25e9f43d2e2548
     channel: pinned
-    purpose: Origin integration dashboard_backend; mounted-pack and autopilot acceptance
-      pending.
+    purpose: >-
+      Origin integration dashboard_backend. gee99b9d = TEVV-Web-Dashboard main
+      after #115: Generate phase no longer authors sensors (ScenarioLab does),
+      ROS 2 step offers published topics only, stale armed topics dropped at
+      launch, sim2real role map follows renames. Bakes the v1 review pins
+      (build script reads product-images.env); compose overrides them.
   origin_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-frontend-v0.2.0-g39de41e
-    digest: sha256:0f82cfd54fe546999ccc7ae14239f7b8a326e648cba7a201bd2041011c412e36
+    tag: tevv-web-dashboard-frontend-v0.2.0-gee99b9d
+    digest: sha256:9a779f5d5564333bfec145309bc7afde0e059a64b5c8b00183da7c0489c93259
     channel: pinned
-    purpose: Origin integration dashboard_frontend; mounted-pack and autopilot acceptance
-      pending.
+    purpose: Origin integration dashboard_frontend, built with the backend above (gee99b9d).
 
   # ---- MnS 1.0 (channel v1): every image rebuilt from the merged default branches on 2026-09-18 ----
   v1_runtime_host:
