@@ -1,5 +1,16 @@
 # Origin whole-product integration candidate
 
+> **Superseded by MnS v1.0.0.** This candidate's capability id
+> (`…-render-35e7a9a52ee2ef15`) is now the `v1` release channel's, and its packs
+> have been published and relocked: `mns_vehicle_models` 1.0.3, Electric Dreams
+> 1.0.5, and the blocks/condo/pendleton/safticity/xfs levels at 1.0.1. See
+> [docs/releases/v1.0.0.md](releases/v1.0.0.md) and `packs/v1.0.0.lock.json`.
+>
+> `packs/origin-integration.lock.json` is kept as the record of the candidate.
+> Eight of its nine entries were never published, so the installer cannot fetch
+> them; `tools/pull-packs.sh --check --all --lock packs/origin-integration.lock.json`
+> names them rather than failing on the first one.
+
 This candidate includes freshly cooked Electric Dreams 1.0.4 and vehicle/object
 pack 1.0.2 variants validated against both frozen host contracts. Observed live on
 2026-09-10 from this candidate: browser pack selection and staging, packaged

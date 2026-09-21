@@ -339,6 +339,39 @@ def verify_staged_selection(selection: dict) -> None:
     missing = [pack["id"] for pack in lock["packs"] if pack["artifact_digest"] not in staged]
     if missing:
         raise CandidateError(f"candidate packs were not staged for authoring: {missing}")
+    verify_library_packs_are_exportable(Path(selection["MNS_AUTHORING_DATA_ROOT"]), index)
+
+
+def verify_library_packs_are_exportable(authoring_data: Path, index: dict) -> None:
+    """Every placeable asset pack must also carry an immutable digest.
+
+    ScenarioLab lists and places asset packs from the PackLibrary directory
+    scan, but takes their artifact digest only from ResolvedPacks/index.json,
+    merging the two by pack id. A pack in the library with no entry in the
+    index is therefore fully usable in the editor and fatal at export
+    ("standalone v2 export requires immutable asset pack
+    id/version/artifact_digest"). Reporting preflight_passed over that state
+    means the operator finds out after authoring a scene, so refuse instead.
+    """
+    digested = {str(entry.get("id")) for entry in (index.get("asset_packs") or [])
+                if isinstance(entry, dict)
+                and str(entry.get("artifact_digest", "")).startswith("sha256:")}
+    unexportable = []
+    for manifest in sorted((authoring_data / "PackLibrary/asset_packs").glob(
+            "*.mnsassetpack/mns_asset_pack.json")):
+        try:
+            document = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise CandidateError(f"unreadable asset pack manifest {manifest}: {exc}") from exc
+        pack = document.get("asset_pack") or document
+        pack_id = str(pack.get("pack_id") or pack.get("id") or "")
+        if pack_id and pack_id not in digested:
+            unexportable.append(f"{pack_id}@{pack.get('version') or '?'}")
+    if unexportable:
+        raise CandidateError(
+            f"asset pack(s) in {authoring_data}/PackLibrary are placeable but have no "
+            f"immutable digest in ResolvedPacks/index.json, so any scenario using them "
+            f"fails at export: {', '.join(unexportable)}")
 
 
 def start_dashboard(workspace: Path, store: Path, images: dict, local_images: bool = False,
@@ -426,7 +459,12 @@ def main(argv=None) -> int:
                 raise CandidateError(f"{runtime_host} is packaged for {host_id}, not UE {args.engine_version}")
         validate_lock(lock, host_id, local_images=args.local_images)
         selection = None
-        if args.start_dashboard or args.dashboard_container:
+        # An --authoring-data-root on its own is a request to check the
+        # authoring side too. Staging used to be verified only on the way to
+        # starting a dashboard, so a plain preflight reported passed without
+        # ever reading ResolvedPacks/index.json -- which is where the digests
+        # an export needs actually live.
+        if args.start_dashboard or args.dashboard_container or args.authoring_data_root:
             selection = candidate_selection(
                 args.workspace, args.pack_store, args.lock, lock,
                 authoring_data=args.authoring_data_root,
@@ -436,6 +474,9 @@ def main(argv=None) -> int:
         expected_ids = lock.get("required_image_ids") if args.local_images else None
         images = verify_images(lock["required_images"], host_id, expected_ids=expected_ids)
         packs = verify_packs(lock, args.pack_store, host_id, local_images=args.local_images)
+        if selection is not None and not args.start_dashboard:
+            # start_dashboard() verifies staging itself, after it has re-staged.
+            verify_staged_selection(selection)
         local_override = None
         local_rerun = None
         if args.start_dashboard:

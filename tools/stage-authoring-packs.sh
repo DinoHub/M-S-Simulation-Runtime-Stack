@@ -93,16 +93,83 @@ seed_authoring_defaults() {
   fi
   mkdir -p "$PACK_LIBRARY/asset_packs" "$PACK_LIBRARY/level_packs"
   own_by_host "$PACK_LIBRARY" "$PACK_LIBRARY/asset_packs" "$PACK_LIBRARY/level_packs"
+  # Seeding is a convenience, so it must never be the thing that stops a
+  # dashboard starting. This pull used to ignore MNS_IMAGE_PULL_POLICY and run
+  # under `set -e`, so on a machine with no registry (or none of this image)
+  # `make dashboard` died here -- even with MNS_SKIP_PACK_INSTALL=1, which
+  # only skips the pack install, not this step.
   if ! docker image inspect "$v1_authoring" >/dev/null 2>&1; then
+    if [[ "${MNS_IMAGE_PULL_POLICY:-missing}" == "never" ]]; then
+      echo "WARNING: $v1_authoring is not present and MNS_IMAGE_PULL_POLICY=never;" >&2
+      echo "         skipping the default asset pack seed. ScenarioLab will start without" >&2
+      echo "         mns_vehicle_models, so a drone cannot be placed on this channel." >&2
+      return 0
+    fi
     echo "Pulling $v1_authoring for ScenarioLab's default asset packs (mns_vehicle_models)..."
-    docker pull "$v1_authoring"
+    if ! docker pull "$v1_authoring"; then
+      echo "WARNING: could not pull $v1_authoring (offline?); skipping the default asset" >&2
+      echo "         pack seed. ScenarioLab will start without mns_vehicle_models, so a" >&2
+      echo "         drone cannot be placed on this channel. Everything else still works." >&2
+      return 0
+    fi
   fi
   echo "Seeding ScenarioLab default asset packs into $PACK_LIBRARY/asset_packs from $v1_authoring"
-  docker run --rm --user "$HOST_UID:$HOST_GID" --entrypoint sh \
-    -v "$PACK_LIBRARY/asset_packs:/out:rw" \
-    "$v1_authoring" -c 'cp -a -n /opt/mns/default-packs/asset_packs/. /out/'
+  if ! docker run --rm --user "$HOST_UID:$HOST_GID" --entrypoint sh \
+      -v "$PACK_LIBRARY/asset_packs:/out:rw" \
+      "$v1_authoring" -c 'cp -a -n /opt/mns/default-packs/asset_packs/. /out/'; then
+    echo "WARNING: seeding the default asset packs failed; continuing without them." >&2
+  fi
 }
 seed_authoring_defaults
+
+# A PackLibrary asset pack is placeable as soon as it has a manifest, but
+# ScenarioLab takes its artifact digest ONLY from ResolvedPacks/index.json
+# (MnSAuthoringSessionSubsystem ReloadPackLibrary merges the two by pack id).
+# A pack present here but absent there therefore lets an operator build a whole
+# scene and then refuses the export with "standalone v2 export requires
+# immutable asset pack id/version/artifact_digest". Say so now rather than an
+# hour of authoring later. Not fatal: the seeded vehicle-model pack is what
+# lets a drone be placed at all, and it is the only published source of those
+# models until an authoring image ships its own.
+report_unexportable_library_packs() {
+  [[ -d "$PACK_LIBRARY/asset_packs" && -f "$STAGED_INDEX" ]] || return 0
+  python3 - "$PACK_LIBRARY/asset_packs" "$STAGED_INDEX" <<'PY'
+import json, sys
+from pathlib import Path
+
+library, staged_index = Path(sys.argv[1]), Path(sys.argv[2])
+try:
+    staged = json.loads(staged_index.read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    sys.exit(0)
+digested = {str(entry.get("id")) for entry in (staged.get("asset_packs") or [])
+            if isinstance(entry, dict) and str(entry.get("artifact_digest", "")).startswith("sha256:")}
+
+unexportable = []
+for manifest in sorted(library.glob("*.mnsassetpack/mns_asset_pack.json")):
+    try:
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        continue
+    pack = document.get("asset_pack") or document
+    pack_id = str(pack.get("pack_id") or pack.get("id") or "")
+    if pack_id and pack_id not in digested:
+        target = (pack.get("runtime") or {}).get("runtime_target_id") or "unknown target"
+        unexportable.append((pack_id, str(pack.get("version") or "?"), target))
+
+if unexportable:
+    print(f"WARNING: {len(unexportable)} asset pack(s) in {library} have no entry in",
+          file=sys.stderr)
+    print(f"         {staged_index}, so ScenarioLab can place them but CANNOT export a",
+          file=sys.stderr)
+    print("         scenario that uses them (no immutable artifact digest):", file=sys.stderr)
+    for pack_id, version, target in unexportable:
+        print(f"           {pack_id}@{version} (cooked for {target})", file=sys.stderr)
+    print("         Install a published build of each into the pack store to fix it:",
+          file=sys.stderr)
+    print("         tools/install-demo-packs.sh --<selection>", file=sys.stderr)
+PY
+}
 
 # No store index means no pack has ever been installed, so there is nothing to
 # stage. Running `packs stage-authoring` against an empty store here used to
@@ -174,6 +241,7 @@ if [[ -f "$STAGED_INDEX" && ! "$STORE_INDEX" -nt "$STAGED_INDEX" \
       && -f "$STAGED_STAMP" && "$(cat "$STAGED_STAMP")" == "$IMAGE" ]]; then
   backfill_level_manifests
   echo "ScenarioLab pack index is current: $STAGED_INDEX"
+  report_unexportable_library_packs
   exit 0
 fi
 
@@ -197,3 +265,4 @@ backfill_level_manifests
 mkdir -p "$STAGED_DIR"
 printf '%s\n' "$IMAGE" >"$STAGED_STAMP"
 own_by_host "$STAGED_DIR" "$STAGED_STAMP"
+report_unexportable_library_packs
