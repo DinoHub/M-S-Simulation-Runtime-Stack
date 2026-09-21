@@ -320,7 +320,7 @@ images:
   dashboard_backend:
     repo: dhdevspace/auto_mns
     tag: "tevv-web-dashboard-backend-latest"
-    digest: sha256:63529359880d6a117b3bdf7822f47abfc212c8cd5f979b780f25e9f43d2e2548
+    digest: sha256:939c93c309d4363ae1552238a175971cb1566fc75f699fbfcda906b6dcfe41e9
     channel: moving
     bakes: [mns_authoring, mns_stack_generator]
     purpose: TEVV Web Dashboard backend API; bakes authoring/generator refs as defaults.
@@ -850,19 +850,28 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-backend-v1.0.0-g339db86
-    digest: sha256:a57faa16aee2cf2900b818b5df5002327964186b6d063fd26036b77dc2d5ef2c
+    tag: tevv-web-dashboard-backend-v1.0.0-gee99b9d
+    digest: sha256:939c93c309d4363ae1552238a175971cb1566fc75f699fbfcda906b6dcfe41e9
     channel: pinned
     purpose: >-
-      MnS 1.0 dashboard backend (TEVV-Web-Dashboard main) with the v1 authoring/generator pins baked.
+      MnS 1.0 dashboard backend (TEVV-Web-Dashboard main) with the v1
+      authoring/generator pins baked. gee99b9d adds #115: the Generate phase no
+      longer authors sensors (ScenarioLab does), the ROS 2 step lists published
+      topics only and offers no guessed names, stale armed record topics are
+      dropped and reported at launch, and apply-prerun carries
+      config/sim2real/topics.yaml across a prefix or rename change. Built with
+      --candidate-lock packs/v1.0.0.lock.json, so the baked defaults are the
+      v1.0.0 authoring and generator, not the v0.2.0 review pins.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-frontend-v1.0.0-g339db86
-    digest: sha256:ed44776a6ec4904caa2573c26de53d70bfbb2f52f119b9a414fa1425025f616c
+    tag: tevv-web-dashboard-frontend-v1.0.0-gee99b9d
+    digest: sha256:9a779f5d5564333bfec145309bc7afde0e059a64b5c8b00183da7c0489c93259
     channel: pinned
     purpose: >-
-      MnS 1.0 dashboard frontend (TEVV-Web-Dashboard main).
+      MnS 1.0 dashboard frontend (TEVV-Web-Dashboard main), built with the
+      backend above (gee99b9d). Byte-identical to the v0.2.0-gee99b9d build:
+      the frontend bakes no pins, so only the backend digest moved.
 
 consumers:
   product_env:
