@@ -313,11 +313,17 @@ workflow:
           # Fast DDS wants an address here, not a name (see DS_HOST above).
           DS_IP=$(getent hosts "$DS_HOST" | awk '{print $1; exit}')
           [ -n "$DS_IP" ] || { echo "cannot resolve $DS_HOST" >&2; exit 42; }
-          export ROS_DISCOVERY_SERVER="${DS_IP}:11811"
-          echo "discovery server $DS_HOST -> $ROS_DISCOVERY_SERVER"
           # The profile XML substitutes this into a locator address, so it is
           # the resolved IP and not the name.
           export ROS_DISCOVERY_SERVER_ADDR="$DS_IP"
+          # Deliberately NOT ROS_DISCOVERY_SERVER. Setting it makes the
+          # participant a plain CLIENT, which learns only about endpoints it
+          # matches -- and this task subscribes to nothing, so `ros2 topic list`
+          # returns an empty graph however healthy the run is. The SUPER_CLIENT
+          # profile above asks the server for the whole discovery database,
+          # which is the only reason this task can see anything at all.
+          unset ROS_DISCOVERY_SERVER
+          echo "discovery server $DS_HOST -> $DS_IP:11811 (SUPER_CLIENT)"
 
           deadline=$(( $(date +%s) + READY_WAIT_SEC ))
           until ros2 topic list 2>/dev/null | grep -qx "/clock" \
