@@ -269,7 +269,9 @@ not local misconfiguration:
 
 `hello_world.yaml` runs to `COMPLETED` and its task log comes back, so
 scheduling, the gang machinery and log capture all work. Workflow specs, task
-specs, events and logs are written to S3 by the control plane.
+specs, events and logs are written to S3 by the control plane. On the GPU
+cluster `verify-gpu.yaml` also completes, with `nvidia-smi` reporting the host
+RTX 5080 and driver 580.173.02 from inside a scheduled pod.
 
 **The task `{{output}}` round trip does not work.** `verify-object-storage.yaml`
 gets `produce` to `COMPLETED` but nothing appears under
@@ -278,6 +280,36 @@ therefore still produce a verdict through its **exit code**, which is what the
 workflow in this repository relies on, but anything that expects to hand a
 `validation.json` to a later task through `{{output}}` needs this resolved or a
 host `volumeMounts` path instead.
+
+### Cluster settings a workflow needs, which no error explains
+
+Three, all applied to the running control plane rather than the chart, and all
+needed again on a fresh cluster:
+
+| Setting | Why |
+| --- | --- |
+| `POOL` → `platforms.default.allowed_mounts: ["/workspace"]` | Empty by default, so any `volumeMounts` entry is refused with *"Task with platform: default does not allow mount"*. |
+| `WORKFLOW` → `credential_config.disable_registry_validation: ["docker.io", "registry-1.docker.io"]` | Submission validates that every image can be pulled. The images are `kind load`ed into the node and the repository is private, so validation fails on an image the run never pulls. |
+| `POD_TEMPLATE` → `default_compute` containers get `imagePullPolicy: IfNotPresent` | Otherwise every task fails `FAILED_IMAGE_PULL` despite the image sitting in the node's containerd store. |
+
+### Three assumptions the bridge's own OSMO notes get wrong
+
+Worth stating because they are easy to inherit:
+
+- **`workflow.labels` does not exist in 6.3.1.** The spec model forbids extra
+  keys, so a labelled workflow is rejected outright. Labels arrived later.
+- **There is no `cpu` or `gpu` platform.** The quick-start chart provisions
+  exactly one, named `default`; naming another fails with *"Platform cpu does
+  not exist in pool default"*. A GPU is requested with `gpu: 1` on the resource.
+- **`{{host:<task>}}` cannot be used for DDS discovery.** Fast DDS in Humble
+  parses `ROS_DISCOVERY_SERVER` as a locator and accepts only an address, so
+  the Kubernetes DNS name is rejected — *"Wrong locator passed into the
+  server's list"* — and the participant then discovers nothing at all. Resolve
+  it with `getent` first. The name is fine for RPC, which is ordinary TCP.
+
+The failure mode of that last one is the reason to care: every task reaches
+`RUNNING`, the simulator mounts its level and spawns the vehicle, and the run
+looks healthy while nothing on the ROS graph can see anything.
 
 ### Host constraints worth knowing
 
@@ -300,12 +332,18 @@ are the machine; 2 onward are this repository.
 | 0 | CLIs and a kind cluster | done, §6 |
 | 1 | OSMO control plane, `verify-hello.yaml` completes | blocked upstream, §6 |
 | 2 | The bridge as a cluster task against a host sim | TEVV-Airsim-ROS2-Bridge, its `osmo/bridge-certify-hostsim.workflow.yaml` |
-| 3 | The runtime host in-cluster, headless, on GPU | **here** — generator headless mode (§3.2), digest pins (§5), pack injection (§4) |
+| 3 | The runtime host in-cluster, headless, on GPU | **done** — `osmo/sim-bridge-vio.workflow.yaml`; condo mounts and the vehicle spawns in a pod |
 | 4 | A whole generated stack as one group, with a verdict | **here** plus the platform — lead task and exit-code contract (§3.4) |
 | 5 | A campaign as N labelled workflows | the campaign runner; one materialized ScenarioSpec per workflow, already how it works |
 
-Stage 3 is the first that needs code in this repository, and the smallest
-useful piece of it is the one that is independently valuable: make the
-generator emit digests instead of moving tags, and a headless profile that
-drops the X11 mounts instead of only adding `-RenderOffScreen`. Both improve
-the compose path on their own merits, whether or not OSMO is adopted.
+Stage 3 is done, by a route worth recording: rather than teach the generator a
+headless profile, the workflow schedules a stack the generator has already
+written and overrides only what a pod forbids — `-RenderOffScreen` for
+`-windowed`, `/tmp` for `/simrunner` because the image runs as uid 1000, and
+the checkout bind-mounted at `/workspace` so the twelve generated config files
+are read rather than restated. That keeps stackgen the single source of truth
+for what a run is; the workflow only decides where it runs.
+
+Two generator changes remain independently worth making, whether or not OSMO
+is adopted: emit image digests instead of moving tags, and a headless profile
+that drops the X11 mounts rather than only adding the flag.
