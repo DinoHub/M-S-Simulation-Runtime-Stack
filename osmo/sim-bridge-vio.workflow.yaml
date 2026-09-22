@@ -186,6 +186,19 @@ workflow:
         # Matches what the generated compose sets. Left unset it defaults to
         # 127.0.0.1, which is the other difference between the two runs.
         MAVLINK_TARGET: "127.0.0.1"
+        # THE variable. The image bakes PX4_INSTANCE=1 into its ENV and the
+        # generated compose overrides it to 0 -- which reads like a default
+        # being restated, so it was the one variable not carried over. Left at
+        # the image's 1, `run_airsim_sitl.sh 0` launches px4 as instance 0
+        # (it takes $1 for -i and never exports PX4_INSTANCE) while
+        # start_mavlink_router.sh and px4-rc.mavlink.router, both
+        # `${PX4_INSTANCE:-0}`, build instance 1: system ID 2, router on 5761,
+        # mavlink on 18571. A self-inconsistent stack: `mavlink start` creates
+        # no instance, every `mavlink stream` fails, the trailing `mavlink
+        # status` returns non-zero and rcS exits 255. Five other hypotheses
+        # were eliminated by runs before this was found by diffing the two
+        # environments line by line.
+        PX4_INSTANCE: "0"
         SIM_DIAL_WAIT_SEC: "900"
         PX4_SIM_MODEL: none_iris
         PX4_SIMULATOR: none
