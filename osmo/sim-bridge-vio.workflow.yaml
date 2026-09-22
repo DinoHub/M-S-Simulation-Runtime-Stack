@@ -28,33 +28,32 @@
 # work on this control plane.
 workflow:
   name: sim-bridge-vio
-  labels:
-    component: runtime-stack
-    suite: sim-bridge-vio
-    tier: L1
+  # No `labels:` block. Workflow labels exist in later OSMO but not in 6.3.1,
+  # where the spec model forbids extra keys and rejects them outright.
   timeout:
     exec_timeout: 25m
     queue_timeout: 1h
 
-  # `platform` belongs to a resource, never to a task; a task selects one with
-  # singular `resource:`. The chart provisions `cpu` and `gpu` in pool default.
+  # `platform`, where it appears at all, belongs to a resource and never to a
+  # task; a task selects one with singular `resource:`. None appears here: the
+  # quick-start chart provisions exactly one platform, named `default`, and
+  # naming anything else is rejected with "Platform cpu does not exist in pool
+  # default". A GPU is asked for with `gpu: 1` on the resource, which is what
+  # the chart's own verify-gpu workflow does.
   resources:
     default:
       cpu: 1
       memory: 1Gi
       storage: 1Gi
-      platform: cpu
     sim:
       cpu: 8
       memory: 16Gi
       storage: 8Gi
       gpu: 1
-      platform: gpu
     worker:
       cpu: 2
       memory: 4Gi
       storage: 2Gi
-      platform: cpu
 
   groups:
   - name: run
@@ -103,13 +102,18 @@ workflow:
           set -e
           S="/workspace/generated/${STACK}/config"
           test -d "$S" || { echo "no generated stack at $S; generate it first" >&2; exit 1; }
-          mkdir -p /simrunner/content-packs /simrunner/mounted-runtime-asset-paks
-          cp "$S/unreal-airsim/settings.json"          /app/TEVVRuntimeHost/settings.json
-          cp "$S/scenario/scenario_runtime.json"       /simrunner/
-          cp "$S/scenario/object_clutter.yaml"         /simrunner/
-          cp "$S/scenario/environment_parameters.json" /simrunner/
-          cp "$S/scenario-plugin/scenario_plugin.json" /simrunner/
-          cp -r "$S/content-packs/." /simrunner/content-packs/
+          # The image runs as uid 1000 (ue4), so / is not writable and the
+          # compose stack's /simrunner paths cannot be recreated here. Every
+          # path below is passed to the binary explicitly, so anywhere writable
+          # will do.
+          R=/tmp/simrunner
+          mkdir -p "$R/content-packs" "$R/mounted-runtime-asset-paks"
+          cp "$S/unreal-airsim/settings.json"          "$R/settings.json"
+          cp "$S/scenario/scenario_runtime.json"       "$R/"
+          cp "$S/scenario/object_clutter.yaml"         "$R/"
+          cp "$S/scenario/environment_parameters.json" "$R/"
+          cp "$S/scenario-plugin/scenario_plugin.json" "$R/"
+          cp -r "$S/content-packs/." "$R/content-packs/"
           # Same flags the generated stack uses, with the window swapped for
           # off-screen rendering: a pod has no X server. Never -NullRHI, which
           # skips rendering and takes the cameras with it.
@@ -120,14 +124,15 @@ workflow:
             -ini:Engine:[SystemSettings]:r.Vulkan.RHIThread=0 \
             -ini:Engine:[SystemSettings]:r.PSOPrecaching=0 \
             -ini:Engine:[SystemSettings]:r.Vulkan.AllowPSOPrecaching=0 \
-            -ScenarioPath=/simrunner/scenario_runtime.json \
+            -settings="$R/settings.json" \
+            -ScenarioPath="$R/scenario_runtime.json" \
             -startSeed=42 \
-            -MnSScenarioPluginConfig=/simrunner/scenario_plugin.json \
-            -SimObjectClutterConfig=/simrunner/object_clutter.yaml \
+            -MnSScenarioPluginConfig="$R/scenario_plugin.json" \
+            -SimObjectClutterConfig="$R/object_clutter.yaml" \
             -SimObjectClutterSeed=42 \
             -SimObjectClutterDensity=none \
-            -MnSResolvedPackSet=/simrunner/content-packs/resolved-pack-set.json \
-            -MnSEnvironmentParameters=/simrunner/environment_parameters.json
+            -MnSResolvedPackSet="$R/content-packs/resolved-pack-set.json" \
+            -MnSEnvironmentParameters="$R/environment_parameters.json"
       exitActions:
         COMPLETE: "0"
         RESCHEDULE: "42,137"
@@ -201,6 +206,10 @@ workflow:
         contents: |
           #!/bin/bash
           set -e
+          # Overriding `command` bypasses the image's /ros_entrypoint.sh, which
+          # is what would normally put ros2 on PATH.
+          source /opt/ros/humble/setup.bash
+          source /ws/install/setup.bash
           # The calibration is frozen beside the scenario and staged into the
           # generated stack; it is part of the run, not of the image.
           exec ros2 launch ov_msckf subscribe.launch.py \
@@ -257,7 +266,10 @@ workflow:
           # Exit code is the verdict, and the three values are not
           # interchangeable: 1 means the stack is wrong and must never be
           # retried, 42 means the platform was not ready and should be.
-          set -uo pipefail
+          # No `set -u`: ROS's setup.bash reads unset variables
+          # (AMENT_TRACE_SETUP_FILES), which would abort the task before it
+          # measured anything.
+          set -o pipefail
           source /opt/ros/humble/setup.bash
           source /ws/install/setup.bash
 
