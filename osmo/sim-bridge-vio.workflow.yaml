@@ -1,0 +1,304 @@
+# One TEVV run as one gang-scheduled OSMO group: the simulator, the ROS 2
+# bridge, an estimator under test, and a lead task whose exit code is the
+# verdict.
+#
+#   osmo workflow submit osmo/sim-bridge-vio.workflow.yaml --dry-run
+#   osmo workflow submit osmo/sim-bridge-vio.workflow.yaml --label suite=vio
+#   osmo workflow query <id>
+#   osmo workflow logs  <id>
+#
+# It schedules a stack that stackgen has already generated; it does not
+# describe one. `stack` below names a directory under generated/, and every
+# config the simulator reads comes from there. That keeps the generator the
+# single source of truth for what a run *is* -- the workflow only decides
+# where it runs. Generate it first:
+#
+#   ./product.sh cli runtime --scenario /workspace/scenarios/vio-osmo-condo --no-run
+#
+# Prerequisites, all from docs/osmo-mapping.md:
+#   - the GPU cluster from osmo/kind-osmo-cluster-config.gpu.yaml, which
+#     bind-mounts the product checkout into the compute node at /workspace
+#   - the four images loaded into that node with `kind load docker-image`
+#   - a control plane from osmo/setup-local-osmo.sh gpu
+#
+# Two things are deliberately absent. There is no autopilot and no pilot, so
+# the vehicle never leaves the ground: this proves the group, the transport and
+# the estimator, not a flight. And the verdict travels in the lead's exit code
+# rather than through {{output}}, because the task-output round trip does not
+# work on this control plane.
+workflow:
+  name: sim-bridge-vio
+  labels:
+    component: runtime-stack
+    suite: sim-bridge-vio
+    tier: L1
+  timeout:
+    exec_timeout: 25m
+    queue_timeout: 1h
+
+  # `platform` belongs to a resource, never to a task; a task selects one with
+  # singular `resource:`. The chart provisions `cpu` and `gpu` in pool default.
+  resources:
+    default:
+      cpu: 1
+      memory: 1Gi
+      storage: 1Gi
+      platform: cpu
+    sim:
+      cpu: 8
+      memory: 16Gi
+      storage: 8Gi
+      gpu: 1
+      platform: gpu
+    worker:
+      cpu: 2
+      memory: 4Gi
+      storage: 2Gi
+      platform: cpu
+
+  groups:
+  - name: run
+    # No task starts until every image is pulled and every container is ready.
+    barrier: true
+    # Default is true, which restarts a dead non-lead task on its own while the
+    # rest of the run continues. A bridge rejoining a mid-run graph corrupts the
+    # recording silently, so any death must fail the gang instead.
+    ignoreNonleadStatus: false
+    tasks:
+
+    # Pod networking has no multicast, so default DDS discovery finds nothing.
+    # Everything below dials this instead.
+    - name: discovery-server
+      image: "{{ ros_base_image }}"
+      resource: default
+      command: ["/bin/bash", "/tmp/ds.sh"]
+      files:
+      - path: /tmp/ds.sh
+        contents: |
+          #!/bin/bash
+          set -e
+          source /opt/ros/humble/setup.bash
+          exec fastdds discovery -i 0 -l 0.0.0.0 -p 11811
+
+    - name: sim
+      image: "{{ runtime_host_image }}"
+      resource: sim
+      command: ["/bin/bash", "/tmp/sim.sh"]
+      volumeMounts: ["/workspace"]
+      environment:
+        NVIDIA_DRIVER_CAPABILITIES: all
+        STACK: "{{ stack }}"
+      files:
+      - path: /tmp/sim.sh
+        contents: |
+          #!/bin/bash
+          # Stage the generated stack's config where the binary expects it. The
+          # checkout is mounted read-only, and these are the paths the compose
+          # stack binds one by one.
+          set -e
+          S="/workspace/generated/${STACK}/config"
+          test -d "$S" || { echo "no generated stack at $S; generate it first" >&2; exit 1; }
+          mkdir -p /simrunner/content-packs /simrunner/mounted-runtime-asset-paks
+          cp "$S/unreal-airsim/settings.json"          /app/TEVVRuntimeHost/settings.json
+          cp "$S/scenario/scenario_runtime.json"       /simrunner/
+          cp "$S/scenario/object_clutter.yaml"         /simrunner/
+          cp "$S/scenario/environment_parameters.json" /simrunner/
+          cp "$S/scenario-plugin/scenario_plugin.json" /simrunner/
+          cp -r "$S/content-packs/." /simrunner/content-packs/
+          # Same flags the generated stack uses, with the window swapped for
+          # off-screen rendering: a pod has no X server. Never -NullRHI, which
+          # skips rendering and takes the cameras with it.
+          exec /app/TEVVRuntimeHost/TEVVRuntimeHost.sh \
+            -RenderOffScreen -NoSound -Unattended -NoSplash \
+            -NoRayTracing \
+            -ExecCmds='r.RayTracing 0;r.RayTracing.ForceAllRayTracingEffects 0;r.Lumen.HardwareRayTracing 0' \
+            -ini:Engine:[SystemSettings]:r.Vulkan.RHIThread=0 \
+            -ini:Engine:[SystemSettings]:r.PSOPrecaching=0 \
+            -ini:Engine:[SystemSettings]:r.Vulkan.AllowPSOPrecaching=0 \
+            -ScenarioPath=/simrunner/scenario_runtime.json \
+            -startSeed=42 \
+            -MnSScenarioPluginConfig=/simrunner/scenario_plugin.json \
+            -SimObjectClutterConfig=/simrunner/object_clutter.yaml \
+            -SimObjectClutterSeed=42 \
+            -SimObjectClutterDensity=none \
+            -MnSResolvedPackSet=/simrunner/content-packs/resolved-pack-set.json \
+            -MnSEnvironmentParameters=/simrunner/environment_parameters.json
+      exitActions:
+        COMPLETE: "0"
+        RESCHEDULE: "42,137"
+
+    - name: bridge
+      image: "{{ bridge_image }}"
+      resource: worker
+      volumeMounts: ["/workspace"]
+      command: ["/bin/bash", "/tmp/bridge.sh"]
+      environment:
+        # One variable names the simulator, and the entrypoint uses it twice:
+        # to dial-wait on the RPC port, and to inject host_ip:= into the launch.
+        AIRSIM_HOST_IP: "{{host:sim}}"
+        AIRSIM_HOST_PORT: "41451"
+        # UE5 cold start with a level to mount. Expiry exits 42, which is
+        # rescheduled as infrastructure rather than counted as a failure.
+        AIRSIM_DIAL_WAIT_SEC: "600"
+        # Shared memory needs one IPC namespace, which OSMO cannot give across
+        # tasks. See docs/osmo-mapping.md section 3.1.
+        TRANSPORT: rpc
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        ROS_DISCOVERY_SERVER: "{{host:discovery-server}}:11811"
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        RCUTILS_COLORIZED_OUTPUT: "0"
+        STACK: "{{ stack }}"
+        VEHICLE: "{{ vehicle }}"
+      files:
+      - path: /tmp/bridge.sh
+        contents: |
+          #!/bin/bash
+          set -e
+          S="/workspace/generated/${STACK}/config"
+          # The topic map is generated per stack; never hand-write topic names.
+          cp "$S/topic_names.yaml" /tmp/topic_names.yaml
+          # Flags mirror the generated stack. enable_vio:=false and
+          # disable_rpc_aux_sensors:=false are what the generator sets when an
+          # estimator is present: images arrive over RPC and the IMU runs at
+          # 200 Hz. MAVROS is off because this group has no autopilot.
+          exec /entrypoint.sh ros2 launch airsim_ros2_bridge single_vehicle.launch.py \
+            vehicle_name:="${VEHICLE}" \
+            enable_vio:=false \
+            auto_discover_cameras:=false \
+            disable_rpc_aux_sensors:=false \
+            poll_rate_hz:=30.0 \
+            topic_prefix:=/ \
+            topic_names_config:=/tmp/topic_names.yaml \
+            enable_mavros:=false \
+            enable_localization:=true \
+            localization_source:=sim \
+            enable_local_obs:=false \
+            use_sim_time:=true
+      exitActions:
+        COMPLETE: "0"
+        RESCHEDULE: "42,137"
+
+    - name: vio
+      image: "{{ vio_estimator_image }}"
+      resource: worker
+      volumeMounts: ["/workspace"]
+      command: ["/bin/bash", "/tmp/vio.sh"]
+      environment:
+        HOME: /tmp
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        ROS_DISCOVERY_SERVER: "{{host:discovery-server}}:11811"
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        STACK: "{{ stack }}"
+      files:
+      - path: /tmp/vio.sh
+        contents: |
+          #!/bin/bash
+          set -e
+          # The calibration is frozen beside the scenario and staged into the
+          # generated stack; it is part of the run, not of the image.
+          exec ros2 launch ov_msckf subscribe.launch.py \
+            config_path:="/workspace/generated/${STACK}/config/vio/estimator_config.yaml" \
+            max_cameras:=2 use_stereo:=true
+      exitActions:
+        COMPLETE: "0"
+        RESCHEDULE: "42,137"
+
+    # The verdict. Deliberately not the bridge's own certify suite, which has
+    # three defects that would fail any run regardless of the stack: it names a
+    # profile XML nothing creates, its contract file is absent from the image,
+    # and its tf and sensor checks default to bare topics. This asserts on one
+    # thing we control instead.
+    - name: score
+      lead: true
+      image: "{{ bridge_image }}"
+      resource: worker
+      command: ["/bin/bash", "/tmp/score.sh"]
+      environment:
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        # A plain DDS client only learns about endpoints it matches, so
+        # `ros2 topic list` shows an empty graph against a discovery server.
+        # SUPER_CLIENT asks the server for the whole database.
+        FASTRTPS_DEFAULT_PROFILES_FILE: /tmp/super-client.xml
+        ROS_DISCOVERY_SERVER_ADDR: "{{host:discovery-server}}"
+        ROS_DISCOVERY_SERVER_PORT: "11811"
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        READY_WAIT_SEC: "720"
+        MIN_ODOM_HZ: "5"
+      files:
+      - path: /tmp/super-client.xml
+        contents: |
+          <?xml version="1.0" encoding="UTF-8" ?>
+          <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+            <participant profile_name="ds_super_client" is_default_profile="true">
+              <rtps><builtin><discovery_config>
+                <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>
+                <discoveryServersList>
+                  <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
+                    <metatrafficUnicastLocatorList><locator><udpv4>
+                      <address>${ROS_DISCOVERY_SERVER_ADDR}</address>
+                      <port>${ROS_DISCOVERY_SERVER_PORT}</port>
+                    </udpv4></locator></metatrafficUnicastLocatorList>
+                  </RemoteServer>
+                </discoveryServersList>
+              </discovery_config></builtin></rtps>
+            </participant>
+          </profiles>
+      - path: /tmp/score.sh
+        contents: |
+          #!/bin/bash
+          # Exit code is the verdict, and the three values are not
+          # interchangeable: 1 means the stack is wrong and must never be
+          # retried, 42 means the platform was not ready and should be.
+          set -uo pipefail
+          source /opt/ros/humble/setup.bash
+          source /ws/install/setup.bash
+
+          deadline=$(( $(date +%s) + READY_WAIT_SEC ))
+          until ros2 topic list 2>/dev/null | grep -qx "/clock" \
+             && ros2 topic list 2>/dev/null | grep -qx "/ov_msckf/odomimu"; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "READINESS TIMEOUT: /clock or /ov_msckf/odomimu never appeared" >&2
+              ros2 topic list 2>/dev/null >&2
+              exit 42
+            fi
+            sleep 5
+          done
+          echo "graph up; measuring"
+
+          rc=0
+          # The estimator can be subscribed and silent -- that is the failure
+          # this catches. A rate, not mere presence.
+          hz=$(timeout 40 ros2 topic hz /ov_msckf/odomimu 2>/dev/null \
+                 | grep -m1 'average rate' | awk '{print $3}')
+          if [ -z "${hz:-}" ]; then
+            echo "FAIL: /ov_msckf/odomimu published nothing in 40 s" >&2
+            rc=1
+          elif awk "BEGIN{exit !($hz < $MIN_ODOM_HZ)}"; then
+            echo "FAIL: odometry $hz Hz below the $MIN_ODOM_HZ Hz floor" >&2
+            rc=1
+          else
+            echo "PASS: odometry $hz Hz"
+          fi
+
+          for t in /imu/data /camera/front/image_raw /camera/front_right/image_raw; do
+            r=$(timeout 25 ros2 topic hz "$t" 2>/dev/null | grep -m1 'average rate' | awk '{print $3}')
+            if [ -z "${r:-}" ]; then echo "FAIL: $t silent" >&2; rc=1; else echo "PASS: $t $r Hz"; fi
+          done
+
+          echo "score rc=$rc"
+          exit $rc
+      exitActions:
+        COMPLETE: "0"
+        FAIL: "1"
+        RESCHEDULE: "42,137"
+
+default-values:
+  stack: vio-osmo-condo
+  vehicle: Drone1
+  ros_base_image: osrf/ros:humble-ros-base
+  runtime_host_image: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0
+  bridge_image: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0
+  vio_estimator_image: dhdevspace/auto_mns:vio-estimator-openvins-69488123

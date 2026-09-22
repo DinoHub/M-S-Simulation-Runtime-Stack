@@ -44,12 +44,25 @@ nodes:
       # the documented source.
       - hostPath: /dev/null
         containerPath: /var/run/nvidia-container-devices/all
-      # The level packs. A pod cannot see a host directory unless kind mounts it
-      # into the node first, so this is the prerequisite for a `sim` task
-      # declaring `volumeMounts: ["/packs"]`. Read-only: a run loads a pack, it
-      # never writes one. Channel v1; point it elsewhere to run another channel.
-      - hostPath: /home/mnsuser/M-S-Simulation-Runtime-Stack/.mns/v1/pack-store
-        containerPath: /packs
+      # The product checkout, which carries both halves of what a sim task
+      # needs: the channel pack stores under .mns/, and the per-stack config
+      # that stackgen writes under generated/<stack>/config -- settings.json,
+      # scenario_runtime.json, environment_parameters.json, object_clutter.yaml,
+      # content-packs/resolved-pack-set.json and the rest. A pod cannot see a
+      # host directory unless kind mounts it into the node first, so this is the
+      # prerequisite for any task declaring volumeMounts.
+      #
+      # Mounting the checkout rather than reproducing those files as OSMO
+      # `files:` entries is deliberate: stackgen stays the single source of
+      # truth for what a run is, and the workflow only schedules it. Twelve
+      # generated files restated by hand in a workflow would drift the first
+      # time the generator changed one.
+      #
+      # Read-only, so a run can load a pack and read its config but cannot
+      # write back into the checkout. A task that must produce artifacts needs
+      # its own writable mount.
+      - hostPath: /home/mnsuser/M-S-Simulation-Runtime-Stack
+        containerPath: /workspace
         readOnly: true
     kubeadmConfigPatches:
       - |
