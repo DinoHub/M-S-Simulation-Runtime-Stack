@@ -202,7 +202,32 @@ workflow:
           done
           echo "sim reachable; starting PX4 SITL"
           cd /px4_workspace/PX4-Autopilot
-          exec ./Scripts/run_airsim_sitl.sh 0
+
+          # Retry, because the image exits on a diagnostic. Its router-mode
+          # startup script ROMFS/px4fmu_common/init.d-posix/px4-rc.mavlink.router
+          # ends with a bare `mavlink status`, so that command's exit code
+          # becomes the script's, becomes rcS's, and PX4 quits:
+          #
+          #   ERROR [px4] Startup script returned with return value: 65280
+          #   PX4 SITL exited with code: 255
+          #
+          # PX4 itself had already booted -- simulator connected on TCP 4560,
+          # lockstep running, router configured. It is a race against mavlink
+          # coming up, and it clears on a retry.
+          #
+          # The generated compose never shows this because the service carries
+          # `restart: unless-stopped`: it crash-loops until an attempt sticks.
+          # OSMO does not restart a task, so without this the gang dies. This
+          # is the same behaviour, made explicit and bounded.
+          for attempt in 1 2 3 4 5; do
+            echo "PX4 SITL attempt ${attempt}"
+            ./Scripts/run_airsim_sitl.sh 0 && exit 0
+            rc=$?
+            echo "PX4 SITL exited ${rc}; retrying" >&2
+            sleep 10
+          done
+          echo "PX4 SITL failed 5 times" >&2
+          exit 42
       exitActions:
         COMPLETE: "0"
         RESCHEDULE: "42,137"
