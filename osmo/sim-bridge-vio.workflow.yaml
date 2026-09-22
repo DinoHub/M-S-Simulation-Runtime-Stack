@@ -79,6 +79,14 @@ workflow:
       cpu: 1
       memory: 1Gi
       storage: 1Gi
+    # SITL runs lockstep with the simulator and the image starts MAVLink at
+    # 4 Mbps. A generated compose stack imposes no CPU limit at all, so this
+    # is the one constraint a pod adds that the working configuration never
+    # had to satisfy.
+    autopilot:
+      cpu: 6
+      memory: 4Gi
+      storage: 2Gi
 
   groups:
   - name: run
@@ -166,7 +174,7 @@ workflow:
     # binds on 0.0.0.0 -- so this needs the simulator's address, not localhost.
     - name: autopilot
       image: "{{ px4_image }}"
-      resource: worker
+      resource: autopilot
       command: ["/bin/bash", "/tmp/autopilot.sh"]
       environment:
         # Resolved to an address in the task, not passed as a name. Compose
