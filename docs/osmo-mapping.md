@@ -217,22 +217,67 @@ umbrella chart last. `osmo/kind-osmo-cluster-config.yaml` in this repository is
 the CPU-only (Option B) cluster: three nodes, `control-plane` / `control-plane`
 / `compute` node pools, gateway NodePort 30080 mapped to host port 80.
 
-### Known blocker, upstream
+### Do not use the umbrella chart from `main`
 
-The umbrella chart on `NVIDIA/OSMO` `main` runs an `identity-bootstrap` binary
-that the published image does not contain:
+`deployments/charts/osmo` on `main` cannot install against any published image.
+It says `appVersion: "6.3.1"` but was created on 2026-08-11, 50 days after the
+6.3.1 release, and the label was never bumped. Its bootstrap Jobs run
+`osmo-bootstrap`, `identity-bootstrap`, `internal-tls-bootstrap`,
+`mek-lifecycle`, `service-auth-bootstrap` and `/osmo/bootstrap-step`, none of
+which exist in `nvcr.io/nvidia/osmo/service:6.3.1` (same digest as `:latest`,
+distroless, entrypoint `/usr/bin/shelless_ulimit`). No values combination
+avoids them: `_bootstrap-gate.tpl:66` injects a `bootstrap-credentials` init
+container into all eight consumer Deployments unconditionally. Pinning to an
+older commit does not help either — at the `6.3.1` tag the directory does not
+exist at all. `ci/deployment-test/check-head-chart-contract.sh:13-14` renders
+that chart only against same-revision `nvstaging/osmo` images, which is why.
 
+### What does work: the `quick-start` chart from the 6.3.1 tag
+
+```bash
+git -C ~/OSMO fetch --depth 1 origin refs/tags/6.3.1:refs/tags/6.3.1
+git -C ~/OSMO worktree add ~/OSMO-6.3.1 6.3.1
+helm dependency update ~/OSMO-6.3.1/deployments/charts/quick-start   # file://../service 1.3.1
+kubectl label node osmo-worker node_group=service --overwrite        # the chart selects on
+kubectl label node osmo-worker2 node_group=compute --overwrite       # node_group, not ours
+helm upgrade --install osmo ~/OSMO-6.3.1/deployments/charts/quick-start \
+  --namespace osmo --create-namespace --set global.osmoImageTag=6.3.1 \
+  --set-string service.services.postgres.nodeSelector.node_group=service \
+  --set-string service.services.redis.nodeSelector.node_group=service \
+  --set-string service.services.localstackS3.nodeSelector.node_group=service \
+  --wait --timeout 20m
+osmo login http://localhost --method=dev --username=testuser
 ```
-Error: failed pre-install: job osmo-identity-token-migration failed: BackoffLimitExceeded
-  exec: "identity-bootstrap": executable file not found in $PATH
-```
 
-`nvcr.io/nvidia/osmo/service:6.3.1` and `:latest` are the same digest
-(`sha256:33ee79c7...`) and predate the commit that introduced the binary
-(`9364e8dc`, *Consolidate OSMO bootstrap into one sequenced Job* (#1414),
-2026-09-18). Setting `imageTag=6.3.1` changes nothing because it is the same
-image. Three ways forward: pin the chart to a commit before #1414, pull the
-released chart from NGC with an API key, or wait for the image to catch up.
+It bundles postgres 15.1, redis 7.0, localstack for S3 and envoy, and disables
+oauth2-proxy and authz, so nothing has to be stood up by hand. Its bootstrap
+Jobs run `alpine/k8s` and `alpine/curl`, never the OSMO image. Before
+installing, render it and grep for the six binaries above — an empty result is
+the gate that the chart and the image agree.
+
+Four things still needed fixing by hand on 6.3.1; all four are upstream bugs,
+not local misconfiguration:
+
+| Symptom | Cause | Fix applied |
+| --- | --- | --- |
+| `osmo-backend-operator-token` exits 52 in a loop | The job talks to `http://osmo-service` directly, but the service answers **only** requests arriving through the Envoy gateway — it closes the connection otherwise, and `set -e` kills the job on curl's exit 52. `osmo-config-setup` in the same chart correctly uses `http://quick-start.osmo.svc.cluster.local`. | Recreate the job with the gateway URL. |
+| ...and before that, the same job fails even on the create path | The chart pre-creates `backend-operator-token` holding `placeholder-token-will-be-replaced-by-job`, so the job takes the "test the existing token" branch into the same dead end. | Delete the placeholder secret so it takes the create branch. |
+| Every workflow fails `FAILED_SERVER_ERROR` | The default pod template sets `runtimeClassName: nvidia`; a CPU-only kind cluster has no such RuntimeClass, so the API server rejects every pod with `RuntimeClass "nvidia" not found`. | `RuntimeClass nvidia` with `handler: runc` as a shim. The GPU operator supplies the real one. |
+| Task `{{output}}` upload never lands | The data credential is created without `addressing_style`, so the client builds virtual-hosted URLs (`http://osmo.localstack-s3.osmo:4566/...`) that do not resolve. Setting `addressing_style=path` is accepted but not honoured in 6.3.1. | Give the localstack pod `hostname: osmo` / `subdomain: localstack-s3`, which makes the virtual-hosted name resolve. Fixes connectivity; the task-output upload is still a no-op — see below. |
+
+### Where it stands
+
+`hello_world.yaml` runs to `COMPLETED` and its task log comes back, so
+scheduling, the gang machinery and log capture all work. Workflow specs, task
+specs, events and logs are written to S3 by the control plane.
+
+**The task `{{output}}` round trip does not work.** `verify-object-storage.yaml`
+gets `produce` to `COMPLETED` but nothing appears under
+`workflows/<id>/produce/`, so `consume` finds an empty input. A lead task can
+therefore still produce a verdict through its **exit code**, which is what the
+workflow in this repository relies on, but anything that expects to hand a
+`validation.json` to a later task through `{{output}}` needs this resolved or a
+host `volumeMounts` path instead.
 
 ### Host constraints worth knowing
 
@@ -240,9 +285,10 @@ released chart from NGC with an API key, or wait for the image to catch up.
   `sudo sysctl`. Three nodes have come up without it.
 - The GPU path (Option A) needs `nvkind` and the GPU operator, neither
   installed. It is the prerequisite for running the runtime host in-cluster.
-- Root filesystem is the real constraint. The cluster alone took the workstation
-  from 25 GB free to 11 GB; a UE5 runtime-host image is tens of GB and will not
-  fit in a kind node's image store without reclaiming space first.
+- Root filesystem is the real constraint, though less than first feared: the
+  runtime host image is **2.32 GB**, not tens of GB, because the level lives in
+  the pack and not the image. Sim, bridge and estimator together are about
+  9.5 GB, and a kind node keeps its own copy of each.
 
 ## 7. A staged path, if this is pursued
 
