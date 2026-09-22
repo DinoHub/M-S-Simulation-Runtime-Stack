@@ -311,6 +311,38 @@ The failure mode of that last one is the reason to care: every task reaches
 `RUNNING`, the simulator mounts its level and spawns the vehicle, and the run
 looks healthy while nothing on the ROS graph can see anything.
 
+### Measuring a ROS graph from another pod
+
+Getting the lead to see the run took four attempts and is worth writing down,
+because every wrong answer looks the same from outside — an empty graph under
+a healthy stack.
+
+- **Fast DDS does not expand `${VAR}` inside XML locator fields.** It fails to
+  parse as an IPv4 literal and takes the whole profile with it, after which the
+  participant falls back to SIMPLE discovery. The ROS 2 daemon swallows the
+  parse errors, so `--no-daemon` is the only way to see the cause. The bridge
+  repo's `config/fastdds-discovery-superclient.xml` has this defect.
+- **A plain CLIENT's graph holds only what it already matches.** So
+  `ros2 topic list` returns `/parameter_events /rosout`, and `ros2 topic hz`
+  — which resolves a topic's type from the graph before subscribing — reports
+  nothing at all.
+- **SUPER_CLIENT lists the topics but did not deliver data** on 6.3.1;
+  `ros2 topic info` showed the publisher as `_NODE_NAME_UNKNOWN_`.
+- **What works is a subscriber that names its own types.** No graph lookup, no
+  profile, no daemon: it subscribes, the discovery server relays the match to
+  the publisher, and data flows. QoS is part of it — sensor topics publish
+  BEST_EFFORT and never match a default RELIABLE subscription.
+
+Measured from the lead's pod on `sim-bridge-vio-11`, which COMPLETED:
+
+```
+PASS: odom (/ov_msckf/odomimu)            199.93 Hz
+PASS: imu (/imu/data)                     200.03 Hz
+PASS: cam_left (/camera/front/image_raw)   30.25 Hz
+PASS: cam_right (/camera/front_right/...)  30.30 Hz
+score rc=0
+```
+
 ### Host constraints worth knowing
 
 - `fs.inotify.max_user_instances` is 128; kind recommends 512. Raising it needs
@@ -332,8 +364,9 @@ are the machine; 2 onward are this repository.
 | 0 | CLIs and a kind cluster | done, §6 |
 | 1 | OSMO control plane, `verify-hello.yaml` completes | blocked upstream, §6 |
 | 2 | The bridge as a cluster task against a host sim | TEVV-Airsim-ROS2-Bridge, its `osmo/bridge-certify-hostsim.workflow.yaml` |
-| 3 | The runtime host in-cluster, headless, on GPU | **done** — `osmo/sim-bridge-vio.workflow.yaml`; condo mounts and the vehicle spawns in a pod |
-| 4 | A whole generated stack as one group, with a verdict | **here** plus the platform — lead task and exit-code contract (§3.4) |
+| 3 | The runtime host in-cluster, headless, on GPU | **done** — `osmo/sim-bridge-vio.workflow.yaml` |
+| 4 | Sim, bridge and an estimator as one group, with a verdict | **done** — `sim-bridge-vio-11` COMPLETED, lead exit 0 |
+| 4b | A flight, and the recording gates over it | not started — no autopilot or pilot in the group yet |
 | 5 | A campaign as N labelled workflows | the campaign runner; one materialized ScenarioSpec per workflow, already how it works |
 
 Stage 3 is done, by a route worth recording: rather than teach the generator a
