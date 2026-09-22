@@ -154,7 +154,12 @@ workflow:
         # tasks. See docs/osmo-mapping.md section 3.1.
         TRANSPORT: rpc
         RMW_IMPLEMENTATION: rmw_fastrtps_cpp
-        ROS_DISCOVERY_SERVER: "{{host:discovery-server}}:11811"
+        # Not ROS_DISCOVERY_SERVER directly: Fast DDS in Humble parses that
+        # variable as a locator and accepts only an IP, so the DNS name behind
+        # {{host:...}} is rejected with "Wrong locator passed into the server's
+        # list" and the participant then discovers nothing. Each task resolves
+        # it to an address first.
+        DS_HOST: "{{host:discovery-server}}"
         ROS_DOMAIN_ID: "0"
         RCUTILS_LOGGING_USE_STDOUT: "1"
         RCUTILS_COLORIZED_OUTPUT: "0"
@@ -165,6 +170,11 @@ workflow:
         contents: |
           #!/bin/bash
           set -e
+          # Fast DDS wants an address here, not a name (see DS_HOST above).
+          DS_IP=$(getent hosts "$DS_HOST" | awk '{print $1; exit}')
+          [ -n "$DS_IP" ] || { echo "cannot resolve $DS_HOST" >&2; exit 42; }
+          export ROS_DISCOVERY_SERVER="${DS_IP}:11811"
+          echo "discovery server $DS_HOST -> $ROS_DISCOVERY_SERVER"
           S="/workspace/generated/${STACK}/config"
           # The topic map is generated per stack; never hand-write topic names.
           cp "$S/topic_names.yaml" /tmp/topic_names.yaml
@@ -197,7 +207,7 @@ workflow:
       environment:
         HOME: /tmp
         RMW_IMPLEMENTATION: rmw_fastrtps_cpp
-        ROS_DISCOVERY_SERVER: "{{host:discovery-server}}:11811"
+        DS_HOST: "{{host:discovery-server}}"
         ROS_DOMAIN_ID: "0"
         RCUTILS_LOGGING_USE_STDOUT: "1"
         STACK: "{{ stack }}"
@@ -210,6 +220,11 @@ workflow:
           # is what would normally put ros2 on PATH.
           source /opt/ros/humble/setup.bash
           source /ws/install/setup.bash
+          # Fast DDS wants an address here, not a name (see DS_HOST above).
+          DS_IP=$(getent hosts "$DS_HOST" | awk '{print $1; exit}')
+          [ -n "$DS_IP" ] || { echo "cannot resolve $DS_HOST" >&2; exit 42; }
+          export ROS_DISCOVERY_SERVER="${DS_IP}:11811"
+          echo "discovery server $DS_HOST -> $ROS_DISCOVERY_SERVER"
           # The calibration is frozen beside the scenario and staged into the
           # generated stack; it is part of the run, not of the image.
           exec ros2 launch ov_msckf subscribe.launch.py \
@@ -235,7 +250,7 @@ workflow:
         # `ros2 topic list` shows an empty graph against a discovery server.
         # SUPER_CLIENT asks the server for the whole database.
         FASTRTPS_DEFAULT_PROFILES_FILE: /tmp/super-client.xml
-        ROS_DISCOVERY_SERVER_ADDR: "{{host:discovery-server}}"
+        DS_HOST: "{{host:discovery-server}}"
         ROS_DISCOVERY_SERVER_PORT: "11811"
         ROS_DOMAIN_ID: "0"
         RCUTILS_LOGGING_USE_STDOUT: "1"
@@ -272,6 +287,14 @@ workflow:
           set -o pipefail
           source /opt/ros/humble/setup.bash
           source /ws/install/setup.bash
+          # Fast DDS wants an address here, not a name (see DS_HOST above).
+          DS_IP=$(getent hosts "$DS_HOST" | awk '{print $1; exit}')
+          [ -n "$DS_IP" ] || { echo "cannot resolve $DS_HOST" >&2; exit 42; }
+          export ROS_DISCOVERY_SERVER="${DS_IP}:11811"
+          echo "discovery server $DS_HOST -> $ROS_DISCOVERY_SERVER"
+          # The profile XML substitutes this into a locator address, so it is
+          # the resolved IP and not the name.
+          export ROS_DISCOVERY_SERVER_ADDR="$DS_IP"
 
           deadline=$(( $(date +%s) + READY_WAIT_SEC ))
           until ros2 topic list 2>/dev/null | grep -qx "/clock" \
@@ -282,6 +305,7 @@ workflow:
               exit 42
             fi
             sleep 5
+            [ $(( $(date +%s) % 60 )) -lt 5 ] && ros2 topic list 2>/dev/null | tr '\n' ' ' | sed 's/^/  graph: /' && echo
           done
           echo "graph up; measuring"
 
