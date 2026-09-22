@@ -169,8 +169,14 @@ workflow:
       resource: worker
       command: ["/bin/bash", "/tmp/autopilot.sh"]
       environment:
-        PX4_SIM_HOSTNAME: "{{host:sim}}"
+        # Resolved to an address in the task, not passed as a name. Compose
+        # hands PX4 a bare IP; under OSMO {{host:sim}} is a ~100-character pod
+        # FQDN, and PX4's rcS logs `[: Illegal number:` on it.
+        SIM_HOST: "{{host:sim}}"
         SIM_PORT: "41451"
+        # Matches what the generated compose sets. Left unset it defaults to
+        # 127.0.0.1, which is the other difference between the two runs.
+        MAVLINK_TARGET: "127.0.0.1"
         SIM_DIAL_WAIT_SEC: "900"
         PX4_SIM_MODEL: none_iris
         PX4_SIMULATOR: none
@@ -193,14 +199,17 @@ workflow:
           # The generated compose sleeps 20 s here. A fixed sleep is a guess
           # that is either wasted time or not enough; wait for the port.
           deadline=$(( $(date +%s) + SIM_DIAL_WAIT_SEC ))
-          until (exec 3<>"/dev/tcp/${PX4_SIM_HOSTNAME}/${SIM_PORT}") 2>/dev/null; do
+          until (exec 3<>"/dev/tcp/${SIM_HOST}/${SIM_PORT}") 2>/dev/null; do
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "READINESS TIMEOUT: ${PX4_SIM_HOSTNAME}:${SIM_PORT}" >&2
+              echo "READINESS TIMEOUT: ${SIM_HOST}:${SIM_PORT}" >&2
               exit 42
             fi
             sleep 5
           done
-          echo "sim reachable; starting PX4 SITL"
+          PX4_SIM_HOSTNAME=$(getent hosts "$SIM_HOST" | awk '{print $1; exit}')
+          [ -n "$PX4_SIM_HOSTNAME" ] || { echo "cannot resolve $SIM_HOST" >&2; exit 42; }
+          export PX4_SIM_HOSTNAME
+          echo "sim $SIM_HOST -> $PX4_SIM_HOSTNAME; starting PX4 SITL"
           cd /px4_workspace/PX4-Autopilot
           exec ./Scripts/run_airsim_sitl.sh 0
       exitActions:
