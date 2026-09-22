@@ -63,8 +63,11 @@ vehicles:
   # This is the failure PR #87's findings describe -- "hand-authored scenarios
   # ... need the level's PlayerStart as origin or the vehicle spawns
   # kilometres above the ground". A pack does not carry its PlayerStart yet,
-  # so until it does, a scenario for a level has to borrow the pose from a
-  # compose stack that is known to fly it.
+  # so the pose has to be found by measurement.
+  #
+  # config/unreal-airsim/condo/settings-px4.json is NOT a source for it, though
+  # it looks like one: its Z: 1.3 places the vehicle 1.3 m BELOW the origin and
+  # so below condo's floor. Tried first, and the run fell 224 m in 25 s.
   #
   # AirSim NED metres relative to OriginGeopoint, and +Z is DOWN -- so a
   # POSITIVE z spawns the vehicle BELOW the origin. The compose stack's
