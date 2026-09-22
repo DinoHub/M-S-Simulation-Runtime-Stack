@@ -849,10 +849,22 @@ default-values:
   # Long enough to span the flight: the recorder is the lead, so the gang ends
   # when it does.
   record_sec: "300"
-  # Whether the vehicle flies. false runs the stack and the estimator with the
-  # vehicle at rest, which is a valid measurement of its own and the only mode
-  # that works while PX4 SITL fails under OSMO (see the elimination trail in
-  # the git log).
+  # Whether the vehicle flies.
+  #
+  # fly=false does NOT produce a VIO verdict, and it is worth knowing why
+  # before reaching for it. OpenVINS publishes nothing on /ov_msckf/odomimu
+  # while the vehicle is stationary: it goes into zero-velocity updates --
+  # healthy, 138 features tracked, |v| = 0.004 m/s -- and emits no odometry.
+  # Run 21 waited the full 900 s and timed out with exit 42.
+  #
+  # Every earlier run published at 199 Hz because the vehicle was falling
+  # through the level. The motion that made the estimator produce output was
+  # the bug.
+  #
+  # So a VIO run needs the flight, and the flight needs PX4 SITL, which fails
+  # under OSMO (five hypotheses eliminated; see the git log). fly=false is
+  # useful for exercising the sim, the bridge and the evaluation phases --
+  # not for measuring an estimator.
   fly: false
   autopilot: px4
   fly_distance_m: "30"
