@@ -754,6 +754,42 @@ workflow:
         COMPLETE: "0,1"
         RESCHEDULE: "137"
 
+    # The recording's own verdict: is the bag internally consistent -- stamps
+    # in sim time, frames present, rates within tolerance? Under compose,
+    # run_experiment.py runs this inside the bridge after the flight; under
+    # OSMO it is one more evaluator reading the same evidence. It writes
+    # validation.json, which `campaign status` reads per run.
+    - name: validate
+      image: "{{ bridge_image }}"
+      resource: light
+      inputs:
+      - task: recorder
+      environment:
+        VEHICLE: "{{ vehicle }}"
+      files:
+      - localpath: files/validate_recording.py
+        path: /tmp/validate_recording.py
+      - path: /tmp/topics.yaml
+        contents: |
+          sim:
+            ground_truth: /ground_truth/odom
+            estimate: {{ est_topic }}
+            clock: /clock
+      command: ["/bin/bash", "-c"]
+      args:
+      - >-
+        source /opt/ros/humble/setup.bash && source /ws/install/setup.bash &&
+        mkdir -p "{{output}}" &&
+        python3 /tmp/validate_recording.py "{{input:0}}"
+        --topics /tmp/topics.yaml --json "{{output}}/validation.json";
+        rc=$?; cat "{{output}}/validation.json" 2>/dev/null | head -c 2000; exit $rc
+      exitActions:
+        # Reports; does not veto. Exit 1 means a check failed, which is
+        # information for the aggregate and the scorecard, not a reason to
+        # stop the workflow.
+        COMPLETE: "0,1"
+        RESCHEDULE: "137"
+
   # ---- aggregate: the verdict ----------------------------------------------
   - name: aggregate
     barrier: true
@@ -766,11 +802,18 @@ workflow:
       inputs:
       - task: vio-eval
       - task: spawn-eval
+      - task: validate
       environment:
         # Every evaluator's output lands under here as input/<n>/, so the
         # aggregate reads them all without knowing how many there are.
         REPORT_DIR: /osmo/data/input
-        MAX_ATE_M: "{{ max_ate_m }}"
+        # The acceptance criteria, as JSON: {"<metric>": {"max": n} | {"min": n}}.
+        # Read from the CampaignSpec's evaluation.gates by the executor and
+        # passed through --set, so the same workflow serves any campaign's
+        # thresholds and the gate a run was judged against is recorded with
+        # the run. Standalone default: the 1 m ATE gate this workflow has
+        # always applied.
+        GATES: '{{ gates_json }}'   # single-quoted: the JSON carries double quotes
       command: ["python3", "/tmp/verdict.py"]
       files:
       - path: /tmp/verdict.py
@@ -824,17 +867,25 @@ workflow:
                           status = 1
                       continue
 
-                  # The gate on the thing under test.
-                  ate = _find(data, ("ate", "ate_m", "ate_rmse", "rmse"))
-                  if ate is None:
-                      print("WARN: %s carries no ATE field; not gated" % path.name)
-                      continue
-                  limit = float(os.environ.get("MAX_ATE_M", 1.0))
-                  if ate > limit:
-                      print("FAIL: ATE %.3f m over the %.3f m gate" % (ate, limit))
-                      status = 1
-                  else:
-                      print("PASS: ATE %.3f m within %.3f m" % (ate, limit))
+                  # The gates on the thing under test. Each names a metric
+                  # and a bound; a metric absent from every report is a WARN,
+                  # not a FAIL -- an evaluator that did not measure something
+                  # is a gap in coverage, and hiding it inside a red verdict
+                  # would make it look like the stack was wrong.
+                  gates = json.loads(os.environ.get("GATES") or "{}")
+                  for metric, bound in gates.items():
+                      value = _find(data, (metric,))
+                      if value is None:
+                          print("WARN: %s carries no %r field; not gated" % (path.name, metric))
+                          continue
+                      if "max" in bound and value > float(bound["max"]):
+                          print("FAIL: %s %.3f over the %.3f gate" % (metric, value, float(bound["max"])))
+                          status = 1
+                      elif "min" in bound and value < float(bound["min"]):
+                          print("FAIL: %s %.3f under the %.3f gate" % (metric, value, float(bound["min"])))
+                          status = 1
+                      else:
+                          print("PASS: %s %.3f within %s" % (metric, value, bound))
 
               print("verdict rc=%d" % status)
               return status
@@ -842,11 +893,22 @@ workflow:
           def _find(node, names):
               """Depth-first search for the first numeric field with one of
               these names. Evaluator report shapes are not yet a contract, so
-              this looks rather than assumes."""
+              this looks rather than assumes. A dotted name ("ate_trans_m.rmse")
+              walks that path from the first matching parent."""
+              for name in names:
+                  if "." in name:
+                      head, _, rest = name.partition(".")
+                      parent = _find(node, (head,)) if not isinstance(node, dict) or head not in node else node[head]
+                      if isinstance(parent, dict):
+                          found = _find(parent, (rest,))
+                          if found is not None:
+                              return found
               if isinstance(node, dict):
                   for key, value in node.items():
                       if key.lower() in names and isinstance(value, (int, float)):
                           return float(value)
+                      if key.lower() in names and isinstance(value, dict) and any("." in n for n in names):
+                          return value
                   for value in node.values():
                       found = _find(value, names)
                       if found is not None:
@@ -893,7 +955,9 @@ default-values:
   # Where the estimator under test publishes. Mirrors the ScenarioSpec's
   # extensions.mns.vio_estimator.odom_topic; change both together.
   est_topic: /ov_msckf/odomimu
-  max_ate_m: "1.0"
+  # JSON. The trajectory report nests its numbers, so the metric is a dotted
+  # path into it. Overridden per campaign from evaluation.gates.
+  gates_json: '{"ate_trans_m.rmse": {"max": 1.0}}'
   # Descent rate above which a run is treated as having fallen out of the
   # world, in m/s, when nothing is moving horizontally.
   max_fall_ms: "0.5"
