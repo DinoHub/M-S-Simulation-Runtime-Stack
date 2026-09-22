@@ -1,0 +1,190 @@
+# copied from TEVV-Airsim-ROS2-Bridge@2007b6c (osmo/bridge-certify-hostsim.workflow.yaml); edit there, not here
+# OSMO workflow: certify the bridge against a sim that runs OUTSIDE the cluster.
+#
+# Stage-1 variant of bridge-certify.workflow.yaml for a workstation kind/nvkind
+# deployment: no GPU task, no sim image inside the cluster. AirSim (UE5) runs on
+# the host as today (make dev / runtime-stack compose); the bridge task dials it
+# at `sim_host`. Everything else -- discovery-server, bridge, certify lead, exit
+# codes -- is identical to the full file, which stays the reference. Keep the
+# two in step: this one is DERIVED (drop the sim task + resource, swap
+# {{host:sim}} for {{ sim_host }}).
+#
+# Prereqs on the host: AirSim RPC bound on 0.0.0.0:41451 (ss -ltnp | grep 41451)
+# and reachable from the kind network (firewall). Pods reach the host by its LAN
+# IP, not 127.0.0.1.
+#
+# Submit:
+#   kind load docker-image tevv-airsim-ros2-bridge:humble --name osmo
+#   osmo workflow submit osmo/bridge-certify-hostsim.workflow.yaml \
+#     --set sim_host=<host-lan-ip> --set bridge_image=tevv-airsim-ros2-bridge:humble \
+#     --label suite=bridge-certify --label stage=hostsim
+#
+workflow: certify the AirSim ROS 2 bridge against the platform contract.
+#
+# One gang-scheduled group = one TEVV run (platform spec 2026-07-13 §7). Tasks:
+#   discovery-server  FastDDS Discovery Server -- the `comms: fastdds-ds`
+#                     rendezvous. DDS multicast does not survive pod networking,
+#                     so every participant dials {{host:discovery-server}}.
+#   sim               Cosys-AirSim UE5 headless (GPU). Image/settings come from
+#                     M-S-Simulation-Runtime-Stack; this file only names the
+#                     interface: RPC on 41451, settings.json injected via files:.
+#   bridge            this repo's image. Dial-waits on the sim RPC port, then
+#                     launches single_vehicle with topic_prefix={vehicle}/.
+#   certify (lead)    runs the contract + validation suites against the live
+#                     graph. Its exit code IS the group outcome.
+#
+# Exit-code contract (spec 2026-07-13 §8, rendered by tevv-compile in the real
+# platform; hand-written here so the file is submittable standalone):
+#   0   PASSED         all checks green
+#   1   FAILED         contract/validation violation -- a real verdict, never retried
+#   42  INFRA_FAILED   readiness timeout (sim never answered RPC) -> reschedule
+#   137 INFRA_FAILED   OOM/SIGKILL -> reschedule (OSMO default)
+#   3006               preempted by KAI -> reschedule (OSMO default)
+# ignoreNonleadStatus: false -- any task death fails the whole gang; a fresh
+# sim or bridge rejoining a half-run graph would corrupt it silently.
+#
+# Submit:
+#   osmo workflow submit osmo/bridge-certify.workflow.yaml \
+#     --set vehicle=Drone1 --set sim_image=<harbor>/airsim-ue5-safticity@sha256:... \
+#     --label suite=bridge-certify --label tier=L1 --priority HIGH
+# Dry run (schema only): add --dry-run.
+#
+# NOT covered here (deliberately): PX4/ArduPilot SITL + MAVROS tasks (add them
+# as more tasks in the same group, addressing the sim by {{host:sim}}), the
+# iceoryx2 SHM transport (needs sim + bridge in ONE task -- see docs/OSMO.md),
+# registry writes and PR feedback (the run-conductor's job, not the bridge's).
+
+workflow:
+  name: bridge-certify-hostsim-{{ vehicle | lower }}
+  labels:
+    component: airsim-ros2-bridge
+    suite: bridge-certify
+    tier: L1
+  timeout:
+    exec_timeout: 30m       # wall-clock phase budget only; sim time is authoritative inside
+    queue_timeout: 2h
+  resources:
+    default:
+      cpu: 1
+      memory: 1Gi
+      storage: 1Gi
+    bridge:
+      cpu: 2
+      memory: 3Gi
+      storage: 4Gi
+      platform: "{{ cpu_platform }}"
+
+  groups:
+  - name: run
+    barrier: true                 # default; all images pulled before any task starts
+    ignoreNonleadStatus: false    # gang integrity: any death fails the group
+    tasks:
+
+    - name: discovery-server
+      image: "{{ ros_base_image }}"
+      resource: default
+      command: ["/bin/bash", "/tmp/ds.sh"]
+      files:
+      - path: /tmp/ds.sh
+        contents: |
+          #!/bin/bash
+          set -e
+          source /opt/ros/humble/setup.bash
+          exec fastdds discovery -i 0 -l 0.0.0.0 -p 11811
+
+
+    - name: bridge
+      image: "{{ bridge_image }}"
+      resource: bridge
+      # Image ENTRYPOINT (/entrypoint.sh) does the dial-wait and env->launch-arg
+      # injection; the CMD below is the launch itself.
+      command: ["/entrypoint.sh"]
+      args:
+      - ros2
+      - launch
+      - airsim_ros2_bridge
+      - single_vehicle.launch.py
+      - "vehicle_name:={{ vehicle }}"
+      - "topic_prefix:={vehicle}/"
+      - "use_sim_time:=true"
+      - "enable_local_obs:=false"
+      environment:
+        AIRSIM_HOST_IP: "{{ sim_host }}"
+        AIRSIM_HOST_PORT: "41451"
+        AIRSIM_DIAL_WAIT_SEC: "120"        # sim is already up on the host; exit 42 after this
+        TRANSPORT: rpc                     # SHM needs same-task co-location (docs/OSMO.md)
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        ROS_DISCOVERY_SERVER: "{{host:discovery-server}}:11811"
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        RCUTILS_COLORIZED_OUTPUT: "0"
+      exitActions:
+        COMPLETE: "0"
+        RESCHEDULE: "42,137"
+
+    - name: certify
+      lead: true
+      image: "{{ bridge_image }}"
+      resource: default
+      command: ["/bin/bash", "/tmp/certify.sh"]
+      environment:
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        # SUPER_CLIENT: tooling must see the whole discovery database, a plain
+        # client only sees what it matches. Same XML as the Makefile ships.
+        FASTRTPS_DEFAULT_PROFILES_FILE: /cfg/fastdds-discovery-superclient.xml
+        ROS_DISCOVERY_SERVER_ADDR: "{{host:discovery-server}}"
+        ROS_DISCOVERY_SERVER_PORT: "11811"
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        VEHICLE: "{{ vehicle }}"
+        # Sim-time freshness window for the contract stamp check.
+        STAMP_WINDOW: "0.5"
+        # Bridge readiness budget before the suites start. Independent of the
+        # bridge's own dial-wait: this waits for /clock + ground_truth/odom to exist.
+        READY_WAIT_SEC: "720"
+      files:
+      - path: /tmp/certify.sh
+        contents: |
+          #!/bin/bash
+          # Lead task. Exit code = run verdict (see header).
+          set -uo pipefail
+          source /opt/ros/humble/setup.bash
+          source /ws/install/setup.bash
+          out="{{output}}"; mkdir -p "$out"
+
+          # --- semantic go-barrier: contract topics present -----------------
+          deadline=$(( $(date +%s) + READY_WAIT_SEC ))
+          until ros2 topic list 2>/dev/null | grep -qx "/${VEHICLE}/ground_truth/odom" \
+                && ros2 topic list 2>/dev/null | grep -qx "/clock"; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "READINESS TIMEOUT: /${VEHICLE}/ground_truth/odom or /clock never appeared" >&2
+              ros2 topic list 2>/dev/null | tee "$out/topics_at_timeout.txt" >&2
+              exit 42
+            fi
+            sleep 5
+          done
+          echo "contract topics present; running suites"
+
+          # --- suites (any failure -> 1, a real verdict) -----------------------
+          rc=0
+          python3 /opt/airsim/test/test_topic_contract.py --vehicle "$VEHICLE" \
+              --check-stamps --stamp-window "$STAMP_WINDOW" | tee "$out/contract.log" || rc=1
+          python3 /opt/airsim/test/test_tf_tree.py --report "$out/tf.json" \
+              | tee "$out/tf.log" || rc=1
+          python3 /opt/airsim/test/test_sensor_fidelity.py --report "$out/sensors.json" \
+              | tee "$out/sensors.log" || rc=1
+          python3 /opt/airsim/test/merge_validation.py --out "$out/validation.json" \
+              "$out/tf.json" "$out/sensors.json" || true
+          echo "certify rc=$rc"
+          exit $rc
+      exitActions:
+        COMPLETE: "0"
+        FAIL: "1"
+        RESCHEDULE: "42,137"
+
+default-values:
+  vehicle: Drone1
+  bridge_image: ghcr.io/dinohub/tevv-airsim-ros2-bridge:humble
+  sim_host: 10.130.3.180        # host LAN IP as seen from kind pods; override with --set
+  ros_base_image: osrf/ros:humble-ros-base
+  cpu_platform: cpu

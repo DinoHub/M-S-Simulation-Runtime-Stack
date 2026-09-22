@@ -1,0 +1,72 @@
+%% Autonomy TEVV platform — system architecture, OSMO orchestration variant
+%% Source of truth: docs/superpowers/specs/2026-07-13-autonomy-tevv-osmo-orchestration-design.md §3
+%% Baseline (Argo-native): diagrams/system-architecture.mermaid
+graph TD
+  subgraph TP["Trigger plane — submission clients"]
+    GHA["GitHub Actions (self-hosted runners)<br/>build + push images, unit tests,<br/>tevv submit on green"]
+    CLI["tevv CLI<br/>dev-initiated runs and sweeps"]
+    CRON["cluster CronJob<br/>nightly L2/L3 matrix via tevv submit"]
+    DEV["Dev workstation<br/>compose stack — manual path"]
+  end
+
+  TC["tevv-compile container (tevv submit step)<br/>omega + tevv.yaml + trigger params →<br/>one OSMO workflow YAML per run + manifest.json"]
+
+  subgraph OP["OSMO control plane — in-cluster services"]
+    API["OSMO API server + web UI<br/>REST submit / cancel, log streaming, port-forward"]
+    ENG["workflow engine<br/>queueing, group state machine, retries"]
+    BK["Postgres (osmo db) + Redis<br/>control-plane state, queues, barriers"]
+  end
+
+  subgraph CC["Compute cluster"]
+    AGENT["OSMO backend agent<br/>WebSocket to control plane, creates pods<br/>in shared workflow namespace"]
+    KAI["KAI scheduler<br/>pools + priorities HIGH | NORMAL | LOW,<br/>preemption, GPU borrowing"]
+    subgraph RP["Run plane — one OSMO group per run, gang-scheduled, per-run pod labels"]
+      COND["run-conductor — lead task<br/>go-barrier, sim-time watchdog, RTF floor,<br/>evaluation, registry writes — exit code = verdict"]
+      SIM["sim adapter (GPU node)<br/>UE5 + Cosys-AirSim | Isaac + Pegasus"]
+      SITL["SITL ×N — PX4 | ArduPilot"]
+      MW["mavlink-router + MAVROS ×N | pymavlink"]
+      COMMS["comms rendezvous task<br/>zenoh router | FastDDS discovery server<br/>addressed by host:&lt;task&gt; DNS tokens"]
+      SUT["stack-under-test tasks<br/>perception / SLAM / planners / BT"]
+      HARN["harness tasks<br/>fault-injector, metrics-collector,<br/>bag-recorder, foxglove-bridge (opt)"]
+    end
+  end
+
+  subgraph DP["Data plane — unchanged from baseline"]
+    MINIO["MinIO S3<br/>MCAP bags, datasets, eval outputs, manifests<br/>+ OSMO workflow_log / workflow_data buckets"]
+    PG["Postgres run registry (tevv db)<br/>system of record"]
+    LOKI["Loki + Alloy DaemonSet<br/>labels component, tier; run_id structured metadata"]
+    PROM["Prometheus<br/>run-scoped exporters + cluster metrics"]
+  end
+
+  subgraph PP["Presentation plane"]
+    GRAF["Grafana<br/>live | post-run | comparisons | platform SLO"]
+    FOX["Foxglove / Lichtblick<br/>live ws per run + MCAP replay from MinIO"]
+    PRFB["PR feedback<br/>commit status + verdict comment by conductor,<br/>janitor backstop from registry"]
+  end
+
+  HARBOR["Harbor registry<br/>Trivy scan + syft SBOM + cosign sign"]
+
+  GHA -->|push images| HARBOR
+  GHA --> TC
+  CLI --> TC
+  CRON --> TC
+  TC -->|"osmo workflow submit (REST), one per run"| API
+  TC -->|PENDING rows, manifest refs| PG
+  API --> ENG
+  ENG --- BK
+  ENG <-->|WebSocket| AGENT
+  AGENT -->|creates group pods| RP
+  KAI -->|gang-schedules, preempts LOW| RP
+  HARBOR -->|digest-pinned pulls only| RP
+  RP -->|"stdout → containerd → Alloy"| LOKI
+  HARN -->|MCAP, eval, manifest| MINIO
+  COND -->|status, gates, metrics summaries| PG
+  RP -->|scraped exporters| PROM
+  DEV -->|"tevv upload (post-hoc)"| MINIO
+  DEV -->|"tevv upload"| PG
+  PROM --> GRAF
+  PG --> GRAF
+  LOKI --> GRAF
+  MINIO --> FOX
+  HARN -->|live websocket| FOX
+  COND --> PRFB

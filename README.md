@@ -246,3 +246,14 @@ The same product shell image exposes equivalent CLI actions:
 Paths passed to the container must be under this repository, mounted as `/workspace`.
 
 The previous named Compose stacks remain documented in [Legacy static stacks](docs/legacy-static-stacks.md). They are compatibility workflows, not the product architecture.
+
+## Platform architecture (TEVV)
+
+The Autonomy TEVV platform specs this stack is being mapped onto — Argo
+baseline, NVIDIA OSMO orchestration variant, Jenkins CI plane — are vendored as
+a dated snapshot under [docs/platform-architecture/](docs/platform-architecture/README.md),
+together with the AirSim ROS 2 bridge's side of the mapping
+([bridge-platform-map.md](docs/platform-architecture/bridge-platform-map.md)) and its
+component contract. In the platform's terms this repo is the reused "existing
+asset": scenario generator → `tevv-compile` compose renderer, metrics /
+`/run_state` lifecycle → harness, compose overlays → the manual path.

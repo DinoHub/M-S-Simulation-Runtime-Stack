@@ -1,0 +1,162 @@
+<mxfile>
+  <diagram name="system-architecture">
+    <mxGraphModel dx="1650" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <mxCell id="TP" value="Trigger plane — outside cluster" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="300" y="40" width="1200" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="GHA" value="GitHub Actions (self-hosted runners)&lt;br/&gt;build + push images, unit tests, fire webhook" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="TP">
+          <mxGeometry x="20" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="CLI" value="tevv CLI&lt;br/&gt;dev-initiated runs and sweeps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="TP">
+          <mxGeometry x="320" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="CRON" value="cron&lt;br/&gt;nightly L2/L3 matrix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="TP">
+          <mxGeometry x="620" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="DEV" value="Dev workstation&lt;br/&gt;compose stack — manual path" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="TP">
+          <mxGeometry x="920" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="HARBOR" value="Harbor registry&lt;br/&gt;Trivy scan + syft SBOM + cosign sign" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="20" y="300" width="240" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="OP" value="Orchestration plane" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="300" y="300" width="1200" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="AE" value="Argo Events&lt;br/&gt;one webhook EventSource, per-tier Sensors" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="OP">
+          <mxGeometry x="20" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="AW" value="Argo Workflows&lt;br/&gt;WorkflowTemplate per tier&lt;br/&gt;partitioned semaphores: gpu-sim-interactive=1, gpu-sim-batch=1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="OP">
+          <mxGeometry x="320" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="OC" value="omega-compile step&lt;br/&gt;tevv-compile container" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="OP">
+          <mxGeometry x="620" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="COND" value="run-conductor step, one per run&lt;br/&gt;K8s client: creates namespace, applies bundle,&lt;br/&gt;go-barrier, watchdog, teardown — exit code = step outcome" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="OP">
+          <mxGeometry x="920" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="RP" value="Run plane — namespace tevv-run-&amp;lt;run_id&amp;gt; per run" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="300" y="560" width="1200" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="SIM" value="sim adapter (GPU node)&lt;br/&gt;UE5 + Cosys-AirSim | Isaac + Pegasus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="RP">
+          <mxGeometry x="20" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="SITL" value="SITL ×N — PX4 | ArduPilot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="RP">
+          <mxGeometry x="320" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="MW" value="mavlink-router + MAVROS ×N | pymavlink" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="RP">
+          <mxGeometry x="620" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="COMMS" value="comms infra&lt;br/&gt;zenoh router | FastDDS discovery server" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="RP">
+          <mxGeometry x="920" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="SUT" value="stack-under-test pods&lt;br/&gt;perception / SLAM / planners / BT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="RP">
+          <mxGeometry x="20" y="150" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="HARN" value="harness pods&lt;br/&gt;fault-injector, metrics-collector,&lt;br/&gt;bag-recorder, foxglove-bridge (opt)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="RP">
+          <mxGeometry x="320" y="150" width="260" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="DP" value="Data plane — shared by both paths" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="300" y="920" width="1200" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="MINIO" value="MinIO S3&lt;br/&gt;MCAP bags, datasets, eval outputs, manifests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="DP">
+          <mxGeometry x="20" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="PG" value="Postgres run registry&lt;br/&gt;system of record" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="DP">
+          <mxGeometry x="320" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="LOKI" value="Loki + Alloy DaemonSet&lt;br/&gt;logs labeled run_id, component, tier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="DP">
+          <mxGeometry x="620" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="PROM" value="Prometheus&lt;br/&gt;live metrics, run_id-labeled" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="DP">
+          <mxGeometry x="920" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="PP" value="Presentation plane" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="1180" width="1200" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="GRAF" value="Grafana&lt;br/&gt;live | post-run | comparisons | platform SLO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="PP">
+          <mxGeometry x="20" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="FOX" value="Foxglove / Lichtblick&lt;br/&gt;live ws per run + MCAP replay from MinIO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="PP">
+          <mxGeometry x="320" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="PRFB" value="PR feedback&lt;br/&gt;commit status, verdict comment, deep links" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="PP">
+          <mxGeometry x="620" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="push images" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="GHA" target="HARBOR">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="webhook" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="GHA" target="AE">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="webhook" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="CLI" target="AE">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="webhook" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="CRON" target="AE">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="AE" target="AW">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="AW" target="OC">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="run bundles, fan-out per run" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="OC" target="COND">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="creates, gates, monitors, tears down" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="COND" target="RP">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="digest-pinned pulls only" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="HARBOR" target="RP">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="stdout → containerd → Alloy" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="RP" target="LOKI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="MCAP, eval, manifest" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="HARN" target="MINIO">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="status, gates, metrics summaries" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="HARN" target="PG">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" value="scraped exporters" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="RP" target="PROM">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" value="tevv upload (post-hoc)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="DEV" target="MINIO">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" value="tevv upload" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="DEV" target="PG">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="PROM" target="GRAF">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="PG" target="GRAF">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="LOKI" target="GRAF">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="MINIO" target="FOX">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e20" value="live websocket" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="HARN" target="FOX">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" value="exit handler" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="AW" target="PRFB">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

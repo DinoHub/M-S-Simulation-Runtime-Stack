@@ -1,0 +1,21 @@
+%% Autonomy TEVV platform — end-to-end run data flow (one automated run + manual lane)
+%% Source of truth: docs/superpowers/specs/2026-07-10-autonomy-tevv-architecture-design.md §3, §7–§9
+graph LR
+  C["git commit / PR / merge / cron"] --> CI["CI: build images,<br/>unit tests,<br/>push to Harbor (digest)"]
+  CI --> WH["webhook<br/>{repo, sha, tier, suite,<br/>matrix, priority, reason}"]
+  WH --> CMP["tevv-compile<br/>schema · digest pin ·<br/>interface/QoS check ·<br/>fault capability · matrix"]
+  CMP --> Q["queue<br/>gpu-sim-slot semaphore,<br/>priority + auto-cancel"]
+  Q --> PREP["PREPARING<br/>namespace tevv-run-id,<br/>pods in init order"]
+  PREP --> BAR["READY<br/>conductor go-barrier:<br/>sim RPC · SITL · MAVROS ·<br/>contract topics · /clock"]
+  BAR --> RUN["RUNNING<br/>mission + fault timeline,<br/>MCAP recording,<br/>live Prom + Foxglove ws"]
+  RUN --> EVAL["EVALUATING<br/>bags → MinIO,<br/>evaluator containers<br/>run gates"]
+  EVAL --> V{"verdict"}
+  V -->|all gates green| PASS["PASSED"]
+  V -->|gate violated| FAIL["FAILED<br/>never auto-retried"]
+  PREP -.->|"readiness timeout,<br/>pull error, sim crash"| INF["INFRA_FAILED<br/>auto-retry ≤2,<br/>diagnostics bundle"]
+  RUN -.->|pod crash, stall| INF
+  INF -.-> Q
+  PASS --> REC["registry write:<br/>runs · gate_results ·<br/>metrics_summary ·<br/>components · fault_events ·<br/>artifacts"]
+  FAIL --> REC
+  REC --> FB["feedback:<br/>PR status + comment,<br/>Grafana run/compare,<br/>Foxglove MCAP replay,<br/>Loki {run_id} logs"]
+  M["manual: compose stack<br/>(same compiled bundle,<br/>--target compose)"] -.->|"tevv upload<br/>(post-hoc, optional)"| REC

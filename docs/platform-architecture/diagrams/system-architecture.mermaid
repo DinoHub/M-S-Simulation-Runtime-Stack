@@ -1,0 +1,62 @@
+%% Autonomy TEVV platform — system architecture (structural view)
+%% Source of truth: docs/superpowers/specs/2026-07-10-autonomy-tevv-architecture-design.md §3
+graph TD
+  subgraph TP["Trigger plane — outside cluster"]
+    GHA["GitHub Actions (self-hosted runners)<br/>build + push images, unit tests, fire webhook"]
+    CLI["tevv CLI<br/>dev-initiated runs and sweeps"]
+    CRON["cron<br/>nightly L2/L3 matrix"]
+    DEV["Dev workstation<br/>compose stack — manual path"]
+  end
+
+  subgraph OP["Orchestration plane"]
+    AE["Argo Events<br/>one webhook EventSource, per-tier Sensors"]
+    AW["Argo Workflows<br/>WorkflowTemplate per tier<br/>partitioned semaphores: gpu-sim-interactive=1, gpu-sim-batch=1"]
+    OC["omega-compile step<br/>tevv-compile container"]
+    COND["run-conductor step, one per run<br/>K8s client: creates namespace, applies bundle,<br/>go-barrier, watchdog, teardown — exit code = step outcome"]
+  end
+
+  subgraph RP["Run plane — namespace tevv-run-&lt;run_id&gt; per run"]
+    SIM["sim adapter (GPU node)<br/>UE5 + Cosys-AirSim | Isaac + Pegasus"]
+    SITL["SITL ×N — PX4 | ArduPilot"]
+    MW["mavlink-router + MAVROS ×N | pymavlink"]
+    COMMS["comms infra<br/>zenoh router | FastDDS discovery server"]
+    SUT["stack-under-test pods<br/>perception / SLAM / planners / BT"]
+    HARN["harness pods<br/>fault-injector, metrics-collector,<br/>bag-recorder, foxglove-bridge (opt)"]
+  end
+
+  subgraph DP["Data plane — shared by both paths"]
+    MINIO["MinIO S3<br/>MCAP bags, datasets, eval outputs, manifests"]
+    PG["Postgres run registry<br/>system of record"]
+    LOKI["Loki + Alloy DaemonSet<br/>logs labeled run_id, component, tier"]
+    PROM["Prometheus<br/>live metrics, run_id-labeled"]
+  end
+
+  subgraph PP["Presentation plane"]
+    GRAF["Grafana<br/>live | post-run | comparisons | platform SLO"]
+    FOX["Foxglove / Lichtblick<br/>live ws per run + MCAP replay from MinIO"]
+    PRFB["PR feedback<br/>commit status, verdict comment, deep links"]
+  end
+
+  HARBOR["Harbor registry<br/>Trivy scan + syft SBOM + cosign sign"]
+
+  GHA -->|push images| HARBOR
+  GHA -->|webhook| AE
+  CLI -->|webhook| AE
+  CRON -->|webhook| AE
+  AE --> AW
+  AW --> OC
+  OC -->|"run bundles, fan-out per run"| COND
+  COND -->|"creates, gates, monitors, tears down"| RP
+  HARBOR -->|digest-pinned pulls only| RP
+  RP -->|"stdout → containerd → Alloy"| LOKI
+  HARN -->|MCAP, eval, manifest| MINIO
+  HARN -->|status, gates, metrics summaries| PG
+  RP -->|scraped exporters| PROM
+  DEV -->|"tevv upload (post-hoc)"| MINIO
+  DEV -->|"tevv upload"| PG
+  PROM --> GRAF
+  PG --> GRAF
+  LOKI --> GRAF
+  MINIO --> FOX
+  HARN -->|live websocket| FOX
+  AW -->|exit handler| PRFB
