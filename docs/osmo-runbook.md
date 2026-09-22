@@ -167,6 +167,9 @@ apart rather than by likelihood.
 | `vio` exits 127: *ros2: not found* | overriding `command` bypasses `/ros_entrypoint.sh` | source ROS in the script |
 | Lead exits 1 on `AMENT_TRACE_SETUP_FILES` | `set -u` versus ROS's `setup.bash` | drop `-u` |
 | Lead's graph is only `/parameter_events /rosout` | see below |
+| PX4 boots, connects to the sim, then `Startup script returned with return value: 65280` | the image bakes `PX4_INSTANCE=1`; compose overrides it to 0 and the task did not | `PX4_INSTANCE: "0"` — see below |
+| MAVROS does a `VER` round-trip with the FCU but `connected` never goes true; pilot gate times out | MAVROS on the router's `AirSim_Inbound` (14580), a single-peer server AirSim floods | `connection: {mavros_udp_port: 14555, mavros_local_port: 14556}` in the ScenarioSpec |
+| Pilot reports touchdown; ground truth sinks at 0.7 m/s for the rest of the run | landed past the level's floor; PX4 commands land speed into nothing | traverse sized to the level (`fly_distance_m`); `spawn-eval` now reports it |
 
 ### A gang that does not fit looks exactly like a hang
 
@@ -197,6 +200,66 @@ Then size the tasks themselves for what they do — a task that waits on a topic
 and commands a flight does not need the simulator's budget. Add the per-task
 requests plus the sidecar and keep the total under the node's allocatable CPU,
 with room for the evaluators that follow.
+
+### PX4: one environment variable, five wrong theories first
+
+PX4 SITL under OSMO exited 255 on every run while booting cleanly under
+compose. Eliminated by runs before the cause was found: a race on the
+trailing `mavlink status`; compose crash-looping too (it does not —
+`RestartCount=0`); rcS's `[: Illegal number:` (appears with compose's exact
+env; benign); the pod's long FQDN (a resolved IP failed identically); a CPU
+limit (6 CPU failed identically).
+
+The cause came from diffing the compose container's environment against the
+task's, line by line. The PX4 image bakes `PX4_INSTANCE=1` into its ENV, and
+the generated compose overrides it to `0` — which reads like a default being
+restated, so it was the one variable the workflow did not carry. Left at 1,
+`run_airsim_sitl.sh 0` launches px4 as instance 0 (it takes `$1` for `-i` and
+never exports `PX4_INSTANCE`) while every router script, reading
+`${PX4_INSTANCE:-0}`, builds instance 1: system ID 2, router 5761, mavlink
+18571. `mavlink start` creates nothing, every stream fails, and the trailing
+`mavlink status` returns non-zero into rcS.
+
+The general lesson is the method, not the variable: **when a container works
+under compose and fails under OSMO, diff the two environments before
+theorising.** `docker exec <compose container> env | sort` against the task's
+`environment:` block finds a missing override in a minute; five plausible
+theories cost an afternoon.
+
+### MAVROS: the router has an endpoint for it, and it is not AirSim's
+
+With PX4 up, MAVROS did a `VER` round-trip with the FCU and then never set
+`connected`. It was attached to `udp://:14560@<px4>:14580`. In the PX4
+image's own router template, 14580 is `AirSim_Inbound` — *"must match
+AirSim's ControlPortRemote"* — a `Mode=Server` endpoint, and the template
+says of that mode: *"tracks a single peer, so a second client there would
+steal the link."* AirSim floods it with HIL at hundreds of Hz; MAVROS on it
+gets the replies to its own requests and almost none of PX4's broadcast
+heartbeats, and `connected` is a heartbeat judgement.
+
+The router binds `MAVROS_UDP` on **14555** for exactly this. Set per vehicle
+in the ScenarioSpec under `connection:` (`VehicleConnection`, fields 8–9) —
+no generator change needed to run. The generator default at
+`stackgen/autopilots/px4.py:48` is a separate fix: its comment claims 14580
+was verified to fly on an older PX4 image whose router did not bind 14555,
+and the two drifted past each other.
+
+Verified where it counts — on compose, the working path — before touching the
+workflow: `CON: Got HEARTBEAT, connected. FCU: PX4 Autopilot` 35 s after the
+stack came up, then OFFBOARD, armed, a 28 m traverse and a landing. The first
+real flight of this scenario.
+
+### The level has edges
+
+That compose flight also showed the vehicle landing where condo has no floor:
+`z` went from −0.7 m at touchdown to −178 m over the remaining recording at a
+steady 0.7 m/s — PX4's land speed, commanded into nothing, because there was
+nothing to detect touchdown against. The pilot reported "touched down" from
+MAVROS's local frame the whole time. The spawn point's floor is measured
+(`z = −1.22 m`, at rest); 28 m along +X there is none. Traverse distance is
+part of a scenario's correctness, not a tuning knob, and `spawn-eval` now
+reports "sank below its start after flying" as its own finding so the
+trajectory evaluator cannot charge the descent to the estimator.
 
 ### The empty-graph family
 
