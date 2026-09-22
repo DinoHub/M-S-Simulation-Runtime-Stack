@@ -269,97 +269,124 @@ workflow:
       command: ["/bin/bash", "/tmp/score.sh"]
       environment:
         RMW_IMPLEMENTATION: rmw_fastrtps_cpp
-        # A plain DDS client only learns about endpoints it matches, so
-        # `ros2 topic list` shows an empty graph against a discovery server.
-        # SUPER_CLIENT asks the server for the whole database.
-        FASTRTPS_DEFAULT_PROFILES_FILE: /tmp/super-client.xml
         DS_HOST: "{{host:discovery-server}}"
-        ROS_DISCOVERY_SERVER_PORT: "11811"
         ROS_DOMAIN_ID: "0"
         RCUTILS_LOGGING_USE_STDOUT: "1"
-        READY_WAIT_SEC: "720"
+        READY_WAIT_SEC: "900"
         MIN_ODOM_HZ: "5"
+        MEASURE_SEC: "20"
       files:
-      - path: /tmp/super-client.xml
-        contents: |
-          <?xml version="1.0" encoding="UTF-8" ?>
-          <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
-            <participant profile_name="ds_super_client" is_default_profile="true">
-              <rtps><builtin><discovery_config>
-                <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>
-                <discoveryServersList>
-                  <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
-                    <metatrafficUnicastLocatorList><locator><udpv4>
-                      <address>${ROS_DISCOVERY_SERVER_ADDR}</address>
-                      <port>${ROS_DISCOVERY_SERVER_PORT}</port>
-                    </udpv4></locator></metatrafficUnicastLocatorList>
-                  </RemoteServer>
-                </discoveryServersList>
-              </discovery_config></builtin></rtps>
-            </participant>
-          </profiles>
       - path: /tmp/score.sh
         contents: |
           #!/bin/bash
-          # Exit code is the verdict, and the three values are not
-          # interchangeable: 1 means the stack is wrong and must never be
-          # retried, 42 means the platform was not ready and should be.
           # No `set -u`: ROS's setup.bash reads unset variables
-          # (AMENT_TRACE_SETUP_FILES), which would abort the task before it
-          # measured anything.
+          # (AMENT_TRACE_SETUP_FILES), which would abort before measuring.
           set -o pipefail
           source /opt/ros/humble/setup.bash
           source /ws/install/setup.bash
-          # Fast DDS wants an address here, not a name (see DS_HOST above).
+          # Fast DDS parses this as a locator and accepts only an address, so
+          # the DNS name behind {{host:...}} has to be resolved first.
           DS_IP=$(getent hosts "$DS_HOST" | awk '{print $1; exit}')
           [ -n "$DS_IP" ] || { echo "cannot resolve $DS_HOST" >&2; exit 42; }
-          # The profile XML substitutes this into a locator address, so it is
-          # the resolved IP and not the name.
-          export ROS_DISCOVERY_SERVER_ADDR="$DS_IP"
-          # Deliberately NOT ROS_DISCOVERY_SERVER. Setting it makes the
-          # participant a plain CLIENT, which learns only about endpoints it
-          # matches -- and this task subscribes to nothing, so `ros2 topic list`
-          # returns an empty graph however healthy the run is. The SUPER_CLIENT
-          # profile above asks the server for the whole discovery database,
-          # which is the only reason this task can see anything at all.
-          unset ROS_DISCOVERY_SERVER
-          echo "discovery server $DS_HOST -> $DS_IP:11811 (SUPER_CLIENT)"
+          export ROS_DISCOVERY_SERVER="${DS_IP}:11811"
+          echo "discovery server $DS_HOST -> $ROS_DISCOVERY_SERVER"
+          exec python3 /tmp/score.py
+      - path: /tmp/score.py
+        contents: |
+          """The verdict. Waits for the estimator, measures the contract
+          topics, and exits with the run's outcome.
 
-          deadline=$(( $(date +%s) + READY_WAIT_SEC ))
-          until ros2 topic list 2>/dev/null | grep -qx "/clock" \
-             && ros2 topic list 2>/dev/null | grep -qx "/ov_msckf/odomimu"; do
-            if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "READINESS TIMEOUT: /clock or /ov_msckf/odomimu never appeared" >&2
-              ros2 topic list 2>/dev/null >&2
-              exit 42
-            fi
-            sleep 5
-            [ $(( $(date +%s) % 60 )) -lt 5 ] && ros2 topic list 2>/dev/null | tr '\n' ' ' | sed 's/^/  graph: /' && echo
-          done
-          echo "graph up; measuring"
+          Measuring is also the readiness test, because under a discovery
+          server there is no cheap way to ask what exists. A plain CLIENT
+          learns only about endpoints it matches, so the graph reads empty
+          and `ros2 topic hz` -- which resolves a topic's type from the graph
+          before subscribing -- reports nothing on a perfectly healthy run.
+          A subscriber that names its own types needs no lookup: it
+          subscribes, the server relays the match, and data flows. QoS has to
+          match too; sensor topics are BEST_EFFORT and never match a default
+          RELIABLE subscription.
 
-          rc=0
-          # The estimator can be subscribed and silent -- that is the failure
-          # this catches. A rate, not mere presence.
-          hz=$(timeout 40 ros2 topic hz /ov_msckf/odomimu 2>/dev/null \
-                 | grep -m1 'average rate' | awk '{print $3}')
-          if [ -z "${hz:-}" ]; then
-            echo "FAIL: /ov_msckf/odomimu published nothing in 40 s" >&2
-            rc=1
-          elif awk "BEGIN{exit !($hz < $MIN_ODOM_HZ)}"; then
-            echo "FAIL: odometry $hz Hz below the $MIN_ODOM_HZ Hz floor" >&2
-            rc=1
-          else
-            echo "PASS: odometry $hz Hz"
-          fi
+          Exit codes are the bridge's vocabulary, and the three are not
+          interchangeable:
+            0   every floor met
+            1   a real verdict -- the stack ran and was wrong. Never retried.
+            42  readiness timeout -- the platform was not ready. Rescheduled.
+          """
+          import os
+          import sys
+          import time
 
-          for t in /imu/data /camera/front/image_raw /camera/front_right/image_raw; do
-            r=$(timeout 25 ros2 topic hz "$t" 2>/dev/null | grep -m1 'average rate' | awk '{print $3}')
-            if [ -z "${r:-}" ]; then echo "FAIL: $t silent" >&2; rc=1; else echo "PASS: $t $r Hz"; fi
-          done
+          import rclpy
+          from rclpy.node import Node
+          from rclpy.qos import qos_profile_sensor_data
+          from nav_msgs.msg import Odometry
+          from sensor_msgs.msg import Imu, Image
 
-          echo "score rc=$rc"
-          exit $rc
+          # topic, message type, QoS, and the rate below which the run failed.
+          # The floors are deliberately far under the nominal rates (200 Hz IMU,
+          # 30 Hz cameras): this asserts that the pipeline is alive end to end,
+          # not that it is fast.
+          CONTRACT = [
+              ("odom", Odometry, "/ov_msckf/odomimu", 10, float(os.environ.get("MIN_ODOM_HZ", 5))),
+              ("imu", Imu, "/imu/data", qos_profile_sensor_data, 50.0),
+              ("cam_left", Image, "/camera/front/image_raw", qos_profile_sensor_data, 5.0),
+              ("cam_right", Image, "/camera/front_right/image_raw", qos_profile_sensor_data, 5.0),
+          ]
+
+          def measure(node, counts, window):
+              for key in counts:
+                  counts[key] = 0
+              start = time.time()
+              while time.time() - start < window:
+                  rclpy.spin_once(node, timeout_sec=0.2)
+              elapsed = max(time.time() - start, 1e-6)
+              return {key: counts[key] / elapsed for key in counts}
+
+          def main():
+              ready_wait = float(os.environ.get("READY_WAIT_SEC", 900))
+              window = float(os.environ.get("MEASURE_SEC", 20))
+
+              rclpy.init()
+              node = Node("tevv_score_probe")
+              counts = {key: 0 for key, _, _, _, _ in CONTRACT}
+
+              def counter(key):
+                  def callback(_msg):
+                      counts[key] += 1
+                  return callback
+
+              for key, msg_type, topic, qos, _floor in CONTRACT:
+                  node.create_subscription(msg_type, topic, counter(key), qos)
+
+              deadline = time.time() + ready_wait
+              while True:
+                  rates = measure(node, counts, 5.0)
+                  if rates["odom"] > 0:
+                      break
+                  if time.time() >= deadline:
+                      print("READINESS TIMEOUT: nothing on /ov_msckf/odomimu "
+                            "after %ss" % ready_wait, file=sys.stderr)
+                      print("  last sample: %s" % rates, file=sys.stderr)
+                      return 42
+                  print("  waiting: " + " ".join("%s=%.1f" % (k, v)
+                                                 for k, v in sorted(rates.items())))
+
+              print("estimator publishing; measuring for %ss" % window)
+              rates = measure(node, counts, window)
+
+              status = 0
+              for key, _type, topic, _qos, floor in CONTRACT:
+                  hz = rates[key]
+                  if hz < floor:
+                      print("FAIL: %s (%s) %.2f Hz below the %.1f Hz floor"
+                            % (key, topic, hz, floor))
+                      status = 1
+                  else:
+                      print("PASS: %s (%s) %.2f Hz" % (key, topic, hz, ))
+              print("score rc=%d" % status)
+              return status
+
+          sys.exit(main())
       exitActions:
         COMPLETE: "0"
         FAIL: "1"
