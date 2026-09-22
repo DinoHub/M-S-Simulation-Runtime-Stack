@@ -128,6 +128,41 @@ conductor can write `workflow_ref` back. There is no registry here, and the
 6.3.1 control plane rejects `workflow.labels` outright, so today that metadata
 has nowhere to live at all.
 
+## Can CampaignSpec fulfil omega's role?
+
+Yes, and it is the better base — because of which direction the gaps run.
+
+The two documents sit at the same level and disagree about scope.
+`CampaignSpec` **delegates**: the world is `scenario: ./ScenarioSpec.yaml`, the
+verdict is `evaluation.evaluator: vio-stress`. omega **inlines**: a three-field
+world, and gates written out in the document. Composition-by-reference against
+one flat file.
+
+| Concern | CampaignSpec | omega.yaml |
+| --- | --- | --- |
+| the world and the rig | a reference to a ScenarioSpec | `{world, drones, origin}`, closed |
+| sweep | `variants[]` with structured `overrides:` | `matrix:` axis→list, or `mode: sample` |
+| repetition | `repeats: 3` | — |
+| evaluator | `evaluation.evaluator` + `inputs` | — (`gates` only) |
+| pass/fail | the evaluator decides | `evaluation.gates`, explicit |
+| component under test | ScenarioSpec `extensions` | `stack[]`, `ref: pinned@sha256:` |
+| classification | — | `tier`, `verifies: [REQ-…]` |
+| interchangeability | implied by `runtime.profile` | `platform.{sim,autopilot,middleware,comms}` |
+| faults | — | `faults[]` timeline |
+
+What CampaignSpec is missing — `tier`, `verifies`, the `platform` axes,
+`faults`, explicit `gates` — are **additive keys**. Nothing structural changes.
+
+What omega is missing — a sensor rig, content-addressed packs, an evaluator
+declaration, `repeats` — requires **opening a closed schema**: `scenario` is
+`additionalProperties: false` and `origin` is pinned to `^preset:[a-z0-9-]+$`.
+
+Adding five keys to `CampaignSpec` is a smaller change than teaching omega to
+carry a stereo rig, and the `scenario:` indirection that omega lacks is
+precisely the thing a rig needs. The cost is ownership: omega is the platform's
+contract, so extending CampaignSpec instead means carrying a fork unless the
+divergence is agreed first. That is a conversation, not an engineering problem.
+
 ## If this is pursued
 
 The order that avoids wasted work:

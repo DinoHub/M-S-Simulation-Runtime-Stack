@@ -1,6 +1,20 @@
-# One TEVV run as one gang-scheduled OSMO group: the simulator, the ROS 2
-# bridge, an estimator under test, and a lead task whose exit code is the
-# verdict.
+# One TEVV run as three OSMO groups: a gang-scheduled runtime that produces
+# evidence, a fan-out of evaluators that read it, and an aggregate that turns
+# their reports into a verdict.
+#
+#     runtime  (sim | bridge | vio | discovery | recorder=lead)
+#        |  evidence complete
+#        v
+#     evaluate (vio-eval | ... )        <- add evaluators here
+#        |
+#        v
+#     aggregate (verdict=lead)
+#
+# Groups are sequenced by `inputs: [{task: <upstream>}]`, which OSMO reads as
+# "cannot be scheduled until that task has COMPLETED" and validates for
+# declaration order and cycles. An evaluator is just a versioned container that
+# is handed a run and writes a JSON report; adding one is a task in `evaluate`
+# plus a line in the aggregate's input list.
 #
 #   osmo workflow submit osmo/sim-bridge-vio.workflow.yaml --dry-run
 #   osmo workflow submit osmo/sim-bridge-vio.workflow.yaml --label suite=vio
@@ -262,129 +276,232 @@ workflow:
     # profile XML nothing creates, its contract file is absent from the image,
     # and its tf and sensor checks default to bare topics. This asserts on one
     # thing we control instead.
-    - name: score
+    # Produces the run's evidence. Lead of the runtime group: when it exits,
+    # the flight is over and the gang comes down. It is NOT the verdict --
+    # recording something and that something being good are different
+    # questions, and conflating them is how a rate check ends up masquerading
+    # as an evaluation.
+    - name: recorder
       lead: true
       image: "{{ bridge_image }}"
       resource: worker
-      command: ["/bin/bash", "/tmp/score.sh"]
+      command: ["/bin/bash", "/tmp/record.sh"]
+      volumeMounts: ["/runs"]
       environment:
         RMW_IMPLEMENTATION: rmw_fastrtps_cpp
         DS_HOST: "{{host:discovery-server}}"
         ROS_DOMAIN_ID: "0"
         RCUTILS_LOGGING_USE_STDOUT: "1"
+        RUN_ID: "{{workflow_id}}"
         READY_WAIT_SEC: "900"
-        MIN_ODOM_HZ: "5"
-        MEASURE_SEC: "20"
+        RECORD_SEC: "{{ record_sec }}"
       files:
-      - path: /tmp/score.sh
+      - path: /tmp/wait_for_estimator.py
+        contents: |
+          """Block until the estimator publishes, then exit 0; exit 42 on timeout.
+
+          Subscribes rather than asking the graph. Under a discovery server a
+          plain CLIENT learns only about endpoints it matches, so `ros2 topic
+          list` reads empty and `ros2 topic hz` -- which resolves a type from
+          the graph before subscribing -- reports nothing on a healthy run. A
+          subscriber that names its own type needs no lookup.
+          """
+          import os, sys, time
+          import rclpy
+          from rclpy.node import Node
+          from nav_msgs.msg import Odometry
+
+          def main():
+              deadline = time.time() + float(os.environ.get("READY_WAIT_SEC", 900))
+              rclpy.init()
+              node = Node("tevv_record_gate")
+              seen = {"n": 0}
+              node.create_subscription(
+                  Odometry, "/ov_msckf/odomimu",
+                  lambda _m: seen.__setitem__("n", seen["n"] + 1), 10)
+              while time.time() < deadline:
+                  rclpy.spin_once(node, timeout_sec=0.5)
+                  if seen["n"] > 0:
+                      print("estimator publishing after %.0fs"
+                            % (float(os.environ.get("READY_WAIT_SEC", 900))
+                               - (deadline - time.time())))
+                      return 0
+              print("READINESS TIMEOUT: nothing on /ov_msckf/odomimu", file=sys.stderr)
+              return 42
+
+          sys.exit(main())
+      - path: /tmp/record.sh
         contents: |
           #!/bin/bash
-          # No `set -u`: ROS's setup.bash reads unset variables
-          # (AMENT_TRACE_SETUP_FILES), which would abort before measuring.
+          # No `set -u`: ROS's setup.bash reads unset variables.
           set -o pipefail
           source /opt/ros/humble/setup.bash
           source /ws/install/setup.bash
-          # Fast DDS parses this as a locator and accepts only an address, so
-          # the DNS name behind {{host:...}} has to be resolved first.
+
+          # Fast DDS parses this as a locator and accepts only an address.
           DS_IP=$(getent hosts "$DS_HOST" | awk '{print $1; exit}')
           [ -n "$DS_IP" ] || { echo "cannot resolve $DS_HOST" >&2; exit 42; }
           export ROS_DISCOVERY_SERVER="${DS_IP}:11811"
           echo "discovery server $DS_HOST -> $ROS_DISCOVERY_SERVER"
-          exec python3 /tmp/score.py
-      - path: /tmp/score.py
+
+          python3 /tmp/wait_for_estimator.py || exit $?
+
+          # sim_real_eval discovers runs by globbing run_* directories and
+          # finding a rosbag2 inside (tools/sim_real_eval/manifest.py).
+          RUN_DIR="/runs/run_${RUN_ID}"
+          mkdir -p "$RUN_DIR"
+          echo "recording ${RECORD_SEC}s into $RUN_DIR"
+
+          # The estimate and the truth, which is what a trajectory evaluator
+          # compares; /clock and /tf so the bag is self-contained in sim time.
+          timeout --signal=INT "$((RECORD_SEC + 30))" \
+            ros2 bag record -s mcap -o "$RUN_DIR/bag" \
+              --max-bag-size 1073741824 \
+              /ov_msckf/odomimu /ground_truth/odom /clock /tf /tf_static &
+          BAG_PID=$!
+          sleep "$RECORD_SEC"
+          kill -INT "$BAG_PID" 2>/dev/null
+          wait "$BAG_PID" 2>/dev/null
+
+          if [ ! -f "$RUN_DIR/bag/metadata.yaml" ]; then
+            echo "FAIL: no rosbag2 metadata at $RUN_DIR/bag" >&2
+            exit 1
+          fi
+          # The evaluators run as a different image and uid.
+          chmod -R a+rX "$RUN_DIR" 2>/dev/null || true
+          echo "evidence complete: $RUN_DIR"
+          ls -la "$RUN_DIR/bag"
+      exitActions:
+        COMPLETE: "0"
+        FAIL: "1"
+        RESCHEDULE: "42,137"
+
+  # ---- evaluate: one container per question, all reading the same evidence --
+  #
+  # Each evaluator is a versioned image handed a run directory and an output
+  # path, writing a JSON report. It never decides the run; it reports on it.
+  # Add a second question by adding a task here and naming it in the
+  # aggregate's inputs.
+  - name: evaluate
+    barrier: true
+    ignoreNonleadStatus: false
+    tasks:
+    - name: vio-eval
+      lead: true
+      image: "{{ sim_real_eval_image }}"
+      resource: worker
+      volumeMounts: ["/runs"]
+      # `inputs` is what sequences this group after `runtime`: OSMO will not
+      # schedule it until the recorder has COMPLETED. The evidence itself
+      # travels through /runs, not through the input directory -- see the
+      # cluster config for why.
+      inputs:
+      - task: recorder
+      environment:
+        RUN_ID: "{{workflow_id}}"
+      command: ["sim-real-eval"]
+      args:
+      - trajectory
+      - "/runs/run_{{workflow_id}}"
+      - --est
+      - estimate
+      - --gt
+      - ground_truth
+      - --out
+      - "/runs/run_{{workflow_id}}/eval/vio"
+      exitActions:
+        # An evaluator reports; it does not veto. A non-zero exit here means
+        # the evaluator itself broke, which is a platform fault, not a verdict
+        # on the stack -- the verdict is the aggregate's to make from the JSON.
+        COMPLETE: "0,1"
+        RESCHEDULE: "137"
+
+  # ---- aggregate: the verdict ----------------------------------------------
+  - name: aggregate
+    barrier: true
+    ignoreNonleadStatus: false
+    tasks:
+    - name: verdict
+      lead: true
+      image: "{{ sim_real_eval_image }}"
+      resource: default
+      volumeMounts: ["/runs"]
+      inputs:
+      - task: vio-eval
+      environment:
+        RUN_ID: "{{workflow_id}}"
+        MAX_ATE_M: "{{ max_ate_m }}"
+      command: ["python3", "/tmp/verdict.py"]
+      files:
+      - path: /tmp/verdict.py
         contents: |
-          """The verdict. Waits for the estimator, measures the contract
-          topics, and exits with the run's outcome.
+          """Turn the evaluators' reports into one exit code.
 
-          Measuring is also the readiness test, because under a discovery
-          server there is no cheap way to ask what exists. A plain CLIENT
-          learns only about endpoints it matches, so the graph reads empty
-          and `ros2 topic hz` -- which resolves a topic's type from the graph
-          before subscribing -- reports nothing on a perfectly healthy run.
-          A subscriber that names its own types needs no lookup: it
-          subscribes, the server relays the match, and data flows. QoS has to
-          match too; sensor topics are BEST_EFFORT and never match a default
-          RELIABLE subscription.
+          Reads every eval/*.json the evaluate group produced and applies the
+          run's gates. This is the only place a pass/fail decision is made:
+          evaluators measure, the aggregate judges. Adding an evaluator means
+          adding a gate here, not changing what any evaluator does.
 
-          Exit codes are the bridge's vocabulary, and the three are not
+          Exit codes are the platform's, and the three are not
           interchangeable:
-            0   every floor met
+            0   gates met
             1   a real verdict -- the stack ran and was wrong. Never retried.
-            42  readiness timeout -- the platform was not ready. Rescheduled.
+            42  no evidence to judge. The platform failed, so reschedule.
           """
-          import os
-          import sys
-          import time
-
-          import rclpy
-          from rclpy.node import Node
-          from rclpy.qos import qos_profile_sensor_data
-          from nav_msgs.msg import Odometry
-          from sensor_msgs.msg import Imu, Image
-
-          # topic, message type, QoS, and the rate below which the run failed.
-          # The floors are deliberately far under the nominal rates (200 Hz IMU,
-          # 30 Hz cameras): this asserts that the pipeline is alive end to end,
-          # not that it is fast.
-          CONTRACT = [
-              ("odom", Odometry, "/ov_msckf/odomimu", 10, float(os.environ.get("MIN_ODOM_HZ", 5))),
-              ("imu", Imu, "/imu/data", qos_profile_sensor_data, 50.0),
-              ("cam_left", Image, "/camera/front/image_raw", qos_profile_sensor_data, 5.0),
-              ("cam_right", Image, "/camera/front_right/image_raw", qos_profile_sensor_data, 5.0),
-          ]
-
-          def measure(node, counts, window):
-              for key in counts:
-                  counts[key] = 0
-              start = time.time()
-              while time.time() - start < window:
-                  rclpy.spin_once(node, timeout_sec=0.2)
-              elapsed = max(time.time() - start, 1e-6)
-              return {key: counts[key] / elapsed for key in counts}
+          import json, os, pathlib, sys
 
           def main():
-              ready_wait = float(os.environ.get("READY_WAIT_SEC", 900))
-              window = float(os.environ.get("MEASURE_SEC", 20))
-
-              rclpy.init()
-              node = Node("tevv_score_probe")
-              counts = {key: 0 for key, _, _, _, _ in CONTRACT}
-
-              def counter(key):
-                  def callback(_msg):
-                      counts[key] += 1
-                  return callback
-
-              for key, msg_type, topic, qos, _floor in CONTRACT:
-                  node.create_subscription(msg_type, topic, counter(key), qos)
-
-              deadline = time.time() + ready_wait
-              while True:
-                  rates = measure(node, counts, 5.0)
-                  if rates["odom"] > 0:
-                      break
-                  if time.time() >= deadline:
-                      print("READINESS TIMEOUT: nothing on /ov_msckf/odomimu "
-                            "after %ss" % ready_wait, file=sys.stderr)
-                      print("  last sample: %s" % rates, file=sys.stderr)
-                      return 42
-                  print("  waiting: " + " ".join("%s=%.1f" % (k, v)
-                                                 for k, v in sorted(rates.items())))
-
-              print("estimator publishing; measuring for %ss" % window)
-              rates = measure(node, counts, window)
+              run = pathlib.Path("/runs/run_%s" % os.environ["RUN_ID"])
+              reports = sorted((run / "eval").glob("*.json"))
+              if not reports:
+                  print("NO EVIDENCE: no eval/*.json under %s" % run, file=sys.stderr)
+                  return 42
 
               status = 0
-              for key, _type, topic, _qos, floor in CONTRACT:
-                  hz = rates[key]
-                  if hz < floor:
-                      print("FAIL: %s (%s) %.2f Hz below the %.1f Hz floor"
-                            % (key, topic, hz, floor))
+              for path in reports:
+                  try:
+                      data = json.loads(path.read_text())
+                  except (OSError, json.JSONDecodeError) as exc:
+                      print("FAIL: %s unreadable (%s)" % (path.name, exc))
+                      status = 1
+                      continue
+                  print("--- %s" % path.name)
+                  print(json.dumps(data, indent=2)[:2000])
+
+                  # The gate. A static vehicle should not drift, so absolute
+                  # trajectory error is the question this run actually asks.
+                  ate = _find(data, ("ate", "ate_m", "ate_rmse", "rmse"))
+                  if ate is None:
+                      print("WARN: %s carries no ATE field; not gated" % path.name)
+                      continue
+                  limit = float(os.environ.get("MAX_ATE_M", 1.0))
+                  if ate > limit:
+                      print("FAIL: ATE %.3f m over the %.3f m gate" % (ate, limit))
                       status = 1
                   else:
-                      print("PASS: %s (%s) %.2f Hz" % (key, topic, hz, ))
-              print("score rc=%d" % status)
+                      print("PASS: ATE %.3f m within %.3f m" % (ate, limit))
+
+              print("verdict rc=%d" % status)
               return status
+
+          def _find(node, names):
+              """Depth-first search for the first numeric field with one of
+              these names. Evaluator report shapes are not yet a contract, so
+              this looks rather than assumes."""
+              if isinstance(node, dict):
+                  for key, value in node.items():
+                      if key.lower() in names and isinstance(value, (int, float)):
+                          return float(value)
+                  for value in node.values():
+                      found = _find(value, names)
+                      if found is not None:
+                          return found
+              elif isinstance(node, list):
+                  for value in node:
+                      found = _find(value, names)
+                      if found is not None:
+                          return found
+              return None
 
           sys.exit(main())
       exitActions:
@@ -394,6 +511,9 @@ workflow:
 
 default-values:
   stack: vio-osmo-condo
+  record_sec: "60"
+  max_ate_m: "1.0"
+  sim_real_eval_image: dhdevspace/auto_mns:sim-real-eval-worker-latest
   vehicle: Drone1
   runtime_host_image: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0
   bridge_image: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0

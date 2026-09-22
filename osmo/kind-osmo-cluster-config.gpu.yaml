@@ -64,6 +64,20 @@ nodes:
       - hostPath: /home/mnsuser/M-S-Simulation-Runtime-Stack
         containerPath: /workspace
         readOnly: true
+      # Where a run's evidence lands: the recorder writes /runs/<run_id>/, the
+      # evaluators read it back. Writable, and deliberately not under the
+      # checkout above.
+      #
+      # This is a stand-in for OSMO's own artifact path. The contract is that a
+      # task writes {{output}} and a downstream task declares
+      # `inputs: [{task: <upstream>}]` to have it delivered -- which is how the
+      # platform spec expects evidence to move, and what a real cluster with
+      # more than one node requires. On this control plane a task's {{output}}
+      # upload does not land (control-plane artifacts do), so evidence moves
+      # through a shared host path instead. Single-node only; replace this with
+      # {{output}} once the upload works.
+      - hostPath: /home/mnsuser/M-S-Simulation-Runtime-Stack/.mns/osmo-runs
+        containerPath: /runs
     kubeadmConfigPatches:
       - |
         kind: JoinConfiguration
