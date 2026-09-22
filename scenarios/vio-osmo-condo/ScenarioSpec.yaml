@@ -49,6 +49,24 @@ vehicles:
     y: -20
     z: -2.0
     yaw: 0
+  # MAVROS attaches to the PX4 image's mavlink-router, and the router has a
+  # dedicated single-peer UDP server for it: MAVROS_UDP on 14555. Left to the
+  # generator's default the bridge is pointed at AirSim_Inbound (14580)
+  # instead, which the router template reserves for AirSim's HIL link and
+  # which AirSim floods at hundreds of Hz. A single-peer server answers its
+  # last sender, so MAVROS on 14580 gets its own request/response traffic (a
+  # VER exchange succeeds) but almost none of PX4's broadcast heartbeats, and
+  # /mavros/state.connected never goes true.
+  #
+  # Nineteen older generated stacks use 14555; this one got 14580 because
+  # stackgen/autopilots/px4.py:48 switched on the premise "Nothing binds
+  # 14555" -- true of an older PX4 image, false of v1.0.0, whose router logs
+  # "Opened UDP Server MAVROS_UDP: 0.0.0.0:14555" on every start. Set here
+  # per vehicle, which the schema admits (VehicleConnection), pending the
+  # generator default being corrected.
+  connection:
+    mavros_udp_port: 14555
+    mavros_local_port: 14556
   # Spawn pose taken from the condo compose stack's own settings, which is the
   # known-good pose for this level:
   #   config/unreal-airsim/condo/settings-px4.json -> X: 0, Y: -20, Z: 1.3

@@ -272,6 +272,13 @@ workflow:
         VEHICLE: "{{ vehicle }}"
         # MAVROS is the only control path a generated stack offers: SITL
         # streams MAVLink to its own loopback and publishes no port.
+        #
+        # Port 14555 is the router's MAVROS_UDP server, not 14580. 14580 is
+        # AirSim_Inbound -- a single-peer server AirSim floods with HIL, so
+        # MAVROS attached there gets its own replies (a VER exchange succeeds)
+        # and almost none of PX4's broadcast heartbeats; connected never goes
+        # true and the pilot's gate times out. Run 22 sat there for 600 s. The
+        # same stack on compose with 14555: connected in 35 s.
         AUTOPILOT_HOST: "{% if fly %}{{host:autopilot}}{% else %}127.0.0.1{% endif %}"
       files:
       - path: /tmp/bridge.sh
@@ -321,7 +328,7 @@ workflow:
             enable_mavros:={{ fly | lower }} \
             mavros_vehicle:="${VEHICLE}" \
             mavros_config:=mavros_px4.yaml \
-            mavros_fcu_url:="udp://:14560@${AUTOPILOT_HOST}:14580" \
+            mavros_fcu_url:="udp://:14556@${AUTOPILOT_HOST}:14555" \
             enable_localization:=true \
             localization_source:=sim \
             enable_local_obs:=false \
