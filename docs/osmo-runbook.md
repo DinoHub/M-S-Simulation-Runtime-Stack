@@ -417,6 +417,7 @@ with the chart gap that omits `addressing_style` from
 | symptom | cause | fix |
 | --- | --- | --- |
 | workflow COMPLETED, no `pilot`/`autopilot` tasks, recorder ran the default 300 s | `osmo workflow submit --set a=1 --set b=2`: both `--set` and `--set-string` are `nargs="+"` and argparse keeps the **last** occurrence, so every value but the final one was dropped and the template rendered its defaults | one `--set` and one `--set-string`, each carrying all its values (`campaign.py: submit`) |
+| a campaign asked for two runs planned one | the platform's `campaign plan --only` is `nargs="+"` too, so `--only a --only b` plans b alone | one flag, every key. Any `nargs="+"` option in these CLIs takes its values together, never repeated |
 | verdict rc=0 with no estimate in the bag | the gate named `ate_rmse_m` (the scorecard's vocabulary), the trajectory report spells it `ate_trans_m.rmse`, and a metric found nowhere was a WARN | aliases for the platform's names; a gate no report measured is a FAIL |
 | pilot: `position estimate available at z=-3.36 m`, then `arming refused` for three minutes | PX4 EKF height not settled at boot (`Preflight Fail: height estimate not stable`), pilot proceeded after a fixed 5 s; run 24 read 0.04 m and armed at once | pilot gate waits for six seconds of local height within a metre of zero and spanning under 15 cm; one retry on a refused arming |
 | `campaign status` empty; `sim-real-eval: invalid choice: 'vio-stress'` | the `-latest` worker image on Docker Hub is from 2026-08-09, before the scorer existed; the platform runs it from source inside its own process | build the worker from `MnS-Integration-Platform/tools/sim_real_eval` and point `MNS_SIM_REAL_EVAL_IMAGE` at it; `campaign.py evaluate <id>` re-scores a manifest |
@@ -522,10 +523,20 @@ by appearing in the spec. Diff two generated stacks before believing a sweep.
 ## A campaign: N runs, N workflows, one scorecard
 
 ```bash
-osmo/campaign.py run    vio-osmo-condo              # materialise, generate, submit, collect, evaluate
-osmo/campaign.py run    vio-osmo-condo --only calm-r1
-osmo/campaign.py status vio-osmo-condo              # the platform's own scorecard
+osmo/campaign.py run      vio-osmo-condo            # materialise, generate, submit, collect, evaluate
+osmo/campaign.py run      vio-osmo-condo --only calm-r1 wind-6-r1
+osmo/campaign.py evaluate vio-osmo-condo            # score the manifest again, after a scorer fix
+osmo/campaign.py reindex  vio-osmo-condo            # rebuild the manifest from the evidence on disk
+osmo/campaign.py status   vio-osmo-condo            # the platform's own scorecard
 ```
+
+A `--only` run updates the runs it touched and leaves the rest of the manifest
+alone. It did not always: re-running one key used to rewrite the manifest with
+that key alone, quietly dropping three finished runs off the scorecard. Which
+is why `reindex` exists -- every bundle carries a `run.json` with what the
+record needs, so the manifest is derivable from the evidence rather than the
+other way round, and a lost or truncated one is rebuilt without re-flying
+anything.
 
 `osmo/campaign.py` is an executor, not a runner. The platform's campaign
 runner already validates the spec, expands `variants × seeds × repeats`,

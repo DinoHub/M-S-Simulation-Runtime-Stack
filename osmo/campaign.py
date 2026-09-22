@@ -224,8 +224,11 @@ def materialise(campaign_file: Path, out_root: Path, only: list[str]) -> list[tu
     -- the runner nests the id itself, so out_root is the campaigns directory.
     Returns [(run_key, host path of that spec)] in the runner's own order."""
     args = ["campaign", "plan", container_path(campaign_file), "--out", container_path(out_root)]
-    for key in only:
-        args += ["--only", key]
+    if only:
+        # One flag, every key: `--only` is nargs="+" and a repeated option
+        # keeps only its last occurrence, so `--only a --only b` plans b
+        # alone. The same argparse shape bites `osmo workflow submit --set`.
+        args += ["--only", *only]
     proc = product_cli(*args)
     runs: list[tuple[str, Path]] = []
     for line in proc.stdout.splitlines():
@@ -454,6 +457,24 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
 # Campaign
 # --------------------------------------------------------------------------
 
+def _merge_runs(root: Path, records: list[RunRecord]) -> list[dict[str, Any]]:
+    fresh = {r.run_key: asdict(r) for r in records}
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    manifest = root / "campaign_manifest.json"
+    if manifest.exists():
+        try:
+            for row in json.loads(manifest.read_text()).get("runs", []):
+                key = row.get("run_key")
+                if key and key not in seen:
+                    merged.append(fresh.get(key, row))
+                    seen.add(key)
+        except (OSError, json.JSONDecodeError):
+            pass
+    merged += [row for key, row in fresh.items() if key not in seen]
+    return merged
+
+
 def write_manifest(root: Path, campaign_file: Path, campaign: dict[str, Any],
                    records: list[RunRecord], platform: dict[str, str] | None,
                    status: str | None = None) -> None:
@@ -473,7 +494,12 @@ def write_manifest(root: Path, campaign_file: Path, campaign: dict[str, Any],
         "provenance": {"executor": "osmo/campaign.py", "workflow": str(WORKFLOW)},
         "preflight": None,
         "status": status,
-        "runs": [asdict(r) for r in records],
+        # A --only invocation carries records for the runs it touched. The
+        # manifest is the campaign's, not the invocation's, so the runs it
+        # already holds are kept and only the ones just run are replaced --
+        # otherwise re-running a single key silently drops its siblings from
+        # the scorecard. Order follows the existing manifest, new keys append.
+        "runs": _merge_runs(root, records),
         # Top level is unconstrained; this is where omega lives.
         "target": "osmo",
         "omega": omega_fields(campaign),
@@ -592,6 +618,52 @@ def cmd_run(args: argparse.Namespace) -> int:
     return rc
 
 
+def cmd_reindex(args: argparse.Namespace) -> int:
+    """Rebuild the manifest's runs from the evidence on disk.
+
+    Every run bundle carries a run.json holding what the record needs, so the
+    manifest is derivable from the evidence rather than the other way round.
+    That makes it recoverable: a manifest lost, truncated by a --only run
+    written before those merged, or copied from another machine can be built
+    back from `runs/*/run.json` without re-flying anything.
+    """
+    campaign_file = find_campaign(args.campaign)
+    campaign = yaml.safe_load(campaign_file.read_text())
+    root = CAMPAIGNS_HOST / str(campaign["id"])
+    records: list[RunRecord] = []
+    platform: dict[str, str] | None = None
+    for meta_file in sorted((root / "runs").glob("*/run.json")):
+        meta = json.loads(meta_file.read_text())
+        bundle = meta_file.parent
+        validation = bundle / "validation.json"
+        valid, failed = None, []
+        if validation.exists():
+            try:
+                v = json.loads(validation.read_text())
+                valid = bool(v.get("ok", v.get("passed", not v.get("failed"))))
+                failed = [str(c) for c in (v.get("failed_checks") or v.get("failed") or [])]
+            except (OSError, json.JSONDecodeError):
+                pass
+        tasks = meta.get("tasks") or {}
+        done = tasks.get("recorder") == "COMPLETED" and tasks.get("pilot") == "COMPLETED"
+        records.append(RunRecord(
+            run_key=meta["run_key"], variant=meta.get("variant", ""), seed=meta.get("seed"),
+            repeat=meta.get("repeat", 1), status="done" if done else "failed",
+            run_id=meta.get("run_id"), scenario_id=meta.get("scenario_id"),
+            spec=str(root / meta["run_key"] / "ScenarioSpec.yaml"), stack=meta.get("stack"),
+            bundle=str(bundle), vehicle=meta.get("vehicle"),
+            recording="kept" if any(bundle.rglob("*.mcap")) else None,
+            recording_valid=valid, failed_checks=failed))
+        platform = platform or meta.get("platform")
+    if not records:
+        sys.exit(f"[campaign] no run bundles under {root / 'runs'}")
+    # Replace rather than merge: the evidence is the authority here.
+    (root / "campaign_manifest.json").unlink(missing_ok=True)
+    write_manifest(root, campaign_file, campaign, records, platform)
+    print(f"[campaign] rebuilt {len(records)} run(s) into {root / 'campaign_manifest.json'}")
+    return 0
+
+
 def cmd_evaluate(args: argparse.Namespace) -> int:
     """Score an existing manifest again -- after a scorer fix, or a rebuild."""
     campaign_file = find_campaign(args.campaign)
@@ -621,6 +693,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--serial", action="store_true", help="wait for each run before submitting the next")
     p.add_argument("--no-evaluate", action="store_true")
     p.set_defaults(fn=cmd_run)
+    p = sub.add_parser("reindex", help="rebuild the manifest's runs from the evidence on disk")
+    p.add_argument("campaign")
+    p.set_defaults(fn=cmd_reindex)
     p = sub.add_parser("evaluate", help="run the campaign-level scorer over the manifest again")
     p.add_argument("campaign")
     p.set_defaults(fn=cmd_evaluate)
