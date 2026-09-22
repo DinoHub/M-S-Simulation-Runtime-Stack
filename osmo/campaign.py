@@ -484,13 +484,48 @@ def write_manifest(root: Path, campaign_file: Path, campaign: dict[str, Any],
     (root / "campaign_manifest.json").write_text(json.dumps(doc, indent=2))
 
 
-def evaluate(root: Path) -> int:
-    """The platform's campaign-level evaluator, via its image, over the
-    manifest -- the same command the runner builds."""
-    proc = sh(["docker", "run", "--rm", "-v", f"{root}:{root}",
-               SIM_REAL_EVAL_IMAGE, "vio-stress", str(root / "campaign_manifest.json"),
-               "--out", str(root / "reports")], check=False, capture=False)
-    return proc.returncode
+def evaluate(root: Path, campaign: dict[str, Any] | None = None) -> int:
+    """The platform's campaign-level evaluator, via its image, once per run.
+
+    The runner scores a whole manifest in one call, which reads each run's bag
+    end to end. Here the flight is a window inside the recording -- the
+    vehicle is parked at both ends and this estimator diverges while it is --
+    so each run is scored from the trimmed trajectory pair `vio-eval` already
+    wrote, and `--est`/`--gt` take a path per run. That is why this is a loop:
+    those flags are one value for the whole invocation.
+
+    Without that pair (an older run, or an estimator that never published) the
+    manifest call is the fallback, and it scores the whole recording.
+    """
+    est_topic = ((campaign or {}).get("evaluation") or {}).get("inputs", {}).get("est_topic")
+    reports = root / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    manifest = json.loads((root / "campaign_manifest.json").read_text())
+    runs = [r for r in manifest.get("runs", []) if r.get("status") == "done" and r.get("bundle")]
+
+    windowed = [r for r in runs
+                if (Path(r["bundle"]) / "eval" / "vio-eval" / "estimate.tum").exists()]
+    if not windowed:
+        # The role map in a generated stack still says estimate: /odom, which
+        # is the simulator's own relay; --est-topic is the CampaignSpec's
+        # answer. See docs/osmo-runbook.md on the generator gap.
+        argv = ["vio-stress", str(root / "campaign_manifest.json"), "--out", str(reports)]
+        if est_topic:
+            argv += ["--est-topic", est_topic]
+        return sh(["docker", "run", "--rm", "-v", f"{root}:{root}", SIM_REAL_EVAL_IMAGE,
+                   *argv], check=False, capture=False).returncode
+
+    rc = 0
+    for r in windowed:
+        bundle = Path(r["bundle"])
+        pair = bundle / "eval" / "vio-eval"
+        proc = sh(["docker", "run", "--rm", "-v", f"{root}:{root}", SIM_REAL_EVAL_IMAGE,
+                   "vio-stress", str(bundle),
+                   "--est", str(pair / "estimate.tum"),
+                   "--gt", str(pair / "ground_truth.tum"),
+                   "--out", str(reports / r["run_key"])], check=False, capture=False)
+        rc = rc or proc.returncode
+    return rc
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -549,7 +584,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if any(r.status != "done" for r in records):
         rc = 1
     if campaign.get("evaluation") and not args.no_evaluate:
-        ev = evaluate(root)
+        ev = evaluate(root, campaign)
         if ev == 3:
             rc = 1
     write_manifest(root, campaign_file, campaign, records, platform)
@@ -562,7 +597,7 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     campaign_file = find_campaign(args.campaign)
     campaign = yaml.safe_load(campaign_file.read_text())
     root = CAMPAIGNS_HOST / str(campaign["id"])
-    return 0 if evaluate(root) in (0, 1) else 1
+    return 0 if evaluate(root, campaign) in (0, 1) else 1
 
 
 def cmd_status(args: argparse.Namespace) -> int:

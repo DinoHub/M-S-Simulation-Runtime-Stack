@@ -63,9 +63,21 @@ variants:
   name: Wind 6 m/s
   overrides:
     environment:
-      conditions:
-        weather:
-          wind: 6.0
+      # `environment.weather`, not `environment.conditions.weather`. The
+      # Environment message declares `weather` and `time_of_day` and allows
+      # unknown fields, so the nested spelling validates, materialises into
+      # the run's ScenarioSpec, and is then dropped on the floor: the
+      # generator's _normalize_conditions reads the top-level `conditions` and
+      # `environment.weather`, nothing else. A campaign authored the nested
+      # way runs its whole sweep against identical worlds and reports the
+      # spread as if it meant something. scenarios/vio-reference is authored
+      # that way today.
+      #
+      # The evidence that this path is live: scenario_conditions.json carries
+      # the weather block and the sim gets SCENARIO_CONDITIONS_ENABLED=true.
+      weather:
+        enabled: true
+        wind: 6.0
 
 # A single VIO run is noise. Two repeats per point is the minimum that lets
 # a difference between variants be told apart from a difference between runs.
