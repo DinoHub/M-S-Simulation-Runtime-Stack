@@ -448,10 +448,32 @@ workflow:
       - task: recorder
       environment:
         RUN_ID: "{{workflow_id}}"
+      files:
+      # sim-real-eval addresses topics by ROLE, and resolves roles through a
+      # profile. Neither its built-in `sim` profile nor the stack's generated
+      # config/sim2real/topics.yaml knows where this estimator publishes: both
+      # map `estimate` to /odom, which is the bridge's own relay of the
+      # simulator's kinematics, not the filter under test. Evaluating that
+      # would compare ground truth against a copy of itself.
+      #
+      # The ScenarioSpec already declares the answer --
+      # extensions.mns.vio_estimator.odom_topic -- so stackgen could write it
+      # into the generated role map and this file could go away. It does not
+      # today; see docs/osmo-runbook.md.
+      - path: /tmp/topics.yaml
+        contents: |
+          sim:
+            ground_truth: /ground_truth/odom
+            estimate: {{ est_topic }}
+            clock: /clock
       command: ["sim-real-eval"]
       args:
       - trajectory
       - "/runs/run_{{workflow_id}}"
+      - --topics
+      - /tmp/topics.yaml
+      - --profile
+      - sim
       - --est
       - estimate
       - --gt
@@ -561,6 +583,9 @@ workflow:
 default-values:
   stack: vio-osmo-condo
   record_sec: "60"
+  # Where the estimator under test publishes. Mirrors the ScenarioSpec's
+  # extensions.mns.vio_estimator.odom_topic; change both together.
+  est_topic: /ov_msckf/odomimu
   max_ate_m: "1.0"
   sim_real_eval_image: dhdevspace/auto_mns:sim-real-eval-worker-latest
   vehicle: Drone1
