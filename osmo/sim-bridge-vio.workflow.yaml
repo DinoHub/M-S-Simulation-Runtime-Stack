@@ -68,8 +68,13 @@ workflow:
 
     # Pod networking has no multicast, so default DDS discovery finds nothing.
     # Everything below dials this instead.
+    # The bridge image, not a stock ROS one: it already ships
+    # /opt/ros/humble/bin/fastdds, so this costs no extra image in the node's
+    # store and no extra pull. (The bridge repo's own examples default to
+    # osrf/ros:humble-ros-base, which is not a tag that exists -- osrf/ros
+    # publishes humble-desktop*, and ros:humble-ros-base is the official one.)
     - name: discovery-server
-      image: "{{ ros_base_image }}"
+      image: "{{ bridge_image }}"
       resource: default
       command: ["/bin/bash", "/tmp/ds.sh"]
       files:
@@ -298,7 +303,6 @@ workflow:
 default-values:
   stack: vio-osmo-condo
   vehicle: Drone1
-  ros_base_image: osrf/ros:humble-ros-base
   runtime_host_image: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0
   bridge_image: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0
   vio_estimator_image: dhdevspace/auto_mns:vio-estimator-openvins-69488123

@@ -119,38 +119,56 @@ helm upgrade --install osmo "$CHART" -n osmo --create-namespace \
   --set-string service.services.postgres.nodeSelector.node_group=service \
   --set-string service.services.redis.nodeSelector.node_group=service \
   --set-string service.services.localstackS3.nodeSelector.node_group=service \
-  --wait --timeout 20m || echo "(install reported failure; the bootstrap fixes below usually explain it)"
+  --timeout 20m
+# Deliberately no --wait: every consumer Deployment blocks on a token that the
+# next step creates, so waiting here would only burn the timeout.
 
 echo "== 6/6 bootstrap fixes"
-# Workaround 2. The chart seeds backend-operator-token with a placeholder, which
-# sends its own Job down the "test the existing token" branch. Removing it makes
-# the Job create a real token instead.
+# Workaround 2+3, done directly rather than by patching the chart's Job.
+#
+# That Job addresses http://osmo-service, but the service answers only requests
+# arriving through the Envoy gateway and closes the connection otherwise, so
+# curl exits 52 and `set -e` kills it. It also carries ttlSecondsAfterFinished:
+# 30, so once its retries are exhausted Kubernetes deletes it -- patching it in
+# place is a race that is lost as soon as helm's --wait runs longer than the
+# job's backoff. Do what the job would have done, against the gateway, and
+# write the secret ourselves.
 kubectl -n osmo delete secret backend-operator-token --ignore-not-found >/dev/null
-
-# Workaround 3. That Job addresses http://osmo-service directly, but the service
-# answers only requests arriving through the Envoy gateway and closes the
-# connection otherwise -- curl exits 52 and `set -e` kills the Job. The sibling
-# config-setup Job in the same chart uses the gateway URL; use it here too.
-if kubectl -n osmo get job osmo-backend-operator-token >/dev/null 2>&1; then
-  kubectl -n osmo get job osmo-backend-operator-token -o json | python3 -c '
-import json, sys
-j = json.load(sys.stdin)
-for k in ("creationTimestamp","resourceVersion","uid","generation","managedFields","ownerReferences"):
-    j["metadata"].pop(k, None)
-j["spec"].pop("selector", None)
-for m in (j["metadata"], j["spec"]["template"]["metadata"]):
-    for k in ("controller-uid","batch.kubernetes.io/controller-uid","job-name","batch.kubernetes.io/job-name"):
-        m.get("labels", {}).pop(k, None)
-j.pop("status", None)
-c = j["spec"]["template"]["spec"]["containers"][0]
-c["command"][2] = c["command"][2].replace(
-    "BASE_URL=\"http://osmo-service\"",
-    "BASE_URL=\"http://quick-start.osmo.svc.cluster.local\"")
-assert "quick-start.osmo.svc.cluster.local" in c["command"][2], "BASE_URL not found to patch"
-json.dump(j, sys.stdout)' > /tmp/osmo-token-job.json
-  kubectl -n osmo delete job osmo-backend-operator-token --wait >/dev/null
-  kubectl -n osmo apply -f /tmp/osmo-token-job.json >/dev/null
-fi
+kubectl -n osmo delete job tokenboot --ignore-not-found >/dev/null 2>&1
+kubectl -n osmo create configmap tokenboot-script --dry-run=client -o yaml \
+  --from-literal=boot.sh='set -e
+B=http://quick-start.osmo.svc.cluster.local
+curl -s -o /dev/null -X POST -H "Content-Type: application/json" \
+  "$B/api/auth/user" -d "{\"id\":\"backend-operator\",\"roles\":[\"osmo-backend\"]}"
+Y=$(date +%Y)
+T=$(curl -s -X POST -G \
+  --data-urlencode "expires_at=$((Y+1))-$(date +%m-%d)" \
+  --data-urlencode "description=Access token for default backend" \
+  --data-urlencode "roles=osmo-backend" \
+  "$B/api/auth/user/backend-operator/access_token/backend-operator-token")
+TOK=$(printf "%s" "$T" | jq -r "if type==\"object\" then .token else . end")
+[ -n "$TOK" ] && [ "$TOK" != "null" ] || { echo "no token: $T" >&2; exit 1; }
+kubectl create secret generic backend-operator-token --from-literal=token="$TOK" \
+  -n osmo --dry-run=client -o yaml | kubectl apply -f -' | kubectl apply -f - >/dev/null
+kubectl apply -f - >/dev/null <<'YAML'
+apiVersion: batch/v1
+kind: Job
+metadata: {name: tokenboot, namespace: osmo}
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: osmo-agent-token-generator
+      containers:
+      - name: boot
+        image: alpine/k8s:1.28.4
+        command: ["sh", "/script/boot.sh"]
+        volumeMounts: [{name: script, mountPath: /script}]
+      volumes:
+      - name: script
+        configMap: {name: tokenboot-script}
+YAML
 
 # Workaround 4. The data credential is created without addressing_style, so the
 # S3 client builds virtual-hosted URLs like http://osmo.localstack-s3.osmo:4566.
@@ -162,13 +180,21 @@ kubectl -n osmo patch deploy localstack-s3 --type=strategic \
 kubectl -n osmo rollout status deploy/localstack-s3 --timeout=180s >/dev/null
 
 echo
-echo "waiting for the token secret (the whole bootstrap hangs on it)"
+echo "waiting for the token (every consumer Deployment blocks on it)"
 for _ in $(seq 60); do
-  kubectl -n osmo get secret backend-operator-token >/dev/null 2>&1 && break
+  kubectl -n osmo get job tokenboot -o jsonpath='{.status.succeeded}' 2>/dev/null | grep -q 1 && break
   sleep 5
 done
-kubectl -n osmo get secret backend-operator-token >/dev/null 2>&1 \
-  || { echo "token secret never appeared; kubectl -n osmo logs -l job-name=osmo-backend-operator-token" >&2; exit 1; }
+kubectl -n osmo get job tokenboot -o jsonpath='{.status.succeeded}' 2>/dev/null | grep -q 1 \
+  || { echo "token bootstrap failed; kubectl -n osmo logs job/tokenboot" >&2; exit 1; }
+kubectl -n osmo delete job tokenboot configmap/tokenboot-script --ignore-not-found >/dev/null 2>&1
+
+echo "waiting for the control plane to settle"
+for _ in $(seq 60); do
+  [ "$(kubectl -n osmo get pods --no-headers 2>/dev/null | grep -cvE ' 1/1 .*Running| Completed')" -eq 0 ] && break
+  sleep 10
+done
+kubectl -n osmo get pods --no-headers 2>/dev/null | grep -vE ' 1/1 .*Running| Completed' || true
 
 cat <<'DONE'
 
