@@ -8,7 +8,8 @@ which covers the same ground from the ROS 2 side.
 
 Read `docs/how-it-fits-together.md` first if the phases and the generated-stack
 layout are not already familiar. (That page arrives with PR #80; until it merges
-the link below dangles.)
+the link below dangles.) To run one rather than understand one, go to
+[Running a TEVV stack under OSMO](osmo-runbook.md).
 
 ## 1. Where this repository sits
 
