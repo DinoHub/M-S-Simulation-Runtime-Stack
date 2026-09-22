@@ -234,6 +234,9 @@ images:
     tag: tevv-runtime-host-20260910.1
     digest: sha256:3a5de227f3ab8a2ac81b0a2cda3262283fedc731b46438395a51e8a376e2cfb8
     channel: pinned
+    source:
+      repo: DinoHub/TEVV-Airsim
+      commit: 6dfe8801
     purpose: >-
       Generic standalone-v2 runtime host built on UE 5.8.2 (label
       tevv.content_packs.host_compatibility_id = ue-5.8.2-cl56702186-...-v2).
@@ -322,6 +325,9 @@ images:
     tag: "tevv-web-dashboard-backend-latest"
     digest: sha256:939c93c309d4363ae1552238a175971cb1566fc75f699fbfcda906b6dcfe41e9
     channel: moving
+    source:
+      repo: DinoHub/TEVV-Web-Dashboard
+      commit: ee99b9d
     bakes: [mns_authoring, mns_stack_generator]
     purpose: TEVV Web Dashboard backend API; bakes authoring/generator refs as defaults.
 
@@ -330,6 +336,9 @@ images:
     tag: "tevv-web-dashboard-frontend-latest"
     digest: sha256:9a779f5d5564333bfec145309bc7afde0e059a64b5c8b00183da7c0489c93259
     channel: moving
+    source:
+      repo: DinoHub/TEVV-Web-Dashboard
+      commit: ee99b9d
     purpose: TEVV Web Dashboard Next.js frontend, served at :3001.
 
   # ---------------------------------------------------------------------
@@ -725,6 +734,9 @@ images:
     tag: tevv-runtime-host-20260918.1
     digest: sha256:72ef41b2040a2de6986068a303ce51f377fb21edf670b32819dd84ae84a8e3bd
     channel: pinned
+    source:
+      repo: DinoHub/TEVV-Airsim
+      commit: a6f514c58
     purpose: >-
       Origin integration runtime_host. 20260918.1 is v0.4.0-origin.1 (TEVV-Airsim
       9771b7c) with only the game executable replaced by a build of a6f514c58, the
@@ -778,6 +790,8 @@ images:
     tag: tevv-web-dashboard-backend-v0.2.0-gee99b9d
     digest: sha256:63529359880d6a117b3bdf7822f47abfc212c8cd5f979b780f25e9f43d2e2548
     channel: pinned
+    source:
+      repo: DinoHub/TEVV-Web-Dashboard
     purpose: >-
       Origin integration dashboard_backend. gee99b9d = TEVV-Web-Dashboard main
       after #115: Generate phase no longer authors sensors (ScenarioLab does),
@@ -789,6 +803,8 @@ images:
     tag: tevv-web-dashboard-frontend-v0.2.0-gee99b9d
     digest: sha256:9a779f5d5564333bfec145309bc7afde0e059a64b5c8b00183da7c0489c93259
     channel: pinned
+    source:
+      repo: DinoHub/TEVV-Web-Dashboard
     purpose: Origin integration dashboard_frontend, built with the backend above (gee99b9d).
 
   # ---- MnS 1.0 (channel v1): every image rebuilt from the merged default branches on 2026-09-18 ----
@@ -853,6 +869,8 @@ images:
     tag: tevv-web-dashboard-backend-v1.0.0-gee99b9d
     digest: sha256:939c93c309d4363ae1552238a175971cb1566fc75f699fbfcda906b6dcfe41e9
     channel: pinned
+    source:
+      repo: DinoHub/TEVV-Web-Dashboard
     purpose: >-
       MnS 1.0 dashboard backend (TEVV-Web-Dashboard main) with the v1
       authoring/generator pins baked. gee99b9d adds #115: the Generate phase no
@@ -868,6 +886,8 @@ images:
     tag: tevv-web-dashboard-frontend-v1.0.0-gee99b9d
     digest: sha256:9a779f5d5564333bfec145309bc7afde0e059a64b5c8b00183da7c0489c93259
     channel: pinned
+    source:
+      repo: DinoHub/TEVV-Web-Dashboard
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard main), built with the
       backend above (gee99b9d). Byte-identical to the v0.2.0-gee99b9d build:
