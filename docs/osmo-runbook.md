@@ -412,6 +412,68 @@ will bite on any transient upload failure; it is worth filing upstream along
 with the chart gap that omits `addressing_style` from
 `quick-start/templates/config-setup.yaml`.
 
+## Four more ways a run lies, found on runs 25 and 26
+
+| symptom | cause | fix |
+| --- | --- | --- |
+| workflow COMPLETED, no `pilot`/`autopilot` tasks, recorder ran the default 300 s | `osmo workflow submit --set a=1 --set b=2`: both `--set` and `--set-string` are `nargs="+"` and argparse keeps the **last** occurrence, so every value but the final one was dropped and the template rendered its defaults | one `--set` and one `--set-string`, each carrying all its values (`campaign.py: submit`) |
+| verdict rc=0 with no estimate in the bag | the gate named `ate_rmse_m` (the scorecard's vocabulary), the trajectory report spells it `ate_trans_m.rmse`, and a metric found nowhere was a WARN | aliases for the platform's names; a gate no report measured is a FAIL |
+| pilot: `position estimate available at z=-3.36 m`, then `arming refused` for three minutes | PX4 EKF height not settled at boot (`Preflight Fail: height estimate not stable`), pilot proceeded after a fixed 5 s; run 24 read 0.04 m and armed at once | pilot gate waits for six seconds of local height within a metre of zero and spanning under 15 cm; one retry on a refused arming |
+| `campaign status` empty; `sim-real-eval: invalid choice: 'vio-stress'` | the `-latest` worker image on Docker Hub is from 2026-08-09, before the scorer existed; the platform runs it from source inside its own process | build the worker from `MnS-Integration-Platform/tools/sim_real_eval` and point `MNS_SIM_REAL_EVAL_IMAGE` at it; `campaign.py evaluate <id>` re-scores a manifest |
+
+And one the task table cannot show: a pilot exits 0 or 1 as COMPLETED, so a
+flight that never armed looks like a flight. The recorder now writes
+`mission.json` beside the bag -- whether the pilot announced, its exit code,
+message counts -- and the executor reads it before calling a run `done`.
+
+## The first flight's number was garbage, and why
+
+Run 24 flew: MAVROS connected 11 s after the group came up, OFFBOARD, armed,
+2.75 m, 8 m traverse, touchdown, 83 MB bag, three evaluators, a verdict. The
+ATE was 5.5e4 m. Working back from that, under compose first, in the order
+the evidence arrived:
+
+| suspect | test | result |
+| --- | --- | --- |
+| OSMO itself | same scenario, same pilot, under compose | diverged identically -- exonerated |
+| IMU body frame (the bug that cost three sessions in September) | gyro axes against body rates derived from ground-truth *orientation*, not the bridge's own twist | identity, 1.00/1.00/1.00 -- FLU, fixed |
+| stereo rig | pixel diff and disparity between the two topics | 16 px at 2.9 m, identical stamps, correct intrinsics |
+| camera timing | image stamp vs IMU stamp at receipt | capture-time stamps, 71 ms latency, 20 Hz |
+| estimator config | diff against `tevv_ws/testing/calibration-campaign-v1-stereo` | byte-identical but for a renamed topic |
+| the scene | `simGetImages` at four headings and two heights | see below |
+
+The vehicle spawns in a 3.5 m bedroom whose walls are 2.2 m tall and have no
+ceiling above them. The corridor mission climbs to 2.75 m. Above the walls the
+stereo pair looks across the whole apartment and into the sky: every feature
+is at infinity, translation is unobservable, and the filter integrates the
+accelerometer alone -- tens of metres per second within ten seconds. It then
+landed on top of a wall (ground truth +2.24 m, exactly wall height); the
+compose repeat missed the wall and fell out of the level.
+
+A route sized to the room (`scenarios/vio-osmo-condo/routes/bedroom-loop.yaml`,
+1.2 m up, metre legs, a yaw sweep, back to the start) gives **0.356 m ATE rmse
+over a 7.0 m path** in flight. This is working VIO, in line with the reference
+campaign's stereo numbers.
+
+Then the second finding. Over the whole bag the same flight scores 1.75 m,
+and the part after touchdown alone 2.08 m and climbing: the estimator this
+stack ships holds well in motion and runs away at about 2 m/s^2 the moment
+the vehicle is parked (`zupt_only_at_beginning: true` means nothing catches
+it, and the stereo updates evidently do not hold it either). The compose
+runner never sees this because it stops the bag when the pilot exits. Under
+OSMO the recorder is its own task, so the pilot now publishes `/mission/done`
+(latched) when it finishes, whatever its exit code, and the recorder closes
+the bag four seconds later. `record_sec` is the cap for a pilot that never
+gets there, and the whole window when nothing flies.
+
+Two smaller things run 24 also taught: the recorder gates on ground truth,
+not estimator odometry (OpenVINS publishes nothing under ZUPT, so gating on
+it starts the bag at takeoff), and the `validate` evaluator was handed the
+run directory instead of its `bag/`, exited 2, and under
+`ignoreNonleadStatus: false` took the two evaluators beside it down with it
+after they had written their reports. An evaluator's exit range is now
+`0,1,2`: it reports, it never vetoes.
+
 ## A campaign: N runs, N workflows, one scorecard
 
 ```bash
@@ -432,13 +494,20 @@ command it submits the workflow, polls it, and pulls the evidence back.
 Where things land, and why the layout is fixed:
 
 ```
-generated/campaigns/<id>/
+<checkout>/generated/campaigns/<id>/
   campaign_manifest.json      mns.vio_campaign_manifest.v1 — what `status` reads
-  <run_key>/ScenarioSpec.yaml written by the platform
-  <run_key>/stack/            written by the platform; the workflow's `stack=`
+  <run_key>/ScenarioSpec.yaml written by the platform (as root: the product shell is)
+  stacks/<run_key>/           written by the generator (as this user); the workflow's `stack=`
   runs/<run_key>/             bag/, eval/*/…, validation.json, topics.yaml, run.json
   reports/<run_key>.json      the campaign-level evaluator (vio-stress)
 ```
+
+`<checkout>` is the one the cluster mounts at `/workspace` (read from the
+kind config), even when the executor runs from a worktree beneath it: that
+checkout owns the pack store the generator needs, and a `stack=` value is a
+path under its `generated/`. The stacks sit beside the run directories, not
+inside them, because `campaign plan` creates those as root and the generator
+runs as the invoking user.
 
 Nothing downstream reads anything else, so an executor that lands these files
 gets `campaign status` — and the dashboard's campaign view — unchanged.

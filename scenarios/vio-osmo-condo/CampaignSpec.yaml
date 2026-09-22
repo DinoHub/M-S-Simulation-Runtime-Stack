@@ -33,15 +33,23 @@ evaluation:
     ate_rmse_m: {max: 1.0}
 
 mission:
-  # Under OSMO the pilot is a task in the workflow, not a command the runner
-  # execs into the bridge, so `source: external` with a no-op start_cmd is the
-  # honest description: the runner starts nothing. `autopilot` and `timeout_s`
-  # are read -- they become the workflow's autopilot and record_sec.
+  # `source: external`: the flight is not the autonomy under test, it is the
+  # excitation. Under compose the runner compiles the route into a pilot
+  # command it execs into the bridge; under OSMO the pilot is a task in the
+  # workflow and the executor hands it the same compiled route. `autopilot`
+  # and `timeout_s` are read by both.
   source: external
-  start_cmd: "true"
   autopilot: px4
+  # The flight, as time-indexed waypoints the pilot follows and returns from.
+  # A route is what makes two repeats comparable, and this one is sized to
+  # the bedroom the vehicle spawns in: the corridor mission it replaced
+  # climbed over the room's 2.2 m walls and pointed the cameras at the far
+  # side of the apartment, which no estimator survives.
+  trajectory: ./routes/bedroom-loop.yaml
   done: timeout
-  timeout_s: 300
+  # A cap, not the length of the recording: the recorder stops when the pilot
+  # reports the mission done. Sized to boot + a 60 s route + landing.
+  timeout_s: 180
 
 # One difference at a time. Wind is a declared environment condition, so it
 # leaves a trace in the generated stack rather than being an RPC nobody can

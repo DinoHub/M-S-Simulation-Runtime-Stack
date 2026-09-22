@@ -399,9 +399,30 @@ workflow:
         FLY_DISTANCE_M: "{{ fly_distance_m }}"
         FLY_ALTITUDE_M: "{{ fly_altitude_m }}"
         FLY_SPEED_MS: "{{ fly_speed_ms }}"
+        ROUTE_B64: "{{ route_b64 }}"
       files:
       - localpath: files/fly_mission_mavros.py
         path: /tmp/fly_mission_mavros.py
+      - path: /tmp/announce_done.py
+        contents: |
+          """Publish /mission/done once, latched, and leave."""
+          import sys, time
+          import rclpy
+          from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
+          from std_msgs.msg import Int32
+          rclpy.init()
+          node = rclpy.create_node("mission_announcer")
+          qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                           reliability=ReliabilityPolicy.RELIABLE)
+          pub = node.create_publisher(Int32, "/mission/done", qos)
+          msg = Int32(); msg.data = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+          deadline = time.time() + 20
+          while time.time() < deadline:
+              pub.publish(msg)
+              rclpy.spin_once(node, timeout_sec=0.5)
+              if pub.get_subscription_count() > 0 and time.time() > deadline - 17:
+                  break
+          print("mission done announced (pilot exit %d)" % msg.data)
       - path: /tmp/fly.sh
         contents: |
           #!/bin/bash
@@ -415,34 +436,84 @@ workflow:
           # The pilot needs MAVROS connected to the flight controller, which is
           # slower than the graph appearing: SITL boots, then MAVLink handshakes.
           python3 - <<'GATE' || exit 42
-          import sys, time
+          import os, sys, time
           import rclpy
           from rclpy.node import Node
+          from rclpy.qos import qos_profile_sensor_data
           from mavros_msgs.msg import State
+          from geometry_msgs.msg import PoseStamped
           rclpy.init()
           node = Node("tevv_pilot_gate")
-          seen = {"connected": False}
+          seen = {"connected": False, "z": []}
           def on_state(msg):
               seen["connected"] = bool(msg.connected)
-          import os
+          def on_pose(msg):
+              seen["z"].append((time.time(), msg.pose.position.z))
+              seen["z"] = [s for s in seen["z"] if s[0] > time.time() - 6.0]
           ns = os.environ["VEHICLE"]
           node.create_subscription(State, f"/{ns}/mavros/state", on_state, 10)
+          node.create_subscription(PoseStamped, f"/{ns}/mavros/local_position/pose",
+                                   on_pose, qos_profile_sensor_data)
+          said = False
           deadline = time.time() + 600
           while time.time() < deadline:
               rclpy.spin_once(node, timeout_sec=0.5)
-              if seen["connected"]:
-                  print("MAVROS connected to the flight controller")
+              if not seen["connected"]:
+                  continue
+              if not said:
+                  print("MAVROS connected to the flight controller"); said = True
+              # PX4 arms only once its EKF height is settled. Run 26 read the
+              # local height as -3.36 m on the ground, spent 12 s in "height
+              # estimate not stable", and then refused every arm command for
+              # three minutes; run 24 read 0.04 m and armed at once. So: six
+              # seconds of samples, all within a metre of zero, spanning less
+              # than 15 cm.
+              zs = [z for _, z in seen["z"]]
+              if len(zs) >= 20 and seen["z"][0][0] < time.time() - 5.0 \
+                      and max(abs(z) for z in zs) < 1.0 and max(zs) - min(zs) < 0.15:
+                  print("EKF height settled at %.2f m over %.0fs" % (zs[-1], time.time() - seen["z"][0][0]))
                   sys.exit(0)
-          print("READINESS TIMEOUT: MAVROS never reported connected", file=sys.stderr)
+          if not seen["connected"]:
+              print("READINESS TIMEOUT: MAVROS never reported connected", file=sys.stderr)
+          else:
+              print("READINESS TIMEOUT: EKF height never settled (last %s)" % (seen["z"][-1:] or "none"), file=sys.stderr)
           sys.exit(1)
           GATE
 
-          exec python3 /tmp/fly_mission_mavros.py \
-            --vehicle "$VEHICLE" \
-            --autopilot "$AUTOPILOT" \
-            --distance "$FLY_DISTANCE_M" \
-            --altitude "$FLY_ALTITUDE_M" \
-            --speed "$FLY_SPEED_MS"
+          # A declared route -- the CampaignSpec's `mission.trajectory`, compiled
+          # to base64 JSON exactly as the platform's runner hands it to this
+          # same script -- flies itself and lands where it took off. Without
+          # one, the corridor mission: climb, traverse, land where it ends up.
+          fly() {
+            if [ -n "$ROUTE_B64" ]; then
+              python3 /tmp/fly_mission_mavros.py \
+                --vehicle "$VEHICLE" \
+                --autopilot "$AUTOPILOT" \
+                --trajectory-b64 "$ROUTE_B64"
+            else
+              python3 /tmp/fly_mission_mavros.py \
+                --vehicle "$VEHICLE" \
+                --autopilot "$AUTOPILOT" \
+                --distance "$FLY_DISTANCE_M" \
+                --altitude "$FLY_ALTITUDE_M" \
+                --speed "$FLY_SPEED_MS"
+            fi
+          }
+          fly 2>&1 | tee /tmp/fly.log; rc=${PIPESTATUS[0]}
+          # A refused arming is the one failure that is about the autopilot's
+          # moment, not the mission: give it one more go after a pause.
+          if [ "$rc" -ne 0 ] && grep -q "arming refused" /tmp/fly.log; then
+            echo "[pilot] arming refused; retrying once in 20s"; sleep 20
+            fly 2>&1 | tee /tmp/fly.log; rc=${PIPESTATUS[0]}
+          fi
+          # Tell the recorder the flight is over, however it ended. Under
+          # compose the runner stops the bag when this script exits; here the
+          # recorder is its own task and has to be told. The estimator this
+          # stack ships holds well in flight and runs away once the vehicle is
+          # parked (2 m/s^2, no ZUPT after the first frame), so a bag that
+          # keeps rolling after touchdown scores the parking, not the flight.
+          python3 /tmp/announce_done.py "$rc"
+          exit $rc
       exitActions:
         # A flight that could not be commanded is not a verdict on the
         # estimator: the recorder and the evaluators still run, and the
@@ -471,6 +542,9 @@ workflow:
         # and a downstream task declaring `inputs: [{task: recorder}]` has it
         # delivered. No shared filesystem, so this works on a real cluster.
         OUT_DIR: "{{output}}"
+        # Without this every line the recorder prints is stamped at exit,
+        # because Python block-buffers stdout when it is a pipe.
+        PYTHONUNBUFFERED: "1"
         READY_WAIT_SEC: "900"
         RECORD_SEC: "{{ record_sec }}"
       files:
@@ -503,15 +577,18 @@ workflow:
           from rclpy.node import Node
           from rclpy.qos import QoSProfile, QoSDurabilityPolicy, qos_profile_sensor_data
           from rclpy.serialization import serialize_message
+          import json
           import rosbag2_py
 
           from nav_msgs.msg import Odometry
+          from std_msgs.msg import Int32
           from rosgraph_msgs.msg import Clock
           from tf2_msgs.msg import TFMessage
 
           LATCHED = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
 
           # topic, python type, type string for the bag, QoS
+          DONE_GRACE_SEC = 4.0
           TOPICS = [
               ("/ov_msckf/odomimu", Odometry, "nav_msgs/msg/Odometry", 10),
               ("/ground_truth/odom", Odometry, "nav_msgs/msg/Odometry", 10),
@@ -519,6 +596,10 @@ workflow:
               ("/tf", TFMessage, "tf2_msgs/msg/TFMessage", 10),
               ("/tf_static", TFMessage, "tf2_msgs/msg/TFMessage", LATCHED),
           ]
+
+          ALIASES = {"ate_rmse_m": "ate_trans_m.rmse", "ate_max_m": "ate_trans_m.max",
+                     "rpe_rmse_m": "rpe_trans_m.rmse"}
+          measured = set()
 
           def main():
               run_dir = pathlib.Path(os.environ["OUT_DIR"])
@@ -549,21 +630,45 @@ workflow:
                       name=topic, type=type_str, serialization_format="cdr"))
                   node.create_subscription(msg_type, topic, make_writer(topic), qos)
 
-              # The estimator is the slow one: the simulator has to boot, the
-              # bridge has to connect, and the filter has to initialise.
+              # The pilot announces the end of the flight; the bag closes a
+              # few seconds later. RECORD_SEC is the cap for a pilot that
+              # never gets there, and the whole window when nothing flies.
+              done = {"at": None, "rc": None}
+              def on_done(msg):
+                  if done["at"] is None:
+                      done["at"] = time.time(); done["rc"] = msg.data
+                      print("mission done (pilot exit %d); closing the bag in %.0fs"
+                            % (msg.data, DONE_GRACE_SEC))
+              node.create_subscription(Int32, "/mission/done", on_done, LATCHED)
+
+              # Readiness is the bridge publishing ground truth: the simulator
+              # has booted and the bridge has connected. The estimator is not
+              # part of readiness -- OpenVINS holds the filter under ZUPT and
+              # publishes nothing until the vehicle moves, so gating on its
+              # odometry would start the bag at takeoff and lose the first
+              # second of the flight. An estimator that never publishes is a
+              # verdict for the evaluators, not a reason to reschedule.
               deadline = time.time() + ready_wait
-              while counts["/ov_msckf/odomimu"] == 0:
+              while counts["/ground_truth/odom"] == 0:
                   if time.time() >= deadline:
-                      print("READINESS TIMEOUT: nothing on /ov_msckf/odomimu "
+                      print("READINESS TIMEOUT: nothing on /ground_truth/odom "
                             "after %.0fs" % ready_wait, file=sys.stderr)
                       return 42
                   rclpy.spin_once(node, timeout_sec=0.5)
-              print("estimator publishing; recording %.0fs into %s"
+              print("bridge publishing; recording %.0fs into %s"
                     % (record_sec, bag_dir))
 
               start = time.time()
               while time.time() - start < record_sec:
                   rclpy.spin_once(node, timeout_sec=0.2)
+                  if done["at"] is not None and time.time() - done["at"] > DONE_GRACE_SEC:
+                      break
+              print("recorded %.0fs" % (time.time() - start))
+              (run_dir / "mission.json").write_text(json.dumps({
+                  "announced": done["at"] is not None,
+                  "pilot_exit": done["rc"],
+                  "recorded_sec": round(time.time() - start, 1),
+                  "messages": dict(counts)}, indent=2))
 
               del writer          # flush and close the bag
               total = sum(counts.values())
@@ -572,6 +677,9 @@ workflow:
               if total == 0:
                   print("FAIL: recorded nothing", file=sys.stderr)
                   return 1
+              if counts["/ov_msckf/odomimu"] == 0:
+                  print("NOTE: the estimator never published; the evaluators "
+                        "will say so", file=sys.stderr)
               print("evidence complete: %s (%d messages)" % (run_dir, total))
               return 0
 
@@ -793,14 +901,18 @@ workflow:
       - >-
         source /opt/ros/humble/setup.bash && source /ws/install/setup.bash &&
         mkdir -p "{{output}}" &&
-        python3 /tmp/validate_recording.py "{{input:0}}"
+        python3 /tmp/validate_recording.py "{{input:0}}/bag"
         --topics /tmp/topics.yaml --json "{{output}}/validation.json";
         rc=$?; cat "{{output}}/validation.json" 2>/dev/null | head -c 2000; exit $rc
       exitActions:
-        # Reports; does not veto. Exit 1 means a check failed, which is
-        # information for the aggregate and the scorecard, not a reason to
-        # stop the workflow.
-        COMPLETE: "0,1"
+        # Reports; does not veto. Exit 1 means a check failed and 2 means the
+        # validator could not read the bag at all; both are information for
+        # the aggregate and the scorecard, not a reason to stop the workflow.
+        # A non-lead exiting outside this range fails the whole group under
+        # ignoreNonleadStatus: false -- the two evaluators beside it are marked
+        # FAILED after writing their reports, and the verdict never runs. That
+        # is what run 24 did, one wrong path deep.
+        COMPLETE: "0,1,2"
         RESCHEDULE: "137"
 
   # ---- aggregate: the verdict ----------------------------------------------
@@ -881,16 +993,18 @@ workflow:
                       continue
 
                   # The gates on the thing under test. Each names a metric
-                  # and a bound; a metric absent from every report is a WARN,
-                  # not a FAIL -- an evaluator that did not measure something
-                  # is a gap in coverage, and hiding it inside a red verdict
-                  # would make it look like the stack was wrong.
+                  # in the platform's vocabulary (the scorecard's columns:
+                  # ate_rmse_m, ate_max_m, rpe_rmse_m) and a bound; the
+                  # trajectory evaluator spells the same numbers as nested
+                  # paths, so both are looked for. A metric that no report
+                  # measured fails at the end, below: run 26 passed with a
+                  # gate on a number that did not exist.
                   gates = json.loads(os.environ.get("GATES") or "{}")
                   for metric, bound in gates.items():
-                      value = _find(data, (metric,))
+                      value = _find(data, (metric, ALIASES.get(metric, metric)))
                       if value is None:
-                          print("WARN: %s carries no %r field; not gated" % (path.name, metric))
                           continue
+                      measured.add(metric)
                       if "max" in bound and value > float(bound["max"]):
                           print("FAIL: %s %.3f over the %.3f gate" % (metric, value, float(bound["max"])))
                           status = 1
@@ -899,6 +1013,12 @@ workflow:
                           status = 1
                       else:
                           print("PASS: %s %.3f within %s" % (metric, value, bound))
+
+              for metric in json.loads(os.environ.get("GATES") or "{}"):
+                  if metric not in measured:
+                      print("FAIL: gate %r -- no report measured it (the estimate "
+                            "never published, or the evaluator crashed)" % metric)
+                      status = 1
 
               print("verdict rc=%d" % status)
               return status
@@ -971,6 +1091,11 @@ default-values:
   fly_distance_m: "8"
   fly_altitude_m: "3.0"
   fly_speed_ms: "1.0"
+  # A declared route as base64 JSON (the platform's trajectory_plan form,
+  # which fly_mission_mavros.py --trajectory-b64 flies). Set by the campaign
+  # executor from the CampaignSpec's mission.trajectory; when empty the
+  # corridor mission above flies instead.
+  route_b64: ""
   # Where the estimator under test publishes. Mirrors the ScenarioSpec's
   # extensions.mns.vio_estimator.odom_topic; change both together.
   est_topic: /ov_msckf/odomimu

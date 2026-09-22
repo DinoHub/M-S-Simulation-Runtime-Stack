@@ -1,0 +1,32 @@
+# A loop that stays inside the bedroom the vehicle spawns in.
+#
+# The room is about 3.5 m square and its walls are 2.2 m tall with no ceiling
+# above them. The corridor mission this replaced climbed to 2.75 m, cleared
+# the walls, and pointed the stereo pair at the far side of the apartment and
+# the sky: every feature at infinity, translation unobservable, the filter
+# ran off at tens of metres a second. It then landed on top of a wall.
+#
+# So: 1.2 m up, legs of a metre inside the furniture, a yaw sweep for
+# rotation excitation, and back to where it started, where there is floor.
+# Local ENU relative to the takeoff point: +y is the level's +X (towards
+# the wardrobe, ~2.5 m away), +x is the level's +Y (towards the windows).
+name: condo_bedroom_loop_v1
+frame_id: map
+relative_to_start: true
+rate_hz: 20
+prestream_seconds: 2
+finish_hold_seconds: 3
+waypoints:
+  - {t: 0,  position: [0, 0, 0], yaw: 0}        # still: the estimator's static init window
+  - {t: 6,  position: [0, 0, 0], yaw: 0}
+  - {t: 9,  position: [0, 0, 1.2], yaw: 0}
+  - {t: 12, position: [0, 0, 1.2], yaw: 0}
+  - {t: 18, position: [0, 1.0, 1.2], yaw: 0}    # towards the wardrobe, stopping short
+  - {t: 24, position: [0.8, 1.0, 1.2], yaw: 0}  # towards the windows
+  - {t: 30, position: [0.8, -0.5, 1.2], yaw: 0}
+  - {t: 36, position: [0, -0.5, 1.2], yaw: 0}
+  - {t: 42, position: [0, 0, 1.2], yaw: 0}
+  - {t: 46, position: [0, 0, 1.2], yaw: 1.0}    # yaw sweep in place
+  - {t: 50, position: [0, 0, 1.2], yaw: 0}
+  - {t: 55, position: [0, 0, 0.4], yaw: 0}      # come down over the start; the pilot lands from here
+  - {t: 57, position: [0, 0, 0.4], yaw: 0}

@@ -51,6 +51,7 @@ usable.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -67,9 +68,43 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / "osmo" / "sim-bridge-vio.workflow.yaml"
+
+
+def workspace_host() -> Path:
+    """The host directory the cluster mounts at /workspace.
+
+    The workflow resolves a stack as /workspace/generated/<stack>/config, and
+    /workspace is whatever the kind config says it is -- the main checkout,
+    not necessarily the checkout this script runs from. A worktree under it
+    is still reachable, as a relative path through `..`, which is what the
+    `stack` value becomes when this script runs from one."""
+    for name in ("kind-osmo-cluster-config.gpu.yaml", "kind-osmo-cluster-config.yaml"):
+        cfg = ROOT / "osmo" / name
+        if not cfg.exists():
+            continue
+        doc = yaml.safe_load(cfg.read_text())
+        for node in doc.get("nodes") or []:
+            for mount in node.get("extraMounts") or []:
+                if mount.get("containerPath") == "/workspace":
+                    return Path(mount["hostPath"])
+    return ROOT
+
+
+WORKSPACE_HOST = workspace_host()
+# The product shell, the cluster and the generated campaign tree all hang off
+# the one checkout the cluster mounts, even when this script runs from a
+# worktree beneath it: that checkout owns the pack store, and paths the
+# workflow sees under /workspace are paths under it.
+PRODUCT_SH = WORKSPACE_HOST / "product.sh"
+CAMPAIGNS_HOST = WORKSPACE_HOST / "generated" / "campaigns"
 MANIFEST_SCHEMA = "mns.vio_campaign_manifest.v1"
 RUN_META_SCHEMA = "mns.vio_run_meta.v1"
-SIM_REAL_EVAL_IMAGE = "dhdevspace/auto_mns:sim-real-eval-worker-latest"
+# The campaign-level scorer. `vio-stress` postdates the `-latest` worker image
+# on Docker Hub (2026-08-09); this tag is built from the platform checkout:
+#   docker build -t dhdevspace/auto_mns:sim-real-eval-worker-<sha> \
+#       MnS-Integration-Platform/tools/sim_real_eval
+SIM_REAL_EVAL_IMAGE = os.environ.get("MNS_SIM_REAL_EVAL_IMAGE",
+                                     "dhdevspace/auto_mns:sim-real-eval-worker-bcb899f")
 
 # The runtime host pin the v1 lock still carries is the build without iceoryx2;
 # every generated stack gets the rebuilt digest until the repin merges.
@@ -125,19 +160,21 @@ def sh(argv: list[str], *, cwd: Path | None = None, check: bool = True,
 
 
 def product_cli(*args: str) -> subprocess.CompletedProcess:
-    """The platform's launcher, through the product shell. Paths it prints are
-    container paths under /workspace, which is this checkout."""
-    return sh(["./product.sh", "cli", *args], env={"MNS_IMAGE_PULL_POLICY": "missing"}, check=False)
+    """The platform's launcher, through the product shell of the checkout the
+    cluster mounts. Paths it prints are container paths under /workspace,
+    which is that checkout."""
+    return sh([str(PRODUCT_SH), "cli", *args], cwd=WORKSPACE_HOST,
+              env={"MNS_IMAGE_PULL_POLICY": "missing"}, check=False)
 
 
 def host_path(container_path: str) -> Path:
     if container_path.startswith("/workspace/"):
-        return ROOT / container_path[len("/workspace/"):]
+        return WORKSPACE_HOST / container_path[len("/workspace/"):]
     return Path(container_path)
 
 
 def container_path(p: Path) -> str:
-    return "/workspace/" + str(p.resolve().relative_to(ROOT))
+    return "/workspace/" + str(p.resolve().relative_to(WORKSPACE_HOST))
 
 
 # --------------------------------------------------------------------------
@@ -183,8 +220,9 @@ PLAN_LINE = re.compile(r"^\[campaign\] (?P<key>\S+): (?P<spec>/\S+ScenarioSpec\.
 
 def materialise(campaign_file: Path, out_root: Path, only: list[str]) -> list[tuple[str, Path]]:
     """Run `campaign plan`, which validates the spec, expands the matrix and
-    writes <root>/<run_key>/ScenarioSpec.yaml for every run. Returns
-    [(run_key, host path of that spec)] in the runner's own order."""
+    writes <out_root>/<campaign id>/<run_key>/ScenarioSpec.yaml for every run
+    -- the runner nests the id itself, so out_root is the campaigns directory.
+    Returns [(run_key, host path of that spec)] in the runner's own order."""
     args = ["campaign", "plan", container_path(campaign_file), "--out", container_path(out_root)]
     for key in only:
         args += ["--only", key]
@@ -223,21 +261,45 @@ def osmo(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     return proc
 
 
-def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any]) -> str:
+def route_blob(campaign_file: Path, campaign: dict[str, Any]) -> str:
+    """The CampaignSpec's declared route, compiled the way the platform's runner
+    compiles it: the YAML plan as base64 JSON, so it rides in a command line
+    (`trajectory_command` in the platform's campaign.py). Empty when the
+    campaign flies no route, and the workflow's corridor mission flies."""
+    mission = campaign.get("mission") or {}
+    rel = mission.get("trajectory")
+    if not rel:
+        return ""
+    plan = yaml.safe_load((campaign_file.parent / rel).read_text())
+    return base64.b64encode(json.dumps(plan).encode()).decode()
+
+
+def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
+           campaign_file: Path) -> str:
     mission = campaign.get("mission") or {}
     inputs = (campaign.get("evaluation") or {}).get("inputs") or {}
-    stack_rel = str(stack_dir.resolve().relative_to(ROOT / "generated"))
+    stack_rel = os.path.relpath(stack_dir.resolve(), WORKSPACE_HOST / "generated")
+    # One --set and one --set-string, each carrying every value. `osmo
+    # workflow submit` declares both as nargs="+" and argparse keeps only the
+    # last occurrence of a repeated option, so `--set a=1 --set b=2` submits
+    # with b alone and the workflow silently runs on its defaults for the
+    # rest -- run 25 flew nothing that way. --set casts to int/float where it
+    # can; the values that must stay strings (JSON, base64, a number the
+    # template quotes) go through --set-string.
     sets = {
         "stack": stack_rel,
         "fly": "true",
         "autopilot": str(mission.get("autopilot", "px4")),
-        "record_sec": str(int(mission.get("timeout_s", 300))),
         "est_topic": str(inputs.get("est_topic", "/ov_msckf/odomimu")),
-        "gates_json": json.dumps(run_gates),
     }
-    argv = ["workflow", "submit", str(WORKFLOW)]
-    for k, v in sets.items():
-        argv += ["--set", f"{k}={v}"]
+    strings = {
+        "record_sec": str(int(mission.get("timeout_s", 300))),
+        "gates_json": json.dumps(run_gates),
+        "route_b64": route_blob(campaign_file, campaign),
+    }
+    argv = ["workflow", "submit", str(WORKFLOW),
+            "--set", *[f"{k}={v}" for k, v in sets.items()],
+            "--set-string", *[f"{k}={v}" for k, v in strings.items()]]
     proc = osmo(*argv)
     m = re.search(r"Workflow ID\s*-\s*(\S+)", proc.stdout)
     if not m:
@@ -323,8 +385,14 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
 
     # A run that produced evidence flew; the campaign-level evaluator judges it.
     # That is the compose runner's semantics and the scorecard depends on it.
-    if tasks.get("recorder") == "COMPLETED":
+    # "Flew" is literal: the pilot task has to exist and have completed. Run
+    # 25 had a COMPLETED recorder, a full bag, and no pilot task at all,
+    # because the submit's values never reached the workflow.
+    if tasks.get("recorder") == "COMPLETED" and tasks.get("pilot") == "COMPLETED":
         rec.status = "done"
+    elif "pilot" not in tasks:
+        rec.status = "failed"
+        rec.error = f"workflow {status}: no pilot task -- the workflow ran on its defaults"
     else:
         rec.status = "failed"
         failed = [f"{t}={s}" for t, s in tasks.items() if s.startswith("FAILED")]
@@ -332,6 +400,22 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
 
     # Evidence, into the layout the scorecard reads.
     download(workflow_id, "recorder", bundle, endpoint)
+    # The recorder writes how the flight ended beside the bag. A pilot task
+    # exits 0 or 1 as COMPLETED -- a failed flight must not take the gang
+    # down with it -- so the task table cannot tell a flight from a refusal
+    # to arm; this can.
+    mission = bundle / "mission.json"
+    if rec.status == "done" and mission.exists():
+        try:
+            m = json.loads(mission.read_text())
+            if not m.get("announced"):
+                rec.status, rec.error = "failed", "the pilot never reported the mission done"
+            elif m.get("pilot_exit") not in (0, None):
+                rec.status, rec.error = "failed", f"pilot exited {m['pilot_exit']}"
+            elif not (m.get("messages") or {}).get("/ov_msckf/odomimu"):
+                rec.status, rec.error = "failed", "the estimator never published"
+        except (OSError, json.JSONDecodeError):
+            pass
     for evaluator in ("vio-eval", "spawn-eval", "validate"):
         download(workflow_id, evaluator, bundle / "eval" / evaluator, endpoint)
     validation = next(iter(bundle.rglob("validation.json")), None)
@@ -349,8 +433,8 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
     rec.bundle = str(bundle)
     rec.recording = "kept" if any(bundle.rglob("*.mcap")) else None
 
-    topics = spec_file.parent / "stack" / "config" / "sim2real" / "topics.yaml"
-    if topics.exists():
+    topics = Path(rec.stack) / "config" / "sim2real" / "topics.yaml" if rec.stack else None
+    if topics is not None and topics.exists():
         (bundle / "topics.yaml").write_bytes(topics.read_bytes())
 
     (bundle / "run.json").write_text(json.dumps({
@@ -412,12 +496,18 @@ def evaluate(root: Path) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     campaign_file = find_campaign(args.campaign)
     campaign = yaml.safe_load(campaign_file.read_text())
-    root = ROOT / "generated" / "campaigns" / str(campaign["id"])
+    root = CAMPAIGNS_HOST / str(campaign["id"])
+    # The product shell runs as root and `campaign plan` creates <root>/<key>/
+    # as root. The manifest, the stacks and the evidence are written by this
+    # user, so their directories are made here first, and the stacks live
+    # beside the run directories rather than inside them.
+    for d in (root, root / "stacks", root / "runs", root / "reports"):
+        d.mkdir(parents=True, exist_ok=True)
     run_gates = gates(campaign)
     om = omega_fields(campaign)
     print(f"[campaign] {campaign['id']}: tier={om['tier']} verifies={om['verifies']} gates={run_gates}")
 
-    runs = materialise(campaign_file, root, args.only or [])
+    runs = materialise(campaign_file, root.parent, args.only or [])
     print(f"[campaign] {len(runs)} run(s) materialised under {root}")
     endpoint = storage_endpoint()
 
@@ -434,11 +524,11 @@ def cmd_run(args: argparse.Namespace) -> int:
                         started_at=now())
         platform = platform or derive_platform(spec)
         records.append(rec)
-        stack_dir = spec_file.parent / "stack"
+        stack_dir = root / "stacks" / key
         try:
             generate_stack(spec_file, stack_dir)
             rec.stack = str(stack_dir)
-            wf = submit(stack_dir, campaign, run_gates)
+            wf = submit(stack_dir, campaign, run_gates, campaign_file)
             rec.run_id = wf
             print(f"[campaign] {key}: submitted {wf}")
             submitted.append((rec, spec_file, wf))
@@ -467,10 +557,18 @@ def cmd_run(args: argparse.Namespace) -> int:
     return rc
 
 
+def cmd_evaluate(args: argparse.Namespace) -> int:
+    """Score an existing manifest again -- after a scorer fix, or a rebuild."""
+    campaign_file = find_campaign(args.campaign)
+    campaign = yaml.safe_load(campaign_file.read_text())
+    root = CAMPAIGNS_HOST / str(campaign["id"])
+    return 0 if evaluate(root) in (0, 1) else 1
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     campaign_file = find_campaign(args.campaign)
     campaign = yaml.safe_load(campaign_file.read_text())
-    root = ROOT / "generated" / "campaigns" / str(campaign["id"])
+    root = CAMPAIGNS_HOST / str(campaign["id"])
     proc = product_cli("campaign", "status", container_path(root / "campaign_manifest.json"),
                        *(["--json"] if args.json else []))
     sys.stdout.write(proc.stdout)
@@ -488,6 +586,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--serial", action="store_true", help="wait for each run before submitting the next")
     p.add_argument("--no-evaluate", action="store_true")
     p.set_defaults(fn=cmd_run)
+    p = sub.add_parser("evaluate", help="run the campaign-level scorer over the manifest again")
+    p.add_argument("campaign")
+    p.set_defaults(fn=cmd_evaluate)
     p = sub.add_parser("status", help="the platform's scorecard over this campaign's manifest")
     p.add_argument("campaign")
     p.add_argument("--json", action="store_true")
