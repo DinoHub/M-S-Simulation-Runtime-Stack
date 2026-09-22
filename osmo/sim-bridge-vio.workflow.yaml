@@ -170,6 +170,7 @@ workflow:
         COMPLETE: "0"
         RESCHEDULE: "42,137"
 
+{% if fly %}
     # SITL. Connects to the simulator's PX4 connector, which settings.json
     # binds on 0.0.0.0 -- so this needs the simulator's address, not localhost.
     - name: autopilot
@@ -224,6 +225,7 @@ workflow:
         COMPLETE: "0"
         RESCHEDULE: "42,137"
 
+{% endif %}
     - name: bridge
       image: "{{ bridge_image }}"
       resource: worker
@@ -257,7 +259,7 @@ workflow:
         VEHICLE: "{{ vehicle }}"
         # MAVROS is the only control path a generated stack offers: SITL
         # streams MAVLink to its own loopback and publishes no port.
-        AUTOPILOT_HOST: "{{host:autopilot}}"
+        AUTOPILOT_HOST: "{% if fly %}{{host:autopilot}}{% else %}127.0.0.1{% endif %}"
       files:
       - path: /tmp/bridge.sh
         contents: |
@@ -303,7 +305,7 @@ workflow:
             poll_rate_hz:=30.0 \
             topic_prefix:=/ \
             topic_names_config:=/tmp/topic_names.yaml \
-            enable_mavros:=true \
+            enable_mavros:={{ fly | lower }} \
             mavros_vehicle:="${VEHICLE}" \
             mavros_config:=mavros_px4.yaml \
             mavros_fcu_url:="udp://:14560@${AUTOPILOT_HOST}:14580" \
@@ -355,6 +357,7 @@ workflow:
     # profile XML nothing creates, its contract file is absent from the image,
     # and its tf and sensor checks default to bare topics. This asserts on one
     # thing we control instead.
+{% if fly %}
     # Flies the vehicle. The platform's own pilot, shipped with the workflow
     # by `localpath` rather than baked into an image, so it stays the one
     # implementation rather than a second one that drifts.
@@ -427,6 +430,7 @@ workflow:
         COMPLETE: "0,1"
         RESCHEDULE: "42,137"
 
+{% endif %}
     # Produces the run's evidence. Lead of the runtime group: when it exits,
     # the flight is over and the gang comes down. It is NOT the verdict --
     # recording something and that something being good are different
@@ -733,6 +737,11 @@ default-values:
   # Long enough to span the flight: the recorder is the lead, so the gang ends
   # when it does.
   record_sec: "300"
+  # Whether the vehicle flies. false runs the stack and the estimator with the
+  # vehicle at rest, which is a valid measurement of its own and the only mode
+  # that works while PX4 SITL fails under OSMO (see the elimination trail in
+  # the git log).
+  fly: false
   autopilot: px4
   fly_distance_m: "30"
   fly_altitude_m: "3.0"
