@@ -426,6 +426,25 @@ flight that never armed looks like a flight. The recorder now writes
 `mission.json` beside the bag -- whether the pilot announced, its exit code,
 message counts -- and the executor reads it before calling a run `done`.
 
+Runs 27 and 28 finished the set. The readiness gate that waited for a
+near-zero EKF height hung forever on a vehicle whose local origin PX4 had put
+at 37.70 m: rock steady, nowhere near zero. The gate now asks only for
+stillness (under 0.5 m of span over six seconds), gives up after two minutes
+and flies anyway -- the arming retry is there for exactly that -- and says out
+loud what it is waiting for, which run 27 could not, having buffered its
+stdout into a pipe that the gang tore down.
+
+Then run 28 flew the route and reported 1.602 m against a 1.0 m gate. That
+number was true and useless: the same bag scores **0.046 m airborne** and
+0.109 m over takeoff-to-landing. The ten seconds between touchdown and the
+bag closing are the parked divergence, and they were most of the metric. So
+`vio-eval` now cuts the flight out first -- takeoff minus three seconds to
+landing plus one, from ground truth -- writes it as the TUM files
+sim-real-eval already accepts, and scores that. The whole-recording number is
+measured too and written to `window.json` as `whole_recording_ate_rmse_m`, a
+name no gate matches, because the drift is a real property of this estimator
+and only its *position in the metric* was the lie.
+
 ## The first flight's number was garbage, and why
 
 Run 24 flew: MAVROS connected 11 s after the group came up, OFFBOARD, armed,

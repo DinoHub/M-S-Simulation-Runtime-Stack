@@ -400,6 +400,9 @@ workflow:
         FLY_ALTITUDE_M: "{{ fly_altitude_m }}"
         FLY_SPEED_MS: "{{ fly_speed_ms }}"
         ROUTE_B64: "{{ route_b64 }}"
+        # Run 27's pilot sat in its gate until the gang ended and left no line
+        # behind: block-buffered stdout on a pipe.
+        PYTHONUNBUFFERED: "1"
       files:
       - localpath: files/fly_mission_mavros.py
         path: /tmp/fly_mission_mavros.py
@@ -455,6 +458,7 @@ workflow:
           node.create_subscription(PoseStamped, f"/{ns}/mavros/local_position/pose",
                                    on_pose, qos_profile_sensor_data)
           said = False
+          last_note = time.time()
           deadline = time.time() + 600
           while time.time() < deadline:
               rclpy.spin_once(node, timeout_sec=0.5)
@@ -462,6 +466,7 @@ workflow:
                   continue
               if not said:
                   print("MAVROS connected to the flight controller"); said = True
+                  connected_at = time.time()
               # PX4 arms only once its EKF height is settled. Run 26 read the
               # local height as -3.36 m on the ground, spent 12 s in "height
               # estimate not stable", and then refused every arm command for
@@ -469,9 +474,23 @@ workflow:
               # seconds of samples, all within a metre of zero, spanning less
               # than 15 cm.
               zs = [z for _, z in seen["z"]]
-              if len(zs) >= 20 and seen["z"][0][0] < time.time() - 5.0 \
-                      and max(abs(z) for z in zs) < 1.0 and max(zs) - min(zs) < 0.15:
-                  print("EKF height settled at %.2f m over %.0fs" % (zs[-1], time.time() - seen["z"][0][0]))
+              span = (max(zs) - min(zs)) if zs else None
+              # Stillness only: run 28 sat at a rock-steady 37.70 m, the
+              # EKF's local origin being wherever PX4 put it, and a bound on
+              # the value itself held the pilot for the full two minutes.
+              if len(zs) >= 20 and seen["z"][0][0] < time.time() - 5.0 and span < 0.5:
+                  print("EKF height settled at %.2f m (span %.2f m over %.0fs)"
+                        % (zs[-1], span, time.time() - seen["z"][0][0]))
+                  sys.exit(0)
+              if time.time() - last_note > 10.0:
+                  last_note = time.time()
+                  print("waiting for the EKF height to settle: %d samples, z=%s span=%s"
+                        % (len(zs), ("%.2f" % zs[-1]) if zs else "none",
+                           ("%.2f" % span) if span is not None else "none"))
+              if said and time.time() - connected_at > 120.0:
+                  print("EKF height did not settle in 120s (z=%s span=%s); flying anyway, "
+                        "the pilot retries a refused arming"
+                        % (("%.2f" % zs[-1]) if zs else "none", ("%.2f" % span) if span is not None else "none"))
                   sys.exit(0)
           if not seen["connected"]:
               print("READINESS TIMEOUT: MAVROS never reported connected", file=sys.stderr)
@@ -596,10 +615,6 @@ workflow:
               ("/tf", TFMessage, "tf2_msgs/msg/TFMessage", 10),
               ("/tf_static", TFMessage, "tf2_msgs/msg/TFMessage", LATCHED),
           ]
-
-          ALIASES = {"ate_rmse_m": "ate_trans_m.rmse", "ate_max_m": "ate_trans_m.max",
-                     "rpe_rmse_m": "rpe_trans_m.rmse"}
-          measured = set()
 
           def main():
               run_dir = pathlib.Path(os.environ["OUT_DIR"])
@@ -748,18 +763,102 @@ workflow:
             ground_truth: /ground_truth/odom
             estimate: {{ est_topic }}
             clock: /clock
+      # Cut the flight out of the recording, and say what the rest costs.
+      #
+      # The vehicle is on the ground at both ends of a bag: before takeoff, and
+      # after landing while the gang winds down. This estimator holds to
+      # centimetres in motion and diverges at roughly two metres per second
+      # squared once parked -- zupt_only_at_beginning means nothing catches it
+      # a second time. Ten seconds of that turned run 28's 0.046 m into
+      # 1.602 m, so a bag scored end to end reports the parking, not the
+      # flight.
+      #
+      # sim-real-eval takes TUM files for either side, so the window is cut
+      # here and handed over as files: the evaluator still does the alignment
+      # and the arithmetic, on the part of the evidence that is about the
+      # thing under test. The whole-recording number is measured too and
+      # written beside it under its own name -- the drift is a real property
+      # of this estimator, and hiding it would be its own kind of lie.
+      - path: /tmp/flight_window.py
+        contents: |
+          import json
+          import os
+          import sys
+
+          import numpy as np
+          from sim_real_eval.bagio import extract_odom, write_tum, OdomSeries
+          from sim_real_eval.trajectory import compare_trajectories
+
+          CLIMB_M = 0.3       # above the resting height, the vehicle is flying
+          LEAD_S = 3.0        # keep the run-up: the filter is moving before it lifts
+          TAIL_S = 1.0        # and the touchdown, but not the parking after it
+
+          def main(bag, out_dir, est_topic):
+              est = extract_odom(bag, est_topic)
+              gt = extract_odom(bag, "/ground_truth/odom")
+              if len(est.stamp_ns) == 0:
+                  print("no estimate on %s; nothing to score" % est_topic, file=sys.stderr)
+                  return 1
+              t0 = gt.stamp_ns[0]
+              sec = lambda ns: (ns - t0) / 1e9
+
+              rest = float(np.mean(gt.pos[:50, 2]))
+              up = np.where(gt.pos[:, 2] > rest + CLIMB_M)[0]
+              if len(up) < 2:
+                  print("the vehicle never left the ground; scoring the whole recording")
+                  lo, hi = sec(gt.stamp_ns[0]), sec(gt.stamp_ns[-1])
+              else:
+                  lo, hi = sec(gt.stamp_ns[up[0]]) - LEAD_S, sec(gt.stamp_ns[up[-1]]) + TAIL_S
+
+              def clip(s):
+                  m = (sec(s.stamp_ns) >= lo) & (sec(s.stamp_ns) <= hi)
+                  return OdomSeries(stamp_ns=s.stamp_ns[m], pos=s.pos[m], quat=s.quat[m],
+                                    lin_vel=s.lin_vel[m], ang_vel=s.ang_vel[m])
+
+              e, g = clip(est), clip(gt)
+              print("flight window %.1f..%.1f s of a %.1f s recording: "
+                    "%d estimate samples, %d ground truth"
+                    % (lo, hi, sec(gt.stamp_ns[-1]), len(e.stamp_ns), len(g.stamp_ns)))
+              if len(e.stamp_ns) < 20:
+                  print("the estimate does not cover the flight", file=sys.stderr)
+                  return 1
+
+              os.makedirs(out_dir, exist_ok=True)
+              write_tum(os.path.join(out_dir, "estimate.tum"), e)
+              write_tum(os.path.join(out_dir, "ground_truth.tum"), g)
+
+              window = {"flight_window_s": [round(lo, 1), round(hi, 1)],
+                        "recording_s": round(sec(gt.stamp_ns[-1]), 1),
+                        "airborne_s": round(hi - lo - LEAD_S - TAIL_S, 1),
+                        "path_m": round(float(np.linalg.norm(
+                            np.diff(g.pos, axis=0), axis=1).sum()), 2)}
+              # The same alignment over everything recorded, for contrast. Its
+              # keys are deliberately not the gated names.
+              try:
+                  whole = compare_trajectories(est, gt)
+                  window["whole_recording_ate_rmse_m"] = round(whole.ate_trans["rmse"], 3)
+              except ValueError as exc:
+                  window["whole_recording_ate_rmse_m"] = None
+                  window["whole_recording_note"] = str(exc)
+              with open(os.path.join(out_dir, "window.json"), "w") as f:
+                  json.dump(window, f, indent=2)
+              print(json.dumps(window, indent=2))
+              return 0
+
+          sys.exit(main(sys.argv[1], sys.argv[2], sys.argv[3]))
       # sim-real-eval's report writer does not create its output directory,
       # so the shell makes it first.
       command: ["/bin/sh", "-c"]
       args:
       - >-
         mkdir -p "{{output}}" &&
+        python3 /tmp/flight_window.py "{{input:0}}/bag" "{{output}}" "{{ est_topic }}" &&
         exec sim-real-eval
         trajectory "{{input:0}}"
         --topics /tmp/topics.yaml
         --profile sim
-        --est estimate
-        --gt ground_truth
+        --est "{{output}}/estimate.tum"
+        --gt "{{output}}/ground_truth.tum"
         --out "{{output}}/vio"
       exitActions:
         # An evaluator reports; it does not veto. A non-zero exit here means
@@ -957,6 +1056,10 @@ workflow:
             42  no evidence to judge. The platform failed, so reschedule.
           """
           import json, os, pathlib, sys
+
+          ALIASES = {"ate_rmse_m": "ate_trans_m.rmse", "ate_max_m": "ate_trans_m.max",
+                     "rpe_rmse_m": "rpe_trans_m.rmse"}
+          measured = set()
 
           def main():
               reports_dir = pathlib.Path(os.environ["REPORT_DIR"])

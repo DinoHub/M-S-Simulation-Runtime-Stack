@@ -48,8 +48,9 @@ mission:
   trajectory: ./routes/bedroom-loop.yaml
   done: timeout
   # A cap, not the length of the recording: the recorder stops when the pilot
-  # reports the mission done. Sized to boot + a 60 s route + landing.
-  timeout_s: 180
+  # reports the mission done. Sized to boot, the pilot's readiness gate (up to
+  # two minutes of EKF settling), a 60 s route and the landing.
+  timeout_s: 300
 
 # One difference at a time. Wind is a declared environment condition, so it
 # leaves a trace in the generated stack rather than being an RPC nobody can

@@ -487,9 +487,9 @@ def write_manifest(root: Path, campaign_file: Path, campaign: dict[str, Any],
 def evaluate(root: Path) -> int:
     """The platform's campaign-level evaluator, via its image, over the
     manifest -- the same command the runner builds."""
-    proc = sh(["docker", "run", "--rm", "-v", f"{root}:/data",
-               SIM_REAL_EVAL_IMAGE, "vio-stress", "/data/campaign_manifest.json",
-               "--out", "/data/reports"], check=False, capture=False)
+    proc = sh(["docker", "run", "--rm", "-v", f"{root}:{root}",
+               SIM_REAL_EVAL_IMAGE, "vio-stress", str(root / "campaign_manifest.json"),
+               "--out", str(root / "reports")], check=False, capture=False)
     return proc.returncode
 
 
