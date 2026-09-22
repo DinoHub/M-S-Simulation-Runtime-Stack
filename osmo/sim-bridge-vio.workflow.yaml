@@ -143,13 +143,16 @@ workflow:
       volumeMounts: ["/workspace"]
       command: ["/bin/bash", "/tmp/bridge.sh"]
       environment:
-        # One variable names the simulator, and the entrypoint uses it twice:
-        # to dial-wait on the RPC port, and to inject host_ip:= into the launch.
-        AIRSIM_HOST_IP: "{{host:sim}}"
-        AIRSIM_HOST_PORT: "41451"
-        # UE5 cold start with a level to mount. Expiry exits 42, which is
-        # rescheduled as infrastructure rather than counted as a failure.
-        AIRSIM_DIAL_WAIT_SEC: "600"
+        # The published v1.0.0 bridge image predates the entrypoint's dial-wait
+        # and its host_ip:= injection (bridge commit b641876, three days after
+        # the image was built), so both are done in the task script below. It
+        # would be wrong to depend on them anyway: which behaviour the image
+        # has then decides whether the run works.
+        SIM_HOST: "{{host:sim}}"
+        SIM_PORT: "41451"
+        # UE5 cold start with a level to mount and shaders to compile. Expiry
+        # exits 42, rescheduled as infrastructure rather than counted a failure.
+        SIM_DIAL_WAIT_SEC: "900"
         # Shared memory needs one IPC namespace, which OSMO cannot give across
         # tasks. See docs/osmo-mapping.md section 3.1.
         TRANSPORT: rpc
@@ -178,11 +181,31 @@ workflow:
           S="/workspace/generated/${STACK}/config"
           # The topic map is generated per stack; never hand-write topic names.
           cp "$S/topic_names.yaml" /tmp/topic_names.yaml
+
+          # A ready container is not an answering simulator. Without this the
+          # bridge reads settings over RPC before UE5 is listening, logs
+          # "Direct-RPC getSettingsString failed: Connection refused", and
+          # carries on with a partial topic remap that silently drops the
+          # camera and sensor renames.
+          deadline=$(( $(date +%s) + SIM_DIAL_WAIT_SEC ))
+          until (exec 3<>"/dev/tcp/${SIM_HOST}/${SIM_PORT}") 2>/dev/null; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "READINESS TIMEOUT: ${SIM_HOST}:${SIM_PORT} unreachable after ${SIM_DIAL_WAIT_SEC}s" >&2
+              exit 42
+            fi
+            sleep 5
+          done
+          echo "sim RPC ${SIM_HOST}:${SIM_PORT} reachable"
           # Flags mirror the generated stack. enable_vio:=false and
           # disable_rpc_aux_sensors:=false are what the generator sets when an
           # estimator is present: images arrive over RPC and the IMU runs at
           # 200 Hz. MAVROS is off because this group has no autopilot.
+          # host_ip:= explicitly, for the same reason: the image's entrypoint
+          # would otherwise leave the launch default of 127.0.0.1, and the
+          # bridge would look for the simulator inside its own pod.
           exec /entrypoint.sh ros2 launch airsim_ros2_bridge single_vehicle.launch.py \
+            host_ip:="${SIM_HOST}" \
+            host_port:="${SIM_PORT}" \
             vehicle_name:="${VEHICLE}" \
             enable_vio:=false \
             auto_discover_cameras:=false \
