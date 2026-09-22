@@ -49,6 +49,29 @@ vehicles:
     y: 0
     z: 0
     yaw: 0
+  # KNOWN BROKEN: the vehicle spawns in mid-air and falls through the level.
+  #
+  # Measured from a recorded run (sim-bridge-vio-13, /ground_truth/odom):
+  #   t+  0.0s  z =   -71.7 m      already falling when recording began
+  #   t+ 32.5s  z =  -363.9 m
+  #   t+129.9s  z = -1216.4 m      ~9 m/s, x and y exactly 0.000 throughout
+  #
+  # start below is inherited from vio-reference, which was authored against
+  # xfs. Condo's ground is not at its world origin, so (0, 0, 0) is mid-air:
+  # the sim logs MNS_SCENARIO_ORIGIN_READY position_cm=X=0 Y=0 Z=0 and the
+  # vehicle free-falls from there.
+  #
+  # This is the failure mode recorded in PR #87's findings -- "hand-authored
+  # scenarios ... need the level's PlayerStart as origin or the vehicle spawns
+  # kilometres above the ground" -- and the PlayerStart pose for a pack is not
+  # exposed anywhere yet, which is why this spec cannot simply be corrected.
+  #
+  # Every VIO number from this scenario is meaningless until it is. An
+  # evaluator comparing a falling vehicle against an estimator that thinks it
+  # is stationary reports a large trajectory error that says nothing about the
+  # estimator: sim-real-eval flagged it as "degeneracy": "collinear", which is
+  # exactly a vertical line.
+  #
   # Stereo pair, 0.12 m baseline. Camera Z is 0.25 m above the IMU: at zero the
   # camera sits inside the airframe and the rotor arms fill about a third of
   # every frame.
