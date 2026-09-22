@@ -640,6 +640,100 @@ workflow:
         COMPLETE: "0,1"
         RESCHEDULE: "137"
 
+    # Was the vehicle ever actually in the world? Nothing else asks.
+    #
+    # A vehicle spawned below a level's floor falls out of the world and keeps
+    # falling. Every container stays healthy, every topic publishes at full
+    # rate, and the trajectory evaluator returns a confident number computed
+    # from garbage -- 109 m of "estimator error" that was really the drop. This
+    # scenario did exactly that until its spawn pose was corrected, and the
+    # only hint was sim-real-eval reporting "degeneracy": "collinear", which is
+    # what a vertical line looks like to an alignment.
+    #
+    # So this runs first, cheaply, on the same evidence, and says plainly
+    # whether the run is worth reading at all.
+    - name: spawn-eval
+      image: "{{ bridge_image }}"
+      resource: light
+      inputs:
+      - task: recorder
+      environment:
+        MAX_FALL_MS: "{{ max_fall_ms }}"
+      command: ["/bin/bash", "-c"]
+      args:
+      - >-
+        source /opt/ros/humble/setup.bash &&
+        mkdir -p "{{output}}" &&
+        exec python3 /tmp/spawn_check.py "{{input:0}}/bag" "{{output}}/spawn.json"
+      files:
+      - path: /tmp/spawn_check.py
+        contents: |
+          """Report whether the vehicle stayed in the world.
+
+          Free fall through a level is the specific failure this catches:
+          ground truth descending steadily with no horizontal motion, forever,
+          because there is no floor under the spawn point. It is reported, not
+          judged -- the aggregate decides what a run with a bad spawn is worth.
+          """
+          import json
+          import os
+          import sys
+
+          import rosbag2_py
+          from rclpy.serialization import deserialize_message
+          from nav_msgs.msg import Odometry
+
+          def main(bag_path, out_path):
+              reader = rosbag2_py.SequentialReader()
+              reader.open(
+                  rosbag2_py.StorageOptions(uri=bag_path, storage_id="mcap"),
+                  rosbag2_py.ConverterOptions("cdr", "cdr"))
+
+              samples = []
+              while reader.has_next():
+                  topic, data, stamp = reader.read_next()
+                  if topic == "/ground_truth/odom":
+                      pos = deserialize_message(data, Odometry).pose.pose.position
+                      samples.append((stamp / 1e9, pos.x, pos.y, pos.z))
+
+              if len(samples) < 2:
+                  report = {"spawn_ok": False,
+                            "reason": "no ground truth in the bag",
+                            "samples": len(samples)}
+              else:
+                  span = samples[-1][0] - samples[0][0]
+                  drop = samples[0][3] - samples[-1][3]
+                  fall_rate = drop / span if span > 0 else 0.0
+                  horizontal = max(
+                      abs(s[1] - samples[0][1]) + abs(s[2] - samples[0][2])
+                      for s in samples)
+                  limit = float(os.environ.get("MAX_FALL_MS", 0.5))
+                  falling = fall_rate > limit and horizontal < 1.0
+                  report = {
+                      "spawn_ok": not falling,
+                      "reason": ("free fall: descending %.2f m/s with %.2f m of "
+                                 "horizontal motion" % (fall_rate, horizontal)
+                                 if falling else "vehicle stayed in the world"),
+                      "z_first_m": round(samples[0][3], 3),
+                      "z_last_m": round(samples[-1][3], 3),
+                      "z_min_m": round(min(s[3] for s in samples), 3),
+                      "fall_rate_ms": round(fall_rate, 3),
+                      "horizontal_travel_m": round(horizontal, 3),
+                      "duration_s": round(span, 2),
+                      "samples": len(samples),
+                  }
+
+              with open(out_path, "w") as handle:
+                  json.dump({"spawn": report}, handle, indent=2)
+              print(json.dumps(report, indent=2))
+              # Reports; does not veto. The aggregate decides.
+              return 0
+
+          sys.exit(main(sys.argv[1], sys.argv[2]))
+      exitActions:
+        COMPLETE: "0,1"
+        RESCHEDULE: "137"
+
   # ---- aggregate: the verdict ----------------------------------------------
   - name: aggregate
     barrier: true
@@ -651,8 +745,11 @@ workflow:
       resource: default
       inputs:
       - task: vio-eval
+      - task: spawn-eval
       environment:
-        REPORT_DIR: "{{input:0}}"
+        # Every evaluator's output lands under here as input/<n>/, so the
+        # aggregate reads them all without knowing how many there are.
+        REPORT_DIR: /osmo/data/input
         MAX_ATE_M: "{{ max_ate_m }}"
       command: ["python3", "/tmp/verdict.py"]
       files:
@@ -691,8 +788,23 @@ workflow:
                   print("--- %s" % path.name)
                   print(json.dumps(data, indent=2)[:2000])
 
-                  # The gate. A static vehicle should not drift, so absolute
-                  # trajectory error is the question this run actually asks.
+                  # Was the run physically valid? A vehicle that fell out of
+                  # the world produces a trajectory error that says nothing
+                  # about the estimator, so this is checked before the number
+                  # is believed -- and failing here is a verdict on the
+                  # scenario, not on the thing under test.
+                  spawn = data.get("spawn")
+                  if isinstance(spawn, dict):
+                      if spawn.get("spawn_ok"):
+                          print("PASS: spawn -- %s" % spawn.get("reason"))
+                      else:
+                          print("FAIL: spawn -- %s" % spawn.get("reason"))
+                          print("      every other number from this run is "
+                                "measuring the fall, not the estimator")
+                          status = 1
+                      continue
+
+                  # The gate on the thing under test.
                   ate = _find(data, ("ate", "ate_m", "ate_rmse", "rmse"))
                   if ate is None:
                       print("WARN: %s carries no ATE field; not gated" % path.name)
@@ -750,6 +862,9 @@ default-values:
   # extensions.mns.vio_estimator.odom_topic; change both together.
   est_topic: /ov_msckf/odomimu
   max_ate_m: "1.0"
+  # Descent rate above which a run is treated as having fallen out of the
+  # world, in m/s, when nothing is moving horizontally.
+  max_fall_ms: "0.5"
   sim_real_eval_image: dhdevspace/auto_mns:sim-real-eval-worker-latest
   px4_image: dhdevspace/auto_mns:px4-airsim-px4-v1.0.0
   vehicle: Drone1
