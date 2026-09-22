@@ -244,6 +244,80 @@ three — the generator's estimator/SHM exclusion, and a scenario that declares
 fisheye cameras on the right channel. Under OSMO a third applies regardless:
 sim and bridge would have to be one task.
 
+## Evidence, evaluators and the verdict
+
+The run is three groups, sequenced by `inputs: [{task: <upstream>}]`, which
+OSMO reads as *"cannot be scheduled until that task has COMPLETED"* and
+validates for declaration order and cycles:
+
+```
+runtime   sim | bridge | vio | discovery | recorder=lead
+   |  evidence complete
+evaluate  vio-eval              <- one container per question
+   |
+aggregate verdict=lead          <- the only place pass/fail is decided
+```
+
+The split is the point. **Evaluators report; the aggregate judges.** An
+evaluator's non-zero exit means the evaluator broke, which is a platform
+fault, so `vio-eval` carries `COMPLETE: "0,1"` and only a crash reschedules.
+The verdict comes from reading `eval/*.json`, and returns `42` when there is
+nothing to read rather than passing an unjudged run.
+
+Adding a question is a task in `evaluate` plus a gate in the aggregate.
+Nothing else changes.
+
+### Two traps that produce a green run with no meaning
+
+Both were hit, and both are worse than an error because they pass.
+
+**Do not record with `ros2 bag record`.** It resolves each topic's type from
+the graph before subscribing, and a plain CLIENT's graph holds only what it
+already matches — so it creates the bag, subscribes to nothing, and exits 0
+with `message_count: 0`. The damage surfaces two groups later as the
+evaluator reporting missing topics, which points at the evaluator rather than
+the recorder. The recorder here names its types and writes through
+`rosbag2_py.SequentialWriter`, and refuses to exit 0 on an empty bag.
+
+This is the same root cause as `ros2 topic hz` and `ros2 topic list` returning
+nothing — see the empty-graph family above. Stated once more because it keeps
+arriving in new clothes: **under a discovery server, any ROS 2 tool that
+infers a type from the graph will silently do nothing.**
+
+**Check what `estimate` resolves to.** `sim-real-eval` addresses topics by
+role. Its built-in `sim` profile *and* the stack's generated
+`config/sim2real/topics.yaml` both map `estimate` to `/odom` — the bridge's
+relay of the simulator's own kinematics, not the filter under test. Evaluating
+that compares ground truth against a copy of itself and passes every time.
+The ScenarioSpec declares the real answer as
+`extensions.mns.vio_estimator.odom_topic`; stackgen does not yet write it into
+the role map, so the workflow overrides it with an explicit `--topics` file.
+Worth fixing at source.
+
+### A note on where evidence lives
+
+`/runs` is a stand-in. The platform expects a task to write `{{output}}` and a
+downstream task to declare `inputs:`, which is also what any multi-node cluster
+requires. On this control plane that upload does not land, for a reason worth
+knowing since it is silent:
+
+- The `workflow_data` credential has `addressing_style: null`, and with a
+  custom `override_url` OSMO 6.3.1 defaults to **virtual-hosted** addressing
+  (`src/lib/data/storage/backends/s3.py:153`). Control-plane pods escape it
+  because the chart sets `AWS_S3_FORCE_PATH_STYLE=true` on them; **workflow
+  task pods get no such variable.** localstack does not recognise
+  `osmo.localstack-s3.osmo` as a virtual host, parses `workflows` out of the
+  path as the bucket, and answers `NoSuchBucket`.
+- And `src/cli/data.py:56` discards the result of `upload_objects()`, so
+  `osmo data upload` exits 0 even when every file failed. The task logs
+  *"All Outputs Uploaded"* and goes COMPLETED with nothing stored.
+
+The fix is `addressing_style: path` on the three workflow credentials
+(`osmo config update WORKFLOW`). The second item is a genuine 6.3.1 bug and
+will bite on any transient upload failure; it is worth filing upstream along
+with the chart gap that omits `addressing_style` from
+`quick-start/templates/config-setup.yaml`.
+
 ## Teardown
 
 ```bash
