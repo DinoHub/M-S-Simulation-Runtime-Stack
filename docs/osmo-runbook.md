@@ -212,29 +212,37 @@ co-location, so shared memory cannot come up between separate tasks at all.
 Testing it would mean running the simulator and the bridge as one task under a
 supervisor, which redefines the profile.
 
-**Also excluded by the estimator, on compose too.** With
-`extensions.mns.vio_estimator` enabled, the generator forces `ENABLE_VIO=false`
-(`stackgen/generators/compose.py:94-106`), which is the switch that would
-otherwise turn on `enable_iceoryx_fisheye`. The comment there says why, and it
-is a defect rather than a preference:
+**Excluded by the estimator, on compose too — for a reason that has expired.**
+With `extensions.mns.vio_estimator` enabled, the generator forces
+`ENABLE_VIO=false` (`stackgen/generators/compose.py:94-106`), which is the
+switch that would otherwise turn on `enable_iceoryx_fisheye`. The comment there
+gives the reason:
 
 > the shipped bridge's iceoryx image subscriber dies on a duplicate
 > `cadence_rate_hz` declaration, so the SHM route delivers nothing at all (the
 > sim logs `NumRecipients=0` while publishing at 30 Hz)
 
-So an estimator and SHM cameras are mutually exclusive in a generated stack
-today, on compose as much as on a cluster.
+**That defect is fixed.** TEVV-Airsim-ROS2-Bridge `896ab2f`, *"stop the fisheye
+image subscriber aborting on startup"* (2026-08-08), removed the duplicate
+declaration; it is on `main` and an ancestor of `459952ee`, the commit the
+pinned `v1.0.0` bridge image was built from. So the generator's exclusion now
+rests on a stale premise and should be re-tested and either lifted or
+re-justified. `ENABLE_VIO` in the stack `.env` overrides the default either
+way, which the generator comment states explicitly — so the experiment costs
+one environment variable, not a code change.
 
-**And this scenario has no fisheye camera anyway.** `vio-osmo-condo` declares
-two `image_type: 0` (Scene) pinhole cameras at 640×480, FOV 80. The SHM path
-carries fisheye captures specifically. Nothing here would exercise it even if
-the transport allowed.
+**And this scenario has no fisheye camera.** `vio-osmo-condo` declares two
+`image_type: 0` (Scene) pinhole cameras at 640×480, FOV 80, inherited from
+`vio-reference`. The SHM path carries fisheye captures specifically.
+`scenarios/contract-probe-condo/` is the nearest thing that does declare one
+(FOV 190, 1344×1344, no estimator) — though its `environment:` block names the
+ue582 pack ids and would need the same one-block edit `vio-osmo-condo` has.
 
-So: **the fisheye SHM path remains untested**, it was untested before this work
-began, and three independent things would each have to change to test it — the
-bridge's iceoryx subscriber defect, the generator's estimator/SHM exclusion,
-and a scenario that actually declares fisheye cameras. Under OSMO a fourth
-would: sim and bridge in one task.
+So the honest position: **the fisheye SHM path is untested here**, and it was
+untested before this work began. What blocks it is now two things rather than
+three — the generator's estimator/SHM exclusion, and a scenario that declares
+fisheye cameras on the right channel. Under OSMO a third applies regardless:
+sim and bridge would have to be one task.
 
 ## Teardown
 
