@@ -412,6 +412,70 @@ will bite on any transient upload failure; it is worth filing upstream along
 with the chart gap that omits `addressing_style` from
 `quick-start/templates/config-setup.yaml`.
 
+## A campaign: N runs, N workflows, one scorecard
+
+```bash
+osmo/campaign.py run    vio-osmo-condo              # materialise, generate, submit, collect, evaluate
+osmo/campaign.py run    vio-osmo-condo --only calm-r1
+osmo/campaign.py status vio-osmo-condo              # the platform's own scorecard
+```
+
+`osmo/campaign.py` is an executor, not a runner. The platform's campaign
+runner already validates the spec, expands `variants × seeds × repeats`,
+merges each variant's overrides into a materialised ScenarioSpec, generates a
+stack per run, scores the evidence, and renders `status`. The executor reuses
+every one of those by shelling into the product shell — `campaign plan`
+writes every run's spec to disk, `runtime --no-run` generates its stack — and
+replaces only the middle of the runner's `run_one`: instead of a compose
+command it submits the workflow, polls it, and pulls the evidence back.
+
+Where things land, and why the layout is fixed:
+
+```
+generated/campaigns/<id>/
+  campaign_manifest.json      mns.vio_campaign_manifest.v1 — what `status` reads
+  <run_key>/ScenarioSpec.yaml written by the platform
+  <run_key>/stack/            written by the platform; the workflow's `stack=`
+  runs/<run_key>/             bag/, eval/*/…, validation.json, topics.yaml, run.json
+  reports/<run_key>.json      the campaign-level evaluator (vio-stress)
+```
+
+Nothing downstream reads anything else, so an executor that lands these files
+gets `campaign status` — and the dashboard's campaign view — unchanged.
+
+Evidence comes out of object storage through the **localstack NodePort**,
+with the aws CLI on the `kind` docker network. `osmo data download` cannot do
+it from the host: the credential names `http://localstack-s3.osmo:4566`, a
+cluster-internal name. Node IP and port are read live; a rebuilt cluster
+changes both.
+
+### Where the omega fields live
+
+The root `CampaignSpec` message rejects unknown keys and the contract is a
+separately vendored repository, so the fields `omega.yaml` has and
+`mns.campaign.v1` lacks ride where the schema leaves room:
+
+| omega | in the CampaignSpec | consumed by |
+| --- | --- | --- |
+| `tier`, `verifies` | `extensions.mns.omega` | manifest top level; a registry, when one exists |
+| `evaluation.gates` | `evaluation.gates` (the message allows unknown fields) | the workflow's verdict, as `GATES` JSON |
+| `platform.{sim,autopilot,middleware,comms}` | **not authored** — derived from `runtime.profile` | manifest and `run.json` |
+| `matrix` | `variants[]` — structured overrides, strictly more expressive | the platform's own expansion |
+| `repeats` | `repeats` — omega has no equivalent | the platform's own expansion |
+
+The compose runner ignores all of it, which is the point: one file drives
+both targets. Promoting `mns.omega.*` and `gates` to first-class fields is a
+contract-repo change to propose once this has run.
+
+### Run status, and what it does not mean
+
+A run whose `recorder` task COMPLETED is `done` — it flew and produced
+evidence — even if the workflow's own verdict FAILED. That keeps the compose
+runner's semantics: run status says whether the flight happened; the
+campaign-level evaluator and the gates say whether it was any good. A verdict
+FAIL on a `done` run lands in `failed_checks` as `gate`, where the scorecard
+shows it.
+
 ## Teardown
 
 ```bash
