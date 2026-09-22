@@ -296,38 +296,106 @@ workflow:
         READY_WAIT_SEC: "900"
         RECORD_SEC: "{{ record_sec }}"
       files:
-      - path: /tmp/wait_for_estimator.py
+      - path: /tmp/record.py
         contents: |
-          """Block until the estimator publishes, then exit 0; exit 42 on timeout.
+          """Record the run's evidence into a rosbag2.
 
-          Subscribes rather than asking the graph. Under a discovery server a
-          plain CLIENT learns only about endpoints it matches, so `ros2 topic
-          list` reads empty and `ros2 topic hz` -- which resolves a type from
-          the graph before subscribing -- reports nothing on a healthy run. A
-          subscriber that names its own type needs no lookup.
+          Not `ros2 bag record`, for the same reason the lead does not use
+          `ros2 topic hz`: under a discovery server a plain CLIENT learns only
+          about endpoints it matches, and `ros2 bag record` resolves each
+          topic's type from the graph before subscribing. It therefore creates
+          the bag, subscribes to nothing, and exits cleanly with
+          `message_count: 0` -- a green task and an empty bag, which is the
+          worst possible failure because every downstream stage looks broken
+          instead.
+
+          Naming the types here removes the lookup. The subscriptions then
+          match through the discovery server exactly as the estimator's do.
+
+          Exits 42 if the estimator never publishes (the platform was not
+          ready) and 1 if the bag ends up empty anyway (something is wrong
+          that a longer wait will not fix).
           """
-          import os, sys, time
+          import os
+          import pathlib
+          import sys
+          import time
+
           import rclpy
           from rclpy.node import Node
+          from rclpy.qos import QoSProfile, QoSDurabilityPolicy, qos_profile_sensor_data
+          from rclpy.serialization import serialize_message
+          import rosbag2_py
+
           from nav_msgs.msg import Odometry
+          from rosgraph_msgs.msg import Clock
+          from tf2_msgs.msg import TFMessage
+
+          LATCHED = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+
+          # topic, python type, type string for the bag, QoS
+          TOPICS = [
+              ("/ov_msckf/odomimu", Odometry, "nav_msgs/msg/Odometry", 10),
+              ("/ground_truth/odom", Odometry, "nav_msgs/msg/Odometry", 10),
+              ("/clock", Clock, "rosgraph_msgs/msg/Clock", qos_profile_sensor_data),
+              ("/tf", TFMessage, "tf2_msgs/msg/TFMessage", 10),
+              ("/tf_static", TFMessage, "tf2_msgs/msg/TFMessage", LATCHED),
+          ]
 
           def main():
-              deadline = time.time() + float(os.environ.get("READY_WAIT_SEC", 900))
+              run_dir = pathlib.Path("/runs/run_%s" % os.environ["RUN_ID"])
+              bag_dir = run_dir / "bag"
+              run_dir.mkdir(parents=True, exist_ok=True)
+              record_sec = float(os.environ.get("RECORD_SEC", 60))
+              ready_wait = float(os.environ.get("READY_WAIT_SEC", 900))
+
               rclpy.init()
-              node = Node("tevv_record_gate")
-              seen = {"n": 0}
-              node.create_subscription(
-                  Odometry, "/ov_msckf/odomimu",
-                  lambda _m: seen.__setitem__("n", seen["n"] + 1), 10)
-              while time.time() < deadline:
+              node = Node("tevv_recorder")
+
+              writer = rosbag2_py.SequentialWriter()
+              writer.open(
+                  rosbag2_py.StorageOptions(uri=str(bag_dir), storage_id="mcap"),
+                  rosbag2_py.ConverterOptions("cdr", "cdr"))
+
+              counts = {topic: 0 for topic, _, _, _ in TOPICS}
+
+              def make_writer(topic):
+                  def callback(msg):
+                      writer.write(topic, serialize_message(msg),
+                                   node.get_clock().now().nanoseconds)
+                      counts[topic] += 1
+                  return callback
+
+              for topic, msg_type, type_str, qos in TOPICS:
+                  writer.create_topic(rosbag2_py.TopicMetadata(
+                      name=topic, type=type_str, serialization_format="cdr"))
+                  node.create_subscription(msg_type, topic, make_writer(topic), qos)
+
+              # The estimator is the slow one: the simulator has to boot, the
+              # bridge has to connect, and the filter has to initialise.
+              deadline = time.time() + ready_wait
+              while counts["/ov_msckf/odomimu"] == 0:
+                  if time.time() >= deadline:
+                      print("READINESS TIMEOUT: nothing on /ov_msckf/odomimu "
+                            "after %.0fs" % ready_wait, file=sys.stderr)
+                      return 42
                   rclpy.spin_once(node, timeout_sec=0.5)
-                  if seen["n"] > 0:
-                      print("estimator publishing after %.0fs"
-                            % (float(os.environ.get("READY_WAIT_SEC", 900))
-                               - (deadline - time.time())))
-                      return 0
-              print("READINESS TIMEOUT: nothing on /ov_msckf/odomimu", file=sys.stderr)
-              return 42
+              print("estimator publishing; recording %.0fs into %s"
+                    % (record_sec, bag_dir))
+
+              start = time.time()
+              while time.time() - start < record_sec:
+                  rclpy.spin_once(node, timeout_sec=0.2)
+
+              del writer          # flush and close the bag
+              total = sum(counts.values())
+              for topic, _, _, _ in TOPICS:
+                  print("  %-22s %d msgs" % (topic, counts[topic]))
+              if total == 0:
+                  print("FAIL: recorded nothing", file=sys.stderr)
+                  return 1
+              print("evidence complete: %s (%d messages)" % (run_dir, total))
+              return 0
 
           sys.exit(main())
       - path: /tmp/record.sh
@@ -344,33 +412,14 @@ workflow:
           export ROS_DISCOVERY_SERVER="${DS_IP}:11811"
           echo "discovery server $DS_HOST -> $ROS_DISCOVERY_SERVER"
 
-          python3 /tmp/wait_for_estimator.py || exit $?
-
           # sim_real_eval discovers runs by globbing run_* directories and
           # finding a rosbag2 inside (tools/sim_real_eval/manifest.py).
-          RUN_DIR="/runs/run_${RUN_ID}"
-          mkdir -p "$RUN_DIR"
-          echo "recording ${RECORD_SEC}s into $RUN_DIR"
-
-          # The estimate and the truth, which is what a trajectory evaluator
-          # compares; /clock and /tf so the bag is self-contained in sim time.
-          timeout --signal=INT "$((RECORD_SEC + 30))" \
-            ros2 bag record -s mcap -o "$RUN_DIR/bag" \
-              --max-bag-size 1073741824 \
-              /ov_msckf/odomimu /ground_truth/odom /clock /tf /tf_static &
-          BAG_PID=$!
-          sleep "$RECORD_SEC"
-          kill -INT "$BAG_PID" 2>/dev/null
-          wait "$BAG_PID" 2>/dev/null
-
-          if [ ! -f "$RUN_DIR/bag/metadata.yaml" ]; then
-            echo "FAIL: no rosbag2 metadata at $RUN_DIR/bag" >&2
-            exit 1
-          fi
-          # The evaluators run as a different image and uid.
-          chmod -R a+rX "$RUN_DIR" 2>/dev/null || true
-          echo "evidence complete: $RUN_DIR"
-          ls -la "$RUN_DIR/bag"
+          python3 /tmp/record.py
+          rc=$?
+          # The evaluators run from a different image as a different uid.
+          chmod -R a+rX "/runs/run_${RUN_ID}" 2>/dev/null || true
+          ls -la "/runs/run_${RUN_ID}/bag" 2>/dev/null
+          exit $rc
       exitActions:
         COMPLETE: "0"
         FAIL: "1"
