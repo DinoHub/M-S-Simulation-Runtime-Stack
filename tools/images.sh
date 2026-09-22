@@ -10,7 +10,10 @@
 #
 #   tools/images.sh status          # START HERE: one prioritized "what needs you"
 #                                    # list, merging verify + report + baked +
-#                                    # .env overrides + per-row follow_up notes.
+#                                    # .env overrides + per-row follow_up notes,
+#                                    # plus SOURCE_AHEAD for rows that name a
+#                                    # `source:` repo — merged code no image
+#                                    # carries, which no registry check can see.
 #                                    # --offline skips every registry lookup.
 #   tools/images.sh sync            # regenerate all artifacts (offline)
 #   tools/images.sh verify          # CI gate: selftest + regenerate + diff, exit 1 on

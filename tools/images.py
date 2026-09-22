@@ -115,6 +115,19 @@ class CatalogError(SystemExit):
 # Loading + validation
 # --------------------------------------------------------------------------
 
+# A traced tag ends in -g<short sha> (tools/traced-tags.sh in the dashboard and
+# the other component repos). That suffix is the only machine-readable link an
+# image has back to the commit it was built from, short of pulling the image
+# and reading its labels — which `status` deliberately does not do, since it is
+# a registry-only command.
+_TRACED_SHA_RE = re.compile(r"-g([0-9a-f]{7,40})$")
+
+
+def _sha_from_tag(tag: str) -> str | None:
+    m = _TRACED_SHA_RE.search(tag or "")
+    return m.group(1) if m else None
+
+
 def _validate_catalog(data: Any) -> None:
     """The structural checks load_catalog() applies to a parsed catalog dict.
     Split out from load_catalog() so tools/images.py's self-test can run it
@@ -152,6 +165,26 @@ def _validate_catalog(data: Any) -> None:
                     f"images.{key}.latest_tag must be a string ending in '-latest'")
         if row["channel"] not in VALID_CHANNELS:
             raise CatalogError(f"images.{key}.channel {row['channel']!r} not in {VALID_CHANNELS}")
+        if "source" in row:
+            src = row["source"]
+            if not isinstance(src, dict):
+                raise CatalogError(f"images.{key}.source must be a mapping")
+            if not isinstance(src.get("repo"), str) or "/" not in src["repo"]:
+                raise CatalogError(
+                    f"images.{key}.source.repo must be 'owner/name' — the repository the "
+                    f"image is BUILT FROM, so `status` can say when that source has moved "
+                    f"past what is pinned here")
+            for field in ("branch", "commit"):
+                if field in src and not isinstance(src[field], str):
+                    raise CatalogError(f"images.{key}.source.{field} must be a string")
+            if "commit" in src and not re.fullmatch(r"[0-9a-f]{7,40}", src["commit"]):
+                raise CatalogError(
+                    f"images.{key}.source.commit must be a hex sha (7-40 chars), "
+                    f"got {src['commit']!r}")
+            if "commit" not in src and not _sha_from_tag(row["tag"]):
+                raise CatalogError(
+                    f"images.{key}.source needs a commit: the tag {row['tag']!r} carries no "
+                    f"traced '-g<sha>' suffix to read it from")
         if "follow_up" in row and not isinstance(row["follow_up"], str):
             raise CatalogError(
                 f"images.{key}.follow_up must be a string (a note to whoever reads "
@@ -930,6 +963,8 @@ consumers:
 
 
 def run_selftest() -> None:
+    _selftest_source_block()
+
     # 1. An unquoted two-component numeric tag must be rejected: YAML parses
     #    `tag: 3.4` as the float 3.4, not the string "3.4".
     unquoted = yaml.safe_load(_SELFTEST_FIXTURE.format(tag="3.4"))
@@ -1044,9 +1079,60 @@ def run_selftest() -> None:
         raise AssertionError("selftest FAILED: unparseable owned tag did not raise")
 
 
+def _selftest_source_block() -> None:
+    """The optional `source:` block, which `status` uses to say when merged
+    code has no image. Wrong shapes must be refused at load, not discovered as
+    a traceback inside the weekly status run."""
+    def catalog(**src):
+        row = {"repo": "r/i", "tag": "img-v1.0.0-gee99b9d", "channel": "pinned",
+               "digest": "sha256:" + "0" * 64, "purpose": "fixture"}
+        if src:
+            row["source"] = src
+        return {"schema": "mns.images.v1", "images": {"fixture": row},
+                "consumers": {"product_env": {}, "compose_env": {},
+                              "image_sets": {}, "legacy_env": {}}}
+
+    # the sha comes from the traced tag when the block does not state one
+    assert _sha_from_tag("img-v1.0.0-gee99b9d") == "ee99b9d"
+    assert _sha_from_tag("tevv-runtime-host-20260918.1") is None
+    assert _sha_from_tag("something-latest") is None
+
+    _validate_catalog(catalog())                                   # no block: fine
+    _validate_catalog(catalog(repo="DinoHub/TEVV-Web-Dashboard"))   # sha from the tag
+    _validate_catalog(catalog(repo="o/n", branch="release/v1.0.0", commit="a6f514c58"))
+
+    for bad, why in (
+        ({"repo": "no-slash"}, "repo without an owner"),
+        ({"branch": "main"}, "no repo"),
+        ({"repo": "o/n", "commit": "zzzzzzz"}, "non-hex commit"),
+        ({"repo": "o/n", "branch": 7}, "non-string branch"),
+    ):
+        try:
+            _validate_catalog(catalog(**bad))
+        except CatalogError:
+            continue
+        raise AssertionError(f"selftest FAILED: _validate_catalog accepted {why}: {bad}")
+
+    # a row whose tag carries no sha must say which commit it was built from,
+    # or the check would silently do nothing for it
+    doc = catalog(repo="o/n")
+    doc["images"]["fixture"]["tag"] = "tevv-runtime-host-20260918.1"
+    try:
+        _validate_catalog(doc)
+    except CatalogError:
+        pass
+    else:
+        raise AssertionError(
+            "selftest FAILED: a source: block on a tag with no -g<sha> and no "
+            "commit: was accepted — the check would be a no-op for that row.")
+
+    # a row with no source: block yields no finding, without any network call
+    assert _source_ahead_row("fixture", catalog()["images"]["fixture"]) is None
+
+
 def cmd_selftest(_args: argparse.Namespace) -> int:
     run_selftest()
-    print("selftest: ok (tag quoting + immutable owned-image guards)")
+    print("selftest: ok (tag quoting + immutable owned-image guards + source: block)")
     return 0
 
 
@@ -1242,6 +1328,65 @@ def _row_result(key: str, row: dict[str, Any], *, status: str, detail: str,
         "latest_tag": latest_tag or row["tag"], "status": status,
         "live_digest": live_digest, "detail": detail,
     }
+
+
+def _github_compare(repo: str, base: str, head: str) -> tuple[int | None, str]:
+    """Commits on `head` that are not in `base`, via the GitHub compare API.
+
+    Returns (ahead_by, "") or (None, reason). Shells out to `gh` rather than
+    calling the API directly: six of the seven repositories in this product are
+    private, and `gh` already holds the credentials a developer and CI both
+    use. Anything that goes wrong — no gh, not logged in, no access to that
+    repository, a network blip — comes back as a reason string, never an
+    exception: a check that cannot run must not be mistaken for a check that
+    passed, nor fail the command it is reporting inside.
+    """
+    try:
+        proc = subprocess.run(
+            ["gh", "api", f"repos/{repo}/compare/{base}...{head}",
+             "--jq", ".status + \" \" + (.ahead_by|tostring)"],
+            capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        return None, "gh not installed"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"gh failed: {exc}"
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip().splitlines()
+        detail = err[-1] if err else f"exit {proc.returncode}"
+        return None, detail[:120]
+    parts = proc.stdout.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return None, f"unexpected compare output: {proc.stdout.strip()[:60]}"
+    return int(parts[1]), ""
+
+
+def _source_ahead_row(key: str, row: dict[str, Any]) -> tuple[str, str] | None:
+    """One finding when the source branch has moved past the commit this row's
+    image was built from, or None when it has not (or cannot be told).
+
+    This is the gap nothing else covers. `report`/`bump` ask the registry
+    whether the TAG still resolves where the catalog says — they cannot see
+    that the code was merged and no image was ever built from it. A pinned row
+    is OK by every other check for as long as nobody rebuilds, which is exactly
+    how a merged fix reaches nobody.
+    """
+    src = row.get("source") or {}
+    repo = src.get("repo")
+    if not repo:
+        return None
+    built = src.get("commit") or _sha_from_tag(row["tag"])
+    if not built:
+        return None
+    branch = src.get("branch") or "main"
+    ahead, err = _github_compare(repo, built, branch)
+    if ahead is None:
+        return key, f"SOURCE_UNKNOWN — could not compare {repo}@{built[:9]} with {branch}: {err}"
+    if ahead <= 0:
+        return None
+    plural = "" if ahead == 1 else "s"
+    return key, (f"SOURCE_AHEAD — {repo} {branch} is {ahead} commit{plural} ahead of "
+                 f"{built[:9]}, the commit this image was built from — rebuild the image "
+                 f"and repin (bump will NOT fix this: the tag has not moved)")
 
 
 def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, Any]:
@@ -1523,6 +1668,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     images = catalog["images"]
     broken: list[tuple[str, str]] = []      # catalog/artifacts wrong right now
     pins: list[tuple[str, str]] = []        # registry says the pin is stale
+    stale_source: list[tuple[str, str]] = []  # code merged, image never rebuilt
+    unknown_source: list[tuple[str, str]] = []  # the source check could not run
     followups: list[tuple[str, str]] = []   # someone must do something, later
     unpublished: list[tuple[str, str]] = []
     overrides: list[tuple[str, str]] = []
@@ -1569,13 +1716,33 @@ def cmd_status(args: argparse.Namespace) -> int:
                 else:
                     unpublished.append((key, "referenced by this repo, absent from the registry"))
 
+    # 3b. source vs pin. The registry checks above answer "has this tag moved";
+    # this one answers "has the CODE moved past the image", which nothing else
+    # sees. A row opts in by naming where it is built from:
+    #
+    #   source:
+    #     repo: DinoHub/TEVV-Web-Dashboard
+    #     branch: main            # optional, defaults to main
+    #     commit: ee99b9d         # optional when the tag ends -g<sha>
+    #
+    # Left off a row, nothing changes for it.
+    if not args.offline:
+        for key in sorted(images):
+            finding = _source_ahead_row(key, images[key])
+            if not finding:
+                continue
+            if finding[1].startswith("SOURCE_UNKNOWN"):
+                unknown_source.append(finding)
+            else:
+                stale_source.append(finding)
+
     # 4. ./.env overrides — never actionable (they are the intended escape
     # hatch), always worth stating, because a pin that does not take effect
     # looks exactly like a pin that does.
     for var, env_value, _ref in dotenv_overrides(catalog):
         overrides.append((var, env_value))
 
-    total = len(broken) + len(pins) + len(followups)
+    total = len(broken) + len(pins) + len(stale_source) + len(followups)
     print(f"NEEDS YOU ({total})")
     if not total:
         checked = "catalog and artifacts agree" if args.offline else \
@@ -1587,12 +1754,16 @@ def cmd_status(args: argparse.Namespace) -> int:
     if pins:
         print(f"\n  stale pins ({len(pins)}) — tools/images.sh bump fixes all of these")
         _print_table(pins, 4)
+    if stale_source:
+        print(f"\n  source ahead of the image ({len(stale_source)}) — merged code that no "
+              f"image carries; rebuild and repin, `bump` does nothing here")
+        _print_notes(stale_source, 4)
     if followups:
         print(f"\n  follow-ups ({len(followups)}) — from images/catalog.yaml; "
               f"delete the entry when done")
         _print_notes(followups, 4)
 
-    fyi_total = len(unpublished) + len(overrides)
+    fyi_total = len(unpublished) + len(overrides) + len(unknown_source)
     print(f"\nFYI ({fyi_total}) — known and deliberate, no action")
     if overrides:
         print(f"\n  overridden by ./.env ({len(overrides)}) — for these the catalog "
@@ -1601,6 +1772,10 @@ def cmd_status(args: argparse.Namespace) -> int:
     if unpublished:
         print(f"\n  unpublished ({len(unpublished)})")
         _print_table(unpublished, 4)
+    if unknown_source:
+        print(f"\n  source not checked ({len(unknown_source)}) — needs `gh` logged in with "
+              f"read access to the source repository")
+        _print_notes(unknown_source, 4)
     if suppressed:
         print(f"\n  ({suppressed} unpublished row(s) already named in a follow-up above)")
     if args.offline:
