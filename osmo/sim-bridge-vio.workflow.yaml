@@ -35,11 +35,11 @@
 #   - the four images loaded into that node with `kind load docker-image`
 #   - a control plane from osmo/setup-local-osmo.sh gpu
 #
-# Two things are deliberately absent. There is no autopilot and no pilot, so
-# the vehicle never leaves the ground: this proves the group, the transport and
-# the estimator, not a flight. And the verdict travels in the lead's exit code
-# rather than through {{output}}, because the task-output round trip does not
-# work on this control plane.
+# The vehicle flies: an autopilot task runs SITL against the simulator, the
+# bridge carries MAVROS, and a pilot task commands a traverse. That matters for
+# what the verdict means -- a static vehicle gives a degenerate trajectory
+# (collinear, no motion baseline), so an absolute trajectory error computed
+# over it is not a measurement of the estimator.
 workflow:
   name: sim-bridge-vio
   # No `labels:` block. Workflow labels exist in later OSMO but not in 6.3.1,
@@ -151,6 +151,51 @@ workflow:
         COMPLETE: "0"
         RESCHEDULE: "42,137"
 
+    # SITL. Connects to the simulator's PX4 connector, which settings.json
+    # binds on 0.0.0.0 -- so this needs the simulator's address, not localhost.
+    - name: autopilot
+      image: "{{ px4_image }}"
+      resource: worker
+      command: ["/bin/bash", "/tmp/autopilot.sh"]
+      environment:
+        PX4_SIM_HOSTNAME: "{{host:sim}}"
+        SIM_PORT: "41451"
+        SIM_DIAL_WAIT_SEC: "900"
+        PX4_SIM_MODEL: none_iris
+        PX4_SIMULATOR: none
+        PX4_SYS_AUTOSTART: "10016"
+        PX4_HOME_LAT: "42.764938"
+        PX4_HOME_LON: "-115.579201"
+        PX4_HOME_ALT: "1183.0"
+        MAV_0_BROADCAST: "1"
+        MAV_1_BROADCAST: "1"
+        MAV_2_BROADCAST: "1"
+        MAVLINK_MODE: router
+        HOST_NETWORK_MODE: "false"
+        SWARM_ID: "1"
+        SWARM_SIZE: "1"
+      files:
+      - path: /tmp/autopilot.sh
+        contents: |
+          #!/bin/bash
+          set -e
+          # The generated compose sleeps 20 s here. A fixed sleep is a guess
+          # that is either wasted time or not enough; wait for the port.
+          deadline=$(( $(date +%s) + SIM_DIAL_WAIT_SEC ))
+          until (exec 3<>"/dev/tcp/${PX4_SIM_HOSTNAME}/${SIM_PORT}") 2>/dev/null; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "READINESS TIMEOUT: ${PX4_SIM_HOSTNAME}:${SIM_PORT}" >&2
+              exit 42
+            fi
+            sleep 5
+          done
+          echo "sim reachable; starting PX4 SITL"
+          cd /px4_workspace/PX4-Autopilot
+          exec ./Scripts/run_airsim_sitl.sh 0
+      exitActions:
+        COMPLETE: "0"
+        RESCHEDULE: "42,137"
+
     - name: bridge
       image: "{{ bridge_image }}"
       resource: worker
@@ -182,6 +227,9 @@ workflow:
         RCUTILS_COLORIZED_OUTPUT: "0"
         STACK: "{{ stack }}"
         VEHICLE: "{{ vehicle }}"
+        # MAVROS is the only control path a generated stack offers: SITL
+        # streams MAVLink to its own loopback and publishes no port.
+        AUTOPILOT_HOST: "{{host:autopilot}}"
       files:
       - path: /tmp/bridge.sh
         contents: |
@@ -227,7 +275,10 @@ workflow:
             poll_rate_hz:=30.0 \
             topic_prefix:=/ \
             topic_names_config:=/tmp/topic_names.yaml \
-            enable_mavros:=false \
+            enable_mavros:=true \
+            mavros_vehicle:="${VEHICLE}" \
+            mavros_config:=mavros_px4.yaml \
+            mavros_fcu_url:="udp://:14560@${AUTOPILOT_HOST}:14580" \
             enable_localization:=true \
             localization_source:=sim \
             enable_local_obs:=false \
@@ -276,6 +327,78 @@ workflow:
     # profile XML nothing creates, its contract file is absent from the image,
     # and its tf and sensor checks default to bare topics. This asserts on one
     # thing we control instead.
+    # Flies the vehicle. The platform's own pilot, shipped with the workflow
+    # by `localpath` rather than baked into an image, so it stays the one
+    # implementation rather than a second one that drifts.
+    #
+    # A separate task rather than a process inside the bridge: MAVROS is a ROS
+    # node, so the control path crosses pods like any other topic, and the
+    # flight's own success or failure stays legible in its own exit code.
+    - name: pilot
+      image: "{{ bridge_image }}"
+      resource: worker
+      command: ["/bin/bash", "/tmp/fly.sh"]
+      environment:
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        DS_HOST: "{{host:discovery-server}}"
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        VEHICLE: "{{ vehicle }}"
+        AUTOPILOT: "{{ autopilot }}"
+        FLY_DISTANCE_M: "{{ fly_distance_m }}"
+        FLY_ALTITUDE_M: "{{ fly_altitude_m }}"
+        FLY_SPEED_MS: "{{ fly_speed_ms }}"
+      files:
+      - localpath: files/fly_mission_mavros.py
+        path: /tmp/fly_mission_mavros.py
+      - path: /tmp/fly.sh
+        contents: |
+          #!/bin/bash
+          set -o pipefail
+          source /opt/ros/humble/setup.bash
+          source /ws/install/setup.bash
+          DS_IP=$(getent hosts "$DS_HOST" | awk '{print $1; exit}')
+          [ -n "$DS_IP" ] || { echo "cannot resolve $DS_HOST" >&2; exit 42; }
+          export ROS_DISCOVERY_SERVER="${DS_IP}:11811"
+
+          # The pilot needs MAVROS connected to the flight controller, which is
+          # slower than the graph appearing: SITL boots, then MAVLink handshakes.
+          python3 - <<'GATE' || exit 42
+          import sys, time
+          import rclpy
+          from rclpy.node import Node
+          from mavros_msgs.msg import State
+          rclpy.init()
+          node = Node("tevv_pilot_gate")
+          seen = {"connected": False}
+          def on_state(msg):
+              seen["connected"] = bool(msg.connected)
+          import os
+          ns = os.environ["VEHICLE"]
+          node.create_subscription(State, f"/{ns}/mavros/state", on_state, 10)
+          deadline = time.time() + 600
+          while time.time() < deadline:
+              rclpy.spin_once(node, timeout_sec=0.5)
+              if seen["connected"]:
+                  print("MAVROS connected to the flight controller")
+                  sys.exit(0)
+          print("READINESS TIMEOUT: MAVROS never reported connected", file=sys.stderr)
+          sys.exit(1)
+          GATE
+
+          exec python3 /tmp/fly_mission_mavros.py \
+            --vehicle "$VEHICLE" \
+            --autopilot "$AUTOPILOT" \
+            --distance "$FLY_DISTANCE_M" \
+            --altitude "$FLY_ALTITUDE_M" \
+            --speed "$FLY_SPEED_MS"
+      exitActions:
+        # A flight that could not be commanded is not a verdict on the
+        # estimator: the recorder and the evaluators still run, and the
+        # trajectory they produce says what actually happened.
+        COMPLETE: "0,1"
+        RESCHEDULE: "42,137"
+
     # Produces the run's evidence. Lead of the runtime group: when it exits,
     # the flight is over and the gang comes down. It is NOT the verdict --
     # recording something and that something being good are different
@@ -286,13 +409,16 @@ workflow:
       image: "{{ bridge_image }}"
       resource: worker
       command: ["/bin/bash", "/tmp/record.sh"]
-      volumeMounts: ["/runs"]
       environment:
         RMW_IMPLEMENTATION: rmw_fastrtps_cpp
         DS_HOST: "{{host:discovery-server}}"
         ROS_DOMAIN_ID: "0"
         RCUTILS_LOGGING_USE_STDOUT: "1"
         RUN_ID: "{{workflow_id}}"
+        # Evidence leaves the task this way: OSMO uploads whatever lands here,
+        # and a downstream task declaring `inputs: [{task: recorder}]` has it
+        # delivered. No shared filesystem, so this works on a real cluster.
+        OUT_DIR: "{{output}}"
         READY_WAIT_SEC: "900"
         RECORD_SEC: "{{ record_sec }}"
       files:
@@ -343,7 +469,7 @@ workflow:
           ]
 
           def main():
-              run_dir = pathlib.Path("/runs/run_%s" % os.environ["RUN_ID"])
+              run_dir = pathlib.Path(os.environ["OUT_DIR"])
               bag_dir = run_dir / "bag"
               run_dir.mkdir(parents=True, exist_ok=True)
               record_sec = float(os.environ.get("RECORD_SEC", 60))
@@ -416,9 +542,7 @@ workflow:
           # finding a rosbag2 inside (tools/sim_real_eval/manifest.py).
           python3 /tmp/record.py
           rc=$?
-          # The evaluators run from a different image as a different uid.
-          chmod -R a+rX "/runs/run_${RUN_ID}" 2>/dev/null || true
-          ls -la "/runs/run_${RUN_ID}/bag" 2>/dev/null
+          ls -la "${OUT_DIR}/bag" 2>/dev/null
           exit $rc
       exitActions:
         COMPLETE: "0"
@@ -439,11 +563,9 @@ workflow:
       lead: true
       image: "{{ sim_real_eval_image }}"
       resource: worker
-      volumeMounts: ["/runs"]
-      # `inputs` is what sequences this group after `runtime`: OSMO will not
-      # schedule it until the recorder has COMPLETED. The evidence itself
-      # travels through /runs, not through the input directory -- see the
-      # cluster config for why.
+      # Sequences this group after `runtime` -- OSMO will not schedule it until
+      # the recorder has COMPLETED -- and delivers the recorder's uploaded
+      # output into {{input:0}}.
       inputs:
       - task: recorder
       environment:
@@ -466,20 +588,19 @@ workflow:
             ground_truth: /ground_truth/odom
             estimate: {{ est_topic }}
             clock: /clock
-      command: ["sim-real-eval"]
+      # sim-real-eval's report writer does not create its output directory,
+      # so the shell makes it first.
+      command: ["/bin/sh", "-c"]
       args:
-      - trajectory
-      - "/runs/run_{{workflow_id}}"
-      - --topics
-      - /tmp/topics.yaml
-      - --profile
-      - sim
-      - --est
-      - estimate
-      - --gt
-      - ground_truth
-      - --out
-      - "/runs/run_{{workflow_id}}/eval/vio"
+      - >-
+        mkdir -p "{{output}}" &&
+        exec sim-real-eval
+        trajectory "{{input:0}}"
+        --topics /tmp/topics.yaml
+        --profile sim
+        --est estimate
+        --gt ground_truth
+        --out "{{output}}/vio"
       exitActions:
         # An evaluator reports; it does not veto. A non-zero exit here means
         # the evaluator itself broke, which is a platform fault, not a verdict
@@ -496,11 +617,10 @@ workflow:
       lead: true
       image: "{{ sim_real_eval_image }}"
       resource: default
-      volumeMounts: ["/runs"]
       inputs:
       - task: vio-eval
       environment:
-        RUN_ID: "{{workflow_id}}"
+        REPORT_DIR: "{{input:0}}"
         MAX_ATE_M: "{{ max_ate_m }}"
       command: ["python3", "/tmp/verdict.py"]
       files:
@@ -522,10 +642,10 @@ workflow:
           import json, os, pathlib, sys
 
           def main():
-              run = pathlib.Path("/runs/run_%s" % os.environ["RUN_ID"])
-              reports = sorted((run / "eval").glob("*.json"))
+              reports_dir = pathlib.Path(os.environ["REPORT_DIR"])
+              reports = sorted(reports_dir.rglob("*.json"))
               if not reports:
-                  print("NO EVIDENCE: no eval/*.json under %s" % run, file=sys.stderr)
+                  print("NO EVIDENCE: no *.json under %s" % reports_dir, file=sys.stderr)
                   return 42
 
               status = 0
@@ -582,12 +702,19 @@ workflow:
 
 default-values:
   stack: vio-osmo-condo
-  record_sec: "60"
+  # Long enough to span the flight: the recorder is the lead, so the gang ends
+  # when it does.
+  record_sec: "300"
+  autopilot: px4
+  fly_distance_m: "30"
+  fly_altitude_m: "3.0"
+  fly_speed_ms: "1.0"
   # Where the estimator under test publishes. Mirrors the ScenarioSpec's
   # extensions.mns.vio_estimator.odom_topic; change both together.
   est_topic: /ov_msckf/odomimu
   max_ate_m: "1.0"
   sim_real_eval_image: dhdevspace/auto_mns:sim-real-eval-worker-latest
+  px4_image: dhdevspace/auto_mns:px4-airsim-px4-v1.0.0
   vehicle: Drone1
   runtime_host_image: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0
   bridge_image: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0
