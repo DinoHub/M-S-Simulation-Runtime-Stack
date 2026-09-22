@@ -1,0 +1,38 @@
+# OSMO Quickstart cluster, CPU-only (NVIDIA/OSMO deploy_local.rst, Option B).
+#
+# Three nodes, one OSMO role each: the Kubernetes control-plane and the control
+# worker host the platform services; the compute worker runs submitted
+# workflows. The control worker maps gateway NodePort 30080 to host port 80,
+# which is what `osmo login http://127.0.0.1` talks to.
+#
+# GPU comes later: Option A swaps `kind` for `nvkind` and adds the GPU operator,
+# which is what the runtime host task needs (docs/osmo-mapping.md, stage 3).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: osmo
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "osmo.nvidia.com/node-pool=control-plane"
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "osmo.nvidia.com/node-pool=control-plane"
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 80
+        protocol: TCP
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "osmo.nvidia.com/node-pool=compute"
