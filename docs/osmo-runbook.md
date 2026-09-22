@@ -156,6 +156,7 @@ apart rather than by likelihood.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| Every task sits in `SCHEDULING`, forever, with no error | the gang does not fit one node — see below | shrink the group's CPU budget |
 | Task `FAILED_IMAGE_PULL` | pod template forces a registry pull | `imagePullPolicy: IfNotPresent` (above) |
 | `FAILED_SERVER_ERROR`, no pod | `RuntimeClass "nvidia" not found` | GPU operator missing, or the CPU shim in `setup-local-osmo.sh` |
 | Rejected at submit: *does not allow mount* | platform `allowed_mounts` is empty | above |
@@ -166,6 +167,36 @@ apart rather than by likelihood.
 | `vio` exits 127: *ros2: not found* | overriding `command` bypasses `/ros_entrypoint.sh` | source ROS in the script |
 | Lead exits 1 on `AMENT_TRACE_SETUP_FILES` | `set -u` versus ROS's `setup.bash` | drop `-u` |
 | Lead's graph is only `/parameter_events /rosout` | see below |
+
+### A gang that does not fit looks exactly like a hang
+
+Gang scheduling is all-or-nothing: if one task will not fit, the whole group
+stays `PENDING` and retries indefinitely. There is no failure, no timeout that
+fires quickly, and `osmo workflow query` shows every task `SCHEDULING`. The
+reason is only in the pod events:
+
+```bash
+kubectl -n default describe pod <any pending pod> | grep -A6 Events:
+#   PodSchedulingErrors: Resources were found for 6 pods while 7 are required
+#   for gang scheduling ... 1 node(s) didn't have enough resources: CPU cores
+```
+
+**Budget the sidecar.** Every pod carries an `osmo-ctrl` container whose
+request counts against the same node. The chart ships it at 1 CPU, so a
+seven-task group spends 7 cores before any work — which is what took this
+group past a 24-core node when the autopilot and pilot were added. Trimming it
+once helps every workflow:
+
+```bash
+osmo config show POD_TEMPLATE > pt.json     # default_ctrl.spec.containers[0]
+# requests: cpu 250m, memory 256Mi
+osmo config update POD_TEMPLATE default_ctrl --file ctrl.json
+```
+
+Then size the tasks themselves for what they do — a task that waits on a topic
+and commands a flight does not need the simulator's budget. Add the per-task
+requests plus the sidecar and keep the total under the node's allocatable CPU,
+with room for the evaluators that follow.
 
 ### The empty-graph family
 

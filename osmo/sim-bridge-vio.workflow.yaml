@@ -54,13 +54,19 @@ workflow:
   # naming anything else is rejected with "Platform cpu does not exist in pool
   # default". A GPU is asked for with `gpu: 1` on the resource, which is what
   # the chart's own verify-gpu workflow does.
+  # Sized so the whole gang fits one node, because gang scheduling is
+  # all-or-nothing: one task that does not fit leaves the entire group
+  # PENDING, retrying, with no failure to read. Every pod also carries an
+  # osmo-ctrl sidecar whose request counts against the same budget -- at one
+  # CPU each that was 7 cores of overhead on a 24-core node, and a 7-task
+  # group did not fit.
   resources:
     default:
       cpu: 1
       memory: 1Gi
       storage: 1Gi
     sim:
-      cpu: 8
+      cpu: 6
       memory: 16Gi
       storage: 8Gi
       gpu: 1
@@ -68,6 +74,11 @@ workflow:
       cpu: 2
       memory: 4Gi
       storage: 2Gi
+    # Waits on a topic, then commands a flight. It needs almost nothing.
+    light:
+      cpu: 1
+      memory: 1Gi
+      storage: 1Gi
 
   groups:
   - name: run
@@ -336,7 +347,7 @@ workflow:
     # flight's own success or failure stays legible in its own exit code.
     - name: pilot
       image: "{{ bridge_image }}"
-      resource: worker
+      resource: light
       command: ["/bin/bash", "/tmp/fly.sh"]
       environment:
         RMW_IMPLEMENTATION: rmw_fastrtps_cpp
