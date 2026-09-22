@@ -1,0 +1,59 @@
+# OSMO Quickstart cluster, GPU variant (NVIDIA/OSMO deploy_local.rst, Option A).
+#
+# Create it with nvkind, not kind, so the host GPU is passed through to the
+# compute worker:
+#
+#   nvkind cluster create --config-template=osmo/kind-osmo-cluster-config.gpu.yaml
+#   nvkind cluster print-gpus
+#   kubectl config use-context kind-osmo
+#
+# nvkind requires docker's default runtime to be nvidia, which is a sudo step on
+# the host (`nvidia-ctk runtime configure --runtime=docker --set-as-default`).
+# The CPU-only variant beside this file needs none of that.
+#
+# Node roles are the same three as the CPU config: the Kubernetes control-plane
+# and the control worker host the platform services, the compute worker runs
+# submitted workflows. The control worker maps gateway NodePort 30080 to host
+# port 80, which is what `osmo login http://localhost` talks to.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: osmo
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "osmo.nvidia.com/node-pool=control-plane"
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "osmo.nvidia.com/node-pool=control-plane"
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 80
+        protocol: TCP
+  - role: worker
+    extraMounts:
+      # Hands every host GPU to this node. The NVIDIA container runtime reads
+      # the presence of this path, not its contents, which is why /dev/null is
+      # the documented source.
+      - hostPath: /dev/null
+        containerPath: /var/run/nvidia-container-devices/all
+      # The level packs. A pod cannot see a host directory unless kind mounts it
+      # into the node first, so this is the prerequisite for a `sim` task
+      # declaring `volumeMounts: ["/packs"]`. Read-only: a run loads a pack, it
+      # never writes one. Channel v1; point it elsewhere to run another channel.
+      - hostPath: /home/mnsuser/M-S-Simulation-Runtime-Stack/.mns/v1/pack-store
+        containerPath: /packs
+        readOnly: true
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "osmo.nvidia.com/node-pool=compute"
