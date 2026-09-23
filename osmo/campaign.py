@@ -726,19 +726,28 @@ def cmd_watch(args: argparse.Namespace) -> int:
         print(f"[campaign] {wf}: the run is over", flush=True)
         return 0
 
-    url = expose_nodeport(wf, pod)
+    url = expose_nodeport(wf, pod, args.node_port)
     print(f"[campaign] {wf}: open Foxglove at {url}", flush=True)
     print(f"[campaign] {wf}: from another machine: ssh -L 8765:{url.split('//')[1]} <this host>, "
           f"then ws://localhost:8765", flush=True)
     return 0
 
 
-def expose_nodeport(wf: str, pod: str) -> str:
+# The one port every viz run is reached on, so a Foxglove connection saved
+# once keeps working run after run. Inside the NodePort range (30000-32767)
+# and easy to read as 8765's stand-in. One GPU means one run at a time, so
+# one fixed port is enough; if it is still held -- a previous run's pod not
+# yet gone -- the Service takes whatever port Kubernetes assigns instead.
+FOXGLOVE_NODE_PORT = 30765
+
+
+def expose_nodeport(wf: str, pod: str, node_port: int = FOXGLOVE_NODE_PORT) -> str:
     """A NodePort Service in front of a run's foxglove pod; returns its ws:// URL.
 
     Owned by the pod, so Kubernetes deletes it with the pod: no process to keep
     alive, nothing to clean up. The address is the pod's node, which is
-    reachable from this host on the kind network.
+    reachable from this host on the kind network. `node_port` 0 lets
+    Kubernetes pick; a fixed port that is already allocated falls back to that.
     """
     meta = json.loads(subprocess.run(["kubectl", "get", "pod", "-n", "default", pod, "-o", "json"],
                                      capture_output=True, text=True, check=True).stdout)
@@ -753,8 +762,18 @@ def expose_nodeport(wf: str, pod: str) -> str:
                  "selector": {"osmo.workflow_id": wf, "osmo.task_name": "foxglove"},
                  "ports": [{"name": "ws", "port": 8765, "targetPort": 8765, "protocol": "TCP"}]},
     }
-    subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(svc), text=True,
-                   capture_output=True, check=True)
+    if node_port:
+        svc["spec"]["ports"][0]["nodePort"] = node_port
+    proc = subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(svc), text=True,
+                          capture_output=True)
+    if proc.returncode != 0 and node_port and "already allocated" in proc.stderr:
+        print(f"[campaign] {wf}: node port {node_port} is held by another Service; "
+              f"taking an assigned one", flush=True)
+        del svc["spec"]["ports"][0]["nodePort"]
+        proc = subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(svc), text=True,
+                              capture_output=True)
+    if proc.returncode != 0:
+        sys.exit(f"[campaign] {wf}: could not create Service {name}: {proc.stderr.strip()}")
     node_port = subprocess.run(["kubectl", "get", "svc", "-n", "default", name, "-o",
                                 "jsonpath={.spec.ports[0].nodePort}"],
                                capture_output=True, text=True, check=True).stdout.strip()
@@ -850,6 +869,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--tunnel", action="store_true",
                    help="kubectl port-forward to localhost instead of a NodePort (held until the run ends)")
     p.add_argument("--port", type=int, default=8765, help="local port with --tunnel (default 8765)")
+    p.add_argument("--node-port", type=int, default=FOXGLOVE_NODE_PORT,
+                   help=f"NodePort for the Service (default {FOXGLOVE_NODE_PORT}; 0 = any, "
+                        "30000-32767)")
     p.add_argument("--wait", type=float, default=900.0, help="seconds to wait for the task to start")
     p.set_defaults(fn=cmd_watch)
     p = sub.add_parser("reindex", help="rebuild the manifest's runs from the evidence on disk")

@@ -581,9 +581,24 @@ own: its cameras, TF, ground truth and the estimate, over Foxglove.
 
 ```bash
 osmo/campaign.py run vio-osmo-condo --only calm-r1 --viz    # adds the foxglove task
-osmo/campaign.py watch sim-bridge-vio-55                    # prints ws://172.27.0.4:30223
+osmo/campaign.py watch sim-bridge-vio-55                    # prints ws://172.27.0.4:30765
 osmo/campaign.py watch sim-bridge-vio-55 --tunnel           # or: ws://localhost:8765, held
 ```
+
+The address is the same on every run: the GPU node's IP on the `kind` docker
+network (`osmo-worker2`, 172.27.0.4 on this cluster) and node port **30765**,
+so a connection saved once in Foxglove keeps working. Kubernetes only hands
+out node ports in 30000-32767, which is why it is not 8765 itself. If 30765 is
+still held -- the previous run's pod not yet gone -- `watch` says so and takes
+an assigned port instead; `--node-port N` picks another, `--node-port 0` always
+takes an assigned one. The node IP changes only when the cluster is rebuilt.
+
+`ws://localhost:8765` without a held tunnel needs the port mapped out of the
+kind node, which kind only does at cluster creation: an `extraPortMappings`
+entry `containerPort: 30765, hostPort: 8765` on a node in
+`osmo/kind-osmo-cluster-config.gpu.yaml`, then a rebuild. Not done yet: 8765
+is also what a compose stack's `foxglove_bridge_d1` publishes, and the two
+would collide whenever both run.
 
 In Foxglove: *Open connection -> Foxglove WebSocket -> the printed address*.
 Useful panels: Image on `/camera/front/image_raw`; 3D with `/tf`,
@@ -664,6 +679,124 @@ message per frame, stamped like the frame, so the camera rate the estimator
 was fed is in the evidence (run 42: a steady 30 Hz, the bridge's cap). The
 1.0 m gate was sized for condo's 7.5 m path; on XFS's 51 m it is a 2% drift
 bound. Left as it is, and worth deciding per level.
+
+## Authoring for OSMO: what you edit, and what the run reads from it
+
+Two files are yours, per campaign, under `scenarios/<campaign>/`. Everything
+under `generated/` is rewritten on every run; an edit there is lost.
+
+- **`ScenarioSpec.yaml`** is one world to fly: the level, the vehicle and its
+  rig, the weather, the estimator. It reaches the run only as the files the
+  generator writes from it.
+- **`CampaignSpec.yaml`** is an experiment over that world. `scenario:` points
+  at the ScenarioSpec; `variants[].overrides` are ScenarioSpec fragments merged
+  into it once per run; `repeats` and `seeds` say how many runs. `mission`,
+  `evaluation` and `recording` never become part of a ScenarioSpec -- under
+  OSMO they reach the run only as values `osmo/campaign.py` passes at submit.
+
+```
+CampaignSpec --scenario:--> ScenarioSpec (base)
+   | variants[].overrides merged by `campaign plan`
+   v
+generated/campaigns/<id>/<run_key>/ScenarioSpec.yaml --`runtime --no-run`--> stacks/<run_key>/config/*  --> the tasks
+CampaignSpec mission / evaluation --osmo/campaign.py submit--> --set / --set-string --> the workflow's values
+```
+
+### CampaignSpec, field by field
+
+| field | workflow value | what it changes |
+| --- | --- | --- |
+| `scenario` | -- | the base spec `campaign plan` merges into |
+| `variants[].overrides` | -- | anything a ScenarioSpec can say, per variant; see the next table for what of it reaches a task |
+| `repeats`, `seeds` | -- | how many run keys. A seed is written into the run's spec as `seed:` and becomes the object-clutter seed in `scenario_runtime.json`, which the sim reads |
+| `mission.autopilot` | `autopilot` | which autopilot task runs (PX4 or ArduPilot) and the bridge's MAVROS link (UDP 14555 or TCP 5760). **Must agree with the ScenarioSpec's `runtime.profile`**; nothing checks, and a mismatch flies one autopilot against a sim configured for the other |
+| `mission.trajectory` | `route_b64` | the route, compiled to base64 JSON for the pilot. Absent: the workflow's corridor mission, whose distance, altitude and speed are workflow defaults, not spec fields |
+| `mission.timeout_s` | `record_sec` | a cap on the recording; it normally ends 4 s after the pilot's `/mission/done` |
+| `evaluation.gates` | `gates_json` | the verdict task's pass/fail. Scorecard names are aliased (`ate_rmse_m` -> `ate_trans_m.rmse`); a gate nothing measured fails |
+| `evaluation.inputs.est_topic` | `est_topic` | the estimate the evaluators score. Keep it equal to the estimator's `odom_topic` |
+| `evaluation.evaluator` | -- | the campaign-level scorer (vio-stress), run on this host after the matrix; writes `reports/` |
+| `extensions.mns.omega` | -- | `tier` and `verifies`, into the manifest only |
+| `mission.source`, `mission.done` | **ignored** | the pilot is always an external task; the run is done when it says so |
+| `recording.topics`, `recording.keep` | **ignored** | the recorder's topic list is fixed in `osmo/files/record.py` |
+
+### ScenarioSpec, block by block
+
+| block | generated file (under `stacks/<run_key>/config/`) | read by |
+| --- | --- | --- |
+| `environment.{id,version,artifact_digest}` | `content-packs/resolved-pack-set.json` | sim; the level must be in the v1 pack store |
+| `environment.weather`, `time_of_day`, `wind_mps` / `wind_from_deg` | `scenario/scenario_conditions.json`; `unreal-airsim/host-launch-args.json` where the generator emits it | sim |
+| `runtime.profile` | `unreal-airsim/settings.json` (vehicle type, ArduPilot's UDP pair) | sim |
+| `vehicles[0].start` | `settings.json` | sim: the spawn |
+| `vehicles[0].cameras`, `sensors`, `dynamics` | `settings.json`, `topic_names.yaml` | sim and bridge |
+| `extensions.mns.vio_estimator.config_dir` | `vio/estimator_config.yaml`, the kalibr chains | vio |
+| `seed` (set per run by `seeds`) | `scenario/scenario_runtime.json`, `object_clutter.yaml` | sim |
+
+What a ScenarioSpec says and OSMO does **not** honour, each a silent no-op
+rather than an error:
+
+- **Images.** They are the workflow's `default-values`, not the generated
+  `.env`. A different image is `--set <x>_image=...` or an edit there.
+- **`runtime.features.mavros`.** The workflow starts MAVROS whenever the run
+  flies.
+- **`ros_domain_id`.** Every task is a client of the gang's discovery server.
+- **`vio_estimator.launch_args`.** `vio.sh` launches stereo with two cameras,
+  whatever the block says.
+- **The vehicle's name.** The workflow's `vehicle` default is `Drone1` and the
+  executor does not pass another; `runtime_name` must be `Drone1`.
+- **A second vehicle.** Generated into `settings.json`, never flown or recorded.
+
+### The whole tree
+
+```
+<checkout>/                                    the one the cluster mounts at /workspace
+  scenarios/<campaign>/                        YOURS
+    CampaignSpec.yaml
+    ScenarioSpec.yaml
+    openvins/                                  estimator_config.yaml, kalibr_imu_chain.yaml, kalibr_imucam_chain.yaml
+    routes/*.yaml                              mission.trajectory
+  osmo/
+    campaign.py                                the executor: run, watch, status, evaluate, reindex
+    sim-bridge-vio.workflow.yaml               structure and default-values (images live here)
+    files/                                     one script per task -- behaviour is edited here, not in the YAML
+    kind-osmo-cluster-config*.yaml, setup-local-osmo.sh
+  generated/campaigns/<id>/                    WRITTEN FOR YOU
+    campaign_manifest.json                     what `status` and the dashboard read
+    <run_key>/ScenarioSpec.yaml                base + variant, merged by `campaign plan`
+    stacks/<run_key>/
+      config/unreal-airsim/                    settings.json, host-launch-args.json
+      config/scenario/                         scenario_conditions.json, scenario_runtime.json,
+                                               environment_parameters.json, object_clutter.*
+      config/scenario-plugin/                  scenario_plugin.json
+      config/content-packs/                    resolved-pack-set.json and the level pack
+      config/vio/                              the estimator config, copied from openvins/
+      config/topic_names.yaml                  the bridge's renames; never hand-write topic names
+      config/{px4,ardupilot,sim2real,metrics}/
+      docker-compose.yml, .env                 compose only; OSMO reads neither
+      source/ScenarioSpec.yaml
+    runs/<run_key>/                            the evidence, pulled back from object storage
+      bag/bag_0.mcap                           opens in Foxglove directly
+      mission.json                             announced, pilot_exit, recorded_sec, per-topic counts
+      run.json                                 workflow id, task states, viz flags
+      topics.yaml, validation.json
+      eval/vio-eval/                           estimate.tum, ground_truth.tum, window.json, vio.json|md
+      eval/spawn-eval/spawn.json
+      eval/validate/validation.json
+    reports/<run_key>.json|md                  vio-stress
+  generated/campaigns/<id>-viz/                --chase-cam runs: the same, plus viz/<run_key>/ScenarioSpec.yaml
+```
+
+Typical changes, and where they go:
+
+| to... | edit |
+| --- | --- |
+| add a condition to sweep | a new `variants[]` entry with an `overrides:` fragment |
+| fly more or fewer times | `repeats`, or `seeds` |
+| change the flight | `routes/<name>.yaml`, or point `mission.trajectory` at another |
+| switch autopilot | `mission.autopilot` **and** `runtime.profile`, together |
+| tighten or loosen the pass mark | `evaluation.gates` |
+| another level or spawn | `environment` and `vehicles[0].start` |
+| another estimator | `extensions.mns.vio_estimator` and its `config_dir`; the image in the workflow's `vio_estimator_image` |
+| a task's behaviour | `osmo/files/<task script>` |
 
 ## A campaign: N runs, N workflows, one scorecard
 

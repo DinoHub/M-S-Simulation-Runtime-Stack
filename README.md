@@ -181,6 +181,32 @@ Reading the result: the `valid` column is the recording's own verdict and sits l
 accuracy columns deliberately — a number computed from a recording that failed its gates is
 worse than no number.
 
+### The same campaign on a cluster (OSMO)
+
+`osmo/campaign.py` flies a CampaignSpec on NVIDIA OSMO instead of compose: one
+workflow per run, the evidence pulled back into the same
+`generated/campaigns/<id>/` layout, so `status` and the dashboard read it
+unchanged. Three campaigns ship ready: `vio-osmo-condo` (PX4),
+`vio-osmo-condo-ardupilot` and `vio-osmo-xfs`.
+
+```bash
+osmo/campaign.py run    vio-osmo-condo                  # every run in the matrix
+osmo/campaign.py run    vio-osmo-condo --only calm-r1 --viz
+osmo/campaign.py watch  <workflow id>                   # Foxglove at ws://<GPU node IP>:30765
+osmo/campaign.py status vio-osmo-condo
+```
+
+You edit two files per campaign, `scenarios/<campaign>/CampaignSpec.yaml` and
+`ScenarioSpec.yaml`, plus the routes and estimator config beside them. Not every field
+reaches an OSMO run, and some are silently ignored there (`recording.topics`, the
+estimator's `launch_args`, image pins). One pair has to be changed together:
+`mission.autopilot` and `runtime.profile`.
+
+- [Authoring for OSMO](docs/osmo-runbook.md#authoring-for-osmo-what-you-edit-and-what-the-run-reads-from-it):
+  every field, the generated files it becomes, and the whole folder tree.
+- [OSMO runbook](docs/osmo-runbook.md): setting up the cluster, running, watching, and what to do when a run fails.
+- [OSMO and Kubernetes for this repo](docs/osmo-kubernetes-concepts.md): the concepts to learn first.
+
 ## What will this stack publish?
 
 The bridges' topic names are the product of four inputs that only meet at
