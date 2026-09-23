@@ -23,18 +23,32 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, qos_profile_sensor_data
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, qos_profile_sensor_data
 from rclpy.serialization import serialize_message
 import json
 import rosbag2_py
 
-from sensor_msgs.msg import CameraInfo
+from sensor_msgs.msg import CameraInfo, Imu
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Int32
 from rosgraph_msgs.msg import Clock
 from tf2_msgs.msg import TFMessage
 
 LATCHED = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+# Collisions are events, published on contact and on release, so the
+# subscription has to be reliable and pick up what was published before it
+# matched: a strike during the first second of discovery is still a strike.
+EVENTS = QoSProfile(depth=100, reliability=QoSReliabilityPolicy.RELIABLE,
+                    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+
+# The bridge's collision message. A bridge image without it (or without the
+# multirotor publisher, which is everything before collision-p0.1) records no
+# /collision; mission.json then says there was no publisher, which is not the
+# same claim as "no collision".
+try:
+    from airsim_interfaces.msg import CollisionInfo
+except ImportError:
+    CollisionInfo = None
 
 # topic, python type, type string for the bag, QoS
 DONE_GRACE_SEC = 4.0
@@ -51,7 +65,16 @@ TOPICS = [
     # the bag could say whether the frames had thinned out.
     ("/camera/front/camera_info", CameraInfo, "sensor_msgs/msg/CameraInfo", qos_profile_sensor_data),
     ("/camera/front_right/camera_info", CameraInfo, "sensor_msgs/msg/CameraInfo", qos_profile_sensor_data),
+    # The recording validator's imu_gravity and imu_flu gates read this; without
+    # it every run was marked invalid for "only 0 inertial samples".
+    ("/imu/data", Imu, "sensor_msgs/msg/Imu", qos_profile_sensor_data),
 ]
+if CollisionInfo is not None:
+    TOPICS.append(("/collision", CollisionInfo, "airsim_interfaces/msg/CollisionInfo", EVENTS))
+# Topics that legitimately carry nothing in a good run. Zero messages there
+# is only evidence if something was publishing, so their publisher count is
+# written next to the message counts.
+EVENT_TOPICS = [topic for topic, _, _, qos in TOPICS if qos is EVENTS]
 
 def main():
     run_dir = pathlib.Path(os.environ["OUT_DIR"])
@@ -116,16 +139,21 @@ def main():
         if done["at"] is not None and time.time() - done["at"] > DONE_GRACE_SEC:
             break
     print("recorded %.0fs" % (time.time() - start))
+    publishers = {topic: node.count_publishers(topic) for topic in EVENT_TOPICS}
     (run_dir / "mission.json").write_text(json.dumps({
         "announced": done["at"] is not None,
         "pilot_exit": done["rc"],
         "recorded_sec": round(time.time() - start, 1),
-        "messages": dict(counts)}, indent=2))
+        "messages": dict(counts),
+        "publishers": publishers}, indent=2))
 
     del writer          # flush and close the bag
     total = sum(counts.values())
     for topic, _, _, _ in TOPICS:
         print("  %-22s %d msgs" % (topic, counts[topic]))
+    for topic, n in publishers.items():
+        print("  %-22s %d publisher(s)%s" % (topic, n, "" if n else
+              ": zero messages here means not measured, not no collision"))
     if total == 0:
         print("FAIL: recorded nothing", file=sys.stderr)
         return 1
