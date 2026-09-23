@@ -535,6 +535,64 @@ declared condition kept the traceability and lost the physics.
 (platform `feat/campaign-target-osmo`). The second lesson: diff the vehicle's
 motion, not only the stacks.
 
+## Watching a run
+
+A pod has no screen and the v1 runtime host has no Pixel Streaming (see
+`docs/osmo-pixel-streaming.md`), so the view into a live run is the vehicle's
+own: its cameras, TF, ground truth and the estimate, over Foxglove.
+
+```bash
+osmo/campaign.py run vio-osmo-condo --only calm-r1 --viz          # adds the foxglove task
+osmo/campaign.py watch sim-bridge-vio-48                          # tunnels it to localhost:8765
+```
+
+Then in Foxglove: *Open connection -> Foxglove WebSocket ->
+`ws://localhost:8765`*. Useful panels: Image on `/camera/front/image_raw`, 3D
+with `/tf`, `/ground_truth/odom` and `/ov_msckf/odomimu`, Plot on
+`/ground_truth/odom.pose.pose.position.z`. Measured through the tunnel on run
+48: camera 30 Hz (~28 MB/s), IMU and estimate 200 Hz, ground truth 50 Hz.
+From another machine: `ssh -L 8765:127.0.0.1:8765 <this host>`.
+
+What makes it work, each learned the hard way:
+
+- **`watch` never touches OSMO's API.** On the quick-start deployment
+  `osmo workflow port-forward` answered `504 upstream request timeout` while
+  the task was up and listening, and `osmo workflow query` failed the same way
+  for a whole run while its gang loaded, so a watcher polling it missed the
+  run entirely. `watch` finds the pod by OSMO's labels
+  (`osmo.workflow_id`, `osmo.task_name=foxglove`) and uses `kubectl
+  port-forward`.
+- **It waits for the port, not the pod.** OSMO's sidecar holds a task's
+  command until the whole gang is up, so the container runs before
+  foxglove_bridge listens, and one refused connection makes kubectl drop the
+  tunnel for good. `watch` probes the port inside the pod first and re-opens
+  the tunnel if it drops.
+- **The foxglove task is a SUPER_CLIENT**; every other task is a plain CLIENT.
+  foxglove_bridge offers what the graph shows, and a plain client's graph
+  holds only what it already matches. The profile is written at runtime with
+  the server's IP literal.
+- **The bridge is the Foxglove SDK server** (`foxglove.sdk.v1`). Current
+  Foxglove speaks it; an old client offering only `foxglove.websocket.v1` is
+  refused with HTTP 400.
+- **A viz run holds itself open** for `viz_hold_sec` (600 s) after the bag
+  closes. The recorder is the gang's lead, and without the hold the
+  simulator goes a minute after touchdown. The evidence is unaffected; the
+  bag is final before the hold starts. The hold sleeps; it must not spin the
+  node, whose writer is closed by then (runs 48-49 died that way).
+- **The task can never fail a run** (`COMPLETE: "0-255"`), and `--set
+  viz=false` is tested as a string: a bare Jinja test calls `"false"` true.
+
+`--chase-cam` (only with `--viz`) adds a third-person camera 1.5 m behind and
+0.8 m above the drone, pitched down 20 degrees, on `/chase_Scene/image`. It
+shares the bridge's one combined image budget with the stereo pair -- measured
+on run 49, the front camera fell from 30 Hz to 18 Hz (1345 frames in 75 s) --
+so those runs go to their own `<campaign>-viz` manifest and never sit in the
+scored one.
+
+After a run, no tunnel needed: `runs/<key>/bag/bag_0.mcap` opens in Foxglove
+directly -- ground truth against the estimate, TF, and the camera_info
+stamps that show the rate the estimator was fed.
+
 ## ArduPilot, and XFS
 
 Both run now. `vio-osmo-condo-ardupilot` scored 0.058 m on the bedroom route

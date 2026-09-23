@@ -241,6 +241,33 @@ def materialise(campaign_file: Path, out_root: Path, only: list[str]) -> list[tu
     return runs
 
 
+# A third-person view for watching a run: a vehicle camera behind and above
+# the drone, pitched down. Close enough to stay inside condo's 3.5 m bedroom.
+# It shares the bridge's one combined image budget (~30 Hz across every camera
+# of the vehicle), so it thins the stereo pair the estimator is fed -- a run
+# with it is for looking at, not for scoring.
+CHASE_CAMERA = {
+    "position": {"x": -1.5, "y": 0.0, "z": -0.8},
+    "pitch": -20.0,
+    "capture_settings": [{"image_type": 0, "width": 640, "height": 480, "fov_degrees": 90}],
+}
+
+
+def with_chase_camera(spec_file: Path, out_dir: Path) -> Path:
+    """A copy of a run's spec with the chase camera on every vehicle.
+
+    A copy because `campaign plan` writes the materialised spec as root, and
+    because the scored spec should stay exactly what the campaign declared.
+    Relative paths in it are already absolute, so the copy generates alike."""
+    spec = yaml.safe_load(spec_file.read_text())
+    for vehicle in spec.get("vehicles") or []:
+        vehicle.setdefault("cameras", {})["chase"] = CHASE_CAMERA
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / "ScenarioSpec.yaml"
+    out.write_text(yaml.safe_dump(spec, sort_keys=False))
+    return out
+
+
 def generate_stack(spec_file: Path, stack_dir: Path) -> None:
     proc = product_cli("runtime", "--scenario", container_path(spec_file.parent),
                        "--no-run", "--out", container_path(stack_dir))
@@ -278,7 +305,7 @@ def route_blob(campaign_file: Path, campaign: dict[str, Any]) -> str:
 
 
 def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
-           campaign_file: Path) -> str:
+           campaign_file: Path, viz: bool = False) -> str:
     mission = campaign.get("mission") or {}
     inputs = (campaign.get("evaluation") or {}).get("inputs") or {}
     stack_rel = os.path.relpath(stack_dir.resolve(), WORKSPACE_HOST / "generated")
@@ -294,6 +321,7 @@ def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
         "fly": "true",
         "autopilot": str(mission.get("autopilot", "px4")),
         "est_topic": str(inputs.get("est_topic", "/ov_msckf/odomimu")),
+        "viz": "true" if viz else "false",
     }
     strings = {
         "record_sec": str(int(mission.get("timeout_s", 300))),
@@ -450,6 +478,10 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
         # OSMO- and omega-specific facts live here, not in the RunRecord.
         "target": "osmo", "workflow_id": workflow_id, "workflow_status": status,
         "tasks": tasks, "platform": platform, "gates": run_gates,
+        # Whether someone could watch this run, read from what actually ran.
+        "viz": {"foxglove": "foxglove" in tasks,
+                "chase_cam": (Path(rec.stack) / "config" / "unreal-airsim" / "settings.json").exists()
+                and '"chase"' in (Path(rec.stack) / "config" / "unreal-airsim" / "settings.json").read_text()},
     }, indent=2))
 
 
@@ -555,9 +587,15 @@ def evaluate(root: Path, campaign: dict[str, Any] | None = None) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    if args.chase_cam and not args.viz:
+        sys.exit("[campaign] --chase-cam is for watching a run: it needs --viz")
     campaign_file = find_campaign(args.campaign)
     campaign = yaml.safe_load(campaign_file.read_text())
     root = CAMPAIGNS_HOST / str(campaign["id"])
+    if args.chase_cam:
+        # Its own manifest and scorecard: a chase-camera run flew a different
+        # image budget, and must never sit in the campaign it was copied from.
+        root = root.with_name(root.name + "-viz")
     # The product shell runs as root and `campaign plan` creates <root>/<key>/
     # as root. The manifest, the stacks and the evidence are written by this
     # user, so their directories are made here first, and the stacks live
@@ -568,7 +606,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     om = omega_fields(campaign)
     print(f"[campaign] {campaign['id']}: tier={om['tier']} verifies={om['verifies']} gates={run_gates}")
 
-    runs = materialise(campaign_file, root.parent, args.only or [])
+    runs = materialise(campaign_file, CAMPAIGNS_HOST, args.only or [])
     print(f"[campaign] {len(runs)} run(s) materialised under {root}")
     endpoint = storage_endpoint()
 
@@ -587,11 +625,16 @@ def cmd_run(args: argparse.Namespace) -> int:
         records.append(rec)
         stack_dir = root / "stacks" / key
         try:
-            generate_stack(spec_file, stack_dir)
+            if args.chase_cam:
+                generate_stack(with_chase_camera(spec_file, root / "viz" / key), stack_dir)
+            else:
+                generate_stack(spec_file, stack_dir)
             rec.stack = str(stack_dir)
-            wf = submit(stack_dir, campaign, run_gates, campaign_file)
+            wf = submit(stack_dir, campaign, run_gates, campaign_file, viz=args.viz)
             rec.run_id = wf
             print(f"[campaign] {key}: submitted {wf}")
+            if args.viz:
+                print(f"[campaign] {key}: watch live with  osmo/campaign.py watch {wf}")
             submitted.append((rec, spec_file, wf))
         except RuntimeError as exc:
             rec.status, rec.error, rec.finished_at = "failed", str(exc), now()
@@ -616,6 +659,70 @@ def cmd_run(args: argparse.Namespace) -> int:
     write_manifest(root, campaign_file, campaign, records, platform)
     print(f"[campaign] manifest: {root / 'campaign_manifest.json'}")
     return rc
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    """Tunnel a running workflow's Foxglove task to this machine.
+
+    Asks Kubernetes, not OSMO. OSMO labels every task pod with its workflow
+    and task name, so the pod is found by label and forwarded with kubectl.
+    Both halves avoid OSMO's gateway on purpose: on the quick-start deployment
+    `osmo workflow port-forward` came back `504 upstream request timeout` while
+    the task was up and listening, and `osmo workflow query` failed the same
+    way for the whole of a run while its gang was loading -- a watcher polling
+    it saw nothing and missed the run.
+
+    Start this as soon as the workflow is submitted; the view lasts as long as
+    the run's recording.
+    """
+    wf = args.workflow
+    selector = f"osmo.workflow_id={wf},osmo.task_name=foxglove"
+    deadline = time.time() + args.wait
+    said = None
+    while True:
+        out = subprocess.run(
+            ["kubectl", "get", "pods", "-n", "default", "-l", selector, "-o",
+             "jsonpath={range .items[*]}{.metadata.name} {.status.phase} "
+             "{.status.containerStatuses[?(@.name=='foxglove')].ready}{\"\\n\"}{end}"],
+            capture_output=True, text=True).stdout.split()
+        pod, phase, ready = (out + [None, None, None])[:3]
+        if pod and phase == "Running" and ready == "true":
+            break
+        if phase in ("Succeeded", "Failed"):
+            sys.exit(f"[campaign] {wf}: foxglove pod is {phase}; the run is over")
+        state = f"{phase or 'no pod yet'}"
+        if state != said:
+            print(f"[campaign] {wf}: foxglove {state}; waiting", flush=True)
+            said = state
+        if time.time() > deadline:
+            sys.exit(f"[campaign] {wf}: foxglove never came up ({state}); was it submitted with --viz?")
+        time.sleep(3)
+    # A running container is not a listening bridge: OSMO's sidecar holds the
+    # task's own command until the whole gang is up, and one refused
+    # connection is enough for kubectl to drop the tunnel for good. So wait
+    # for the port inside the pod, then keep the tunnel open for as long as
+    # the pod lives.
+    def alive() -> bool:
+        return subprocess.run(["kubectl", "get", "pod", "-n", "default", pod, "-o",
+                               "jsonpath={.status.phase}"], capture_output=True,
+                              text=True).stdout == "Running"
+
+    def listening() -> bool:
+        return subprocess.run(["kubectl", "exec", "-n", "default", pod, "-c", "foxglove", "--",
+                               "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8765"],
+                              capture_output=True).returncode == 0
+
+    while not listening():
+        if not alive() or time.time() > deadline:
+            sys.exit(f"[campaign] {wf}: foxglove_bridge never started listening")
+        time.sleep(3)
+    print(f"[campaign] {wf}: open Foxglove at ws://localhost:{args.port}  (ctrl-c to stop)", flush=True)
+    while alive():
+        subprocess.run(["kubectl", "port-forward", "-n", "default", "--address", "127.0.0.1",
+                        f"pod/{pod}", f"{args.port}:8765"])
+        time.sleep(1)
+    print(f"[campaign] {wf}: the run is over", flush=True)
+    return 0
 
 
 def cmd_reindex(args: argparse.Namespace) -> int:
@@ -692,7 +799,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--only", action="append", help="run key(s) to include")
     p.add_argument("--serial", action="store_true", help="wait for each run before submitting the next")
     p.add_argument("--no-evaluate", action="store_true")
+    p.add_argument("--viz", action="store_true",
+                   help="add the live Foxglove task to every run (see `watch`)")
+    p.add_argument("--chase-cam", action="store_true",
+                   help="with --viz: a third-person camera behind the drone. Thins the "
+                        "stereo pair's rate, so the run is for looking, not scoring")
     p.set_defaults(fn=cmd_run)
+    p = sub.add_parser("watch", help="port-forward a running workflow's Foxglove task to localhost")
+    p.add_argument("workflow", help="workflow id, as `run` printed it")
+    p.add_argument("--port", type=int, default=8765, help="local port (default 8765)")
+    p.add_argument("--wait", type=float, default=900.0, help="seconds to wait for the task to start")
+    p.set_defaults(fn=cmd_watch)
     p = sub.add_parser("reindex", help="rebuild the manifest's runs from the evidence on disk")
     p.add_argument("campaign")
     p.set_defaults(fn=cmd_reindex)

@@ -660,6 +660,7 @@ workflow:
         PYTHONUNBUFFERED: "1"
         READY_WAIT_SEC: "900"
         RECORD_SEC: "{{ record_sec }}"
+        VIZ_HOLD_SEC: "{% if viz | string | lower == 'true' %}{{ viz_hold_sec }}{% else %}0{% endif %}"
       files:
       - path: /tmp/record.py
         contents: |
@@ -798,6 +799,17 @@ workflow:
                   print("NOTE: the estimator never published; the evaluators "
                         "will say so", file=sys.stderr)
               print("evidence complete: %s (%d messages)" % (run_dir, total))
+              # With a viewer attached, keep the gang up after the bag has
+              # closed: the recorder is the lead, and the moment it exits the
+              # simulator goes with it -- a couple of minutes after touchdown,
+              # too short to look at anything. The evidence is already final.
+              hold = float(os.environ.get("VIZ_HOLD_SEC") or 0)
+              if hold > 0:
+                  # Sleep, never spin: the writer is closed, and a callback
+                  # delivered now would write into it and kill the lead.
+                  node.destroy_node()
+                  print("holding the run open %.0fs for the viewer" % hold)
+                  time.sleep(hold)
               return 0
 
           sys.exit(main())
@@ -825,6 +837,74 @@ workflow:
         COMPLETE: "0"
         FAIL: "1"
         RESCHEDULE: "42,137"
+{% if viz | string | lower == 'true' %}
+
+    # A window into the run while it happens. The simulator renders off-screen
+    # in a pod and the v1 runtime host has no Pixel Streaming, so the view is
+    # the one the vehicle has: its cameras, TF, ground truth and the estimate,
+    # served by foxglove_bridge. From the host:
+    #   osmo/campaign.py watch <workflow>   (port-forwards 8765)
+    # then open Foxglove at ws://localhost:8765.
+    #
+    # It is a SUPER_CLIENT where every other task is a plain CLIENT, because
+    # foxglove_bridge offers what the graph shows and a plain CLIENT's graph
+    # holds only what it already matches. The profile is written here with
+    # the server's address literal: Fast DDS does not expand ${VAR} in XML.
+    - name: foxglove
+      image: "{{ bridge_image }}"
+      resource: light
+      command: ["/bin/bash", "/tmp/foxglove.sh"]
+      environment:
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        DS_HOST: "{{host:discovery-server}}"
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+      files:
+      - path: /tmp/foxglove.sh
+        contents: |
+          #!/bin/bash
+          set -o pipefail
+          source /opt/ros/humble/setup.bash
+          source /ws/install/setup.bash
+          DS_IP=$(getent hosts "$DS_HOST" | awk '{print $1; exit}')
+          [ -n "$DS_IP" ] || { echo "cannot resolve $DS_HOST" >&2; exit 0; }
+          cat > /tmp/super_client.xml <<XML
+          <?xml version="1.0" encoding="UTF-8" ?>
+          <dds>
+            <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+              <participant profile_name="super_client" is_default_profile="true">
+                <rtps>
+                  <builtin>
+                    <discovery_config>
+                      <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>
+                      <discoveryServersList>
+                        <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
+                          <metatrafficUnicastLocatorList>
+                            <locator><udpv4><address>${DS_IP}</address><port>11811</port></udpv4></locator>
+                          </metatrafficUnicastLocatorList>
+                        </RemoteServer>
+                      </discoveryServersList>
+                    </discovery_config>
+                  </builtin>
+                </rtps>
+              </participant>
+            </profiles>
+          </dds>
+          XML
+          export FASTRTPS_DEFAULT_PROFILES_FILE=/tmp/super_client.xml
+          unset ROS_DISCOVERY_SERVER
+          echo "foxglove_bridge on ws://0.0.0.0:8765, super client of ${DS_IP}:11811"
+          # send_buffer_limit: a slow tunnel drops frames rather than stalling
+          # the bridge; raw 640x480 bgr8 is ~27 MB/s per camera.
+          ros2 launch foxglove_bridge foxglove_bridge_launch.xml \
+            port:=8765 address:=0.0.0.0 use_sim_time:=true \
+            send_buffer_limit:=50000000
+          exit 0
+      # A viewer never decides a run. Under ignoreNonleadStatus: false any
+      # other exit would take the gang down with it.
+      exitActions:
+        COMPLETE: "0-255"
+{% endif %}
 
   # ---- evaluate: one container per question, all reading the same evidence --
   #
@@ -1333,6 +1413,13 @@ default-values:
   # executor from the CampaignSpec's mission.trajectory; when empty the
   # corridor mission above flies instead.
   route_b64: ""
+  # Live Foxglove view of the run (the `foxglove` task). Off for scored
+  # campaigns; `osmo/campaign.py run --viz` turns it on. Tested as a string:
+  # `--set viz=false` arrives as "false", which a bare Jinja test calls true.
+  viz: false
+  # With viz, how long the run stays up after the recording closes, so there
+  # is something left to look at. Evidence is unaffected: the bag is final.
+  viz_hold_sec: "600"
   # Where the estimator under test publishes. Mirrors the ScenarioSpec's
   # extensions.mns.vio_estimator.odom_topic; change both together.
   est_topic: /ov_msckf/odomimu
