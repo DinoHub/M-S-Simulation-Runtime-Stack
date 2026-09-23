@@ -279,7 +279,8 @@ class GauntletPilot(Node):
                 return
         self.log(f"landing timed out at z={self.position()[2]:.2f} m; continuing")
 
-    def follow(self, plan: dict) -> None:
+    def follow(self, plan: dict, start_t: float = 0.0,
+               origin: tuple[float, float, float] | None = None) -> None:
         """Fly a declared route, in time.
 
         The setpoint is sampled from the plan at the wall clock, so each leg
@@ -287,16 +288,29 @@ class GauntletPilot(Node):
         to chase a distant target. That is what makes two runs of the same route
         comparable, and what a corridor traverse only approximates by walking
         its target at a fixed speed.
+
+        `start_t` enters the route at a later point in its own time. It exists
+        for ArduPilot, which reaches its first altitude with a takeoff command
+        rather than by being asked to: the seconds the route spends on the
+        ground before that are already behind it, and replaying them would
+        command a landing.
+
+        `origin` is where `relative_to_start` is relative to. It is passed in
+        rather than read here because by the time a route is being followed
+        the vehicle is airborne, and a route read from up there is flown that
+        much higher than it was written -- a 1.2 m leg becomes 3.4 m, which on
+        an indoor level is the difference between a room and its roof.
         """
         rate = float(plan.get("rate_hz", 20))
         period = 1.0 / rate
         end_t = float(plan["waypoints"][-1]["t"])
-        origin = self.position() if plan.get("relative_to_start", True) else (0.0, 0.0, 0.0)
+        if origin is None:
+            origin = self.position() if plan.get("relative_to_start", True) else (0.0, 0.0, 0.0)
         self.log(f"route {plan.get('name') or 'unnamed'}: {len(plan['waypoints'])} waypoints "
                  f"over {end_t:.0f} s from ({origin[0]:.1f}, {origin[1]:.1f}, {origin[2]:.1f})")
 
-        began = time.time()
-        last_log = 0.0
+        began = time.time() - start_t
+        last_log = start_t
         while True:
             t = time.time() - began
             if t > end_t:
@@ -324,15 +338,17 @@ class GauntletPilot(Node):
             rclpy.spin_once(self, timeout_sec=period / 2)
             time.sleep(period)
 
-    def prestream(self, plan: dict) -> tuple[float, float, float]:
+    def prestream(self, plan: dict, at: float = 0.0,
+                  origin: tuple[float, float, float] | None = None) -> tuple[float, float, float]:
         """Publish the route's first point before anything else.
 
         PX4 will not enter OFFBOARD unless setpoints are already arriving, so
         the first point has to be in the air before the mode change is even
         attempted. Returns it, for the mode call to keep holding.
         """
-        origin = self.position() if plan.get("relative_to_start", True) else (0.0, 0.0, 0.0)
-        xyz, _ = sample(plan, 0.0)
+        if origin is None:
+            origin = self.position() if plan.get("relative_to_start", True) else (0.0, 0.0, 0.0)
+        xyz, _ = sample(plan, at)
         point = (origin[0] + xyz[0], origin[1] + xyz[1], origin[2] + xyz[2])
         self.stream_setpoint(*point, seconds=float(plan.get("prestream_seconds", 2)))
         return point
@@ -353,6 +369,19 @@ def sample(plan: dict, t: float) -> tuple[list[float], float]:
     delta = math.atan2(math.sin(float(b["yaw"]) - float(a["yaw"])),
                        math.cos(float(b["yaw"]) - float(a["yaw"])))
     return xyz, float(a["yaw"]) + f * delta
+
+
+def first_ascent(plan: dict, floor_m: float = 0.3) -> tuple[float, float]:
+    """When the route first asks to be off the ground, and how high.
+
+    Returns (t, altitude) for the first waypoint above `floor_m`, or the last
+    waypoint if a route never climbs -- a takeoff needs a target either way.
+    """
+    for point in plan["waypoints"]:
+        if float(point["position"][2]) > floor_m:
+            return float(point["t"]), float(point["position"][2])
+    last = plan["waypoints"][-1]
+    return float(last["t"]), float(last["position"][2])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -388,13 +417,19 @@ def main(argv: list[str] | None = None) -> int:
         # A route commands its own climb, as its first leg; the corridor mission
         # climbs to a fixed altitude first and traverses at it.
         altitude = sample(plan, 0.0)[0][2] if plan else args.altitude
+        # Where the route is relative to: read once, on the ground, before
+        # anything climbs. Both branches below leave the vehicle airborne
+        # before the route is followed.
+        ground = pilot.position() if plan and plan.get("relative_to_start", True) else None
+        if plan and not plan.get("relative_to_start", True):
+            ground = (0.0, 0.0, 0.0)
         if args.autopilot == "px4":
             # OFFBOARD only accepts a mode change while setpoints are already
             # arriving, and ends as soon as they stop, so the stream is primed
             # first and never interrupted: no takeoff command, one mode from
             # arming to the landing call.
             if plan:
-                point = pilot.prestream(plan)
+                point = pilot.prestream(plan, origin=ground)
             else:
                 x, y, _ = pilot.position()
                 point = (x, y, altitude)
@@ -403,15 +438,27 @@ def main(argv: list[str] | None = None) -> int:
             pilot.arm()
             if not plan:
                 pilot.climb_offboard(altitude)
+            start_t = 0.0
         else:
             pilot.ensure_mode("GUIDED")
             pilot.arm()
+            # ArduPilot Copter in GUIDED ignores position setpoints until it
+            # has taken off, so a route needs the takeoff command the corridor
+            # mission already gets. Without it the vehicle sits armed on the
+            # ground for the whole route and lands where it started, which is
+            # a flight that reports success and proves nothing.
+            #
+            # It climbs to the first altitude the route asks for, and the
+            # route is then entered at the moment it asks for it: the seconds
+            # a route spends on the ground are a still window for an
+            # estimator, and replaying them after a takeoff would command a
+            # landing.
+            start_t, climb_to = (first_ascent(plan) if plan else (0.0, altitude))
+            pilot.climb(climb_to)
             if plan:
-                pilot.prestream(plan)
-            else:
-                pilot.climb(altitude)
+                pilot.prestream(plan, at=start_t, origin=ground)
         if plan:
-            pilot.follow(plan)
+            pilot.follow(plan, start_t=start_t, origin=ground)
         else:
             pilot.traverse(args.distance, altitude, args.speed, args.traverse_timeout,
                            axis={"x": 0, "y": 1}[args.axis])

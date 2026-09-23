@@ -40,4 +40,6 @@ generated/
 !/scenarios/vio-reference/
 # Same reasoning: the spec is meaningless without the calibration beside it.
 !/scenarios/vio-osmo-condo/
+!/scenarios/vio-osmo-condo-ardupilot/
+!/scenarios/vio-osmo-xfs/
 !/scenarios/vio-reference/**

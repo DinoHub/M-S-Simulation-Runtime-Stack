@@ -125,6 +125,9 @@ workflow:
       environment:
         NVIDIA_DRIVER_CAPABILITIES: all
         STACK: "{{ stack }}"
+{% if fly and autopilot == 'ardupilot' %}
+        AUTOPILOT_HOST: "{{host:autopilot}}"
+{% endif %}
       files:
       - path: /tmp/sim.sh
         contents: |
@@ -142,6 +145,25 @@ workflow:
           R=/tmp/simrunner
           mkdir -p "$R/content-packs" "$R/mounted-runtime-asset-paks"
           cp "$S/unreal-airsim/settings.json"          "$R/settings.json"
+{% if fly and autopilot == 'ardupilot' %}
+          # ArduPilot is the one connector the simulator dials out to: PX4
+          # listens on TCP 4560 and the autopilot connects in, so the sim needs
+          # to know nothing about it, but AirSim SENDS sensor data to
+          # ArduPilot over UDP and the generated settings.json names the
+          # compose hostname (ardupilot-drone-0) to send it to. Under OSMO
+          # that name does not exist, so the pod's own address goes in here.
+          python3 - "$R/settings.json" "$AUTOPILOT_HOST" <<'PATCH'
+          import json, socket, sys
+          path, host = sys.argv[1], sys.argv[2]
+          addr = socket.gethostbyname(host)
+          doc = json.load(open(path))
+          for name, vehicle in (doc.get("Vehicles") or {}).items():
+              if vehicle.get("UdpIp"):
+                  print("%s: UdpIp %s -> %s (%s)" % (name, vehicle["UdpIp"], addr, host))
+                  vehicle["UdpIp"] = addr
+          json.dump(doc, open(path, "w"), indent=2)
+          PATCH
+{% endif %}
           cp "$S/scenario/scenario_runtime.json"       "$R/"
           cp "$S/scenario/object_clutter.yaml"         "$R/"
           cp "$S/scenario/environment_parameters.json" "$R/"
@@ -173,6 +195,73 @@ workflow:
 {% if fly %}
     # SITL. Connects to the simulator's PX4 connector, which settings.json
     # binds on 0.0.0.0 -- so this needs the simulator's address, not localhost.
+{% if autopilot == 'ardupilot' %}
+    # ArduPilot SITL. Two things differ from PX4 beyond the binary: the
+    # simulator link is a UDP pair the SIM dials out to (9003 out, 9002 back)
+    # rather than a TCP port the autopilot dials in to, and MAVLink is served
+    # to MAVROS over TCP 5760 rather than through a mavlink-router's UDP
+    # servers. The image takes the instance number as its argument, exactly as
+    # the generated compose passes `command: ["0"]`.
+    - name: autopilot
+      image: "{{ ardupilot_image }}"
+      resource: autopilot
+      command: ["/bin/bash", "/tmp/autopilot.sh"]
+      environment:
+        SIM_HOST: "{{host:sim}}"
+        SIM_PORT: "41451"
+        SIM_DIAL_WAIT_SEC: "900"
+        # What the generated compose sets, with the sim's address resolved in
+        # the script: the entrypoint passes this to SITL as --sim-address.
+        MAVLINK_GCS_HOST: "127.0.0.1"
+        MAVLINK_C2_HOST: "127.0.0.1"
+        MAVLINK_C2_PORT: "14552"
+        HOST_NETWORK_MODE: "false"
+        ARDUPILOT_HOME_LAT: "42.764938"
+        ARDUPILOT_HOME_LON: "-115.579201"
+        ARDUPILOT_HOME_ALT: "1183.0"
+        INSTANCE_NUM: "0"
+      files:
+      - path: /tmp/autopilot.sh
+        contents: |
+          #!/bin/bash
+          set -e
+          deadline=$(( $(date +%s) + SIM_DIAL_WAIT_SEC ))
+          until (exec 3<>"/dev/tcp/${SIM_HOST}/${SIM_PORT}") 2>/dev/null; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "READINESS TIMEOUT: ${SIM_HOST}:${SIM_PORT}" >&2
+              exit 42
+            fi
+            sleep 5
+          done
+          # An address, not a name: the same reason PX4 needs one here.
+          ARDUPILOT_SIM_HOSTNAME=$(getent hosts "$SIM_HOST" | awk '{print $1; exit}')
+          [ -n "$ARDUPILOT_SIM_HOSTNAME" ] || { echo "cannot resolve $SIM_HOST" >&2; exit 42; }
+          export ARDUPILOT_SIM_HOSTNAME
+          echo "sim $SIM_HOST -> $ARDUPILOT_SIM_HOSTNAME; starting ArduPilot SITL instance ${INSTANCE_NUM}"
+          cd /ardupilot_workspace
+          # The launch script directly, not docker-entrypoint.sh.
+          #
+          # That entrypoint drops to uid 1000 with gosu whenever it starts as
+          # root, which is what a pod does and what compose never does -- the
+          # generated compose sets `user: ${HOST_UID}:${GID}`, so the check
+          # never fires there. Under OSMO the dropped process loads its
+          # parameters and exits 1 with nothing on stderr; the same binary,
+          # same arguments, same pod, run as root, flies (FPS 333, sensor
+          # data flowing from the sim pod). Isolated by running both inside a
+          # held task container.
+          #
+          # The drop exists so a bind-mounted instances directory ends up
+          # owned by the invoking user. A pod bind-mounts nothing here, so
+          # there is nothing for it to protect.
+          set +e
+          stdbuf -oL -eL /usr/local/bin/run_ardupilot_airsim.sh "${INSTANCE_NUM}" 2>&1
+          rc=$?
+          echo "[autopilot] ArduPilot SITL exited ${rc}"
+          exit "$rc"
+      exitActions:
+        COMPLETE: "0"
+        RESCHEDULE: "42,137"
+{% else %}
     - name: autopilot
       image: "{{ px4_image }}"
       resource: autopilot
@@ -237,6 +326,7 @@ workflow:
       exitActions:
         COMPLETE: "0"
         RESCHEDULE: "42,137"
+{% endif %}
 
 {% endif %}
     - name: bridge
@@ -315,6 +405,10 @@ workflow:
           # host_ip:= explicitly, for the same reason: the image's entrypoint
           # would otherwise leave the launch default of 127.0.0.1, and the
           # bridge would look for the simulator inside its own pod.
+          # Jinja tags stay inline in this command. An if-tag on its own line
+          # renders as a blank line, and a blank line after a trailing `\`
+          # ends the command: every argument below it is silently dropped and
+          # MAVROS falls back to the launch file's udp://:14550@.
           exec /entrypoint.sh ros2 launch airsim_ros2_bridge single_vehicle.launch.py \
             host_ip:="${SIM_HOST}" \
             host_port:="${SIM_PORT}" \
@@ -327,8 +421,8 @@ workflow:
             topic_names_config:=/tmp/topic_names.yaml \
             enable_mavros:={{ fly | lower }} \
             mavros_vehicle:="${VEHICLE}" \
-            mavros_config:=mavros_px4.yaml \
-            mavros_fcu_url:="udp://:14556@${AUTOPILOT_HOST}:14555" \
+            mavros_config:={% if autopilot == 'ardupilot' %}mavros_ardupilot.yaml{% else %}mavros_px4.yaml{% endif %} \
+            mavros_fcu_url:="{% if autopilot == 'ardupilot' %}tcp://${AUTOPILOT_HOST}:5760{% else %}udp://:14556@${AUTOPILOT_HOST}:14555{% endif %}" \
             enable_localization:=true \
             localization_source:=sim \
             enable_local_obs:=false \
@@ -1210,6 +1304,7 @@ default-values:
   max_fall_ms: "0.5"
   sim_real_eval_image: dhdevspace/auto_mns:sim-real-eval-worker-latest
   px4_image: dhdevspace/auto_mns:px4-airsim-px4-v1.0.0
+  ardupilot_image: dhdevspace/auto_mns:ardupilot-v1.0.0
   vehicle: Drone1
   runtime_host_image: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0
   bridge_image: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0

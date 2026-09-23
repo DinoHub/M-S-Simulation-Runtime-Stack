@@ -1,0 +1,93 @@
+schema: mns.campaign.v1
+id: vio-osmo-condo-ardupilot
+name: Stereo VIO over Condo under OSMO, ArduPilot
+
+# The scenario this campaign is an experiment over. Everything about the
+# world, the rig and the estimator lives there; this file says how many times
+# to fly it, what to vary, and how to judge the result.
+scenario: ./ScenarioSpec.yaml
+
+# Fields the platform's omega.yaml carries and mns.campaign.v1 does not. The
+# root CampaignSpec message rejects unknown keys, and the contract lives in a
+# separate vendored repository, so they ride in the one slot the schema leaves
+# open -- extensions (field id 12) -- until they are promoted to first-class
+# fields. The OSMO executor reads them from here; the compose runner ignores
+# them, which is the point: the same file drives both.
+extensions:
+  mns.omega:
+    tier: L1
+    verifies: [REQ-VIO-001, REQ-VIO-002]
+
+evaluation:
+  # A dispatch key, not a command line. This is the campaign-level evaluator
+  # that scores every run's evidence after the matrix completes and writes
+  # reports/<run_key>.json in the shape `campaign status` reads.
+  evaluator: vio-stress
+  inputs:
+    est_topic: /ov_msckf/odomimu
+  # Pass/fail thresholds, per metric, applied by the run's verdict task. The
+  # CampaignEvaluation message allows unknown fields, so this validates today;
+  # the compose runner does not read it. Under OSMO these replace the
+  # workflow's hardcoded default.
+  gates:
+    ate_rmse_m: {max: 1.0}
+
+mission:
+  # `source: external`: the flight is not the autonomy under test, it is the
+  # excitation. Under compose the runner compiles the route into a pilot
+  # command it execs into the bridge; under OSMO the pilot is a task in the
+  # workflow and the executor hands it the same compiled route. `autopilot`
+  # and `timeout_s` are read by both.
+  source: external
+  autopilot: ardupilot
+  # The flight, as time-indexed waypoints the pilot follows and returns from.
+  # A route is what makes two repeats comparable, and this one is sized to
+  # the bedroom the vehicle spawns in: the corridor mission it replaced
+  # climbed over the room's 2.2 m walls and pointed the cameras at the far
+  # side of the apartment, which no estimator survives.
+  trajectory: ./routes/bedroom-loop.yaml
+  done: timeout
+  # A cap, not the length of the recording: the recorder stops when the pilot
+  # reports the mission done. Sized to boot, the pilot's readiness gate (up to
+  # two minutes of EKF settling), a 60 s route and the landing.
+  timeout_s: 300
+
+# One difference at a time. Wind is a declared environment condition, so it
+# leaves a trace in the generated stack rather than being an RPC nobody can
+# see afterwards. Two points is enough to prove the matrix; a real sweep adds
+# points here, not elsewhere.
+variants:
+- id: calm
+  name: No wind
+- id: wind-6
+  name: Wind 6 m/s
+  overrides:
+    environment:
+      # `environment.weather`, not `environment.conditions.weather`. The
+      # Environment message declares `weather` and `time_of_day` and allows
+      # unknown fields, so the nested spelling validates, materialises into
+      # the run's ScenarioSpec, and is then dropped on the floor: the
+      # generator's _normalize_conditions reads the top-level `conditions` and
+      # `environment.weather`, nothing else. A campaign authored the nested
+      # way runs its whole sweep against identical worlds and reports the
+      # spread as if it meant something. scenarios/vio-reference is authored
+      # that way today.
+      #
+      # The evidence that this path is live: scenario_conditions.json carries
+      # the weather block and the sim gets SCENARIO_CONDITIONS_ENABLED=true.
+      weather:
+        enabled: true
+        wind: 6.0
+
+# A single VIO run is noise. Two repeats per point is the minimum that lets
+# a difference between variants be told apart from a difference between runs.
+repeats: 2
+
+recording:
+  keep: all
+  topics:
+  - /ov_msckf/odomimu
+  - /ground_truth/odom
+  - /clock
+  - /tf
+  - /tf_static
