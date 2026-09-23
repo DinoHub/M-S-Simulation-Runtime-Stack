@@ -725,6 +725,7 @@ CampaignSpec mission / evaluation --osmo/campaign.py submit--> --set / --set-str
 | --- | --- | --- |
 | `environment.{id,version,artifact_digest}` | `content-packs/resolved-pack-set.json` | sim; the level must be in the v1 pack store |
 | `environment.weather`, `time_of_day`, `wind_mps` / `wind_from_deg` | `scenario/scenario_conditions.json`; `unreal-airsim/host-launch-args.json` where the generator emits it | sim |
+| top-level `conditions.weather` / `conditions.time_of_day` | `scenario/scenario_conditions.json`, **instead of** `environment.weather` / `time_of_day`: the generator takes the top-level block whole and the two are not merged, so a variant's `environment.weather` under a base with `conditions.weather` is dropped and flies the base world. `time_of_day`, like `weather`, needs `enabled: true` or the host keeps the level's sky. The platform's `tevv-campaign validate` fails both (`conditions.shadowed.*`, `conditions.time_of_day.*`); `osmo/campaign.py` does not check | sim |
 | `runtime.profile` | `unreal-airsim/settings.json` (vehicle type, ArduPilot's UDP pair) | sim |
 | `vehicles[0].start` | `settings.json` | sim: the spawn |
 | `vehicles[0].cameras`, `sensors`, `dynamics` | `settings.json`, `topic_names.yaml` | sim and bridge |
