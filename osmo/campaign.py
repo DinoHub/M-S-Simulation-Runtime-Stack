@@ -662,18 +662,19 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_watch(args: argparse.Namespace) -> int:
-    """Tunnel a running workflow's Foxglove task to this machine.
+    """Give a running workflow's live Foxglove view an address on this host.
 
-    Asks Kubernetes, not OSMO. OSMO labels every task pod with its workflow
-    and task name, so the pod is found by label and forwarded with kubectl.
-    Both halves avoid OSMO's gateway on purpose: on the quick-start deployment
-    `osmo workflow port-forward` came back `504 upstream request timeout` while
-    the task was up and listening, and `osmo workflow query` failed the same
-    way for the whole of a run while its gang was loading -- a watcher polling
-    it saw nothing and missed the run.
+    Asks Kubernetes, not OSMO: OSMO labels every task pod with its workflow
+    and task name, so the pod is found by label. OSMO's own gateway is avoided
+    on purpose -- on the quick-start deployment `osmo workflow port-forward`
+    and `osmo workflow query` both came back `504 upstream request timeout`
+    while a gang was loading.
 
-    Start this as soon as the workflow is submitted; the view lasts as long as
-    the run's recording.
+    By default it puts a NodePort Service in front of the pod and exits; the
+    Service dies with the pod. `--tunnel` instead holds a `kubectl
+    port-forward` to localhost until the run ends. The run stays up while
+    someone is connected (the recorder watches /viz/viewers), so connect
+    within a minute of the recording closing.
     """
     wf = args.workflow
     selector = f"osmo.workflow_id={wf},osmo.task_name=foxglove"
@@ -716,13 +717,52 @@ def cmd_watch(args: argparse.Namespace) -> int:
         if not alive() or time.time() > deadline:
             sys.exit(f"[campaign] {wf}: foxglove_bridge never started listening")
         time.sleep(3)
-    print(f"[campaign] {wf}: open Foxglove at ws://localhost:{args.port}  (ctrl-c to stop)", flush=True)
-    while alive():
-        subprocess.run(["kubectl", "port-forward", "-n", "default", "--address", "127.0.0.1",
-                        f"pod/{pod}", f"{args.port}:8765"])
-        time.sleep(1)
-    print(f"[campaign] {wf}: the run is over", flush=True)
+    if args.tunnel:
+        print(f"[campaign] {wf}: open Foxglove at ws://localhost:{args.port}  (ctrl-c to stop)", flush=True)
+        while alive():
+            subprocess.run(["kubectl", "port-forward", "-n", "default", "--address", "127.0.0.1",
+                            f"pod/{pod}", f"{args.port}:8765"])
+            time.sleep(1)
+        print(f"[campaign] {wf}: the run is over", flush=True)
+        return 0
+
+    url = expose_nodeport(wf, pod)
+    print(f"[campaign] {wf}: open Foxglove at {url}", flush=True)
+    print(f"[campaign] {wf}: from another machine: ssh -L 8765:{url.split('//')[1]} <this host>, "
+          f"then ws://localhost:8765", flush=True)
     return 0
+
+
+def expose_nodeport(wf: str, pod: str) -> str:
+    """A NodePort Service in front of a run's foxglove pod; returns its ws:// URL.
+
+    Owned by the pod, so Kubernetes deletes it with the pod: no process to keep
+    alive, nothing to clean up. The address is the pod's node, which is
+    reachable from this host on the kind network.
+    """
+    meta = json.loads(subprocess.run(["kubectl", "get", "pod", "-n", "default", pod, "-o", "json"],
+                                     capture_output=True, text=True, check=True).stdout)
+    name = f"foxglove-{wf}"
+    svc = {
+        "apiVersion": "v1", "kind": "Service",
+        "metadata": {"name": name, "namespace": "default",
+                     "labels": {"osmo.workflow_id": wf, "tevv.viewer": "foxglove"},
+                     "ownerReferences": [{"apiVersion": "v1", "kind": "Pod",
+                                          "name": pod, "uid": meta["metadata"]["uid"]}]},
+        "spec": {"type": "NodePort",
+                 "selector": {"osmo.workflow_id": wf, "osmo.task_name": "foxglove"},
+                 "ports": [{"name": "ws", "port": 8765, "targetPort": 8765, "protocol": "TCP"}]},
+    }
+    subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(svc), text=True,
+                   capture_output=True, check=True)
+    node_port = subprocess.run(["kubectl", "get", "svc", "-n", "default", name, "-o",
+                                "jsonpath={.spec.ports[0].nodePort}"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+    node = meta["spec"]["nodeName"]
+    ip = subprocess.run(["kubectl", "get", "node", node, "-o",
+                         'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}'],
+                        capture_output=True, text=True, check=True).stdout.strip()
+    return f"ws://{ip}:{node_port}"
 
 
 def cmd_reindex(args: argparse.Namespace) -> int:
@@ -805,9 +845,11 @@ def main(argv: list[str] | None = None) -> int:
                    help="with --viz: a third-person camera behind the drone. Thins the "
                         "stereo pair's rate, so the run is for looking, not scoring")
     p.set_defaults(fn=cmd_run)
-    p = sub.add_parser("watch", help="port-forward a running workflow's Foxglove task to localhost")
+    p = sub.add_parser("watch", help="print the address of a running workflow's live Foxglove view")
     p.add_argument("workflow", help="workflow id, as `run` printed it")
-    p.add_argument("--port", type=int, default=8765, help="local port (default 8765)")
+    p.add_argument("--tunnel", action="store_true",
+                   help="kubectl port-forward to localhost instead of a NodePort (held until the run ends)")
+    p.add_argument("--port", type=int, default=8765, help="local port with --tunnel (default 8765)")
     p.add_argument("--wait", type=float, default=900.0, help="seconds to wait for the task to start")
     p.set_defaults(fn=cmd_watch)
     p = sub.add_parser("reindex", help="rebuild the manifest's runs from the evidence on disk")

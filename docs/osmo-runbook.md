@@ -535,6 +535,44 @@ declared condition kept the traceability and lost the physics.
 (platform `feat/campaign-target-osmo`). The second lesson: diff the vehicle's
 motion, not only the stacks.
 
+## Workflow anatomy
+
+`osmo/sim-bridge-vio.workflow.yaml` is structure only: groups, tasks, images,
+resources, environment, exit codes. Each task's script is a file in
+`osmo/files/`, shipped with `localpath:` and run from `/tmp`. Only one file is
+still inline: the four-line `topics.yaml` the evaluators read, because it
+carries the `est_topic` value from the template. Every other value a script
+needs arrives as an environment variable, so the scripts are plain shell and
+Python that can be read and tested on their own.
+
+| task | script | why it is the way it is |
+| --- | --- | --- |
+| discovery-server | `discovery_server.sh` | pods have no multicast, so DDS discovery needs a server; every ROS task is its client |
+| sim | `sim.sh` | stages the generated stack's config into a writable dir (the checkout is mounted read-only, the image runs as uid 1000); renders off-screen, never `-NullRHI`, which drops the cameras; with ArduPilot, patches `UdpIp` to the autopilot pod's address, since AirSim sends ArduPilot its sensors |
+| autopilot | `autopilot_px4.sh` / `autopilot_ardupilot.sh` | waits for the sim's RPC port instead of compose's fixed sleep; hands SITL the sim's IP, not its ~100-character pod name. PX4 needs `PX4_INSTANCE=0` (the image bakes 1). ArduPilot runs the launch script directly as root: the entrypoint's gosu drop makes SITL exit silently in a pod |
+| bridge | `bridge.sh` | resolves the discovery server to an IP (Fast DDS rejects names there); waits for the sim's RPC, or the topic remap is silently partial; MAVROS on PX4's router `MAVROS_UDP` 14555 (not `AirSim_Inbound` 14580) or ArduPilot's TCP 5760 |
+| vio | `vio.sh` | OpenVINS with the stack's generated config; publishes nothing until the vehicle moves |
+| pilot | `pilot.sh`, `fly_mission_mavros.py`, `announce_done.py` | waits for MAVROS and a still EKF height; flies the route; retries a refused arming once; always announces `/mission/done`. Exits 0 or 1 as COMPLETE so a failed flight cannot take the gang down |
+| recorder (lead) | `record.sh`, `record.py` | subscribes with named types (a plain DDS client's graph cannot resolve them); starts on ground truth, stops a few seconds after `/mission/done`; writes `mission.json`; with viz, holds the gang open after the bag closes |
+| foxglove | `foxglove.sh` | a SUPER_CLIENT, so foxglove_bridge sees every topic; can never fail the run |
+| vio-eval | `flight_window.py` + sim-real-eval | cuts the flight out of the bag (resting height read where the estimator starts), then scores that |
+| spawn-eval | `spawn_check.py` | free fall, sinking after landing, or fell through and was put back |
+| validate | `validate_recording.py` | the recording's own gates; writes the `validation.json` the scorecard reads |
+| verdict | `verdict.py` | the only pass/fail: the CampaignSpec's gates, with scorecard names aliased to the report's; a gate nothing measured fails |
+
+Editing rules that each cost a run to learn:
+
+- **Jinja tags inline, never on their own line inside a command.** A tag line
+  renders as a blank line, and a blank line after a trailing `\` ends the
+  command -- every later argument dropped. Now moot for the scripts, which have
+  no template in them; still true for `args:` blocks.
+- **No Jinja in comments** -- they are rendered too; a literal `{% if %}` in a
+  comment broke the whole template.
+- **Booleans from `--set` are strings.** `--set viz=false` gives `"false"`,
+  which a bare `{% if viz %}` calls true; test `viz | string | lower == 'true'`.
+- **One `--set` and one `--set-string`, each with every value** -- both are
+  `nargs="+"` and a repeated flag keeps only its last.
+
 ## Watching a run
 
 A pod has no screen and the v1 runtime host has no Pixel Streaming (see
@@ -542,56 +580,63 @@ A pod has no screen and the v1 runtime host has no Pixel Streaming (see
 own: its cameras, TF, ground truth and the estimate, over Foxglove.
 
 ```bash
-osmo/campaign.py run vio-osmo-condo --only calm-r1 --viz          # adds the foxglove task
-osmo/campaign.py watch sim-bridge-vio-48                          # tunnels it to localhost:8765
+osmo/campaign.py run vio-osmo-condo --only calm-r1 --viz    # adds the foxglove task
+osmo/campaign.py watch sim-bridge-vio-55                    # prints ws://172.27.0.4:30223
+osmo/campaign.py watch sim-bridge-vio-55 --tunnel           # or: ws://localhost:8765, held
 ```
 
-Then in Foxglove: *Open connection -> Foxglove WebSocket ->
-`ws://localhost:8765`*. Useful panels: Image on `/camera/front/image_raw`, 3D
-with `/tf`, `/ground_truth/odom` and `/ov_msckf/odomimu`, Plot on
-`/ground_truth/odom.pose.pose.position.z`. Measured through the tunnel on run
-48: camera 30 Hz (~28 MB/s), IMU and estimate 200 Hz, ground truth 50 Hz.
-From another machine: `ssh -L 8765:127.0.0.1:8765 <this host>`.
+In Foxglove: *Open connection -> Foxglove WebSocket -> the printed address*.
+Useful panels: Image on `/camera/front/image_raw`; 3D with `/tf`,
+`/ground_truth/odom` and `/ov_msckf/odomimu`; Plot on
+`/ground_truth/odom.pose.pose.position.z`. Measured on run 55, through either
+path: camera 30 Hz (~28 MB/s), IMU and estimate 200 Hz, ground truth 50 Hz,
+173 topics. From another machine: `ssh -L 8765:<printed ip:port> <this host>`
+and connect to `ws://localhost:8765`.
+
+**How it reaches you.** foxglove_bridge runs in the gang as one more ROS 2
+node, subscribing to the other pods over DDS. By default `watch` puts a
+NodePort Service in front of that pod and exits: the address is the pod's
+node on the kind network, which this host routes to. The Service is owned by
+the pod, so Kubernetes deletes it with the pod -- nothing to keep running,
+nothing to clean up. `--tunnel` is the fallback: a `kubectl port-forward` to
+localhost, held until the run ends.
+
+**How long it stays up.** Normally the gang ends a minute after touchdown,
+when the recorder (the lead) closes the bag. On a viz run the recorder then
+holds the gang for viewers: the foxglove task publishes `/viz/viewers` (TCP
+connections on its port, read from `/proc/net/tcp`, so it counts NodePort and
+tunnel clients alike), and the run is released once nobody has been connected
+for `viz_idle_sec` (60 s) or after `viz_hold_sec` (600 s) at most. Connect
+within a minute of the flight ending and it stays as long as you do. The
+evidence is final before the hold starts; only the verdict waits.
 
 What makes it work, each learned the hard way:
 
 - **`watch` never touches OSMO's API.** On the quick-start deployment
-  `osmo workflow port-forward` answered `504 upstream request timeout` while
-  the task was up and listening, and `osmo workflow query` failed the same way
-  for a whole run while its gang loaded, so a watcher polling it missed the
-  run entirely. `watch` finds the pod by OSMO's labels
-  (`osmo.workflow_id`, `osmo.task_name=foxglove`) and uses `kubectl
-  port-forward`.
+  `osmo workflow port-forward` and `osmo workflow query` both answered `504
+  upstream request timeout` while a gang was loading. Pods are found by
+  OSMO's labels (`osmo.workflow_id`, `osmo.task_name=foxglove`).
 - **It waits for the port, not the pod.** OSMO's sidecar holds a task's
-  command until the whole gang is up, so the container runs before
-  foxglove_bridge listens, and one refused connection makes kubectl drop the
-  tunnel for good. `watch` probes the port inside the pod first and re-opens
-  the tunnel if it drops.
-- **The foxglove task is a SUPER_CLIENT**; every other task is a plain CLIENT.
+  command until the whole gang is up, so the container is running before
+  foxglove_bridge listens.
+- **The foxglove task is a SUPER_CLIENT**; everything else is a plain client.
   foxglove_bridge offers what the graph shows, and a plain client's graph
-  holds only what it already matches. The profile is written at runtime with
-  the server's IP literal.
-- **The bridge is the Foxglove SDK server** (`foxglove.sdk.v1`). Current
-  Foxglove speaks it; an old client offering only `foxglove.websocket.v1` is
-  refused with HTTP 400.
-- **A viz run holds itself open** for `viz_hold_sec` (600 s) after the bag
-  closes. The recorder is the gang's lead, and without the hold the
-  simulator goes a minute after touchdown. The evidence is unaffected; the
-  bag is final before the hold starts. The hold sleeps; it must not spin the
-  node, whose writer is closed by then (runs 48-49 died that way).
-- **The task can never fail a run** (`COMPLETE: "0-255"`), and `--set
-  viz=false` is tested as a string: a bare Jinja test calls `"false"` true.
+  holds only what it already matches.
+- **The bridge is the Foxglove SDK server** (`foxglove.sdk.v1`). An old
+  client offering only `foxglove.websocket.v1` is refused with HTTP 400.
+- **The hold must not spin the recording node**, whose writer is closed by
+  then (runs 48-49 died that way); it watches `/viz/viewers` on a new node.
+- **A viewer can never fail a run** (`COMPLETE: "0-255"`).
 
 `--chase-cam` (only with `--viz`) adds a third-person camera 1.5 m behind and
 0.8 m above the drone, pitched down 20 degrees, on `/chase_Scene/image`. It
-shares the bridge's one combined image budget with the stereo pair -- measured
-on run 49, the front camera fell from 30 Hz to 18 Hz (1345 frames in 75 s) --
-so those runs go to their own `<campaign>-viz` manifest and never sit in the
-scored one.
+shares the bridge's one combined image budget with the stereo pair -- on run
+49 the front camera fell from 30 Hz to 18 Hz -- so those runs go to their own
+`<campaign>-viz` manifest and never sit in the scored one.
 
-After a run, no tunnel needed: `runs/<key>/bag/bag_0.mcap` opens in Foxglove
-directly -- ground truth against the estimate, TF, and the camera_info
-stamps that show the rate the estimator was fed.
+After a run, no connection needed: `runs/<key>/bag/bag_0.mcap` opens in
+Foxglove directly -- ground truth against the estimate, TF, and the
+camera_info stamps that show the rate the estimator was fed.
 
 ## ArduPilot, and XFS
 
