@@ -199,7 +199,9 @@ osmo/campaign.py status vio-osmo-condo
 You edit two files per campaign, `scenarios/<campaign>/CampaignSpec.yaml` and
 `ScenarioSpec.yaml`, plus the routes and estimator config beside them. Not every field
 reaches an OSMO run, and some are silently ignored there (`recording.topics`, the
-estimator's `launch_args`, image pins). One pair has to be changed together:
+estimator's `launch_args`); images come from `images/catalog.yaml`, and
+`osmo/campaign.py images` checks the GPU node holds them. The live view is
+`runtime.features.foxglove_bridge` in the spec, or `--viz` / `--no-viz`. One pair has to be changed together:
 `mission.autopilot` and `runtime.profile`.
 
 - [Authoring for OSMO](docs/osmo-runbook.md#authoring-for-osmo-what-you-edit-and-what-the-run-reads-from-it):

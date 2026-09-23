@@ -99,17 +99,31 @@ PRODUCT_SH = WORKSPACE_HOST / "product.sh"
 CAMPAIGNS_HOST = WORKSPACE_HOST / "generated" / "campaigns"
 MANIFEST_SCHEMA = "mns.vio_campaign_manifest.v1"
 RUN_META_SCHEMA = "mns.vio_run_meta.v1"
-# The campaign-level scorer. `vio-stress` postdates the `-latest` worker image
-# on Docker Hub (2026-08-09); this tag is built from the platform checkout:
-#   docker build -t dhdevspace/auto_mns:sim-real-eval-worker-<sha> \
-#       MnS-Integration-Platform/tools/sim_real_eval
-SIM_REAL_EVAL_IMAGE = os.environ.get("MNS_SIM_REAL_EVAL_IMAGE",
-                                     "dhdevspace/auto_mns:sim-real-eval-worker-bcb899f")
+# --------------------------------------------------------------------------
+# Images: from the catalog, never typed here
+# --------------------------------------------------------------------------
+#
+# Every image a run uses is the one images/catalog.yaml pins for the product's
+# channel, read from the image set the catalog renders
+# (images/image-set.generated.yaml) -- the same file, and the same two
+# overrides, the stack generator uses: MNS_IMAGE_SET_FILE for another file,
+# MNS_IMAGE_SET for another set. Otherwise the set is the one MNS_CHANNEL's
+# release channel names (product.sh's default, v1).
+IMAGE_SET_FILE = Path(os.environ.get("MNS_IMAGE_SET_FILE",
+                                     ROOT / "images" / "image-set.generated.yaml"))
+CATALOG_FILE = ROOT / "images" / "catalog.yaml"
+# product.sh's channel names -> the catalog's release_channels keys.
+CHANNEL_NAMES = {"v1": "v1", "v2": "standalone_v2", "ue582": "standalone_v2_ue582"}
 
-# The runtime host pin the v1 lock still carries is the build without iceoryx2;
-# every generated stack gets the rebuilt digest until the repin merges.
-RUNTIME_HOST_BROKEN = "sha256:b876fc9ef95bee5259123b29850f5a8ff07d0a393c7c589aa417b8acc8398a8b"
-RUNTIME_HOST_GOOD = "sha256:00700883f527a6a4194b2143797b5e748d1b7c7cf46acf33f73b5f9ffc4d18cf"
+# Workflow value -> where the image set keeps that role.
+WORKFLOW_IMAGES = {
+    "runtime_host_image": ("simulators", "tevv_runtime_host"),
+    "px4_image": ("autopilots", "px4"),
+    "ardupilot_image": ("autopilots", "ardupilot"),
+    "bridge_image": ("ros2_bridge",),
+    "vio_estimator_image": ("vio_estimator",),
+    "sim_real_eval_image": ("sim_real_eval",),
+}
 
 # runtime.profile -> the omega platform axes it implies. Derived, never
 # authored: asking authors to restate what the ScenarioSpec already says is how
@@ -274,9 +288,120 @@ def generate_stack(spec_file: Path, stack_dir: Path) -> None:
     if proc.returncode != 0 or not (stack_dir / "docker-compose.yml").exists():
         sys.stderr.write(proc.stdout + proc.stderr)
         raise RuntimeError(f"stack generation failed for {spec_file}")
-    env_file = stack_dir / ".env"
-    if env_file.exists():
-        env_file.write_text(env_file.read_text().replace(RUNTIME_HOST_BROKEN, RUNTIME_HOST_GOOD))
+
+
+def image_set_name() -> str:
+    if os.environ.get("MNS_IMAGE_SET"):
+        return os.environ["MNS_IMAGE_SET"]
+    channel = os.environ.get("MNS_CHANNEL", "v1")
+    channels = ((yaml.safe_load(CATALOG_FILE.read_text()).get("consumers") or {})
+                .get("release_channels") or {})
+    entry = channels.get(CHANNEL_NAMES.get(channel, channel))
+    if not entry:
+        sys.exit(f"[campaign] MNS_CHANNEL={channel!r} names no release channel in {CATALOG_FILE}")
+    return str(entry.get("image_set") or "published")
+
+
+def pinned_images() -> tuple[str, dict[str, str]]:
+    """(set name, {workflow value: repo:tag@sha256:...}) from the image set."""
+    name = image_set_name()
+    sets = (yaml.safe_load(IMAGE_SET_FILE.read_text()) or {}).get("image_sets") or {}
+    if name not in sets:
+        sys.exit(f"[campaign] image set {name!r} is not in {IMAGE_SET_FILE}; known: {', '.join(sets)}")
+    refs: dict[str, str] = {}
+    for var, path in WORKFLOW_IMAGES.items():
+        node: Any = sets[name].get("images") or {}
+        for part in path:
+            node = (node or {}).get(part)
+        if not isinstance(node, str) or not node:
+            sys.exit(f"[campaign] image set {name!r} has no {'.'.join(path)} (for {var})")
+        refs[var] = node
+    return name, refs
+
+
+def split_ref(ref: str) -> tuple[str, str | None]:
+    """repo:tag@sha256:... -> (repo:tag, sha256:...)."""
+    tag_ref, _, digest = ref.partition("@")
+    return tag_ref, digest or None
+
+
+def gpu_nodes() -> list[str]:
+    out = subprocess.run(["kubectl", "get", "nodes", "-o",
+                          "jsonpath={range .items[*]}{.metadata.name} "
+                          "{.status.allocatable.nvidia\\.com/gpu}{\"\\n\"}{end}"],
+                         capture_output=True, text=True).stdout.split("\n")
+    return [line.split()[0] for line in out if len(line.split()) == 2 and line.split()[1] != "0"]
+
+
+def verify_images(refs: dict[str, str]) -> dict[str, dict[str, Any]]:
+    """Is the image each tag names on the GPU node the one the catalog pins?
+
+    A kind node's containerd holds what `kind load` gave it, by tag and image
+    id, with no registry digest -- so a `repo:tag@sha256:` reference cannot be
+    resolved there, and a pod is given the tag. The digest is checked here
+    instead: the host's docker knows which local image carries the pinned
+    registry digest, and that image's id must be the id the node holds under
+    the tag. A tag that was repointed, or a node loaded from another build,
+    shows up as a mismatch rather than as a run on an image nobody pinned."""
+    nodes = gpu_nodes()
+    report: dict[str, dict[str, Any]] = {}
+    for var, ref in refs.items():
+        tag_ref, digest = split_ref(ref)
+        repo = tag_ref.rsplit(":", 1)[0]
+        row: dict[str, Any] = {"pinned": ref, "submitted": tag_ref, "ok": False}
+        pinned_id = None
+        if digest:
+            proc = subprocess.run(["docker", "image", "inspect", f"{repo}@{digest}",
+                                   "--format", "{{.Id}}"], capture_output=True, text=True)
+            pinned_id = proc.stdout.strip() if proc.returncode == 0 else None
+        row["pinned_image_id"] = pinned_id
+        for node in nodes:
+            proc = subprocess.run(["docker", "exec", node, "crictl", "inspecti", "-o", "json",
+                                   f"docker.io/{tag_ref}" if tag_ref.count("/") == 1 else tag_ref],
+                                  capture_output=True, text=True)
+            try:
+                node_id = json.loads(proc.stdout)["status"]["id"] if proc.returncode == 0 else None
+            except (json.JSONDecodeError, KeyError):
+                node_id = None
+            row.setdefault("nodes", {})[node] = node_id
+        node_ids = set((row.get("nodes") or {}).values())
+        if not digest:
+            row["problem"] = "the image set pins no digest"
+        elif pinned_id is None:
+            row["problem"] = f"{repo}@{digest} is not on this host: docker pull it, then kind load"
+        elif None in node_ids or not node_ids:
+            row["problem"] = f"{tag_ref} is not on the GPU node: kind load docker-image {tag_ref}"
+        elif node_ids != {pinned_id}:
+            row["problem"] = (f"the node's {tag_ref} is not the pinned image "
+                              f"(node {sorted(i[:19] for i in node_ids)}, pinned {pinned_id[:19]})")
+        else:
+            row["ok"] = True
+        report[var] = row
+    return report
+
+
+def resolve_images(allow_drift: bool) -> tuple[dict[str, str], dict[str, Any]]:
+    """The images a run is submitted with, and the record of how they were checked."""
+    name, refs = pinned_images()
+    report = verify_images(refs)
+    bad = {var: row for var, row in report.items() if not row["ok"]}
+    for var, row in report.items():
+        print(f"[campaign] image {var}: {row['submitted']}"
+              + ("" if row["ok"] else f"  -- {row['problem']}"))
+    if bad and not allow_drift:
+        sys.exit(f"[campaign] {len(bad)} image(s) are not what image set {name!r} pins "
+                 f"({IMAGE_SET_FILE}); fix the node or the catalog, or pass --allow-image-drift "
+                 "to fly them anyway (recorded in every run.json)")
+    return ({var: row["submitted"] for var, row in report.items()},
+            {"image_set": name, "file": str(IMAGE_SET_FILE), "verified": not bad, "images": report})
+
+
+def evaluator_image() -> str:
+    """The campaign-level scorer: the image set's sim_real_eval, unless
+    MNS_SIM_REAL_EVAL_IMAGE names another. It must carry `vio-stress`."""
+    if os.environ.get("MNS_SIM_REAL_EVAL_IMAGE"):
+        return os.environ["MNS_SIM_REAL_EVAL_IMAGE"]
+    return pinned_images()[1]["sim_real_eval_image"]
 
 
 # --------------------------------------------------------------------------
@@ -305,7 +430,7 @@ def route_blob(campaign_file: Path, campaign: dict[str, Any]) -> str:
 
 
 def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
-           campaign_file: Path, viz: bool = False) -> str:
+           campaign_file: Path, images: dict[str, str], viz: bool = False) -> str:
     mission = campaign.get("mission") or {}
     inputs = (campaign.get("evaluation") or {}).get("inputs") or {}
     stack_rel = os.path.relpath(stack_dir.resolve(), WORKSPACE_HOST / "generated")
@@ -327,6 +452,8 @@ def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
         "record_sec": str(int(mission.get("timeout_s", 300))),
         "gates_json": json.dumps(run_gates),
         "route_b64": route_blob(campaign_file, campaign),
+        # The workflow names no image of its own; each comes from the catalog.
+        **images,
     }
     argv = ["workflow", "submit", str(WORKFLOW),
             "--set", *[f"{k}={v}" for k, v in sets.items()],
@@ -408,7 +535,7 @@ def download(workflow_id: str, task: str, dest: Path, endpoint: str) -> bool:
 
 def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any],
             workflow_id: str, platform: dict[str, str], run_gates: dict[str, Any],
-            endpoint: str) -> None:
+            endpoint: str, images: dict[str, Any] | None = None) -> None:
     status, tasks = wait(workflow_id)
     rec.finished_at = now()
     bundle = root / "runs" / rec.run_key
@@ -478,6 +605,8 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
         # OSMO- and omega-specific facts live here, not in the RunRecord.
         "target": "osmo", "workflow_id": workflow_id, "workflow_status": status,
         "tasks": tasks, "platform": platform, "gates": run_gates,
+        # Which images flew, as pinned and as found on the node.
+        "images": images,
         # Whether someone could watch this run, read from what actually ran.
         "viz": {"foxglove": "foxglove" in tasks,
                 "chase_cam": (Path(rec.stack) / "config" / "unreal-airsim" / "settings.json").exists()
@@ -560,6 +689,15 @@ def evaluate(root: Path, campaign: dict[str, Any] | None = None) -> int:
     reports.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((root / "campaign_manifest.json").read_text())
     runs = [r for r in manifest.get("runs", []) if r.get("status") == "done" and r.get("bundle")]
+    image = evaluator_image()
+    if sh(["docker", "run", "--rm", image, "vio-stress", "--help"], check=False).returncode != 0:
+        # The published -latest worker predates vio-stress (2026-08-09). Until
+        # a worker that has it is published and pinned in the catalog, point
+        # MNS_SIM_REAL_EVAL_IMAGE at a local build of
+        # MnS-Integration-Platform/tools/sim_real_eval.
+        print(f"[campaign] {image} has no vio-stress; set MNS_SIM_REAL_EVAL_IMAGE to a worker "
+              "that does. Runs are collected; `evaluate` scores them later.", file=sys.stderr)
+        return 3
 
     windowed = [r for r in runs
                 if (Path(r["bundle"]) / "eval" / "vio-eval" / "estimate.tum").exists()]
@@ -570,14 +708,14 @@ def evaluate(root: Path, campaign: dict[str, Any] | None = None) -> int:
         argv = ["vio-stress", str(root / "campaign_manifest.json"), "--out", str(reports)]
         if est_topic:
             argv += ["--est-topic", est_topic]
-        return sh(["docker", "run", "--rm", "-v", f"{root}:{root}", SIM_REAL_EVAL_IMAGE,
+        return sh(["docker", "run", "--rm", "-v", f"{root}:{root}", image,
                    *argv], check=False, capture=False).returncode
 
     rc = 0
     for r in windowed:
         bundle = Path(r["bundle"])
         pair = bundle / "eval" / "vio-eval"
-        proc = sh(["docker", "run", "--rm", "-v", f"{root}:{root}", SIM_REAL_EVAL_IMAGE,
+        proc = sh(["docker", "run", "--rm", "-v", f"{root}:{root}", image,
                    "vio-stress", str(bundle),
                    "--est", str(pair / "estimate.tum"),
                    "--gt", str(pair / "ground_truth.tum"),
@@ -586,9 +724,27 @@ def evaluate(root: Path, campaign: dict[str, Any] | None = None) -> int:
     return rc
 
 
+def wants_viz(spec: dict[str, Any], flag: bool | None) -> bool:
+    """Whether a run gets the live Foxglove task.
+
+    The ScenarioSpec's own switch, `runtime.features.foxglove_bridge`, so a
+    campaign can turn it on for every run or, through a variant's overrides,
+    for some; `--viz` / `--no-viz` override it for one invocation. Absent, it
+    is off under OSMO -- the compose generator defaults it on, but here it adds
+    a pod and holds the gang for viewers, which a scored matrix should not pay
+    for by default."""
+    if flag is not None:
+        return flag
+    runtime = spec.get("runtime")
+    features = (runtime.get("features") if isinstance(runtime, dict) else None) or {}
+    return bool(features.get("foxglove_bridge", False))
+
+
 def cmd_run(args: argparse.Namespace) -> int:
-    if args.chase_cam and not args.viz:
-        sys.exit("[campaign] --chase-cam is for watching a run: it needs --viz")
+    if args.chase_cam and args.viz is False:
+        sys.exit("[campaign] --chase-cam is for watching a run: it cannot go with --no-viz")
+    if args.chase_cam:
+        args.viz = True
     campaign_file = find_campaign(args.campaign)
     campaign = yaml.safe_load(campaign_file.read_text())
     root = CAMPAIGNS_HOST / str(campaign["id"])
@@ -606,6 +762,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     om = omega_fields(campaign)
     print(f"[campaign] {campaign['id']}: tier={om['tier']} verifies={om['verifies']} gates={run_gates}")
 
+    images, image_record = resolve_images(args.allow_image_drift)
     runs = materialise(campaign_file, CAMPAIGNS_HOST, args.only or [])
     print(f"[campaign] {len(runs)} run(s) materialised under {root}")
     endpoint = storage_endpoint()
@@ -630,10 +787,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             else:
                 generate_stack(spec_file, stack_dir)
             rec.stack = str(stack_dir)
-            wf = submit(stack_dir, campaign, run_gates, campaign_file, viz=args.viz)
+            viz = wants_viz(spec, args.viz)
+            wf = submit(stack_dir, campaign, run_gates, campaign_file, images, viz=viz)
             rec.run_id = wf
-            print(f"[campaign] {key}: submitted {wf}")
-            if args.viz:
+            print(f"[campaign] {key}: submitted {wf}" + (" (live view on)" if viz else ""))
+            if viz:
                 print(f"[campaign] {key}: watch live with  osmo/campaign.py watch {wf}")
             submitted.append((rec, spec_file, wf))
         except RuntimeError as exc:
@@ -641,11 +799,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         write_manifest(root, campaign_file, campaign, records, platform)
         if args.serial and submitted:
             rec_s, spec_s, wf_s = submitted.pop()
-            run_one(rec_s, spec_s, root, campaign, wf_s, platform or {}, run_gates, endpoint)
+            run_one(rec_s, spec_s, root, campaign, wf_s, platform or {}, run_gates, endpoint,
+                    image_record)
             write_manifest(root, campaign_file, campaign, records, platform)
 
     for rec, spec_file, wf in submitted:
-        run_one(rec, spec_file, root, campaign, wf, platform or {}, run_gates, endpoint)
+        run_one(rec, spec_file, root, campaign, wf, platform or {}, run_gates, endpoint,
+                image_record)
         print(f"[campaign] {rec.run_key}: {rec.status}" + (f" ({rec.error})" if rec.error else ""))
         write_manifest(root, campaign_file, campaign, records, platform)
 
@@ -784,6 +944,23 @@ def expose_nodeport(wf: str, pod: str, node_port: int = FOXGLOVE_NODE_PORT) -> s
     return f"ws://{ip}:{node_port}"
 
 
+def cmd_images(args: argparse.Namespace) -> int:
+    """Print the catalog's images for this channel and check the GPU node.
+
+    Also the way to submit the workflow by hand: the last line is the
+    --set-string a bare `osmo workflow submit` needs, since the workflow file
+    names no image of its own."""
+    name, refs = pinned_images()
+    report = verify_images(refs)
+    print(f"image set {name!r} from {IMAGE_SET_FILE}")
+    for var, row in report.items():
+        print(f"  {var:22} {'ok  ' if row['ok'] else 'DRIFT'} {row['pinned']}")
+        if not row["ok"]:
+            print(f"  {'':22}       {row['problem']}")
+    print("--set-string " + " ".join(f"{v}={r['submitted']}" for v, r in report.items()))
+    return 0 if all(r["ok"] for r in report.values()) else 1
+
+
 def cmd_reindex(args: argparse.Namespace) -> int:
     """Rebuild the manifest's runs from the evidence on disk.
 
@@ -858,8 +1035,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--only", action="append", help="run key(s) to include")
     p.add_argument("--serial", action="store_true", help="wait for each run before submitting the next")
     p.add_argument("--no-evaluate", action="store_true")
-    p.add_argument("--viz", action="store_true",
-                   help="add the live Foxglove task to every run (see `watch`)")
+    p.add_argument("--viz", action=argparse.BooleanOptionalAction, default=None,
+                   help="the live Foxglove task on (--viz) or off (--no-viz) for every run; "
+                        "default: each run's runtime.features.foxglove_bridge, else off")
+    p.add_argument("--allow-image-drift", action="store_true",
+                   help="fly even if a node's image is not the one the catalog pins "
+                        "(each run.json records what flew)")
     p.add_argument("--chase-cam", action="store_true",
                    help="with --viz: a third-person camera behind the drone. Thins the "
                         "stereo pair's rate, so the run is for looking, not scoring")
@@ -874,6 +1055,8 @@ def main(argv: list[str] | None = None) -> int:
                         "30000-32767)")
     p.add_argument("--wait", type=float, default=900.0, help="seconds to wait for the task to start")
     p.set_defaults(fn=cmd_watch)
+    p = sub.add_parser("images", help="the images a run would fly, and whether the GPU node has them")
+    p.set_defaults(fn=cmd_images)
     p = sub.add_parser("reindex", help="rebuild the manifest's runs from the evidence on disk")
     p.add_argument("campaign")
     p.set_defaults(fn=cmd_reindex)

@@ -336,9 +336,14 @@ default-values:
   viz: false                         # tested as a string: --set viz=false arrives as "false"
   viz_hold_sec: "600"                # with viz, the most the run stays up after the bag closes
   viz_idle_sec: "60"                 # ...and it is released after this long with nobody watching
-  runtime_host_image: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0
-  bridge_image: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0
-  vio_estimator_image: dhdevspace/auto_mns:vio-estimator-openvins-69488123
-  px4_image: dhdevspace/auto_mns:px4-airsim-px4-v1.0.0
-  ardupilot_image: dhdevspace/auto_mns:ardupilot-v1.0.0
-  sim_real_eval_image: dhdevspace/auto_mns:sim-real-eval-worker-latest
+  # Images: none named here. images/catalog.yaml pins them, and
+  # osmo/campaign.py passes the channel's set on every submit, checked against
+  # what the GPU node holds. By hand: `osmo/campaign.py images` prints the
+  # --set-string to use. Empty is deliberate -- a submit without them is
+  # refused, rather than flying whatever an old default named.
+  runtime_host_image: ""
+  bridge_image: ""
+  vio_estimator_image: ""
+  px4_image: ""
+  ardupilot_image: ""
+  sim_real_eval_image: ""

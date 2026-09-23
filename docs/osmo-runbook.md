@@ -580,7 +580,8 @@ A pod has no screen and the v1 runtime host has no Pixel Streaming (see
 own: its cameras, TF, ground truth and the estimate, over Foxglove.
 
 ```bash
-osmo/campaign.py run vio-osmo-condo --only calm-r1 --viz    # adds the foxglove task
+osmo/campaign.py run vio-osmo-condo --only calm-r1 --viz    # adds the foxglove task (or set
+                                                            # runtime.features.foxglove_bridge: true)
 osmo/campaign.py watch sim-bridge-vio-55                    # prints ws://172.27.0.4:30765
 osmo/campaign.py watch sim-bridge-vio-55 --tunnel           # or: ws://localhost:8765, held
 ```
@@ -731,12 +732,13 @@ CampaignSpec mission / evaluation --osmo/campaign.py submit--> --set / --set-str
 | `vehicles[0].cameras`, `sensors`, `dynamics` | `settings.json`, `topic_names.yaml` | sim and bridge |
 | `extensions.mns.vio_estimator.config_dir` | `vio/estimator_config.yaml`, the kalibr chains | vio |
 | `seed` (set per run by `seeds`) | `scenario/scenario_runtime.json`, `object_clutter.yaml` | sim |
+| `runtime.features.foxglove_bridge` | -- (read by `osmo/campaign.py`) | whether the run gets the live Foxglove task. **Off when absent** under OSMO, although the compose generator defaults it on; `--viz` / `--no-viz` override it. Set it in a variant's `overrides` to watch only some runs |
 
 What a ScenarioSpec says and OSMO does **not** honour, each a silent no-op
 rather than an error:
 
-- **Images.** They are the workflow's `default-values`, not the generated
-  `.env`. A different image is `--set <x>_image=...` or an edit there.
+- **Images, from the spec.** Neither the ScenarioSpec nor the generated
+  `.env` chooses them. They come from the image catalog (next section).
 - **`runtime.features.mavros`.** The workflow starts MAVROS whenever the run
   flies.
 - **`ros_domain_id`.** Every task is a client of the gang's discovery server.
@@ -745,6 +747,32 @@ rather than an error:
 - **The vehicle's name.** The workflow's `vehicle` default is `Drone1` and the
   executor does not pass another; `runtime_name` must be `Drone1`.
 - **A second vehicle.** Generated into `settings.json`, never flown or recorded.
+
+### Images: from the catalog, checked on the node
+
+The workflow file names no image; its `*_image` values are empty, and a
+submit without them is refused (`Could not parse docker image`). Every run
+flies the images `images/catalog.yaml` pins for the product's channel, read
+from `images/image-set.generated.yaml`, the file the stack generator uses.
+Two overrides, the generator's own: `MNS_IMAGE_SET_FILE` (another file) and
+`MNS_IMAGE_SET` (another set). Otherwise the set is `MNS_CHANNEL`'s (default
+`v1`).
+
+A kind node holds images by tag with no registry digest, so a pod is given
+the tag. The digest is checked before submitting instead: the host image that
+carries the pinned digest must be the image the GPU node holds under that
+tag. A mismatch stops the run; `--allow-image-drift` flies anyway, and each
+`run.json` has an `images` block saying what was pinned, what was submitted
+and what the node held.
+
+```bash
+osmo/campaign.py images        # ok / DRIFT per image, and the --set-string for a hand submit
+```
+
+The campaign-level scorer is the set's `sim_real_eval` unless
+`MNS_SIM_REAL_EVAL_IMAGE` names another. The published `-latest` worker
+predates `vio-stress`, so today `evaluate` stops with a message saying so
+until that variable names a worker that has it.
 
 ### The whole tree
 
@@ -757,7 +785,7 @@ rather than an error:
     routes/*.yaml                              mission.trajectory
   osmo/
     campaign.py                                the executor: run, watch, status, evaluate, reindex
-    sim-bridge-vio.workflow.yaml               structure and default-values (images live here)
+    sim-bridge-vio.workflow.yaml               structure and default-values (no images: see "Images")
     files/                                     one script per task -- behaviour is edited here, not in the YAML
     kind-osmo-cluster-config*.yaml, setup-local-osmo.sh
   generated/campaigns/<id>/                    WRITTEN FOR YOU
@@ -796,7 +824,8 @@ Typical changes, and where they go:
 | switch autopilot | `mission.autopilot` **and** `runtime.profile`, together |
 | tighten or loosen the pass mark | `evaluation.gates` |
 | another level or spawn | `environment` and `vehicles[0].start` |
-| another estimator | `extensions.mns.vio_estimator` and its `config_dir`; the image in the workflow's `vio_estimator_image` |
+| another estimator | `extensions.mns.vio_estimator` and its `config_dir`; its image is the catalog's `vio_estimator` row |
+| watch some runs live | `runtime.features.foxglove_bridge: true` in those variants' `overrides`, or `--viz` for one invocation |
 | a task's behaviour | `osmo/files/<task script>` |
 
 ## A campaign: N runs, N workflows, one scorecard

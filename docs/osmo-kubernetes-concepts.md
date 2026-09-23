@@ -232,7 +232,7 @@ workflow:
     - name: vio-eval
       inputs: [{task: recorder}] # the recorder's {{output}} appears as {{input:0}}
 default-values:                  # template variables, overridable at submit
-  bridge_image: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0
+  bridge_image: ""               # images are passed at submit, from images/catalog.yaml
 ```
 
 The concepts in it:
