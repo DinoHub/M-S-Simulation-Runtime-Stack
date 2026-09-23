@@ -2,6 +2,7 @@
   "SeeDocsAt": "https://cosys-lab.github.io/settings/",
   "SettingsVersion": 2.0,
   "SimMode": "Multirotor",
+  "ClockType": "SteppableClock",
   "ClockSpeed": 1,
   "LocalHostIp": "0.0.0.0",
   "ApiServerPort": 41451,

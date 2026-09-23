@@ -17,6 +17,7 @@
   "EngineSound": false,
 
   "SimMode": "Multirotor",
+  "ClockType": "SteppableClock",
 
   "Wind": {
     "X": 0,
