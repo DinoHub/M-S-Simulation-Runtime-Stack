@@ -56,11 +56,18 @@ mission:
 # leaves a trace in the generated stack rather than being an RPC nobody can
 # see afterwards. Two points is enough to prove the matrix; a real sweep adds
 # points here, not elsewhere.
+#
+# The difference is visual only. The runtime host applies weather.wind to
+# rendered weather (foliage, particles) and never sets AirSim's physics wind,
+# so the vehicle does not feel it: this campaign's calm and wind-6 runs
+# hovered at the same tilt, 0.31-0.34 deg. The value is the 0-10 visual
+# intensity scale, not metres per second. Condo is also indoors, so even the
+# visual effect is mostly out of the cameras' view.
 variants:
 - id: calm
   name: No wind
 - id: wind-6
-  name: Wind 6 m/s
+  name: Wind, visual level 6
   overrides:
     environment:
       # `environment.weather`, not `environment.conditions.weather`. The
@@ -70,11 +77,13 @@ variants:
       # generator's _normalize_conditions reads the top-level `conditions` and
       # `environment.weather`, nothing else. A campaign authored the nested
       # way runs its whole sweep against identical worlds and reports the
-      # spread as if it meant something. scenarios/vio-reference is authored
-      # that way today.
+      # spread as if it meant something. (scenarios/vio-reference was authored
+      # that way; fixed on fix/vio-reference-weather-path.)
       #
-      # The evidence that this path is live: scenario_conditions.json carries
-      # the weather block and the sim gets SCENARIO_CONDITIONS_ENABLED=true.
+      # The evidence that this path reaches the sim: scenario_conditions.json
+      # carries the weather block and the sim gets
+      # SCENARIO_CONDITIONS_ENABLED=true. Reaching the sim is not moving the
+      # vehicle -- see the note above the variants.
       weather:
         enabled: true
         wind: 6.0

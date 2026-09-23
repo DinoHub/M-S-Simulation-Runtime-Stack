@@ -520,6 +520,21 @@ worst of both.
 The general lesson for a campaign under any executor: a variant is not proven
 by appearing in the spec. Diff two generated stacks before believing a sweep.
 
+**And a live path is still not physical wind.** Reaching
+`scenario_conditions.json` proves the sim received the value, not that the
+vehicle felt it. The runtime host's `ScenarioConditionsSkyAdapter` (TEVV-Airsim)
+sends `weather.wind` to visual weather only -- UltraDynamicWeather and AirSim's
+weather effects -- and never calls AirSim's physics `setWind`; the generated
+`settings.json` has no `Wind` either. The ground truth shows it: calm and wind-6
+runs of this campaign hovered at the same tilt, 0.31-0.34 deg, where a vehicle
+holding position in real wind must lean into it. The value is a 0-10 visual
+intensity (at or below 1 read as a 0-1 fraction), not m/s. The tevv_ws harness
+this replaced sent `wind N 0 0` over RPC, which was physics wind; the move to a
+declared condition kept the traceability and lost the physics.
+`tevv-campaign validate` now warns on any wind and fails the nested spelling
+(platform `feat/campaign-target-osmo`). The second lesson: diff the vehicle's
+motion, not only the stacks.
+
 ## A campaign: N runs, N workflows, one scorecard
 
 ```bash
