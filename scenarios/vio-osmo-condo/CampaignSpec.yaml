@@ -57,17 +57,19 @@ mission:
 # see afterwards. Two points is enough to prove the matrix; a real sweep adds
 # points here, not elsewhere.
 #
-# The difference is visual only. The runtime host applies weather.wind to
-# rendered weather (foliage, particles) and never sets AirSim's physics wind,
-# so the vehicle does not feel it: this campaign's calm and wind-6 runs
-# hovered at the same tilt, 0.31-0.34 deg. The value is the 0-10 visual
-# intensity scale, not metres per second. Condo is also indoors, so even the
-# visual effect is mostly out of the cameras' view.
+# Two kinds of wind, set separately. `wind` is visual: the runtime host feeds
+# it to rendered weather as a 0-10 intensity, and on its own the vehicle does
+# not feel it -- this campaign's first calm and wind-6 runs hovered at the same
+# tilt, 0.31-0.34 deg. `wind_mps` / `wind_from_deg` are physics: the generator
+# writes them as settings.json `Wind`, which the host's physics engine applies
+# as drag (platform feat/campaign-target-osmo). AirSim wind has no occlusion,
+# so indoors in Condo the vehicle feels it through the walls; the visual
+# effect is mostly out of the cameras' view here.
 variants:
 - id: calm
   name: No wind
 - id: wind-6
-  name: Wind, visual level 6
+  name: Wind 6 m/s from the west (physics) + visual level 6
   overrides:
     environment:
       # `environment.weather`, not `environment.conditions.weather`. The
@@ -86,7 +88,9 @@ variants:
       # vehicle -- see the note above the variants.
       weather:
         enabled: true
-        wind: 6.0
+        wind: 6.0            # visual: 0-10 intensity, what the cameras see
+        wind_mps: 6.0        # physics: settings.json Wind, what the vehicle feels
+        wind_from_deg: 270   # blowing FROM the west, so the air moves east
 
 # A single VIO run is noise. Two repeats per point is the minimum that lets
 # a difference between variants be told apart from a difference between runs.
