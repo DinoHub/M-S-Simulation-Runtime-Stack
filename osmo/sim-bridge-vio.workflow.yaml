@@ -693,6 +693,7 @@ workflow:
           import json
           import rosbag2_py
 
+          from sensor_msgs.msg import CameraInfo
           from nav_msgs.msg import Odometry
           from std_msgs.msg import Int32
           from rosgraph_msgs.msg import Clock
@@ -708,6 +709,13 @@ workflow:
               ("/clock", Clock, "rosgraph_msgs/msg/Clock", qos_profile_sensor_data),
               ("/tf", TFMessage, "tf2_msgs/msg/TFMessage", 10),
               ("/tf_static", TFMessage, "tf2_msgs/msg/TFMessage", LATCHED),
+              # One per frame, stamped like the frame, a few hundred bytes: the
+              # camera rate the estimator was actually fed, without recording
+              # the images. On XFS the estimator held for twenty seconds and
+              # then ran away under OSMO but not under compose, and nothing in
+              # the bag could say whether the frames had thinned out.
+              ("/camera/front/camera_info", CameraInfo, "sensor_msgs/msg/CameraInfo", qos_profile_sensor_data),
+              ("/camera/front_right/camera_info", CameraInfo, "sensor_msgs/msg/CameraInfo", qos_profile_sensor_data),
           ]
 
           def main():
@@ -896,13 +904,27 @@ workflow:
               t0 = gt.stamp_ns[0]
               sec = lambda ns: (ns - t0) / 1e9
 
-              rest = float(np.mean(gt.pos[:50, 2]))
-              up = np.where(gt.pos[:, 2] > rest + CLIMB_M)[0]
+              # The resting height is read where the estimator starts, not at
+              # the top of the bag. OpenVINS publishes only once it has
+              # initialised on a still vehicle, so that moment is on the
+              # ground by construction -- whereas the first seconds of a bag
+              # need not be. On XFS under OSMO the vehicle fell through the
+              # terrain before World Partition streamed it in and was put
+              # back 47 m higher five seconds later; a rest height averaged
+              # over those seconds made the whole recording look airborne.
+              t_est = est.stamp_ns[0]
+              after = gt.stamp_ns >= t_est
+              if not after.any():
+                  print("ground truth ends before the estimate starts", file=sys.stderr)
+                  return 1
+              rest = float(np.interp(t_est, gt.stamp_ns, gt.pos[:, 2]))
+              up = np.where(after & (gt.pos[:, 2] > rest + CLIMB_M))[0]
               if len(up) < 2:
                   print("the vehicle never left the ground; scoring the whole recording")
                   lo, hi = sec(gt.stamp_ns[0]), sec(gt.stamp_ns[-1])
               else:
-                  lo, hi = sec(gt.stamp_ns[up[0]]) - LEAD_S, sec(gt.stamp_ns[up[-1]]) + TAIL_S
+                  lo = max(sec(gt.stamp_ns[up[0]]) - LEAD_S, sec(t_est))
+                  hi = sec(gt.stamp_ns[up[-1]]) + TAIL_S
 
               def clip(s):
                   m = (sec(s.stamp_ns) >= lo) & (sec(s.stamp_ns) <= hi)
@@ -1038,7 +1060,21 @@ workflow:
                   # test.
                   falling = fall_rate > limit and horizontal < 1.0
                   sank = (samples[0][3] - samples[-1][3]) > 5.0 and not falling
-                  ok = not falling and not sank
+                  # A third: fell through and was put back. On a World
+                  # Partition level the terrain streams in around the vehicle
+                  # after it spawns; if physics starts first the vehicle drops
+                  # through where the ground will be, and something returns
+                  # it within seconds. First and last samples then agree, so
+                  # the two tests above pass -- but the flight controller's
+                  # EKF has just seen a 47 m round trip (XFS run 41: PX4's
+                  # local origin read 36 m before takeoff) and that run's VIO
+                  # scored 10.4 m against 1.0-1.5 m for the runs without it.
+                  # Judged against where the vehicle rests, since the bag can
+                  # begin mid-drop.
+                  zs = sorted(s[3] for s in samples)
+                  resting = zs[len(zs) // 2]
+                  dropped = (resting - zs[0]) > 5.0 and not falling and not sank
+                  ok = not falling and not sank and not dropped
                   report = {
                       "spawn_ok": ok,
                       "reason": ("free fall: descending %.2f m/s with %.2f m of "
@@ -1047,7 +1083,11 @@ workflow:
                                  "sank %.1f m below its start after flying %.1f m: "
                                  "landed where the level has no floor"
                                  % (samples[0][3] - samples[-1][3], horizontal)
-                                 if sank else "vehicle stayed in the world"),
+                                 if sank else
+                                 "fell %.1f m below its resting height and was put "
+                                 "back: the terrain was not there yet when physics "
+                                 "started" % (resting - zs[0])
+                                 if dropped else "vehicle stayed in the world"),
                       "z_first_m": round(samples[0][3], 3),
                       "z_last_m": round(samples[-1][3], 3),
                       "z_min_m": round(min(s[3] for s in samples), 3),

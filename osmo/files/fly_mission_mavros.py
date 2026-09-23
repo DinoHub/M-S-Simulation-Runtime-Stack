@@ -371,6 +371,11 @@ def sample(plan: dict, t: float) -> tuple[list[float], float]:
     return xyz, float(a["yaw"]) + f * delta
 
 
+# Seconds of a route PX4 flies on the ground before its first ascent: enough to
+# hold OFFBOARD through the arming call, well inside COM_DISARM_PRFLT.
+PX4_ROUTE_LEAD_S = 2.0
+
+
 def first_ascent(plan: dict, floor_m: float = 0.3) -> tuple[float, float]:
     """When the route first asks to be off the ground, and how high.
 
@@ -428,8 +433,20 @@ def main(argv: list[str] | None = None) -> int:
             # arriving, and ends as soon as they stop, so the stream is primed
             # first and never interrupted: no takeoff command, one mode from
             # arming to the landing call.
+            # A route is entered shortly before it first leaves the ground, not
+            # at its t=0. PX4 disarms a vehicle that has not taken off within
+            # COM_DISARM_PRFLT of arming (10 s by default), and a route that
+            # holds on the ground for 8 s before a 3 s climb -- the reference
+            # route does -- is disarmed on the pad and then flown by nobody:
+            # the setpoints stream, the pilot logs every waypoint, and the
+            # vehicle never moves. The ground seconds exist to give an
+            # estimator a still window, which the pre-arm settle has already
+            # provided, so skipping them costs nothing. ArduPilot enters at the
+            # ascent itself (after its takeoff command); PX4 keeps a short
+            # lead so OFFBOARD is established on the ground first.
+            start_t = max(0.0, first_ascent(plan)[0] - PX4_ROUTE_LEAD_S) if plan else 0.0
             if plan:
-                point = pilot.prestream(plan, origin=ground)
+                point = pilot.prestream(plan, at=start_t, origin=ground)
             else:
                 x, y, _ = pilot.position()
                 point = (x, y, altitude)
@@ -438,7 +455,6 @@ def main(argv: list[str] | None = None) -> int:
             pilot.arm()
             if not plan:
                 pilot.climb_offboard(altitude)
-            start_t = 0.0
         else:
             pilot.ensure_mode("GUIDED")
             pilot.arm()

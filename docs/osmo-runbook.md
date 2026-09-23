@@ -535,6 +535,33 @@ declared condition kept the traceability and lost the physics.
 (platform `feat/campaign-target-osmo`). The second lesson: diff the vehicle's
 motion, not only the stacks.
 
+## ArduPilot, and XFS
+
+Both run now. `vio-osmo-condo-ardupilot` scored 0.058 m on the bedroom route
+(PX4: 0.05-0.07 m); `vio-osmo-xfs` flew the full 51 m yard box and scored
+1.53 m (compose, same route: 1.02 m). Each took its own set of fixes, all of
+the same kind as before -- the flow reporting success on a run that did
+nothing useful.
+
+| symptom | cause | fix |
+| --- | --- | --- |
+| ArduPilot armed, route "flown", ground truth never left (0, 0, 0), pilot exit 0 | GUIDED ignores setpoints until a takeoff command; the pilot's route path never sent one | MnS-Integration-Platform#109: take off to the route's first altitude, enter the route there |
+| after that fix, a 1.2 m route flown at 3.4 m | `relative_to_start` read the origin after the takeoff | #109: origin read once, on the ground |
+| PX4 on the XFS route: `Disarmed by auto preflight disarming`, never moved | PX4 disarms if not airborne within `COM_DISARM_PRFLT` (10 s); the reference route holds on the ground 8 s then climbs over 3 s | #109: PX4 enters a route 2 s before its first ascent |
+| ArduPilot task exits 1 after "Loaded defaults", nothing on stderr | the image's entrypoint drops to uid 1000 with gosu when started as root; a pod starts as root, compose never does (`user: ${HOST_UID}:${GID}`). Same binary, args and pod: root flies at 333 FPS, gosu exits 1 | the task runs `run_ardupilot_airsim.sh` directly, as root. Why the dropped process dies is not isolated |
+| AirSim never feeds ArduPilot | ArduPilot is the one connector the sim dials *out* to (UDP), at the generated settings' compose hostname | the sim task resolves the autopilot pod and patches `UdpIp` |
+| MAVROS on `udp://:14550@` for both autopilots | an if-tag on its own line inside the bridge's backslash-continued `ros2 launch` renders as a blank line and ends the command; every later argument dropped | conditionals inline; both renders checked for a complete command |
+| XFS: free fall at 8.33 m/s from spawn | the v1 XFS terrain sits tens of metres *above* the NED origin; the origin and the v2 build's yard coordinate (z = 72) are both underground | spawn measured by holding the vehicle 160 m up for the terrain to stream in and dropping it: ground at NED z = -18.70 at (423, -906); spawn at -21.0 |
+| XFS yard: reference route's first leg is 10 m east | a container stack stands 4 m east of the spawn | the box mirrored west (`routes/yard-box.yaml`) |
+| XFS run 41: 10.4 m ATE, PX4 local origin 36 m before takeoff | World Partition streams terrain in after spawn; physics started first, the vehicle fell 49 m and was put back within 5 s. First and last samples agreed, so spawn-eval passed it | spawn-eval flags a drop of more than 5 m below the resting height; run 41 now reads `spawn_ok: false`. The race itself is the runtime host's to fix |
+| XFS scored against the whole bag after a drop | the flight-window cut read the resting height from the first 50 samples, mid-fall | resting height read where the estimator starts, which is on a still vehicle by construction |
+
+The recorder now also carries the two `camera_info` topics: one small
+message per frame, stamped like the frame, so the camera rate the estimator
+was fed is in the evidence (run 42: a steady 30 Hz, the bridge's cap). The
+1.0 m gate was sized for condo's 7.5 m path; on XFS's 51 m it is a 2% drift
+bound. Left as it is, and worth deciding per level.
+
 ## A campaign: N runs, N workflows, one scorecard
 
 ```bash

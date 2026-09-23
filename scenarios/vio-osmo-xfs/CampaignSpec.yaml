@@ -40,10 +40,10 @@ mission:
   # and `timeout_s` are read by both.
   source: external
   autopilot: px4
-  # The reference campaign's route: a 10 m box at 2-4 m with two yaw steps.
-  # Outdoors there is nothing to stay under, and this is the flight the
-  # frozen calibration in ./openvins was characterised against.
-  trajectory: ./routes/reference-flight.yaml
+  # The reference campaign's route -- a 10 m box at 2-4 m with two yaw steps,
+  # the flight the frozen calibration in ./openvins was characterised on --
+  # mirrored to the west of the container-yard spawn, where it is open.
+  trajectory: ./routes/yard-box.yaml
   done: timeout
   # A cap, not the length of the recording: the recorder stops when the pilot
   # reports the mission done. Sized to boot, the pilot's readiness gate (up to

@@ -44,10 +44,21 @@ vehicles:
   name: Drone1
   runtime_name: Drone1
   ros_domain_id: 1
+  # The container yard, on the ground. Measured on this build by holding the
+  # vehicle 160 m up for the terrain to stream in and letting it fall: it
+  # came to rest on the landscape at NED z = -18.70. The v1 XFS terrain sits
+  # tens of metres ABOVE the NED origin, so the origin (0, 0, 0) and the
+  # older xfs-level coordinates (z = 72) are both underground -- the vehicle
+  # spawns under the world and falls forever; spawn-eval reported 8.33 m/s
+  # of free fall on the first OSMO run. Condo taught the same lesson the
+  # other way up.
+  #
+  # -21.0 is 2.3 m above the measured ground, so the vehicle drops onto it
+  # rather than into it.
   start:
-    x: 0
-    y: 0
-    z: 0
+    x: 423
+    y: -906
+    z: -21.0
   # MAVROS attaches to the PX4 image's mavlink-router, and the router has a
   # dedicated single-peer UDP server for it: MAVROS_UDP on 14555. Left to the
   # generator's default the bridge is pointed at AirSim_Inbound (14580)
