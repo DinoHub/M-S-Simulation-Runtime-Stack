@@ -28,6 +28,16 @@ ALL             ?= false
 # Also forwarded to `make stop` (stop.sh auto-detects when empty).
 SCENARIO        ?=
 
+# X11 cookie for ScenarioLab and the simulator window. A desktop terminal
+# already exports it; SSH, tmux and some Wayland shells do not, and then
+# Unreal containers crash-loop. Keep a valid XAUTHORITY, otherwise use the
+# newest GNOME/Wayland (mutter) cookie, then the GDM one. Empty when none
+# exists, and tools/check_docker.sh's check_x11 then says what to do.
+XAUTHORITY := $(shell f="$$XAUTHORITY"; [ -f "$$f" ] && { echo "$$f"; exit; }; \
+	for c in $$(ls -t /run/user/$$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null) /run/user/$$(id -u)/gdm/Xauthority; do \
+	[ -f "$$c" ] && { echo "$$c"; exit; }; done)
+export XAUTHORITY
+
 # Transitional image workflow: development is local-first and tag-only;
 # production keeps the immutable catalog pins.
 IMAGE_MODE ?= development

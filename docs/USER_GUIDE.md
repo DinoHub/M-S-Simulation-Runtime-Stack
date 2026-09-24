@@ -10,6 +10,35 @@ the product.
 
 ---
 
+## Quick start
+
+Run these commands on an Ubuntu desktop with an NVIDIA GPU and Docker
+installed. You need a Docker Hub account and a GitHub account that can read
+the MnS images and packs; ask your MnS contact for access.
+
+```bash
+git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
+cd M-S-Simulation-Runtime-Stack
+
+./setup.sh              # checks this machine and creates .env with defaults
+docker login            # Docker Hub: the MnS images
+gh auth login           # GitHub: the MnS packs (or: export GH_TOKEN=<token>)
+./product.sh setup      # pulls the release images, once
+make dashboard          # first run downloads about 15 GB of packs
+```
+
+Then open **<http://localhost:3001>** and follow [the walkthrough](#5-walkthrough-from-scenario-to-rosbag).
+
+**You do not need to edit anything.** `./setup.sh` copies
+[`.env.example`](../.env.example) to `.env`, and every setting in it has a
+working default. `make dashboard` finds your display cookie on its own.
+
+If `./setup.sh` prints a `MISSING:` or `WARNING:` line, fix it and run
+`./setup.sh` again. Each line includes the command that fixes it. Sections 2–4
+explain each step in detail.
+
+---
+
 ## 1. What you are running
 
 | Piece | What it is | Where you see it |
@@ -87,7 +116,7 @@ cd M-S-Simulation-Runtime-Stack
 ```
 
 **Fix every warning that `./setup.sh` prints before you continue.** It checks
-Docker access, the NVIDIA runtime and the Python modules.
+Docker access, the NVIDIA runtime, the Python modules and both logins.
 
 `./product.sh setup` is the one step that downloads the full image set. It
 retries each pull if Docker Hub is flaky. Re-run it only when you want to
@@ -96,15 +125,19 @@ refresh to newly published images.
 ### Display access (GNOME / Wayland hosts)
 
 ScenarioLab and the simulator open windows on your desktop, so they need your X
-authority cookie. On GNOME/Wayland (the Ubuntu default), set it in **the
-terminal you run `make dashboard` from**:
+authority cookie. `make dashboard` looks for it on its own: it keeps a valid
+`XAUTHORITY`, and otherwise uses the newest GNOME/Wayland (mutter) cookie, then
+the GDM one.
+
+Run `make dashboard` from a terminal on the desktop itself. It prints
+`WARNING: X11 pass-through looks broken` only when no cookie can be found.
+That usually means you are connected over SSH, or `DISPLAY` is not set. In
+that case, set both by hand:
 
 ```bash
+export DISPLAY=:0      # or :1 — run `echo $DISPLAY` in a desktop terminal to see which
 export XAUTHORITY=$(ls -t /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -1)
-xhost +si:localuser:$USER
 ```
-
-You can add both lines to `~/.bashrc`.
 
 Without this, Unreal containers start, fail to open a display, and restart in a
 loop. The only visible error is
@@ -437,7 +470,7 @@ checks:
 | `authoring_image` / `generator_image` | An image is not on this machine | `./product.sh setup` |
 | `pack_store` | No packs are installed | Step 0 **Download & stage**, or re-run `make dashboard` |
 | `packs_staged` | Packs are installed but ScenarioLab cannot see them | Step 0 **Stage N**, or `tools/stage-authoring-packs.sh` |
-| `display` / `xauthority` | No usable X display | See [Display access](#display-access-gnome--wayland-hosts), then restart the dashboard from that terminal |
+| `display` / `xauthority` | No usable X display | See [Display access](#display-access-gnome--wayland-hosts), then run `make dashboard` again from that terminal |
 | `exports_writable` / `authoring_data_writable` | Folder permissions | Make sure `scenarios/` and `.mns/` belong to you, not root |
 
 ### Common problems
@@ -453,7 +486,7 @@ checks:
 | **Generate** fails with *generation failed* | Usually the generator image is missing, because Generate never pulls it. Run `./product.sh doctor`, then `./product.sh setup`. |
 | Editor: *editor exited immediately (code N)* | Usually the GPU or the display. Check `docker run --rm --gpus all ubuntu nvidia-smi` and the X11 section above. The **Editor log** in Author shows Unreal's own error. |
 | `could not select device driver "nvidia"` | The NVIDIA Container Toolkit is not installed or configured. `./setup.sh` prints the fix. |
-| `…-unreal-airsim is unhealthy` / simulator restarts in a loop | Almost always X11. Set `XAUTHORITY` as above. If an empty directory exists at `/run/user/$(id -u)/gdm/Xauthority`, remove it with `rmdir`. |
+| `…-unreal-airsim is unhealthy` / simulator restarts in a loop | Almost always X11. Run `make dashboard` from a desktop terminal, or set `DISPLAY`/`XAUTHORITY` as above. If an empty directory exists at `/run/user/$(id -u)/gdm/Xauthority`, remove it with `rmdir`. |
 | Launch hangs before *Visualization ready* | The level is still loading. Wait up to 3 minutes and check the `unreal-airsim` row and log. Also make sure nothing else is using port 8765, such as a legacy `./launch.sh` stack or another Foxglove bridge. |
 | PX4 refuses to arm: `Preflight Fail: ekf2 missing data` | PX4's estimator needs 1–2 minutes after spawn. Wait, then arm again. |
 | Lichtblick connects but shows no topics | A ROS domain mismatch. Relaunch from the dashboard so the viewer follows the stack's domain, and check the amber hint on Monitor. |
@@ -514,7 +547,6 @@ checks:
 ./product.sh setup && ./product.sh doctor
 
 # every session
-export XAUTHORITY=$(ls -t /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -1)
 make dashboard                 # → http://localhost:3001
 #   Content → Author (Launch editor, Export) → Generate stack → ROS 2 (pick bag topics)
 #   → Metrics → Launch → fly from Monitor → Launch: Stop

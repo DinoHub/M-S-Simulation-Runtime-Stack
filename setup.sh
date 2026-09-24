@@ -59,14 +59,14 @@ else
 fi
 
 echo
-echo "Checking Python deps for tools/generate_scenario.py..."
+echo "Checking Python deps (scenario generator, image tooling)..."
 
 # launch.sh regenerates templated scenarios with bare `python3`, so these must
 # resolve in the SYSTEM interpreter — a venv would not be picked up. On a
 # PEP 668 host (Ubuntu 26.04+) `pip install` refuses anyway, so apt is the
 # route. Keep the module->package mapping in step with tools/requirements.txt.
 PY_OK=true
-for mod_pkg in "jinja2:python3-jinja2" "dotenv:python3-dotenv"; do
+for mod_pkg in "jinja2:python3-jinja2" "dotenv:python3-dotenv" "yaml:python3-yaml"; do
   mod="${mod_pkg%%:*}"
   pkg="${mod_pkg##*:}"
   if ! python3 -c "import $mod" >/dev/null 2>&1; then
@@ -82,6 +82,36 @@ else
 fi
 
 echo
+echo "Checking registry and pack credentials..."
+
+# Advisory, like the checks above. Both registries are private: images come
+# from Docker Hub (dhdevspace/auto_mns), packs from GitHub releases
+# (DinoHub/TEVV-Airsim, read by tools/install_demo_packs.py).
+DOCKER_LOGIN_OK=false
+docker_config="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+if [ -f "$docker_config" ] && python3 - "$docker_config" <<'PY'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+hub = any("docker.io" in k for k in cfg.get("auths", {}))
+sys.exit(0 if hub or cfg.get("credsStore") or cfg.get("credHelpers") else 1)
+PY
+then
+  DOCKER_LOGIN_OK=true
+  echo "Docker Hub login found."
+else
+  PREFLIGHT_OK=false
+  echo "  MISSING: Docker Hub login  (run: docker login)"
+fi
+GH_LOGIN_OK=false
+if [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ] || { command -v gh >/dev/null 2>&1 && gh auth token >/dev/null 2>&1; }; then
+  GH_LOGIN_OK=true
+  echo "GitHub credentials found."
+else
+  PREFLIGHT_OK=false
+  echo "  MISSING: GitHub credentials for the pack downloads  (run: gh auth login, or export GH_TOKEN=...)"
+fi
+
+echo
 echo "========================================"
 echo " Setup complete"
 echo "========================================"
@@ -92,13 +122,10 @@ if [ "$PREFLIGHT_OK" = false ]; then
   echo "0. Resolve the warnings above (host prerequisites), then re-run ./setup.sh."
   echo
 fi
-echo "1. Review environment configuration:"
-echo "   nano .env"
+n=1
+if [ "$DOCKER_LOGIN_OK" = false ]; then echo "$n. docker login"; n=$((n+1)); fi
+if [ "$GH_LOGIN_OK" = false ]; then echo "$n. gh auth login        (or: export GH_TOKEN=<token>)"; n=$((n+1)); fi
+echo "$n. ./product.sh setup   # pull the release images (once; several GB)"; n=$((n+1))
+echo "$n. make dashboard       # first run downloads ~15 GB of packs, then open http://localhost:3001"
 echo
-echo "2. Log in to the registry holding the sim images (dhdevspace/auto_mns is"
-echo "   private — pulls fail with 'pull access denied' without this):"
-echo "   docker login"
-echo
-echo "3. Launch the stack:"
-echo "   ./launch.sh"
-echo
+echo "Walkthrough: docs/USER_GUIDE.md"
