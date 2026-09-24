@@ -3,7 +3,7 @@
 # them visible to ScenarioLab. Run ./setup.sh first.
 #
 #   ./download-packs.sh --list                 what is available and installed
-#   ./download-packs.sh                        the starter set: Warehouse + Condo (~0.8 GB)
+#   ./download-packs.sh                        the starter set: Warehouse + vehicle models (~0.8 GB)
 #   ./download-packs.sh --all                  every pack (~7.7 GB)
 #   ./download-packs.sh --warehouse --office   only these (vehicle models always added)
 #   ./download-packs.sh --objects              every object pack
@@ -29,9 +29,11 @@ for arg in "$@"; do
   esac
 done
 # The starter set: the smallest level ScenarioLab can open (Warehouse, the
-# one the user guide walks through) and the tiny Condo level. Big packs are
-# opt-in; GitHub releases download slowly.
-STARTER=(--warehouse --condo)
+# one the user guide walks through); the vehicle models are added below.
+# Runtime-only levels (Condo, XFS, ...) are left out: ScenarioLab cannot open
+# them, so they never show in its level list. Big packs are opt-in; GitHub
+# releases download slowly.
+STARTER=(--warehouse)
 STARTER_USED=false
 if [[ ${#SELECTION[@]} -eq 0 ]]; then SELECTION=("${STARTER[@]}"); STARTER_USED=true; fi
 
@@ -79,7 +81,7 @@ PY
 ) || { [[ -n "$plan" ]] && echo "$plan" >&2; exit 2; }
 if [[ "$LIST_ONLY" == true ]]; then
   echo
-  echo "Download: ./download-packs.sh (starter: Warehouse + Condo)  ·  --all  ·  or name packs, e.g. --office --xfs"
+  echo "Download: ./download-packs.sh (starter: Warehouse)  ·  --all  ·  or name packs, e.g. --office --xfs"
   exit 0
 fi
 { read -r PACKS; read -r NEED_GB; read -r ALREADY; } <<<"$plan"

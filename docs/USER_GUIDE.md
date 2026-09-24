@@ -187,7 +187,7 @@ not logged in to GitHub, it runs `gh auth login` for you.
 | Command | What it does |
 |---|---|
 | `./download-packs.sh --list` | Shows every pack: size, whether it is installed, and whether ScenarioLab can open it. |
-| `./download-packs.sh` | Downloads the **starter set**: Warehouse (the level the walkthrough uses), Condo and the vehicle models, about 0.8 GB. |
+| `./download-packs.sh` | Downloads the **starter set**: Warehouse (the level the walkthrough uses) and the vehicle models, about 0.8 GB. |
 | `./download-packs.sh --all` | Downloads everything, about 8 GB. |
 | `./download-packs.sh --office --xfs` | Downloads these as well; the vehicle models are always added. |
 | `./download-packs.sh --objects` | Downloads every object pack. |
@@ -707,7 +707,7 @@ overrides the release, so you would run a different image from everyone else.
 | Author: *not ready*, `pack_store` / `packs_staged` | In Content, click **Download & stage** or **Stage**. |
 | *editor exited immediately* | Usually the GPU or the display. **Editor log** in Author shows Unreal's own error. |
 | Generate prints *…different registry digests; proceeding without enforcing base-release compatibility* | Advisory only: the level pack was cooked against an earlier build of the same base release. Generation continues and the level loads. |
-| A level shows *runtime only* in Content | Expected for Condo, XFS, Safti and Fisherman's Cabin; see [Known limitations](#10-known-limitations). Author in Warehouse or Office Environment. |
+| A downloaded level (Condo, XFS, Safti, Fisherman's Cabin) is missing from ScenarioLab's list, or shows *runtime only* in Content | Expected: ScenarioLab cannot open those four, so it doesn't list them; see [Known limitations](#10-known-limitations). Author in Warehouse or Office Environment. |
 | Scenario doesn't appear in Authored scenarios | It wasn't exported; closing ScenarioLab does not save. Check its status line for *Exported ScenarioSpec*. |
 | Export succeeded but has a default drone at the origin | No drone was placed. Export adds a default one; run **Validate** first. |
 
