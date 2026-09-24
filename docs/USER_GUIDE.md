@@ -476,7 +476,15 @@ Always stop through the dashboard. A bag killed mid-write has no
 
 ### Step 5: Get your rosbag
 
-Each run gets its own folder in `runs/`:
+Everything a run produces is inside the folder you cloned
+(`M-S-Simulation-Runtime-Stack/`). Each run gets its own folder in `runs/`,
+named after the scenario and the time the stack started, in **UTC**. The
+newest run is the last one listed:
+
+```bash
+cd M-S-Simulation-Runtime-Stack
+ls -t runs | head -1              # your latest run
+```
 
 ```
 runs/<scenario>_<YYYYmmdd_HHMMSS>/
@@ -643,14 +651,24 @@ campaign and swap in your own estimator.
 
 ## 7. Where everything is stored
 
-All paths are relative to the repository unless they start with `~`.
+Everything lives inside the folder you cloned, `M-S-Simulation-Runtime-Stack/`.
+
+**Your results**
+
+| What | Where on disk | Where in the dashboard |
+|---|---|---|
+| Rosbag of a run | `runs/<scenario>_<time>/bag/` (`bag_0.db3` + `metadata.yaml`) | **Replay → Bags** (plays it); **Calibration** → *Sim run* → **⬇ View bag files** (downloads it) |
+| Run record | `runs/<scenario>_<time>/run.json`: run id, stack, bag name | shown with the run in **Replay → Bags** |
+| Metrics events | `generated/<scenario>/outputs/metrics/<run id>/events.jsonl` | **Monitor → Run events** while the stack runs |
+| Calibration reports | `runs/_reports/` | **Calibration** |
+| Hand-off bundle | downloaded by your browser | **Analysis → Record integration bundle → Download bundle** |
+
+**Your inputs and the product's own files**
 
 | Path | Contents |
 |---|---|
-| `scenarios/<name>/` | Your exported ScenarioSpec (YAML). |
-| `generated/<name>/` | The generated stack: compose file, configs, `outputs/metrics/` events. |
-| `runs/<run>/` | Recorded runs: `bag/` and `run.json`. |
-| `runs/_reports/` | Calibration (sim-vs-real) reports. |
+| `scenarios/<name>/` | Your exported ScenarioSpec (YAML files). |
+| `generated/<name>/` | The stack generated from it: `docker-compose.yml` and configs. |
 | `.mns/v1/pack-store/` | Installed level and object packs. |
 | `.env` | Local settings. Defaults only; see [section 8](#8-optional-configuration). |
 
