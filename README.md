@@ -4,6 +4,8 @@ This repository is the customer distribution of the MnS product. Its historical 
 
 The first screen is the browser product shell. It launches ScenarioLab in a separate Unreal window for authoring, runs the stack generator image for validation and generation, and owns generated-stack run, status, logs, and stop actions.
 
+> **New here?** Start with the [User Guide](docs/USER_GUIDE.md): setup, `make dashboard`, and a step-by-step walkthrough from scenario to recorded rosbag.
+
 ## Dashboard Entry Point (full loop in the browser)
 
 For teams that want configuration → run → evaluation in one UI instead of
