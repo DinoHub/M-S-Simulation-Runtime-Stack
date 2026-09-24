@@ -175,7 +175,7 @@ echo "========================================"
 echo
 echo "Next:"
 echo
-echo "    ./download-packs.sh     # the Unreal levels and objects (./download-packs.sh --list to choose)"
+echo "    ./download-packs.sh     # the starter levels, ~0.8 GB (--all for everything, --list to choose)"
 echo "    make dashboard          # from a terminal on the desktop, then http://localhost:3001"
 echo
 echo "Walkthrough: docs/USER_GUIDE.md"

@@ -239,6 +239,18 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	# container runs as root, so if it mkdirs generated/ itself the directory
 	# lands root-owned and the generator image cannot write into it.
 	@mkdir -p generated scenarios
+	# Same for the runs directory: compose would create a missing bind source
+	# as root, and the recorder (the host uid) then cannot write a bag into it
+	# ("Failed to create database directory"). TEVV_RUNS_DIR may come from the
+	# shell or ./.env, as it does for compose.
+	@runs="$${TEVV_RUNS_DIR:-$$(sed -n 's/^TEVV_RUNS_DIR=//p' .env 2>/dev/null | tail -1)}"; \
+	runs="$${runs:-$$HOME/tevv-runs}"; case "$$runs" in "~"*) runs="$$HOME$${runs#\~}" ;; esac; \
+	mkdir -p "$$runs" 2>/dev/null; \
+	if [ ! -w "$$runs" ]; then \
+	  echo "ERROR: the runs directory $$runs is not writable by you (owner: $$(stat -c %U "$$runs" 2>/dev/null)),"; \
+	  echo "       so recordings would fail. Fix it with:  sudo chown -R $$(id -un): $$runs"; \
+	  exit 1; \
+	fi
 	# Fail early on Docker, X11, or host-port problems.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
 	. ./tools/load-images-env.sh; \

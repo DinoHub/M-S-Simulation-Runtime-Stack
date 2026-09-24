@@ -23,7 +23,7 @@ clicking. Section 5 explains each step in full.
 git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
 cd M-S-Simulation-Runtime-Stack
 ./setup.sh           # checks the machine, logs in to Docker Hub, pulls the images
-./download-packs.sh  # downloads the Unreal levels and objects (logs in to GitHub)
+./download-packs.sh  # downloads the starter levels, ~0.8 GB (logs in to GitHub)
 make dashboard       # run from a terminal on the desktop, not over SSH
 ```
 
@@ -42,8 +42,9 @@ run the same script again; it skips whatever is already done.
    5. **Validate** → **Validate**, then **Export**. *Export is the only save.*
 4. Back in the dashboard, click your scenario under **Authored scenarios**.
 5. **Generate**: **Generate stack**.
-6. **ROS 2** → **Bag capture**: tick `/ground_truth/odom`, `/imu/data` and a
-   camera → **Save & continue to metrics**. Then **Metrics** → **Save & apply**.
+6. **ROS 2** → **Bag capture**: tick `/ground_truth/odom`, `/imu/data` and
+   `/gps/fix` → **Save & continue to metrics**. Then **Metrics** → **Save &
+   apply**.
 7. **Launch**: pick your stack → **Launch**. Wait for *Visualization ready* →
    **Go to Monitor**.
 8. **Monitor** → **Teleop (WASD)** or **Quick Mission Launch**. *PX4 needs 1–2
@@ -127,6 +128,8 @@ for anything missing)
 - NVIDIA Container Toolkit.
 - `make`, `git`, `curl`, `python3` with `python3-yaml`.
 - The GitHub CLI (`gh`), which is the easiest way to authorise pack downloads.
+- **Google Chrome or Chromium** for the dashboard. Its 3D viewer (Lichtblick)
+  does not run in Firefox.
 
 **Accounts.** The images and packs are private. Ask your MnS contact for access
 to:
@@ -175,8 +178,9 @@ not logged in to GitHub, it runs `gh auth login` for you.
 | Command | What it does |
 |---|---|
 | `./download-packs.sh --list` | Shows every pack: size, whether it is installed, and whether ScenarioLab can open it. |
-| `./download-packs.sh` | Downloads everything (about 8 GB). Same as `--all`. |
-| `./download-packs.sh --warehouse --office` | Downloads only these; the vehicle models are always added. Enough for the walkthrough. |
+| `./download-packs.sh` | Downloads the **starter set**: Warehouse (the level the walkthrough uses), Condo and the vehicle models, about 0.8 GB. |
+| `./download-packs.sh --all` | Downloads everything, about 8 GB. |
+| `./download-packs.sh --office --xfs` | Downloads these as well; the vehicle models are always added. |
 | `./download-packs.sh --objects` | Downloads every object pack. |
 
 A dropped connection resumes where it stopped, and packs already installed
@@ -274,7 +278,8 @@ The whole loop takes about 15 minutes the first time.
 This step shows what is installed.
 
 - **Engine line** lists four roles: ScenarioLab, Runtime host, Stack
-  generator and Product shell. Each should say **matches**.
+  generator and Product shell. ScenarioLab and the runtime host should say
+  **matches**; the generator and shell say **present**.
 - **Level packs** and **Object packs** should say **ready**.
 
 `./download-packs.sh` has already done this work, so normally you just click
@@ -369,9 +374,9 @@ This step validates your ScenarioSpec and turns it into a runnable stack.
 - **Edit YAML** lets you change the root spec by hand. This is optional;
   ScenarioLab is the normal way to edit.
 
-Click **Generate stack**. After a few seconds a green line reads
-*Generated \<name\>*, and the dashboard moves on to ROS 2. The stack is written
-to `generated/<name>/`.
+Click **Generate stack**. After a few seconds the dashboard moves straight on
+to **ROS 2**, which means it worked. The stack is written to
+`generated/<name>/`.
 
 The badge (*working: authored*, *modified from authored*, …) shows whether the
 spec still matches your export. **Restore authored** returns to the export, and
@@ -390,9 +395,12 @@ On **Bag capture**:
 
 1. Leave **Start recording when the stack launches** ticked. Recording then
    starts automatically.
-2. Tick the topics to record. The list shows only topics the generated stack
-   actually publishes. A typical set is `/ground_truth/odom`, `/imu/data`,
-   `/gps/fix`, `/lidar/points`, one camera and `/clock`.
+2. Tick the topics to record, for example `/ground_truth/odom`, `/imu/data` and
+   `/gps/fix`. The summary line at the top shows the count, e.g. *bag 3/12*.
+   - Before launch the list is worked out from the stack's files, so camera
+     images (`/<camera>/image_raw`) and `/clock` are not offered yet. They
+     appear here once the stack is running, and the list then reads *live from
+     ros2-tools*.
    - If you tick nothing, **everything** is recorded, which with cameras is
      gigabytes per minute.
 3. Click **Save & continue to metrics**.
@@ -411,8 +419,11 @@ apply**.
    loading the level takes 1–3 minutes.
 3. When you see **Visualization ready — the viewer is answering**, click
    **Go to Monitor**.
-4. The line **Recording started — N topics armed from pre-run** confirms the
-   bag is recording.
+4. On **Monitor**, the **Bag recording** panel shows **REC mm:ss** and the MB
+   written, which confirms the bag is recording.
+   - The Launch step can also show a red *Recording failed to start:* with
+     no reason after it, even when recording is running. Trust the Monitor
+     panel. If it says *idle*, click **Start** there.
 
 The simulator window, and QGroundControl if you enabled it, also open on your
 desktop.
@@ -471,7 +482,8 @@ ros2 bag play ~/tevv-runs/<run>/bag
 You can also get it from the browser:
 - **Download**: **Calibration** → choose the run as *Sim run (candidate)* →
   **⬇ View bag files**.
-- **Replay**: **Analysis → Replay this run**, or **Replay → Bags**.
+- **Replay**: **Replay → Bags** lists each run with its duration, topics and
+  message count, and plays it in the browser.
 - **Hand-off bundle**: **Analysis → Record integration bundle →
   Download bundle** packages the run for another team.
 
@@ -679,6 +691,7 @@ overrides the release, so you would run a different image from everyone else.
 
 | Symptom | Fix |
 |---|---|
+| `make dashboard` stops: *the runs directory … is not writable by you* | `~/tevv-runs` was created by Docker as root, so recordings would fail. Run the `sudo chown` command it prints, once. |
 | `make dashboard` stops: port in use | Another program holds the port and is named in the message. Stop it, or run `make dashboard-down`. |
 | `Conflict … "/airsim-dashboard-api" is already in use` | Left over from an older install. Run `make dashboard-down`, then `make dashboard`. |
 | Author: *not ready*, `display` / `xauthority` | Run `make dashboard` from a desktop terminal, or see Display access in [section 3](#3-setup). |
@@ -696,6 +709,7 @@ overrides the release, so you would run a different image from everyone else.
 | Launch never reaches *Visualization ready* | The level is still loading; wait up to 3 minutes and check the `unreal-airsim` row. Make sure nothing else holds port 8765, such as another stack or Foxglove bridge. |
 | `unreal-airsim is unhealthy`, restarting in a loop | The display. Start `make dashboard` from a desktop terminal. |
 | PX4 won't arm: `ekf2 missing data` | Wait 1–2 minutes after spawn. |
+| Lichtblick shows *You're using an unsupported browser* | Open the dashboard in Chrome or Chromium. |
 | Lichtblick shows no topics | ROS domain mismatch. Relaunch from the dashboard, and check the hint on Monitor. |
 | Your node sees only `/rosout` and `/parameter_events` | Wrong `ROS_DOMAIN_ID`, or the bridge hasn't finished starting. Read the domain from `generated/<name>/docker-compose.yml`. |
 | Your node sees topics but no data | Your container's user id differs from the stack's. Run it with `-u $(id -u):$(id -g)` and share `/dev/shm`. |

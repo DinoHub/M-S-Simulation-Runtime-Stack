@@ -3,7 +3,8 @@
 # them visible to ScenarioLab. Run ./setup.sh first.
 #
 #   ./download-packs.sh --list                 what is available and installed
-#   ./download-packs.sh                        every pack (same as --all)
+#   ./download-packs.sh                        the starter set: Warehouse + Condo (~0.8 GB)
+#   ./download-packs.sh --all                  every pack (~7.7 GB)
 #   ./download-packs.sh --warehouse --office   only these (vehicle models always added)
 #   ./download-packs.sh --objects              every object pack
 #
@@ -27,7 +28,12 @@ for arg in "$@"; do
     *) echo "Unknown argument: $arg" >&2; usage >&2; exit 2 ;;
   esac
 done
-[[ ${#SELECTION[@]} -gt 0 ]] || SELECTION=(--all)
+# The starter set: the smallest level ScenarioLab can open (Warehouse, the
+# one the user guide walks through) and the tiny Condo level. Big packs are
+# opt-in; GitHub releases download slowly.
+STARTER=(--warehouse --condo)
+STARTER_USED=false
+if [[ ${#SELECTION[@]} -eq 0 ]]; then SELECTION=("${STARTER[@]}"); STARTER_USED=true; fi
 
 # The channel's lock, contracts and pack roots, exactly as make dashboard uses them.
 eval "$(make -s --no-print-directory print-channel-env)"
@@ -82,6 +88,7 @@ echo "========================================"
 echo " MnS content packs (channel $MNS_CHANNEL)"
 echo "========================================"
 echo "  selection: $PACKS"
+[[ "$STARTER_USED" == true ]] && echo "  (the starter set; ./download-packs.sh --all for everything, --list to choose)"
 echo "  to download: ${NEED_GB} GB ($ALREADY already installed)"
 
 # GitHub credentials: the pack releases are private (DinoHub/TEVV-Airsim).
