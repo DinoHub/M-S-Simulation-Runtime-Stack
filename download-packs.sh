@@ -79,7 +79,7 @@ PY
 ) || { [[ -n "$plan" ]] && echo "$plan" >&2; exit 2; }
 if [[ "$LIST_ONLY" == true ]]; then
   echo
-  echo "Download with: ./download-packs.sh --all   or   ./download-packs.sh --warehouse --office"
+  echo "Download: ./download-packs.sh (starter: Warehouse + Condo)  ·  --all  ·  or name packs, e.g. --office --xfs"
   exit 0
 fi
 { read -r PACKS; read -r NEED_GB; read -r ALREADY; } <<<"$plan"
