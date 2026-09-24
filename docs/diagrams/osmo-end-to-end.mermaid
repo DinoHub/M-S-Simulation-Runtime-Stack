@@ -1,0 +1,64 @@
+%% TEVV on OSMO, as built (24 Sept 2026): from getting onto OSMO, through a
+%% CampaignSpec, to one gang-scheduled workflow per run and the scorecard.
+%% Sources: docs/osmo-runbook.md, docs/osmo-kubernetes-concepts.md,
+%% osmo/campaign.py, osmo/sim-bridge-vio.workflow.yaml.
+%% Render: npx -y @mermaid-js/mermaid-cli -i osmo-end-to-end.mermaid -o osmo-end-to-end.png -w 2400 -b white
+%%   (on Ubuntu 23.10+ add -p with {"args":["--no-sandbox"]} if Chromium reports no usable sandbox)
+flowchart TB
+  subgraph ONB["1. Onboarding, once"]
+    direction LR
+    W1["Workstation<br/>NVIDIA runtime as docker default<br/>kind, kubectl, helm, osmo CLIs"]
+    W2["osmo/setup-local-osmo.sh gpu<br/>kind cluster, KAI scheduler,<br/>GPU operator, OSMO 6.3.1"]
+    W3["osmo login + 3 configs<br/>POOL mounts /workspace<br/>WORKFLOW registry check off<br/>POD_TEMPLATE IfNotPresent"]
+    W4["Images onto the GPU node<br/>kind load docker-image<br/>campaign.py images: all ok"]
+    W1 --> W2 --> W3 --> W4
+  end
+
+  subgraph AUTH["2. Authoring, in git"]
+    direction LR
+    CS["CampaignSpec<br/>variants, repeats, seeds,<br/>mission route, gates"]
+    SS["ScenarioSpec<br/>level, vehicle, rig,<br/>weather, estimator"]
+    CAT["images/catalog.yaml<br/>digest-pinned image set"]
+    CS -->|"scenario:"| SS
+  end
+
+  subgraph HOST["3. Per campaign, on the host: osmo/campaign.py run"]
+    direction LR
+    PLAN["product shell: campaign plan<br/>one merged ScenarioSpec per run"]
+    GEN["product shell: runtime --no-run<br/>stacks/run/config: settings.json,<br/>topics, conditions, estimator"]
+    IMG["image check<br/>catalog digest = node image"]
+    SUB["osmo workflow submit, one per run<br/>--set stack, autopilot, viz<br/>--set-string route, gates, images"]
+    PLAN --> GEN --> IMG --> SUB
+  end
+
+  subgraph CP["4. OSMO control plane, namespace osmo"]
+    direction LR
+    API["API server + gateway<br/>submit, query, logs"]
+    ENG["workflow engine<br/>groups, retries, exit codes"]
+    S3["object storage<br/>task outputs"]
+    API --> ENG
+  end
+
+  subgraph NODE["5. GPU node: one gang per run"]
+    direction LR
+    KAI["KAI scheduler<br/>whole group or nothing"]
+    RUN["group run<br/>discovery server, sim UE 5.8 + AirSim,<br/>autopilot PX4 or ArduPilot,<br/>bridge + MAVROS, OpenVINS, pilot,<br/>recorder (lead), foxglove (optional)"]
+    EVAL["group evaluate<br/>vio-eval, spawn-eval, validate"]
+    AGG["group aggregate<br/>verdict against the gates"]
+    KAI --> RUN --> EVAL --> AGG
+  end
+
+  subgraph OUT["6. Results, on the host"]
+    direction LR
+    PULL["runs/run: bag, mission.json,<br/>eval, run.json with images"]
+    VS["vio-stress: reports/run"]
+    MAN["campaign_manifest.json<br/>campaign status, dashboard"]
+    WATCH["campaign.py watch<br/>Foxglove at node:30765"]
+    PULL --> VS --> MAN
+  end
+
+  ONB -->|"cluster ready, images loaded"| HOST
+  AUTH -->|"specs + image pins"| HOST
+  HOST -->|"one workflow per run"| CP
+  CP -->|"gang per run"| NODE
+  NODE -->|"evidence in object storage"| OUT
