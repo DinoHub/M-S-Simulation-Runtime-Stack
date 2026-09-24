@@ -1,555 +1,639 @@
-# MnS Product — User Guide
+# MnS User Guide
 
-This guide takes you from a fresh machine to a recorded rosbag. You author a
-scenario, generate a simulation stack from it, fly it, and record it, all from
-the browser dashboard.
+MnS is a containerised simulation environment for testing drone autonomy. You
+describe a scenario and MnS turns it into a running simulation that you can
+fly, record and evaluate. The simulation runs a PX4 or ArduPilot SITL, an
+Unreal Engine 5.8 world with Cosys-AirSim sensors, and ROS 2 Humble topics.
+Everything runs in Docker, and you drive it from a browser dashboard.
 
-The [README](../README.md) is the operator reference: image pins, channels,
-CLI flags and the legacy stacks. This guide covers only what you need to use
-the product.
+This guide assumes you know ROS 2, PX4/ArduPilot and simulation, but have
+never used MnS. It takes you from a fresh machine to a recorded rosbag. You do
+not need to edit any configuration files.
 
 ---
 
 ## Quick start
 
-Run these commands on an Ubuntu desktop with an NVIDIA GPU and Docker
-installed. You need a Docker Hub account and a GitHub account that can read
-the MnS images and packs; ask your MnS contact for access.
-
 ```bash
 git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
 cd M-S-Simulation-Runtime-Stack
-
-./setup.sh              # checks this machine and creates .env with defaults
-docker login            # Docker Hub: the MnS images
-gh auth login           # GitHub: the MnS packs (or: export GH_TOKEN=<token>)
-./product.sh setup      # pulls the release images, once
-make dashboard          # first run downloads about 15 GB of packs
+./setup.sh           # checks the machine, logs you in, downloads everything (once)
+make dashboard       # starts the product; open http://localhost:3001
 ```
 
-Then open **<http://localhost:3001>** and follow [the walkthrough](#5-walkthrough-from-scenario-to-rosbag).
+Then follow [Your first run](#5-your-first-run-scenario-to-rosbag).
 
-**You do not need to edit anything.** `./setup.sh` copies
-[`.env.example`](../.env.example) to `.env`, and every setting in it has a
-working default. `make dashboard` finds your display cookie on its own.
-
-If `./setup.sh` prints a `MISSING:` or `WARNING:` line, fix it and run
-`./setup.sh` again. Each line includes the command that fixes it. Sections 2–4
-explain each step in detail.
+`./setup.sh` stops and tells you what to fix if anything is missing. Fix it and
+run `./setup.sh` again; it skips whatever is already done.
 
 ---
 
-## 1. What you are running
+## Contents
 
-| Piece | What it is | Where you see it |
-|---|---|---|
-| **TEVV Web Dashboard** | The browser entry point. It walks you through every step and records the run. | <http://localhost:3001> |
-| **ScenarioLab** | An Unreal editor window where you place vehicles, sensors, zones and obstacles in a level. The dashboard launches it. | A separate window on your desktop |
-| **Stack generator** | Turns the exported `ScenarioSpec.yaml` into a runnable Docker Compose stack. | `generated/<scenario>/` |
-| **Generated stack** | The simulation itself: one TEVVRuntimeHost (Unreal + AirSim), an autopilot SITL per vehicle, ROS 2 bridges, a Foxglove bridge and QGroundControl. | The dashboard's **Monitor** page |
-| **Level / object packs** | Pre-cooked Unreal content: environments and placeable props. ScenarioLab and the runtime host load the same checksum-verified artifact. | `.mns/v1/pack-store/` |
+1. [How MnS fits together](#1-how-mns-fits-together)
+2. [Requirements](#2-requirements)
+3. [Setup](#3-setup)
+4. [Starting and stopping the dashboard](#4-starting-and-stopping-the-dashboard)
+5. [Your first run: scenario to rosbag](#5-your-first-run-scenario-to-rosbag)
+6. [Working with a running stack](#6-working-with-a-running-stack)
+7. [Where everything is stored](#7-where-everything-is-stored)
+8. [Optional configuration](#8-optional-configuration)
+9. [Troubleshooting](#9-troubleshooting)
+10. [Known limitations](#10-known-limitations)
+11. [Quick reference](#11-quick-reference)
 
-You never build source code. Everything ships as pinned Docker images and
-downloadable packs.
+---
+
+## 1. How MnS fits together
+
+```
+ ScenarioLab ──export──▶ ScenarioSpec ──generate──▶ Stack ──launch──▶ Simulation ──record──▶ rosbag
+ (Unreal editor)          (YAML files)              (docker compose)   (sim + SITL + ROS 2)     (~/tevv-runs)
+         ▲                                                                   ▲
+         └───────────────── all driven from the dashboard (localhost:3001) ──┘
+```
+
+| MnS term | What it is, in domain terms |
+|---|---|
+| **Level pack** | A pre-built Unreal map, the environment you fly in (Blocks, Condo, XFS, Safticity, Pendleton, Electric Dreams). It is downloaded once and checksum-verified. |
+| **Object pack** | Placeable props, plus the vehicle models. `mns_vehicle_models` supplies the drones. |
+| **ScenarioLab** | An Unreal-based editor. You place vehicles, sensors and objects in a level, then **Export**. |
+| **ScenarioSpec** | The exported scenario: a folder of YAML files covering the environment, vehicles, sensor profiles, objects and runtime settings. It is the single input to everything downstream. |
+| **Stack** | A docker compose project generated from a ScenarioSpec. It contains the Unreal/AirSim runtime host, one SITL per vehicle, a ROS 2 bridge per vehicle, a Foxglove bridge and, optionally, QGroundControl. |
+| **Run** | One launch of a stack. It gets a run id, an optional rosbag, and metrics events. |
+| **Dashboard** | The browser UI that drives all of the above and records the run. |
+
+Three things work differently from a typical ROS 2 sim setup:
+
+- **One ROS domain per vehicle.** Vehicle 1 is on `ROS_DOMAIN_ID=1`, vehicle 2
+  on `2`, and so on. Topic names have **no vehicle namespace**, for example
+  `/imu/data` rather than `/Copter1/imu/data`.
+- **Everything is containerised on Docker bridge networks.** Your own nodes
+  join the stack's network, as described in
+  [Connecting your autonomy stack](#connecting-your-autonomy-stack).
+- **The environment is exact.** A scenario pins a level pack by version *and*
+  digest, and ScenarioLab and the simulator load the same artifact.
 
 ---
 
 ## 2. Requirements
 
-### Hardware
+**Hardware**
+- An NVIDIA GPU with a current driver. Both the simulator and ScenarioLab
+  render on it.
+- **About 50 GB of free disk** for the first setup:
+  - images: several GB
+  - content packs: about 15 GB to download (Electric Dreams alone is 12 GB),
+    and briefly about twice that while they install
+  - rosbags on top of that: hundreds of MB to several GB per minute, depending
+    on the topics you record
 
-- An NVIDIA GPU with a recent driver. The runtime host and ScenarioLab both
-  need GPU passthrough.
-- At least **50 GB free disk** before the first run:
-  - The MnS 1.0 packs are about 15 GB to download, and Electric Dreams alone is
-    12.3 GB. During install the archive and the store copy exist side by side,
-    so plan for about twice that. Staging the packs for ScenarioLab and for
-    generated stacks uses hard links and costs no extra space.
-  - The images take several GB more.
-  - Rosbags grow quickly, from hundreds of MB to several GB per minute
-    depending on the topics you record.
+**Software** (`./setup.sh` checks every item and prints the install command
+for anything missing)
+- Ubuntu 22.04 or later with a desktop session. ScenarioLab, the simulator and
+  QGroundControl open windows.
+- Docker Engine with the Compose v2 plugin, and your user in the `docker`
+  group.
+- NVIDIA Container Toolkit.
+- `make`, `git`, `curl`, `python3` with `python3-yaml`.
+- The GitHub CLI (`gh`), which is the easiest way to authorise pack downloads.
 
-### Software
+**Accounts.** The images and packs are private. Ask your MnS contact for access
+to:
+- **Docker Hub**, for the `dhdevspace/auto_mns` images.
+- **GitHub**, for the `DinoHub/TEVV-Airsim` releases that hold the content
+  packs.
 
-| Requirement | Check |
-|---|---|
-| Linux with a desktop session (X11, or GNOME/Wayland with XWayland) | `echo $DISPLAY` prints something like `:0` or `:1` |
-| Docker Engine and the Compose v2 plugin | `docker compose version` |
-| Your user in the `docker` group | `docker ps` works without `sudo` |
-| NVIDIA Container Toolkit | `docker run --rm --gpus all ubuntu nvidia-smi` |
-| Python 3 with `jinja2`, `python-dotenv` and `pyyaml` | `pip install -r tools/requirements.txt`, or on Ubuntu `sudo apt install python3-jinja2 python3-dotenv python3-yaml` |
-| `make`, `git`, `curl` | |
-
-### Access
-
-You need two sets of credentials. Ask your MnS contact for access if you have
-neither.
-
-1. **Docker Hub**, able to pull the private `dhdevspace/auto_mns` images:
-   ```bash
-   docker login
-   ```
-2. **GitHub**, able to read the private pack releases (`DinoHub/TEVV-Airsim`).
-   Either log in with the GitHub CLI:
-   ```bash
-   gh auth login
-   ```
-   or export a token that has read access:
-   ```bash
-   export GH_TOKEN=<token>
-   ```
-   If you have neither, the pack download stops before it fetches anything and
-   says so. A `404` during the pack download almost always means a missing or
-   expired token, not a network problem.
+`./setup.sh` asks you to log in to both when it needs to.
 
 ---
 
-## 3. One-time setup
+## 3. Setup
+
+Run this from the repository root. You only need to do it once:
 
 ```bash
-git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
-cd M-S-Simulation-Runtime-Stack
-
-./setup.sh            # host checks (Docker, NVIDIA, Python deps); creates .env from the template
-./product.sh setup    # pulls the release images and creates the local pack store
-./product.sh doctor   # confirms every pinned image is present; no network needed
+./setup.sh
 ```
 
-**Fix every warning that `./setup.sh` prints before you continue.** It checks
-Docker access, the NVIDIA runtime, the Python modules and both logins.
+It works through five steps and prints a ✓ or ✗ for each check:
 
-`./product.sh setup` is the one step that downloads the full image set. It
-retries each pull if Docker Hub is flaky. Re-run it only when you want to
-refresh to newly published images.
+| Step | What it does |
+|---|---|
+| **1. Checking this machine** | Checks Docker, Compose, the GPU runtime, tools, Python modules, free disk and the desktop display. |
+| **2. Local configuration** | Creates `.env` from `.env.example`, with defaults only; nothing needs editing. Also creates the working folders. |
+| **3. Accounts** | Checks your Docker Hub and GitHub logins. If one is missing, it runs `docker login` or `gh auth login` for you. |
+| **4. Container images** | Downloads the release images (several GB). Images you already have are kept. |
+| **5. Content packs** | Downloads, verifies and installs the level and object packs (about 15 GB), and makes them visible to ScenarioLab. |
 
-### Display access (GNOME / Wayland hosts)
+It ends with **Setup complete** and tells you to run `make dashboard`.
 
-ScenarioLab and the simulator open windows on your desktop, so they need your X
-authority cookie. `make dashboard` looks for it on its own: it keeps a valid
-`XAUTHORITY`, and otherwise uses the newest GNOME/Wayland (mutter) cookie, then
-the GDM one.
+If it stops early, it lists each problem with the command that fixes it, for
+example `✗ not logged in to Docker Hub → docker login`. Fix the problems and
+run it again. Work that is already done is skipped, so a re-run is quick.
 
-Run `make dashboard` from a terminal on the desktop itself. It prints
-`WARNING: X11 pass-through looks broken` only when no cookie can be found.
-That usually means you are connected over SSH, or `DISPLAY` is not set. In
-that case, set both by hand:
+**Options**
+
+| Command | When to use it |
+|---|---|
+| `./setup.sh --check` | Only check the machine; change and download nothing. |
+| `./setup.sh --packs "--blocks --condo --xfs"` | Install only some levels, for example to skip the 12 GB Electric Dreams. The choices are `--blocks --condo --xfs --safticity --pendleton --electric_dreams`. |
+| `./setup.sh --no-packs` | Skip the pack download for now. `make dashboard` installs the packs later. |
+
+You can add more packs at any time from the dashboard's **Content** step.
+
+**Display access.** `make dashboard` finds your X display cookie itself.
+Start it from a terminal on the desktop, not over SSH. If you must use SSH,
+first run:
 
 ```bash
-export DISPLAY=:0      # or :1 — run `echo $DISPLAY` in a desktop terminal to see which
+export DISPLAY=:1      # run `echo $DISPLAY` in a desktop terminal to see which
 export XAUTHORITY=$(ls -t /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -1)
 ```
 
-Without this, Unreal containers start, fail to open a display, and restart in a
-loop. The only visible error is
-`dependency failed to start: container …-unreal-airsim is unhealthy`, which
-does not mention X11.
-
-### Configuration (`.env`)
-
-**Nothing needs configuring for a standard run.** Every setting has a working
-default.
-
-`./setup.sh` creates `./.env` from [`.env.example`](../.env.example). It is
-local to your machine and not tracked by git. The top section of
-`.env.example`, *Dashboard (make dashboard)*, lists the settings you might
-change, commented out, with their default values. The rest of the file is for
-the legacy `./launch.sh` stacks, which you can ignore.
-
-Settings that go in `./.env`:
-
-| Variable | Default | Change it when |
-|---|---|---|
-| `TEVV_RUNS_DIR` | `~/tevv-runs` | You want runs and rosbags on another disk |
-| `DOCKER_CONFIG` | `~/.docker` | Your `docker login` is stored somewhere else |
-| `DASHBOARD_LICHTBLICK_PORT` | `8082` | The port is already in use |
-| `FOXGLOVE_BRIDGE_PORT` | `8764` | The port is already in use |
-| `GRAFANA_URL` | the local Grafana on :3000 | Set it empty to hide the Grafana embed when monitoring is not running |
-| `DASHBOARD_PULL_POLICY`, `MNS_IMAGE_PULL_POLICY` | `missing` | You want `always`, which re-checks the registry on every start |
-
-Settings you pass on the command line or export in your shell. These are
-**not** read from `.env`:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `XAUTHORITY`, `DISPLAY` | from your desktop session | X11 access for Unreal windows. See [Display access](#display-access-gnome--wayland-hosts). |
-| `GH_TOKEN` | `gh auth token` | GitHub credentials for pack downloads |
-| `CHANNEL` | `v1` | Release line: `v1` (MnS 1.0, UE 5.8.2). The older `ue582` and `v2` lines are for comparison only. |
-| `IMAGE_MODE` | `development` | `production` for the exact digest-pinned release |
-| `DB` | off | `DB=true` adds the telemetry history database |
-| `MNS_DEMO_PACKS` | `--all` | Install only some packs, for example `"--blocks --condo"` |
-| `MNS_SKIP_PACK_INSTALL` | off | `1` skips the pack check, for offline use |
-| `MNS_DEMO_PACK_DOWNLOAD_DIR` | a temp folder | Where pack downloads are staged; use a larger disk |
-
-For example:
-
-```bash
-make dashboard IMAGE_MODE=production DB=true
-```
-
-**Keep image variables (`*_IMAGE`) out of `.env`.** An image key set there
-overrides the release pins. For example, a leftover `MNS_AUTHORING_IMAGE=`
-line makes ScenarioLab launch an old image. Only set one when you deliberately
-want to run a local build.
-
 ---
 
-## 4. Start the dashboard
+## 4. Starting and stopping the dashboard
 
 ```bash
-make dashboard
+make dashboard         # start; prints "Dashboard: http://localhost:3001 ..."
+make dashboard-down    # stop the dashboard
 ```
 
-The first run downloads and stages the demo packs (about 15 GB). Later runs
-only check that nothing is missing and start in seconds. When the command
-finishes it prints:
+Open **<http://localhost:3001>**. The first start after setup takes a few
+seconds, because everything is already downloaded.
 
-```
-Dashboard: http://localhost:3001 (backend :8001, lichtblick :8082, image mode: development)
-```
+The left sidebar has these pages:
 
-Open **<http://localhost:3001>**.
-
-### Variants
-
-| Command | Use it when |
+| Page | Use it to |
 |---|---|
-| `make dashboard` | Normal use: the MnS 1.0 release (channel `v1`, Unreal Engine 5.8.2). Local images are kept; only missing ones are pulled. |
-| `make dashboard IMAGE_MODE=production` | You want the exact, digest-pinned release images. |
-| `make dashboard MNS_DEMO_PACKS="--blocks --condo --xfs"` | You want only some packs, for example to skip the 12 GB Electric Dreams. The names are `--blocks --condo --electric_dreams --pendleton --safticity --xfs --mns_vehicle_models`. |
-| `make dashboard MNS_SKIP_PACK_INSTALL=1` | You are offline and the packs are already installed. |
-| `make dashboard DB=true` | You also want the telemetry history database. |
-| `make dashboard CHANNEL=ue582` or `CHANNEL=v2` | You need an older pre-release line: `ue582` is the 5.8.2 review set, `v2` is UE 5.5.4. Each line has its own packs and data. |
+| **Overview** | See system status at a glance. |
+| **Scenario Configuration** | Work through the step-by-step flow, from content to launch. You spend most of your time here. |
+| **Monitor** | Watch and fly the running stack: 3D view, cameras, plots, teleop and recording. |
+| **Replay** | Play back recorded bags in the browser. |
+| **Calibration** | Compare simulated runs with real flights, and download bag files. |
+| **VIO Stress** | Visual-inertial odometry stress evaluation. |
 
-### Ports used
+The dashboard uses these host ports:
 
-| Port | Service | Checked at start |
-|---|---|---|
-| 3001 | Dashboard frontend | yes |
-| 8001 | Dashboard API | yes |
-| 8082 | Lichtblick (3D / plot viewer) | yes |
-| 8764 | ROS 2 tools Foxglove websocket | yes |
-| 8765+ | Foxglove bridge of the running stack (one port per vehicle) | no |
-| 8767 | Bag replay bridge | no |
-| 3000 | Grafana (optional monitoring) | no |
-
-If a checked port is busy, `make dashboard` stops and names the process
-holding it.
-
----
-
-## 5. Walkthrough: from scenario to rosbag
-
-The left sidebar has **Overview**, **Scenario Configuration**, **Monitor**,
-**Replay**, **Calibration** and **VIO Stress**.
-
-Open **Scenario Configuration**. Across the top is a stepper:
-
-```
-0 Content → 1a Author → 1b Generate → 1c ROS 2 → 1d Metrics → 2 Launch → 3 Runtime → 4 Analysis
-```
-
-Each step unlocks when the one before it is done. A completed step shows a
-check mark.
-
-### Step 0 — Content: *engine · level & object packs*
-
-1. Under **Engine line**, every image role should show **matches**:
-   - ScenarioLab (authoring)
-   - Runtime host (simulation)
-   - Stack generator
-   - Product shell (pack install)
-
-   If a role shows **not on this machine**, run `./product.sh setup`, then
-   click **Refresh**.
-2. Under **Level packs** and **Object packs**, each pack should be **ready**.
-   If not, tick the packs you want and click **Download & stage N**, or
-   **Stage N** when they only need staging. The panel shows the free disk
-   space and how much the selection needs.
-3. The step is done when the badge reads *N of M level packs ready*. Click
-   **Continue to Author**.
-
-### Step 1a — Author: *ScenarioLab export*
-
-1. The header badge should read **environment ready**. If it shows *Authoring
-   environment not ready*, it lists the failing checks; see
-   [Troubleshooting](#7-troubleshooting). Fix them and click **Re-check
-   environment**.
-2. Click **Launch editor**. ScenarioLab opens in its own window after 30–90
-   seconds.
-3. In ScenarioLab:
-   1. Pick a level.
-   2. Place your vehicle(s) and attach sensors.
-   3. Add zones and obstacles as needed.
-   4. Click **Export**. The status line reads
-      `Exported ScenarioSpec: …/scenarios/<name>/ScenarioSpec.yaml`.
-4. Back in the dashboard, the scenario appears under **Authored scenarios**
-   within about 5 seconds. **Click it** to select it and move to Generate.
-
-Each row in **Authored scenarios** has three icons:
-- ✏️ reopens the scenario in ScenarioLab.
-- ⧉ copies it as the basis for a new scenario.
-- 🗑 deletes the spec and generated stack. Recorded runs are kept.
-
-> **No ScenarioLab?** Click **Skip authoring — build the spec in the wizard**
-> to build the whole scenario in the next step instead.
-
-### Step 1b — Generate: *spec → stack*
-
-The left card is a five-step form: **Scenario → Vehicles → Sensors → Zones →
-Obstacles**. If you exported from ScenarioLab, the form is already filled in.
-The right card shows the resulting **ScenarioSpec** YAML.
-
-1. On the **Scenario** step, check the **Name** and **Environment**.
-   Environment is the level pack, shown as name and version. Optionally pick a
-   **Runtime profile** and enable features such as `sim_real_eval`.
-2. Review the remaining steps with **Continue →**.
-3. Click **Generate stack**.
-
-The badge above the YAML tells you where the spec came from:
-- *matches authored* — the spec is exactly what you exported.
-- *modified from authored* — you edited it in the form.
-- *hand-edited* — you used **Edit YAML**.
-
-**Restore authored** takes you back to the export. If you generate over a name
-that already has a different authored spec, the dashboard asks before
-overwriting it. **Save as new…** forks the spec under a new name instead.
-
-The step is done when a green line reads *Generated <name>.* The dashboard then
-moves to ROS 2 on its own. The stack is written to `generated/<name>/` in this
-repository.
-
-### Step 1c — ROS 2: *network · topics · bag*
-
-This step decides **what goes into the rosbag**. It has four sub-steps.
-
-| Sub-step | What you set |
+| Port | Service |
 |---|---|
-| **Network** | `ROS_DOMAIN_ID`, the network preset, and optionally `cyclonedds.xml`. The defaults are fine for a single machine. |
-| **Topic names** | An optional `TOPIC_PREFIX` and topic renames. |
-| **Sensors** | Sensor settings for the stack. |
-| **Bag capture** | What to record (see below). |
+| 3001 | dashboard |
+| 8001 | dashboard API |
+| 8082 | Lichtblick (the viewer) |
+| 8764 | ROS 2 tools |
+| 8765, 8766, … | Foxglove bridge for vehicle 1, 2, … of the running stack |
+| 41451 | AirSim RPC of the running stack |
 
-On **Bag capture**:
+If one of the first four is taken, `make dashboard` stops and names the
+program using it.
 
-1. Keep **Start recording when the stack launches** ticked if you want
-   recording to start automatically.
-2. Tick the topics to record. The list comes from the generated stack, so you
-   see exactly what it will publish.
-   - If you select nothing, *every* topic is recorded, which is gigabytes per
-     minute with cameras.
-   - Pick the topics you need, typically pose/odometry, IMU, lidar and one
-     camera.
-3. Click **Save & continue to metrics**.
-
-### Step 1d — Metrics: *what the sim logs*
-
-1. Optionally tick **Measure this run** and choose a preset. Detectors write
-   events to `outputs/metrics/<run>/events.jsonl`.
-2. Click **Save & apply**.
-
-### Step 2 — Launch: *run & record*
-
-1. The chips at the top confirm your choices, for example *12 record topics ·
-   domain 1*.
-2. Under **Generated stack**, pick your stack (**Refresh stacks** if it is not
-   listed) and click **Launch**.
-3. Watch the service rows. Each one moves to **running · healthy**. The
-   simulator (`unreal-airsim`) is the slowest; loading a level takes 1–3
-   minutes.
-4. When the status reads **Visualization ready — the viewer is answering**, the
-   button turns into a green **Go to Monitor**.
-5. If autostart recording is on, a line reads **Recording started — N topics
-   armed from pre-run.**
-
-A QGroundControl window and the Unreal simulator window also open on your
-desktop.
-
-### Step 3 — Runtime: *what is flying*
-
-This step shows *X of Y healthy* for the stack's services and links to the
-**Monitor** page. On **Monitor**:
-
-- **Viewers → Lichtblick**: live 3D view, camera images and plots from the
-  stack's ROS 2 topics. **Viewers → Sim** shows the simulator view.
-- **Mission Control** (right-hand panel):
-  - pick a vehicle
-  - **Bag recording**: start and stop recording by hand. The badge shows
-    **REC mm:ss** and the size written so far.
-  - **Quick Mission Launch**, **Flight patterns**, and **Teleop (WASD)** for
-    keyboard flight
-  - compact telemetry
-- **Run events** and **Grafana**: the metrics stream for this run.
-- **Controls**: the evaluation runtime config and live sensor controls.
-
-Fly your mission, from Quick Mission Launch, a flight pattern, teleop,
-QGroundControl, or your own autonomy stack on the same ROS domain.
-
-### Step 4 — Stop and finalize the recording
-
-Go back to **Launch** and click **Stop**, or use **Stop & finalize** in
-Mission Control's **Bag recording** panel first.
-
-**Always stop through the dashboard.** Stopping finalizes the bag, which writes
-its `metadata.yaml`, and only then tears the stack down. A bag without
-`metadata.yaml` cannot be replayed or analysed. So do not `docker rm -f` a
-recorder that shows **writing bag**; give it time to finish.
-
-After Stop, a line reports *Run … archived*. The **Analysis** step unlocks.
-
-### Step 5 — Get the rosbag
-
-Every recorded run gets its own folder under the runs directory. That is
-`~/tevv-runs` by default, or `TEVV_RUNS_DIR` if you set it.
-
-```
-~/tevv-runs/
-  <scenario>_<YYYYmmdd_HHMMSS>/
-    run.json            # run id and the stack it came from
-    bag/
-      metadata.yaml     # rosbag2 metadata (written on a clean stop)
-      bag_0.db3         # rosbag2 sqlite3 storage (zstd per message); large runs split into bag_1.db3, …
-```
-
-There are three ways to get the bag:
-
-1. **From disk.** Copy `~/tevv-runs/<run>/bag/`. It is a standard ROS 2
-   (Humble) bag:
-   ```bash
-   ros2 bag info ~/tevv-runs/<run>/bag
-   ros2 bag play ~/tevv-runs/<run>/bag
-   ```
-2. **Download in the browser.** Open **Calibration**, choose the run as *Sim
-   run (candidate)*, then click **⬇ View bag files**. You get a download link
-   per file. The downloaded `.db3` also opens in Lichtblick
-   (<http://localhost:8082> → *Open local file*).
-3. **Replay in the browser.** Go to **Analysis → Replay this run**, or
-   **Replay → Bags**, to play the bag back in Lichtblick without the stack
-   running.
-
-**Analysis** also offers **Record integration bundle** / **Download bundle**,
-which package the run for hand-off to an integration team.
-
----
-
-## 6. Stopping and cleaning up
-
-```bash
-make dashboard-down        # stops the dashboard containers
-```
-
-Launch → **Stop** has already stopped the simulation stack, and Author →
-**Stop** closes ScenarioLab.
-
-`make dashboard-down` leaves a few helper containers that the dashboard creates
-on demand. Remove them when you are completely done:
+`make dashboard-down` leaves a few helper containers that the dashboard starts
+on demand. To remove them as well:
 
 ```bash
 docker rm -f ros2-tools mns-replay-bridge mns-scenariolab-editor 2>/dev/null
 docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
 ```
 
-Check your disk use from time to time. Old runs are never deleted
-automatically.
-
-```bash
-du -sh generated/ ~/tevv-runs
-```
-
 ---
 
-## 7. Troubleshooting
+## 5. Your first run: scenario to rosbag
 
-### Author preflight checks
+Open **Scenario Configuration**. A stepper runs across the top:
 
-When Author says *Authoring environment not ready*, it names the failing
-checks:
+```
+0 Content → 1a Author → 1b Generate → 1c ROS 2 → 1d Metrics → 2 Launch → 3 Runtime → 4 Analysis
+```
 
-| Check | Meaning | Fix |
-|---|---|---|
-| `docker_daemon` | The dashboard cannot reach Docker | Start Docker; make sure your user is in the `docker` group |
-| `authoring_image` / `generator_image` | An image is not on this machine | `./product.sh setup` |
-| `pack_store` | No packs are installed | Step 0 **Download & stage**, or re-run `make dashboard` |
-| `packs_staged` | Packs are installed but ScenarioLab cannot see them | Step 0 **Stage N**, or `tools/stage-authoring-packs.sh` |
-| `display` / `xauthority` | No usable X display | See [Display access](#display-access-gnome--wayland-hosts), then run `make dashboard` again from that terminal |
-| `exports_writable` / `authoring_data_writable` | Folder permissions | Make sure `scenarios/` and `.mns/` belong to you, not root |
+Each step unlocks when the previous one is done and then shows a check mark.
+The whole loop takes about 15 minutes the first time.
 
-### Common problems
+### Step 0: Content
 
-| Symptom | Cause and fix |
+This step shows what is installed.
+
+- **Engine line** lists four roles: ScenarioLab, Runtime host, Stack
+  generator and Product shell. Each should say **matches**.
+- **Level packs** and **Object packs** should say **ready**.
+
+`./setup.sh` has already done this work, so normally you just click
+**Continue to Author**.
+
+To add a pack later, tick it and click **Download & stage N**. The panel shows
+the free space and how much the selection needs.
+
+### Step 1a: Author the scenario in ScenarioLab
+
+1. Check the header reads **environment ready**. If it doesn't, the failing
+   checks are listed; see [Troubleshooting](#9-troubleshooting).
+2. Click **Launch editor**. ScenarioLab opens in its own window after 30–90
+   seconds.
+
+**Moving around the viewport**
+
+| Input | Action |
 |---|---|
-| `make dashboard` stops: *port 3001 (or 8001/8082/8764) in use* | Another program or an old dashboard is using the port. `make dashboard-down`, or stop the process it names. |
-| `Conflict … "/airsim-dashboard-api" is already in use` | A container from an older install. Run `make dashboard-down`, then `make dashboard`. |
-| Pack download fails with `404` | GitHub credentials are missing or expired. `gh auth login` or `export GH_TOKEN=…`. |
-| No internet on the machine, or GitHub access blocked | Copy the `.mnslevelpack` / `.mnsassetpack` archives into `.mns/v1/packs/`, then run `tools/pull-packs.sh --import`. The archives are verified before install. Then start with `make dashboard MNS_SKIP_PACK_INSTALL=1`. |
-| *Not enough free space for this selection* | Free some disk, or select fewer packs. `MNS_DEMO_PACK_DOWNLOAD_DIR=/bigdisk/tmp` moves the download staging area. |
-| `pull access denied for dhdevspace/auto_mns` | Run `docker login` with an account that has access. |
-| **Generate** fails with *generation failed* | Usually the generator image is missing, because Generate never pulls it. Run `./product.sh doctor`, then `./product.sh setup`. |
-| Editor: *editor exited immediately (code N)* | Usually the GPU or the display. Check `docker run --rm --gpus all ubuntu nvidia-smi` and the X11 section above. The **Editor log** in Author shows Unreal's own error. |
-| `could not select device driver "nvidia"` | The NVIDIA Container Toolkit is not installed or configured. `./setup.sh` prints the fix. |
-| `…-unreal-airsim is unhealthy` / simulator restarts in a loop | Almost always X11. Run `make dashboard` from a desktop terminal, or set `DISPLAY`/`XAUTHORITY` as above. If an empty directory exists at `/run/user/$(id -u)/gdm/Xauthority`, remove it with `rmdir`. |
-| Launch hangs before *Visualization ready* | The level is still loading. Wait up to 3 minutes and check the `unreal-airsim` row and log. Also make sure nothing else is using port 8765, such as a legacy `./launch.sh` stack or another Foxglove bridge. |
-| PX4 refuses to arm: `Preflight Fail: ekf2 missing data` | PX4's estimator needs 1–2 minutes after spawn. Wait, then arm again. |
-| Lichtblick connects but shows no topics | A ROS domain mismatch. Relaunch from the dashboard so the viewer follows the stack's domain, and check the amber hint on Monitor. |
-| A bag is missing from Replay / Analysis | It was never finalized, so it has no `metadata.yaml`. Always stop through the dashboard. |
-| Very large bags | No topics were selected, so everything was recorded. Pick topics in ROS 2 → Bag capture. |
-| ScenarioLab looks older than expected | An image variable in `./.env` overrides the release pins. Remove it; see [Configuration](#configuration-env). |
+| **W A S D**, **Q/E** | Fly the camera; Q/E move down/up. Hold **Shift** for 4× speed. |
+| **Right mouse** (hold) | Look around. |
+| **Mouse wheel** | Move forward/back. |
+| **Left click** | Select an object. **Tab** cycles through placed objects. |
+| **1 / 2 / 3** | Move / Rotate / Scale mode, then drag the gizmo. |
+| Arrow keys, **PgUp/PgDn** | Nudge the selection (25 cm or 5°; hold **Ctrl** for finer steps). |
+| **N** | Add a drone where the screen centre points. |
+| **P** | Export. |
+| **F10** | Hide or show the side panel. |
 
-### Getting logs
+**Building a scenario.** The side panel has a **Scenario** name field, then
+these tabs: **Environment**, **Vehicles**, **Sensor Profiles**, **Objects**,
+**Spawns**, **Degradation**, **Runtime** and **Validate**. Work through them in
+this order:
 
-- **Dashboard:**
-  ```bash
-  docker logs airsim-dashboard-api
-  ```
-- **Stack services:** use the collapsible log in **Launch**, or:
-  ```bash
-  docker compose --project-directory generated/<name> logs -f <service>
-  ```
-- **ScenarioLab:** Author → **Editor log**, or:
-  ```bash
-  docker logs mns-scenariolab-editor
-  ```
-- **API health:**
-  ```bash
-  curl -s localhost:8001/api/scenario/preflight
-  ```
-  This should report `"ready": true`.
+1. **Scenario** (top field): type a name and press Enter. The name becomes the
+   folder name `scenarios/<name>/`.
+2. **Environment**: pick a **Level Pack** and click **Apply Level Pack**. The
+   level loads.
+   - Do this **first**. Switching levels restarts ScenarioLab and discards
+     everything placed so far.
+   - Optional settings here: **Edit MnS Origin** (the ROS frame origin), time
+     of day, and a weather preset.
+3. **Runtime**: choose the **Autopilot** (`px4` or `ardupilot`; it applies to
+   the whole scenario). Leave Endpoint on `docker`. Tick the extras you want:
+   QGroundControl, the ROS 2 bridge, MAVROS.
+4. **Vehicles**: aim the screen centre at the ground and click **Add Drone**,
+   or press **N**.
+   - Choose a **Vehicle type** (default `quadrotor_small`) and a **Sensor
+     profile**.
+   - Adjust the drone with the gizmo or the **Position m / Rotation deg**
+     fields. These are metres, ROS FLU, relative to the origin. **Snap Floor**
+     puts the drone on the ground.
+5. **Sensor Profiles**: edit the sensors a profile carries.
+   - Sensors: IMU, GPS, barometer and magnetometer (each with noise and
+     timing), lidar or GPU lidar, and RGB, depth or fisheye cameras.
+   - Camera settings: intrinsics, noise and mount pose.
+   - Click **Save Profile** after editing. Unsaved profile edits are not
+     exported.
+   - **Assign** gives the profile to a drone.
+6. **Objects** *(optional)*: pick a pack and asset, then **Place Selected
+   Asset**.
+7. **Spawns** / **Degradation** *(optional)*: add random-clutter volumes, and
+   zones that degrade sensors or weather (GPS jamming or spoofing, urban
+   canyon, fog, gale, …).
+8. **Validate**: click **Validate** and fix anything it lists until it reads
+   *Validation OK*.
+9. Click **Export** (or press **P**). The status line reads
+   `Exported ScenarioSpec: …/scenarios/<name>/ScenarioSpec.yaml`.
+
+**Export is the only save.** Closing ScenarioLab without exporting loses your
+work.
+
+Back in the dashboard, your scenario appears under **Authored scenarios**
+within about 5 seconds. **Click it** to move to Generate.
+
+Each row in **Authored scenarios** has three icons:
+- ✏️ reopens the scenario in ScenarioLab.
+- ⧉ copies it into a new scenario.
+- 🗑 deletes its spec and stack. Recorded runs are kept.
+
+> **No GPU desktop available for ScenarioLab?** **Skip ScenarioLab — write
+> the spec by hand** gives you a minimal template spec to edit in Generate.
+
+### Step 1b: Generate the stack
+
+This step validates your ScenarioSpec and turns it into a runnable stack.
+
+- **Spec source** should read *Authored in ScenarioLab: \<name\>*.
+- **Files in this spec** lists the exported YAML files. Click one to read it.
+- **Edit YAML** lets you change the root spec by hand. This is optional;
+  ScenarioLab is the normal way to edit.
+
+Click **Generate stack**. After a few seconds a green line reads
+*Generated \<name\>*, and the dashboard moves on to ROS 2. The stack is written
+to `generated/<name>/`.
+
+The badge (*working: authored*, *modified from authored*, …) shows whether the
+spec still matches your export. **Restore authored** returns to the export, and
+**Save as new…** forks the spec under a new name.
+
+### Step 1c: ROS 2 settings and what to record
+
+| Sub-step | What you set |
+|---|---|
+| **Network** | `ROS_DOMAIN_ID`, a network preset, and optionally a CycloneDDS configuration. The defaults work on one machine. |
+| **Topic names** | An optional topic prefix and renames. |
+| **Sensors** | Tweaks to the stack's sensor settings. |
+| **Bag capture** | Which topics to record. |
+
+On **Bag capture**:
+
+1. Leave **Start recording when the stack launches** ticked. Recording then
+   starts automatically.
+2. Tick the topics to record. The list shows only topics the generated stack
+   actually publishes. A typical set is `/ground_truth/odom`, `/imu/data`,
+   `/gps/fix`, `/lidar/points`, one camera and `/clock`.
+   - If you tick nothing, **everything** is recorded, which with cameras is
+     gigabytes per minute.
+3. Click **Save & continue to metrics**.
+
+### Step 1d: Metrics
+
+Optionally tick **Measure this run** and choose a preset. Event detectors then
+log to `generated/<name>/outputs/metrics/<run>/events.jsonl`. Click **Save &
+apply**.
+
+### Step 2: Launch
+
+1. Under **Generated stack**, select your stack and click **Launch**. Use
+   **Refresh stacks** if it isn't listed.
+2. Each service moves to **running · healthy**. The simulator is last, because
+   loading the level takes 1–3 minutes.
+3. When you see **Visualization ready — the viewer is answering**, click
+   **Go to Monitor**.
+4. The line **Recording started — N topics armed from pre-run** confirms the
+   bag is recording.
+
+The simulator window, and QGroundControl if you enabled it, also open on your
+desktop.
+
+### Step 3: Fly it (Monitor)
+
+The **Monitor** page has these areas:
+
+- **Viewers → Lichtblick**: live 3D view, camera images and plots. **Viewers →
+  Sim** shows the simulator view.
+- **Mission Control** (right-hand panel):
+  - pick a vehicle
+  - **Quick Mission Launch** and **Flight patterns** for scripted flights
+  - **Teleop (WASD)** for keyboard flight
+  - **Bag recording**: start and stop by hand; it shows **REC mm:ss** and the
+    size written so far
+  - compact telemetry
+- **Run events** / **Grafana**: the live metrics stream.
+- **Controls**: evaluation settings and live sensor controls.
+
+**PX4 needs 1–2 minutes after spawn** before its estimator accepts arming
+(`Preflight Fail: ekf2 missing data`). If the first arm is refused, wait and
+try again.
+
+You can also fly from your own autonomy stack; see
+[section 6](#connecting-your-autonomy-stack).
+
+### Step 4: Stop, which finalizes the bag
+
+Go back to **Launch** and click **Stop**. The dashboard stops the recorder
+cleanly, writing the bag's `metadata.yaml`, and then shuts the stack down.
+**Analysis** then unlocks.
+
+Always stop through the dashboard. A bag killed mid-write has no
+`metadata.yaml`, so it cannot be replayed or analysed.
+
+### Step 5: Get your rosbag
+
+Each run gets its own folder in `~/tevv-runs/`:
+
+```
+~/tevv-runs/<scenario>_<YYYYmmdd_HHMMSS>/
+  run.json          # run id, stack, bag path
+  bag/
+    metadata.yaml   # rosbag2 metadata
+    bag_0.db3       # rosbag2 sqlite3 storage (zstd per message); large runs add bag_1.db3, …
+```
+
+It is a standard ROS 2 Humble bag:
+
+```bash
+ros2 bag info ~/tevv-runs/<run>/bag
+ros2 bag play ~/tevv-runs/<run>/bag
+```
+
+You can also get it from the browser:
+- **Download**: **Calibration** → choose the run as *Sim run (candidate)* →
+  **⬇ View bag files**.
+- **Replay**: **Analysis → Replay this run**, or **Replay → Bags**.
+- **Hand-off bundle**: **Analysis → Record integration bundle →
+  Download bundle** packages the run for another team.
 
 ---
 
-## 8. Known limitations (MnS 1.0)
+## 6. Working with a running stack
 
-- **PX4 is not ready to arm immediately after spawn.** PX4's estimator needs
-  1–2 minutes before it accepts arming. The dashboard teleop tries to arm as
-  soon as a session starts, so the first attempt can be refused. Wait and try
-  again.
-- **ArduPilot:** its command channel carries heartbeats only. The dashboard
-  cannot see the takeoff altitude, and the vehicle stays armed after a
-  descent-style "land". Disarm it explicitly.
-- **ROS `map` height:** the `map → odom` transform is the authored spawn point,
-  so ROS map z is off by the small drop as the vehicle settles before arming.
-  That is about 4.6 m on Electric Dreams.
-- **Bag format:** bags are recorded as rosbag2 **sqlite3 (`.db3`)**. If you
-  need MCAP, convert with `ros2 bag convert`. Replay and Calibration also
-  accept uploaded `.mcap` bags.
-- **Committed scenarios:** most scenarios under `scenarios/` are marked
-  *LEGACY v1 SCENARIO SPEC* and cannot be generated. Re-author them in
-  ScenarioLab. `scenarios/vio-reference` is current: it is the reference for
-  `make campaign`, which flies a scored matrix of runs. See the README section
-  *Characterise an algorithm (campaigns)*.
-- **`tests/full-product-e2e`** covers the older Blocks-only release. It is not
-  an acceptance test for MnS 1.0.
+### What runs in a stack
 
-## 9. Quick reference
+`generated/<name>/docker-compose.yml` contains:
+
+| Service | Role |
+|---|---|
+| `unreal-airsim` | Unreal Engine 5.8 runtime host with Cosys-AirSim, loading your level pack. Publishes AirSim RPC on host port **41451**. |
+| `px4-drone-N` / `ardupilot-drone-N` | SITL autopilot, one per vehicle. |
+| `airsim_bridge_…` | ROS 2 Humble bridge: sensors and ground truth out, commands in. It also runs MAVROS if enabled. |
+| `foxglove_bridge_…` | Foxglove websocket for vehicle N on host port **8765 + N − 1**. |
+| `qgroundcontrol-x11` | QGroundControl, if enabled. |
+| `iceoryx-init`, `sim-real-eval-worker`, `vio_estimator_…` | Helpers. The last two appear only when the scenario enables them. |
+
+The runtime defaults:
+- **ROS 2 Humble**, `rmw_fastrtps_cpp` over UDPv4.
+- `use_sim_time:=true`; `/clock` comes from the simulator.
+- `ROS_DOMAIN_ID` equals the vehicle's index.
+
+### Topics
+
+Before launching, list exactly what a stack will publish:
 
 ```bash
-# once
-./setup.sh && docker login && gh auth login
-./product.sh setup && ./product.sh doctor
-
-# every session
-make dashboard                 # → http://localhost:3001
-#   Content → Author (Launch editor, Export) → Generate stack → ROS 2 (pick bag topics)
-#   → Metrics → Launch → fly from Monitor → Launch: Stop
-ls ~/tevv-runs/                # your runs; the bag is in <run>/bag/
-make dashboard-down
+make topics STACK=generated/<name>
 ```
+
+These are the defaults for one vehicle on its own domain:
+
+| Topic | Type |
+|---|---|
+| `/ground_truth/odom` | `nav_msgs/Odometry` (`odom` → `base_link`) |
+| `/pose` | `geometry_msgs/PoseStamped` |
+| `/imu/data`, `/imu/mag`, `/air_pressure`, `/gps/fix` | IMU, magnetometer, barometer, `NavSatFix` |
+| `/camera/<cam>/image_raw`, `/camera/<cam>/camera_info` | per RGB camera |
+| `/lidar/points` | `PointCloud2` |
+| `/clock`, `/tf`, `/tf_static` | |
+
+Commands go in through the bridge as services (`/takeoff`, `/land`, `/reset`,
+`/gps_waypoint`, …) and velocity topics (`/vel_cmd_body_frame`,
+`/vel_cmd_world_frame`). With MAVROS enabled, its topics sit under
+`/<vehicle>/mavros/…`.
+
+**Frames.** AirSim works in NED/FRD. The bridge publishes REP-105 ENU/FLU
+(`map → odom → base_link`).
+
+**Wide cameras.** A camera with a field of view of 90° or more, or a fisheye
+camera, is sent over shared memory (iceoryx) for VIO. It then has **no**
+`/camera/…/image_raw` topic. `make topics` shows this.
+
+### Connecting your autonomy stack
+
+**Over ROS 2.** The stack's ROS traffic lives on Docker bridge networks, one
+per vehicle, named `<stack>_agent_internal-N`. Run your nodes in a container
+attached to that network with the same domain, RMW, user and shared memory:
+
+```bash
+docker network ls | grep agent_internal          # find the network name
+docker run --rm -it \
+  --network <stack>_agent_internal-1 \
+  --ipc host -v /dev/shm:/dev/shm -u $(id -u):$(id -g) \
+  -e ROS_DOMAIN_ID=1 -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
+  -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 -e ROS_LOCALHOST_ONLY=0 \
+  <your-ros2-humble-image> ros2 topic list
+```
+
+Use the same user id as the stack. A mismatched user can subscribe, but
+receives nothing over shared memory. The dashboard's own recorder attaches
+exactly this way.
+
+Alternatively, add your service to `generated/<name>/docker-compose.yml` on
+that network. Regenerating the stack overwrites the file, so keep a copy.
+
+**Over MAVLink.** In the default `docker` endpoint mode, no autopilot port is
+published on the host.
+- **PX4:** mavlink-router streams GCS traffic on UDP **14550** (to
+  QGroundControl, or to the host when QGC is off). MAVROS connects to
+  `px4-drone-1:14580`.
+- **ArduPilot:** MAVROS connects to `tcp://ardupilot-drone-0:5760`, and QGC
+  uses UDP **14550**.
+
+To reach the autopilot from your container, join the vehicle's network as
+above.
+
+**Over AirSim RPC.** Connect to `localhost:41451` from the host.
+
+**Visualisation.** Connect Foxglove or Lichtblick to `ws://localhost:8765`
+(vehicle 1).
+
+### Repeatable test campaigns
+
+`make campaign` flies a *campaign*: a scored matrix of runs over one scenario,
+for example 4 wind strengths × 3 repeats, each recorded, validity-gated and
+scored. `scenarios/vio-reference/README.md` shows how to copy the reference
+campaign and swap in your own estimator.
+
+---
+
+## 7. Where everything is stored
+
+All paths are relative to the repository unless they start with `~`.
+
+| Path | Contents |
+|---|---|
+| `scenarios/<name>/` | Your exported ScenarioSpec (YAML). |
+| `generated/<name>/` | The generated stack: compose file, configs, `outputs/metrics/` events. |
+| `~/tevv-runs/<run>/` | Recorded runs: `bag/` and `run.json`. |
+| `~/tevv-runs/_reports/` | Calibration (sim-vs-real) reports. |
+| `.mns/v1/pack-store/` | Installed level and object packs. |
+| `.env` | Local settings. Defaults only; see [section 8](#8-optional-configuration). |
+
+To free disk, delete old runs from `~/tevv-runs/`, and old scenarios with the
+🗑 icon in Author. `du -sh generated/ ~/tevv-runs` shows the usage.
+
+---
+
+## 8. Optional configuration
+
+Nothing here is needed for a normal run.
+
+**Settings in `.env`.** Uncomment the line in the *Dashboard* section at the
+top of `.env`:
+
+| Variable | Default | Change it to |
+|---|---|---|
+| `TEVV_RUNS_DIR` | `~/tevv-runs` | keep runs and bags on another disk |
+| `DASHBOARD_LICHTBLICK_PORT`, `FOXGLOVE_BRIDGE_PORT` | `8082`, `8764` | move a port that clashes |
+| `GRAFANA_URL` | local Grafana | empty, to hide the Grafana embed |
+| `DOCKER_CONFIG` | `~/.docker` | a non-default Docker login location |
+
+**Options on the `make dashboard` command line**
+
+| Option | Effect |
+|---|---|
+| `DB=true` | Adds the telemetry history database. |
+| `IMAGE_MODE=production` | Uses only the exact, digest-pinned release images. |
+| `MNS_SKIP_PACK_INSTALL=1` | Skips the pack check, for offline starts. |
+| `CHANNEL=ue582` / `CHANNEL=v2` | Runs an older pre-release line. It has its own packs and data. |
+
+**Keep image variables (`*_IMAGE`) out of `.env`.** An image set there
+overrides the release, so you would run a different image from everyone else.
+
+---
+
+## 9. Troubleshooting
+
+**Setup**
+
+| Symptom | Fix |
+|---|---|
+| `✗ Docker is not reachable` | Start Docker, then `sudo usermod -aG docker $USER` and log out and back in. |
+| `✗ NVIDIA container runtime not usable` | Install the NVIDIA Container Toolkit. `./setup.sh` prints the exact commands. |
+| `pull access denied for dhdevspace/auto_mns` | Your Docker Hub account lacks access. Ask your MnS contact. |
+| Pack download fails with `404` | Your GitHub account cannot read the pack releases (they answer 404, not 401). Check `gh auth status` and ask for access. |
+| `only N GB free` | Free disk, or install fewer packs: `./setup.sh --packs "--blocks --condo"`. |
+| No internet on this machine | Copy the `.mnslevelpack` / `.mnsassetpack` files into `.mns/v1/packs/`, then run `tools/pull-packs.sh --import` and `./setup.sh --no-packs`. |
+
+**Dashboard and ScenarioLab**
+
+| Symptom | Fix |
+|---|---|
+| `make dashboard` stops: port in use | Another program holds the port and is named in the message. Stop it, or run `make dashboard-down`. |
+| `Conflict … "/airsim-dashboard-api" is already in use` | Left over from an older install. Run `make dashboard-down`, then `make dashboard`. |
+| Author: *not ready*, `display` / `xauthority` | Run `make dashboard` from a desktop terminal, or see Display access in [section 3](#3-setup). |
+| Author: *not ready*, `pack_store` / `packs_staged` | In Content, click **Download & stage** or **Stage**. |
+| *editor exited immediately* | Usually the GPU or the display. **Editor log** in Author shows Unreal's own error. |
+| Scenario doesn't appear in Authored scenarios | It wasn't exported; closing ScenarioLab does not save. Check its status line for *Exported ScenarioSpec*. |
+| Export succeeded but has a default drone at the origin | No drone was placed. Export adds a default one; run **Validate** first. |
+
+**Running**
+
+| Symptom | Fix |
+|---|---|
+| Launch never reaches *Visualization ready* | The level is still loading; wait up to 3 minutes and check the `unreal-airsim` row. Make sure nothing else holds port 8765, such as another stack or Foxglove bridge. |
+| `unreal-airsim is unhealthy`, restarting in a loop | The display. Start `make dashboard` from a desktop terminal. |
+| PX4 won't arm: `ekf2 missing data` | Wait 1–2 minutes after spawn. |
+| Lichtblick shows no topics | ROS domain mismatch. Relaunch from the dashboard, and check the hint on Monitor. |
+| Your node sees topics but no data | Your container's user id differs from the stack's. Run it with `-u $(id -u):$(id -g)` and share `/dev/shm`. |
+| Bag missing from Replay / Analysis | It was not finalized. Always stop from the dashboard. |
+| Huge bag | No topics were selected, so everything was recorded. Pick topics in ROS 2 → Bag capture. |
+
+**Logs**
+- Dashboard: `docker logs airsim-dashboard-api`
+- ScenarioLab: Author → **Editor log**
+- Stack services: the log panel in **Launch**, or
+  `docker compose --project-directory generated/<name> logs -f <service>`
+
+---
+
+## 10. Known limitations
+
+- **PX4** refuses to arm for 1–2 minutes after spawn, while its EKF2
+  initialises.
+- **ArduPilot:** the dashboard's command link carries heartbeats only, so
+  takeoff altitude is not reported and the vehicle stays armed after a
+  descent "land". Disarm it explicitly.
+- **ROS `map` height** is offset by the small settle drop before arming (about
+  4.6 m on Electric Dreams).
+- **Bags are sqlite3 (`.db3`).** Convert with `ros2 bag convert` if you need
+  MCAP.
+- **Legacy scenarios:** the scenarios under `scenarios/` marked *LEGACY v1
+  SCENARIO SPEC* cannot be generated; re-author them in ScenarioLab.
+- **ScenarioLab** has no mission or waypoint authoring. Fly missions from
+  Monitor, QGroundControl or your own stack.
+
+---
+
+## 11. Quick reference
+
+```bash
+./setup.sh                      # once: check, log in, download
+make dashboard                  # start → http://localhost:3001
+make topics STACK=generated/<name>    # what a stack publishes
+ls ~/tevv-runs/                 # runs; bag in <run>/bag/
+make dashboard-down             # stop the dashboard
+```
+
+**The flow:** Content → Author (Launch editor · Environment → Runtime →
+Vehicles → Sensor Profiles → Validate → **Export**) → **Generate stack** →
+ROS 2 (tick bag topics) → Metrics → **Launch** → Monitor (fly) → Launch
+**Stop** → `~/tevv-runs/<run>/bag/`

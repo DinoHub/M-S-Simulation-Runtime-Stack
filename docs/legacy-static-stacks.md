@@ -14,7 +14,7 @@ This repo **does not contain the planner implementation** — the planner lives 
 
 ```bash
 cp .env.example .env
-./setup.sh                            # chmod +x for the launcher scripts
+./setup.sh --check                    # host checks only; plain ./setup.sh also downloads the dashboard images and packs
 ./launch.sh                           # default scenario from .env (SCENARIO=...)
 ./launch.sh ardupilot-xfs             # named scenario
 ./stop.sh                             # tear down
