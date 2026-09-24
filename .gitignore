@@ -20,6 +20,7 @@ generated/
 .venv
 
 /.mns/
+/runs/
 /generated/
 /scenarios/*
 # The reference campaign is a whole directory:

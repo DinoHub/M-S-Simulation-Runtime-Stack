@@ -52,7 +52,7 @@ run the same script again; it skips whatever is already done.
    recording. Fly with **Teleop (WASD)** or **Quick Mission Launch**. *PX4 needs
    1–2 minutes after spawn before it will arm.*
 9. **Launch** → **Stop**. This finalizes the bag.
-10. Your bag is in `~/tevv-runs/<scenario>_<timestamp>/bag/`. **Replay → Bags**
+10. Your bag is in `runs/<scenario>_<timestamp>/bag/`. **Replay → Bags**
     lists and plays it; with ROS 2 on the host, `ros2 bag info` reads it too.
 
 Starting again from scratch on a machine that has run MnS before? Stop what
@@ -86,7 +86,7 @@ docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
 
 ```
  ScenarioLab ──export──▶ ScenarioSpec ──generate──▶ Stack ──launch──▶ Simulation ──record──▶ rosbag
- (Unreal editor)          (YAML files)              (docker compose)   (sim + SITL + ROS 2)     (~/tevv-runs)
+ (Unreal editor)          (YAML files)              (docker compose)   (sim + SITL + ROS 2)     (runs/)
          ▲                                                                   ▲
          └───────────────── all driven from the dashboard (localhost:3001) ──┘
 ```
@@ -222,7 +222,12 @@ grep -n '_IMAGE=' .env        # delete any image lines this shows; they override
 make dashboard
 ```
 
-Scenarios in `scenarios/` and runs in `~/tevv-runs/` are kept.
+Scenarios in `scenarios/` and runs in `runs/` are kept.
+
+Runs recorded before this release are in `~/tevv-runs`, the old default.
+They stay there. To keep recording into that folder, add
+`TEVV_RUNS_DIR=/home/<you>/tevv-runs` to `.env`; otherwise move them into
+`runs/`.
 
 ---
 
@@ -471,10 +476,10 @@ Always stop through the dashboard. A bag killed mid-write has no
 
 ### Step 5: Get your rosbag
 
-Each run gets its own folder in `~/tevv-runs/`:
+Each run gets its own folder in `runs/`:
 
 ```
-~/tevv-runs/<scenario>_<YYYYmmdd_HHMMSS>/
+runs/<scenario>_<YYYYmmdd_HHMMSS>/
   run.json          # run id, stack, bag path
   bag/
     metadata.yaml   # rosbag2 metadata
@@ -484,8 +489,8 @@ Each run gets its own folder in `~/tevv-runs/`:
 It is a standard ROS 2 Humble bag:
 
 ```bash
-ros2 bag info ~/tevv-runs/<run>/bag
-ros2 bag play ~/tevv-runs/<run>/bag
+ros2 bag info runs/<run>/bag
+ros2 bag play runs/<run>/bag
 ```
 
 You can also get it from the browser:
@@ -618,7 +623,7 @@ for example:
 docker run --rm --network <stack>_agent_internal-1 --ipc host -v /dev/shm:/dev/shm \
   -u $(id -u):$(id -g) -e HOME=/tmp -e ROS_DOMAIN_ID=<domain> \
   -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
-  -v ~/tevv-runs:/out --entrypoint bash \
+  -v "$PWD/runs":/out --entrypoint bash \
   dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0 -lc \
   'source /opt/ros/humble/setup.bash && mkdir -p /out/my_run && ros2 bag record \
    -o /out/my_run/bag -s sqlite3 /ground_truth/odom /imu/data /front_rgb/image_raw /clock'
@@ -644,13 +649,13 @@ All paths are relative to the repository unless they start with `~`.
 |---|---|
 | `scenarios/<name>/` | Your exported ScenarioSpec (YAML). |
 | `generated/<name>/` | The generated stack: compose file, configs, `outputs/metrics/` events. |
-| `~/tevv-runs/<run>/` | Recorded runs: `bag/` and `run.json`. |
-| `~/tevv-runs/_reports/` | Calibration (sim-vs-real) reports. |
+| `runs/<run>/` | Recorded runs: `bag/` and `run.json`. |
+| `runs/_reports/` | Calibration (sim-vs-real) reports. |
 | `.mns/v1/pack-store/` | Installed level and object packs. |
 | `.env` | Local settings. Defaults only; see [section 8](#8-optional-configuration). |
 
-To free disk, delete old runs from `~/tevv-runs/`, and old scenarios with the
-🗑 icon in Author. `du -sh generated/ ~/tevv-runs` shows the usage.
+To free disk, delete old runs from `runs/`, and old scenarios with the
+🗑 icon in Author. `du -sh generated/ runs/` shows the usage.
 
 ---
 
@@ -662,7 +667,7 @@ Nothing here is needed for a normal run.
 
 | Variable | Default | Change it to |
 |---|---|---|
-| `TEVV_RUNS_DIR` | `~/tevv-runs` | keep runs and bags on another disk |
+| `TEVV_RUNS_DIR` | `runs/` in the checkout | keep runs and bags on another disk (an absolute path) |
 | `DASHBOARD_LICHTBLICK_PORT`, `FOXGLOVE_BRIDGE_PORT` | `8082`, `8764` | move a port that clashes |
 | `GRAFANA_URL` | local Grafana | empty, to hide the Grafana embed |
 | `DOCKER_CONFIG` | `~/.docker` | a non-default Docker login location |
@@ -699,7 +704,7 @@ overrides the release, so you would run a different image from everyone else.
 
 | Symptom | Fix |
 |---|---|
-| `make dashboard` stops: *the runs directory … is not writable by you* | `~/tevv-runs` was created by Docker as root, so recordings would fail. Run the `sudo chown` command it prints, once. |
+| `make dashboard` stops: *the runs directory … is not writable by you* | The runs folder (`runs/`, or your `TEVV_RUNS_DIR`) is owned by root, so recordings would fail. Run the `sudo chown` command it prints, once. |
 | `make dashboard` stops: port in use | Another program holds the port and is named in the message. Stop it, or run `make dashboard-down`. |
 | `Conflict … "/airsim-dashboard-api" is already in use` | Left over from an older install. Run `make dashboard-down`, then `make dashboard`. |
 | Author: *not ready*, `display` / `xauthority` | Run `make dashboard` from a desktop terminal, or see Display access in [section 3](#3-setup). |
@@ -760,11 +765,11 @@ overrides the release, so you would run a different image from everyone else.
 ./download-packs.sh --list      # what packs exist; ./download-packs.sh to get them
 make dashboard                  # start → http://localhost:3001
 make topics STACK=generated/<name>    # what a stack publishes
-ls ~/tevv-runs/                 # runs; bag in <run>/bag/
+ls runs/                 # runs; bag in <run>/bag/
 make dashboard-down             # stop the dashboard
 ```
 
 **The flow:** Content → Author (Launch editor · Environment → Runtime →
 Vehicles → Sensor Profiles → Validate → **Export**) → **Generate stack** →
 ROS 2 (tick bag topics) → Metrics → **Launch** → Monitor (fly) → Launch
-**Stop** → `~/tevv-runs/<run>/bag/`
+**Stop** → `runs/<run>/bag/`

@@ -239,7 +239,7 @@ services:
       - ${MSRS_ROOT:-${PWD}}:${MSRS_ROOT:-${PWD}}
       # the pack mount directory (may live outside the checkout), read-only
       - ${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}:${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}:ro
-      - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
+      - ${TEVV_RUNS_DIR:-${MSRS_ROOT:-${PWD}}/runs}:/data/runs
     # No depends_on the database, deliberately. It used to gate on
     # postgres-telemetry being healthy (required: false, so the db stayed
     # opt-in), which was right while this container ran the schema init. Now

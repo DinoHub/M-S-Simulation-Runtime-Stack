@@ -198,9 +198,9 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	# Same for the runs directory: compose would create a missing bind source
 	# as root, and the recorder (the host uid) then cannot write a bag into it
 	# ("Failed to create database directory"). TEVV_RUNS_DIR may come from the
-	# shell or ./.env, as it does for compose.
+	# shell or ./.env, as it does for compose; the default is ./runs here.
 	@runs="$${TEVV_RUNS_DIR:-$$(sed -n 's/^TEVV_RUNS_DIR=//p' .env 2>/dev/null | tail -1)}"; \
-	runs="$${runs:-$$HOME/tevv-runs}"; case "$$runs" in "~"*) runs="$$HOME$${runs#\~}" ;; esac; \
+	runs="$${runs:-$$(pwd)/runs}"; case "$$runs" in "~"*) runs="$$HOME$${runs#\~}" ;; esac; \
 	mkdir -p "$$runs" 2>/dev/null; \
 	if [ ! -w "$$runs" ]; then \
 	  echo "ERROR: the runs directory $$runs is not writable by you (owner: $$(stat -c %U "$$runs" 2>/dev/null)),"; \

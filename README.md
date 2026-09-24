@@ -87,7 +87,7 @@ The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
 generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
 (no source checkouts).
 **Monitor → Controls** edits the evaluation files in the shared runs directory
-(`TEVV_RUNS_DIR`, default `~/tevv-runs`; hot-reloaded). **Calibration**
+(`TEVV_RUNS_DIR`, default `runs/` in this checkout; hot-reloaded). **Calibration**
 shows the sim-to-real verdicts the `sim-real-eval` worker writes there
 automatically after each recorded run (enable with
 `runtime.features: { sim_real_eval: true }` in the scenario).

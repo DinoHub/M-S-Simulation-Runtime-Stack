@@ -97,7 +97,7 @@ step "2/4" "Local configuration"
 
 if [[ "$CHECK_ONLY" == false ]]; then
   chmod +x setup.sh download-packs.sh product.sh tools.sh 2>/dev/null || true
-  mkdir -p generated scenarios
+  mkdir -p generated scenarios runs
 fi
 if [[ -f .env ]]; then
   ok ".env exists (kept as is)"
