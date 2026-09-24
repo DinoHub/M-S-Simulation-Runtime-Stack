@@ -30,13 +30,14 @@ make dashboard       # run from a terminal on the desktop, not over SSH
 Both scripts stop and tell you what to fix if anything is missing. Fix it and
 run the same script again; it skips whatever is already done.
 
-**In the browser**, at <http://localhost:3001> → **Scenario Configuration**:
+**In Chrome or Chromium** (the 3D viewer does not run in Firefox), at
+<http://localhost:3001> → **Scenario Configuration**:
 
 1. **Content**: **Continue to Author**.
 2. **Author**: **Launch editor**. ScenarioLab opens in its own window.
 3. In ScenarioLab:
    1. Type a name in **Scenario** and press Enter.
-   2. **Environment** → **Warehouse** → **Apply Level Pack**.
+   2. **Environment** → **Level Pack** `warehouse` → **Apply Level Pack**.
    3. **Runtime** → Autopilot `px4`.
    4. **Vehicles**: aim the screen centre at the floor → **Add Drone**.
    5. **Validate** → **Validate**, then **Export**. *Export is the only save.*
@@ -47,13 +48,21 @@ run the same script again; it skips whatever is already done.
    apply**.
 7. **Launch**: pick your stack → **Launch**. Wait for *Visualization ready* →
    **Go to Monitor**.
-8. **Monitor** → **Teleop (WASD)** or **Quick Mission Launch**. *PX4 needs 1–2
-   minutes after spawn before it will arm.*
+8. **Monitor**: the **Bag recording** panel shows **REC mm:ss**; that's your bag
+   recording. Fly with **Teleop (WASD)** or **Quick Mission Launch**. *PX4 needs
+   1–2 minutes after spawn before it will arm.*
 9. **Launch** → **Stop**. This finalizes the bag.
-10. Your bag is in `~/tevv-runs/<scenario>_<timestamp>/bag/`:
-    ```bash
-    ros2 bag info ~/tevv-runs/<scenario>_<timestamp>/bag
-    ```
+10. Your bag is in `~/tevv-runs/<scenario>_<timestamp>/bag/`. **Replay → Bags**
+    lists and plays it; with ROS 2 on the host, `ros2 bag info` reads it too.
+
+Starting again from scratch on a machine that has run MnS before? Stop what
+is running first:
+
+```bash
+make dashboard-down                                                    # in the old checkout
+docker rm -f ros2-tools mns-replay-bridge mns-scenariolab-editor 2>/dev/null
+docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
+```
 
 ---
 
