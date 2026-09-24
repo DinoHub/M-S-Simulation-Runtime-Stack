@@ -12,19 +12,46 @@ not need to edit any configuration files.
 
 ---
 
-## Quick start
+## Quick start: your first rosbag
+
+The first run takes about 30 minutes of downloads, then about 15 minutes of
+clicking. Section 5 explains each step in full.
+
+**On the command line** (once):
 
 ```bash
 git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
 cd M-S-Simulation-Runtime-Stack
-./setup.sh           # checks the machine, logs you in, downloads everything (once)
-make dashboard       # starts the product; open http://localhost:3001
+./setup.sh           # checks the machine, logs you in, downloads images and packs
+make dashboard       # run from a terminal on the desktop, not over SSH
 ```
-
-Then follow [Your first run](#5-your-first-run-scenario-to-rosbag).
 
 `./setup.sh` stops and tells you what to fix if anything is missing. Fix it and
 run `./setup.sh` again; it skips whatever is already done.
+
+**In the browser**, at <http://localhost:3001> → **Scenario Configuration**:
+
+1. **Content**: **Continue to Author**.
+2. **Author**: **Launch editor**. ScenarioLab opens in its own window.
+3. In ScenarioLab:
+   1. Type a name in **Scenario** and press Enter.
+   2. **Environment** → **Warehouse** → **Apply Level Pack**.
+   3. **Runtime** → Autopilot `px4`.
+   4. **Vehicles**: aim the screen centre at the floor → **Add Drone**.
+   5. **Validate** → **Validate**, then **Export**. *Export is the only save.*
+4. Back in the dashboard, click your scenario under **Authored scenarios**.
+5. **Generate**: **Generate stack**.
+6. **ROS 2** → **Bag capture**: tick `/ground_truth/odom`, `/imu/data` and a
+   camera → **Save & continue to metrics**. Then **Metrics** → **Save & apply**.
+7. **Launch**: pick your stack → **Launch**. Wait for *Visualization ready* →
+   **Go to Monitor**.
+8. **Monitor** → **Teleop (WASD)** or **Quick Mission Launch**. *PX4 needs 1–2
+   minutes after spawn before it will arm.*
+9. **Launch** → **Stop**. This finalizes the bag.
+10. Your bag is in `~/tevv-runs/<scenario>_<timestamp>/bag/`:
+    ```bash
+    ros2 bag info ~/tevv-runs/<scenario>_<timestamp>/bag
+    ```
 
 ---
 
@@ -152,6 +179,21 @@ first run:
 export DISPLAY=:1      # run `echo $DISPLAY` in a desktop terminal to see which
 export XAUTHORITY=$(ls -t /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -1)
 ```
+
+### Updating an existing checkout
+
+To move a checkout you set up earlier onto a new release:
+
+```bash
+make dashboard-down
+git pull
+grep -n '_IMAGE=' .env        # delete any image lines this shows; they override the release
+./product.sh pull-images      # refresh images whose tags were republished
+./setup.sh                    # installs any new packs
+make dashboard
+```
+
+Scenarios in `scenarios/` and runs in `~/tevv-runs/` are kept.
 
 ---
 
@@ -515,6 +557,38 @@ above.
 
 **Visualisation.** Connect Foxglove or Lichtblick to `ws://localhost:8765`
 (vehicle 1).
+
+### Running stacks without the dashboard
+
+The same generate, run and stop steps are available as commands, for scripts,
+CI, or a machine where you only need the simulation. Paths are inside the
+repository, which is mounted at `/workspace`:
+
+```bash
+./product.sh cli runtime --scenario /workspace/scenarios/<name> \
+                         --out /workspace/generated/<name> --no-run   # validate + generate
+./product.sh cli run-stack --stack /workspace/generated/<name> --detach
+./product.sh cli status    --stack /workspace/generated/<name>
+./product.sh cli logs      --stack /workspace/generated/<name>
+./product.sh cli stop      --stack /workspace/generated/<name>
+```
+
+Nothing records a bag automatically this way. Record from your own container
+as shown in [Connecting your autonomy stack](#connecting-your-autonomy-stack),
+for example:
+
+```bash
+docker run --rm --network <stack>_agent_internal-1 --ipc host -v /dev/shm:/dev/shm \
+  -u $(id -u):$(id -g) -e HOME=/tmp -e ROS_DOMAIN_ID=<domain> \
+  -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+  -v ~/tevv-runs:/out --entrypoint bash \
+  dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0 -lc \
+  'source /opt/ros/humble/setup.bash && mkdir -p /out/my_run && ros2 bag record \
+   -o /out/my_run/bag -s sqlite3 /ground_truth/odom /imu/data /front_rgb/image_raw /clock'
+```
+
+Press Ctrl-C to stop recording. The bag is finalized when `ros2 bag record`
+exits cleanly.
 
 ### Repeatable test campaigns
 
