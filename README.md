@@ -20,8 +20,9 @@ make dashboard-down
 By default, `make dashboard` runs the transitional development workflow: it keeps any locally built matching image tags, pulls only tags absent from the Docker image store, and uses the tag-only development image-set overlay for generated stacks. It does not refresh an existing tag. Run `./product.sh setup` when you deliberately want the approved remote images refreshed; use `IMAGE_MODE=production` to test the immutable release pins.
 
 `make dashboard` also onboards the standalone-v2 content: on the first run it
-downloads the channel's checksum-locked demo packs (UE 5.8.2: five levels and
-two object packs, about 5.7 GB; Office Environment and XFS are the big ones)
+downloads the channel's checksum-locked demo packs (MnS 1.0: six levels, four
+object packs and the vehicle models, about 7.7 GB; Office Environment and XFS
+are the big ones)
 into the channel's pack store through the product-shell image, then stages them
 for ScenarioLab, and seeds ScenarioLab's
 PackLibrary with the `mns_vehicle_models` and `scenario_runtime_basic` asset
@@ -67,16 +68,16 @@ owns its own pack store and authoring data under `.mns/` and its own lock and
 host contract under `packs/` (see [packs/README.md](packs/README.md)):
 
 ```bash
-make dashboard                 # CHANNEL=ue582, UE 5.8.2 (default): 5 level + 2 object packs, ~5.7 GB
+make dashboard                 # CHANNEL=v1, MnS 1.0 on UE 5.8.2 (default): 6 level + 5 object packs, ~7.7 GB
+make dashboard CHANNEL=ue582   # the earlier UE 5.8.2 review set
 make dashboard CHANNEL=v2      # the previous UE 5.5.4 set: 4 level + 3 object packs, ~2.6 GB
 MNS_CHANNEL=v2 ./product.sh start
 ```
 
-Every image on the 5.8.2 channel is a published digest pin: runtime host
-`tevv-runtime-host-20260909.2` (2.55 GB), ScenarioLab `mns-authoring-20260909.1`
-(switches level packs in-process), generator `mns-stack-generator-20260909` and
-shell `mns-product-shell-20260909` (`packs/README.md` says what they were built
-from). A channel may also carry `channel: local` rows for images built on this
+Every image on the default `v1` channel is a published digest pin of the
+non-Substrate MnS 1.0 baseline: runtime host, ScenarioLab, generator and shell
+`*-v1.0.0` ([docs/releases/v1.0.0.md](docs/releases/v1.0.0.md) says what they
+were built from). A channel may also carry `channel: local` rows for images built on this
 machine; `tools/ensure-images.sh` and `./product.sh doctor` refuse to start a
 channel whose local images are missing. The dashboard's Content phase shows the
 active engine line, the packs published for it, and installs the missing ones.
@@ -84,14 +85,14 @@ active engine line, the packs published for it, and installs the missing ones.
 The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
 generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
 (no source checkouts — same distribution contract as `./launch.sh`).
-**Runtime Config** edits the evaluation files in the shared runs directory
+**Monitor → Controls** edits the evaluation files in the shared runs directory
 (`TEVV_RUNS_DIR`, default `~/tevv-runs`; hot-reloaded). **Calibration**
 shows the sim-to-real verdicts the `sim-real-eval` worker writes there
 automatically after each recorded run (enable with
 `runtime.features: { sim_real_eval: true }` in the scenario).
 
 The browser product shell (`./product.sh start`, port 8760) remains the
-visual ScenarioLab authoring surface; the dashboard links to it. Grafana
+visual ScenarioLab authoring surface. Grafana
 monitoring stays on :3000 — the dashboard uses :3001.
 
 ---
@@ -125,7 +126,7 @@ Use the pull helper directly when you only want to refresh the image cache:
 `make dashboard` installs the checksum-verified standalone-v2 demo catalog itself. For the product shell, or to install a subset by hand:
 
 ```bash
-tools/install-demo-packs.sh --all             # the default channel's (UE 5.8.2) seven packs
+tools/install-demo-packs.sh --all             # the default channel's (MnS 1.0) eleven packs
 tools/install-demo-packs.sh --safti --office-props
 tools/install-demo-packs.sh --objects         # every object pack in the lock
 tools/install-demo-packs.sh --missing --all   # only what the store lacks (what make dashboard runs)
@@ -133,7 +134,7 @@ tools/install-demo-packs.sh --check --all     # offline: list installed/missing,
 tools/install-demo-packs.sh --lock packs/standalone-v2-review.1.lock.json --help   # the 5.5.4 set's selections
 ```
 
-The installer downloads the assets declared in the selected lock (`--lock` or `MNS_DEMO_PACK_LOCK`; default `packs/standalone-v2-ue582.lock.json`), verifies their full SHA-256 checksums, installs them into the channel's content-addressed pack store, and refreshes ScenarioLab's resolved pack index. Selections are the lock's: `--condo`, `--safti`, `--xfs`, `--office`, `--warehouse`, `--office-props`, `--warehouse-props` on 5.8.2. Run with `--dry-run` to inspect the selected immutable assets without downloading them. It refuses to start a download that cannot fit (archive plus store copy) and says how much room it needs; `MNS_DEMO_PACK_DOWNLOAD_DIR` moves the staging area. The product-shell image that performs the install is the lock's digest pin, or `MNS_PRODUCT_SHELL_IMAGE` when set, which is how `make dashboard` keeps install and staging on the selected `IMAGE_MODE`'s shell.
+The installer downloads the assets declared in the selected lock (`--lock` or `MNS_DEMO_PACK_LOCK`; default `packs/v1.0.0.lock.json`), verifies their full SHA-256 checksums, installs them into the channel's content-addressed pack store, and refreshes ScenarioLab's resolved pack index. Selections are the lock's: `--warehouse`, `--office`, `--condo`, `--xfs`, `--safti`, `--fishermans-cabin`, `--office-props`, `--office-pack-vol-1`, `--warehouse-props`, `--fishermans-cabin-props`, `--mns_vehicle_models` on MnS 1.0. Run with `--dry-run` to inspect the selected immutable assets without downloading them. It refuses to start a download that cannot fit (archive plus store copy) and says how much room it needs; `MNS_DEMO_PACK_DOWNLOAD_DIR` moves the staging area. The product-shell image that performs the install is the lock's digest pin, or `MNS_PRODUCT_SHELL_IMAGE` when set, which is how `make dashboard` keeps install and staging on the selected `IMAGE_MODE`'s shell.
 
 Each generated ScenarioSpec selects an environment with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact. The specs committed under `scenarios/` predate this and carry only `environment.id`, so they cannot select a v2 level pack — each one now says so in its header, and `tools/images.sh drift` skips them by name rather than reporting a generation failure. They remain as a reference for the legacy static stacks under `compose/`; re-author them in ScenarioLab to migrate. The catalog includes six authoring vehicle models independently of the three placeable object-vehicle models.
 

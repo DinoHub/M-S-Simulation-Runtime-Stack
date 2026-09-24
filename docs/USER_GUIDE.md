@@ -55,8 +55,8 @@ run `./setup.sh` again; it skips whatever is already done.
 
 | MnS term | What it is, in domain terms |
 |---|---|
-| **Level pack** | A pre-built Unreal map, the environment you fly in (Blocks, Condo, XFS, Safticity, Pendleton, Electric Dreams). It is downloaded once and checksum-verified. |
-| **Object pack** | Placeable props, plus the vehicle models. `mns_vehicle_models` supplies the drones. |
+| **Level pack** | A pre-built Unreal map, the environment you fly in: Warehouse, Office Environment, Condo, XFS, Safti or Fisherman's Cabin. It is downloaded once and checksum-verified. ScenarioLab can open **Warehouse** and **Office Environment**; the other four are *runtime only* and fly from hand-written specs. |
+| **Object pack** | Placeable props: office, warehouse and cabin props. The drone models come as their own pack, `mns_vehicle_models`. |
 | **ScenarioLab** | An Unreal-based editor. You place vehicles, sensors and objects in a level, then **Export**. |
 | **ScenarioSpec** | The exported scenario: a folder of YAML files covering the environment, vehicles, sensor profiles, objects and runtime settings. It is the single input to everything downstream. |
 | **Stack** | A docker compose project generated from a ScenarioSpec. It contains the Unreal/AirSim runtime host, one SITL per vehicle, a ROS 2 bridge per vehicle, a Foxglove bridge and, optionally, QGroundControl. |
@@ -65,9 +65,10 @@ run `./setup.sh` again; it skips whatever is already done.
 
 Three things work differently from a typical ROS 2 sim setup:
 
-- **One ROS domain per vehicle.** Vehicle 1 is on `ROS_DOMAIN_ID=1`, vehicle 2
-  on `2`, and so on. Topic names have **no vehicle namespace**, for example
-  `/imu/data` rather than `/Copter1/imu/data`.
+- **One ROS domain per vehicle.** Each vehicle's `ROS_DOMAIN_ID` comes from its
+  `ros_domain_id` in the scenario; ScenarioLab numbers them 1, 2, … by default.
+  Topic names have **no vehicle namespace**, for example `/imu/data` rather than
+  `/Copter1/imu/data`.
 - **Everything is containerised on Docker bridge networks.** Your own nodes
   join the stack's network, as described in
   [Connecting your autonomy stack](#connecting-your-autonomy-stack).
@@ -81,10 +82,11 @@ Three things work differently from a typical ROS 2 sim setup:
 **Hardware**
 - An NVIDIA GPU with a current driver. Both the simulator and ScenarioLab
   render on it.
-- **About 50 GB of free disk** for the first setup:
-  - images: several GB
-  - content packs: about 15 GB to download (Electric Dreams alone is 12 GB),
-    and briefly about twice that while they install
+- **About 35 GB of free disk** for the first setup. `./setup.sh` works out the
+  exact figure for your pack selection.
+  - images: about 15 GB
+  - content packs: about 8 GB to download, and briefly about twice that while
+    they install
   - rosbags on top of that: hundreds of MB to several GB per minute, depending
     on the topics you record
 
@@ -124,7 +126,7 @@ It works through five steps and prints a ✓ or ✗ for each check:
 | **2. Local configuration** | Creates `.env` from `.env.example`, with defaults only; nothing needs editing. Also creates the working folders. |
 | **3. Accounts** | Checks your Docker Hub and GitHub logins. If one is missing, it runs `docker login` or `gh auth login` for you. |
 | **4. Container images** | Downloads the release images (several GB). Images you already have are kept. |
-| **5. Content packs** | Downloads, verifies and installs the level and object packs (about 15 GB), and makes them visible to ScenarioLab. |
+| **5. Content packs** | Downloads, verifies and installs the level and object packs (about 8 GB), and makes them visible to ScenarioLab. |
 
 It ends with **Setup complete** and tells you to run `make dashboard`.
 
@@ -137,7 +139,7 @@ run it again. Work that is already done is skipped, so a re-run is quick.
 | Command | When to use it |
 |---|---|
 | `./setup.sh --check` | Only check the machine; change and download nothing. |
-| `./setup.sh --packs "--blocks --condo --xfs"` | Install only some levels, for example to skip the 12 GB Electric Dreams. The choices are `--blocks --condo --xfs --safticity --pendleton --electric_dreams`. |
+| `./setup.sh --packs "--condo --xfs"` | Install only some packs, to save disk or time. Levels: `--condo --xfs --safti --warehouse --fishermans-cabin --office`. Props: `--office-props --office-pack-vol-1 --warehouse-props --fishermans-cabin-props`. |
 | `./setup.sh --no-packs` | Skip the pack download for now. `make dashboard` installs the packs later. |
 
 You can add more packs at any time from the dashboard's **Content** step.
@@ -253,8 +255,10 @@ this order:
    folder name `scenarios/<name>/`.
 2. **Environment**: pick a **Level Pack** and click **Apply Level Pack**. The
    level loads.
-   - Do this **first**. Switching levels restarts ScenarioLab and discards
-     everything placed so far.
+   - For a first run, pick **Warehouse**. The list shows only levels
+     ScenarioLab can open: Warehouse and Office Environment.
+   - Do this **first**. Switching levels can restart ScenarioLab, and it
+     discards everything placed so far.
    - Optional settings here: **Edit MnS Origin** (the ROS frame origin), time
      of day, and a weather preset.
 3. **Runtime**: choose the **Autopilot** (`px4` or `ardupilot`; it applies to
@@ -433,7 +437,8 @@ You can also get it from the browser:
 The runtime defaults:
 - **ROS 2 Humble**, `rmw_fastrtps_cpp` over UDPv4.
 - `use_sim_time:=true`; `/clock` comes from the simulator.
-- `ROS_DOMAIN_ID` equals the vehicle's index.
+- `ROS_DOMAIN_ID` is the vehicle's `ros_domain_id` from the scenario. Check it with
+  `grep ROS_DOMAIN_ID generated/<name>/docker-compose.yml`.
 
 ### Topics
 
@@ -450,7 +455,7 @@ These are the defaults for one vehicle on its own domain:
 | `/ground_truth/odom` | `nav_msgs/Odometry` (`odom` → `base_link`) |
 | `/pose` | `geometry_msgs/PoseStamped` |
 | `/imu/data`, `/imu/mag`, `/air_pressure`, `/gps/fix` | IMU, magnetometer, barometer, `NavSatFix` |
-| `/camera/<cam>/image_raw`, `/camera/<cam>/camera_info` | per RGB camera |
+| `/<camera>/image_raw`, `/<camera>/camera_info`, `/<camera>/camera_pose` | per camera, named after the camera in the sensor profile, e.g. `/front_rgb/image_raw` (`bgra8`) |
 | `/lidar/points` | `PointCloud2` |
 | `/clock`, `/tf`, `/tf_static` | |
 
@@ -462,25 +467,31 @@ Commands go in through the bridge as services (`/takeoff`, `/land`, `/reset`,
 **Frames.** AirSim works in NED/FRD. The bridge publishes REP-105 ENU/FLU
 (`map → odom → base_link`).
 
-**Wide cameras.** A camera with a field of view of 90° or more, or a fisheye
-camera, is sent over shared memory (iceoryx) for VIO. It then has **no**
-`/camera/…/image_raw` topic. `make topics` shows this.
+**Cameras.** Images travel from the simulator to the bridge over shared
+memory (iceoryx), and the bridge publishes them as `/<camera>/image_raw`.
+`make topics` currently lists such a camera under *NOT on ROS — camera rides
+the iceoryx SHM path*. That line is out of date: the image topic is there once
+the stack runs.
 
 ### Connecting your autonomy stack
 
 **Over ROS 2.** The stack's ROS traffic lives on Docker bridge networks, one
 per vehicle, named `<stack>_agent_internal-N`. Run your nodes in a container
-attached to that network with the same domain, RMW, user and shared memory:
+attached to that network with the stack's domain, RMW, user and shared memory:
 
 ```bash
-docker network ls | grep agent_internal          # find the network name
+docker network ls | grep agent_internal                       # the network name
+grep -m1 ROS_DOMAIN_ID generated/<name>/docker-compose.yml    # the vehicle's domain
 docker run --rm -it \
   --network <stack>_agent_internal-1 \
-  --ipc host -v /dev/shm:/dev/shm -u $(id -u):$(id -g) \
-  -e ROS_DOMAIN_ID=1 -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
+  --ipc host -v /dev/shm:/dev/shm -u $(id -u):$(id -g) -e HOME=/tmp \
+  -e ROS_DOMAIN_ID=<domain> -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
   -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 -e ROS_LOCALHOST_ONLY=0 \
   <your-ros2-humble-image> ros2 topic list
 ```
+
+If you see only `/rosout` and `/parameter_events`, the domain is wrong or the
+bridge is still starting.
 
 Use the same user id as the stack. A mismatched user can subscribe, but
 receives nothing over shared memory. The dashboard's own recorder attaches
@@ -553,7 +564,7 @@ top of `.env`:
 | `DB=true` | Adds the telemetry history database. |
 | `IMAGE_MODE=production` | Uses only the exact, digest-pinned release images. |
 | `MNS_SKIP_PACK_INSTALL=1` | Skips the pack check, for offline starts. |
-| `CHANNEL=ue582` / `CHANNEL=v2` | Runs an older pre-release line. It has its own packs and data. |
+| `CHANNEL=ue582` / `CHANNEL=v2` | Runs an older pre-release line (UE 5.8.2 review set / UE 5.5.4). Each has its own packs and data. |
 
 **Keep image variables (`*_IMAGE`) out of `.env`.** An image set there
 overrides the release, so you would run a different image from everyone else.
@@ -570,7 +581,7 @@ overrides the release, so you would run a different image from everyone else.
 | `✗ NVIDIA container runtime not usable` | Install the NVIDIA Container Toolkit. `./setup.sh` prints the exact commands. |
 | `pull access denied for dhdevspace/auto_mns` | Your Docker Hub account lacks access. Ask your MnS contact. |
 | Pack download fails with `404` | Your GitHub account cannot read the pack releases (they answer 404, not 401). Check `gh auth status` and ask for access. |
-| `only N GB free` | Free disk, or install fewer packs: `./setup.sh --packs "--blocks --condo"`. |
+| `only N GB free` | Free disk, or install fewer packs: `./setup.sh --packs "--condo --xfs"`. |
 | No internet on this machine | Copy the `.mnslevelpack` / `.mnsassetpack` files into `.mns/v1/packs/`, then run `tools/pull-packs.sh --import` and `./setup.sh --no-packs`. |
 
 **Dashboard and ScenarioLab**
@@ -582,6 +593,8 @@ overrides the release, so you would run a different image from everyone else.
 | Author: *not ready*, `display` / `xauthority` | Run `make dashboard` from a desktop terminal, or see Display access in [section 3](#3-setup). |
 | Author: *not ready*, `pack_store` / `packs_staged` | In Content, click **Download & stage** or **Stage**. |
 | *editor exited immediately* | Usually the GPU or the display. **Editor log** in Author shows Unreal's own error. |
+| Generate prints *…different registry digests; proceeding without enforcing base-release compatibility* | Advisory only: the level pack was cooked against an earlier build of the same base release. Generation continues and the level loads. |
+| A level shows *runtime only* in Content | Expected for Condo, XFS, Safti and Fisherman's Cabin; see [Known limitations](#10-known-limitations). Author in Warehouse or Office Environment. |
 | Scenario doesn't appear in Authored scenarios | It wasn't exported; closing ScenarioLab does not save. Check its status line for *Exported ScenarioSpec*. |
 | Export succeeded but has a default drone at the origin | No drone was placed. Export adds a default one; run **Validate** first. |
 
@@ -593,6 +606,7 @@ overrides the release, so you would run a different image from everyone else.
 | `unreal-airsim is unhealthy`, restarting in a loop | The display. Start `make dashboard` from a desktop terminal. |
 | PX4 won't arm: `ekf2 missing data` | Wait 1–2 minutes after spawn. |
 | Lichtblick shows no topics | ROS domain mismatch. Relaunch from the dashboard, and check the hint on Monitor. |
+| Your node sees only `/rosout` and `/parameter_events` | Wrong `ROS_DOMAIN_ID`, or the bridge hasn't finished starting. Read the domain from `generated/<name>/docker-compose.yml`. |
 | Your node sees topics but no data | Your container's user id differs from the stack's. Run it with `-u $(id -u):$(id -g)` and share `/dev/shm`. |
 | Bag missing from Replay / Analysis | It was not finalized. Always stop from the dashboard. |
 | Huge bag | No topics were selected, so everything was recorded. Pick topics in ROS 2 → Bag capture. |
@@ -612,8 +626,13 @@ overrides the release, so you would run a different image from everyone else.
 - **ArduPilot:** the dashboard's command link carries heartbeats only, so
   takeoff altitude is not reported and the vehicle stays armed after a
   descent "land". Disarm it explicitly.
-- **ROS `map` height** is offset by the small settle drop before arming (about
-  4.6 m on Electric Dreams).
+- **Runtime-only levels.** ScenarioLab cannot open Condo, XFS, Safti or
+  Fisherman's Cabin: its editor lacks plugins those levels need. They still
+  mount and fly, but you author them by hand, starting from a Warehouse
+  export. Set the spec's origin to the level's PlayerStart; with the default
+  (0,0,0) origin the drone can spawn high above the level and fall.
+- **Office Environment** has a low ceiling. PX4 takeoffs there can be slow, and
+  flights fly low.
 - **Bags are sqlite3 (`.db3`).** Convert with `ros2 bag convert` if you need
   MCAP.
 - **Legacy scenarios:** the scenarios under `scenarios/` marked *LEGACY v1

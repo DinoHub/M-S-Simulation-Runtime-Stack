@@ -5,7 +5,7 @@
 #   ./setup.sh                    check the machine, log in, pull images, install packs
 #   ./setup.sh --check            check only: change nothing, download nothing
 #   ./setup.sh --no-packs         everything except the pack download (do it later)
-#   ./setup.sh --packs "--blocks --condo"   install only these packs
+#   ./setup.sh --packs "--condo --xfs"      install only these packs
 #
 # Safe to re-run: every step skips what is already done. It never needs sudo;
 # where a host package is missing it prints the command to install it.
@@ -90,11 +90,36 @@ if command -v python3 >/dev/null 2>&1; then
   done
 fi
 
+# Size of the selected packs, from the lock tools/install_demo_packs.py reads
+# (MNS_DEMO_PACK_LOCK, else the default channel's). Also validates --packs.
+pack_info=$(PACKS="$PACKS" python3 - <<'PY' 2>&1
+import json, os, sys
+sys.path.insert(0, "tools")
+import install_demo_packs as m
+lock = json.load(open(os.environ.get("MNS_DEMO_PACK_LOCK") or m.DEFAULT_LOCK_PATH))
+names = [a[2:] for a in os.environ["PACKS"].split()]
+known = {p["selection"] for p in lock["packs"]}
+# ScenarioLab cannot place a drone without the vehicle models: always add them.
+if "all" not in names and "mns_vehicle_models" in known and "mns_vehicle_models" not in names:
+    names.append("mns_vehicle_models")
+bad = [n for n in names if n not in known | {"all", "objects"}]
+if bad:
+    sys.exit("unknown pack(s): " + " ".join("--" + b for b in bad)
+             + ". Choose from: " + " ".join("--" + k for k in sorted(known)))
+sel = [p for p in lock["packs"] if "all" in names or p["selection"] in names
+       or ("objects" in names and p["kind"] == "asset")]
+print(round(sum(p.get("size_bytes", 0) for p in sel) / 1e9, 1), " ".join("--" + n for n in names))
+PY
+) || { echo "  ✗ $pack_info"; exit 2; }
+PACK_GB="${pack_info%% *}"
+PACKS="${pack_info#* }"
+# Archive + store copy while installing, plus ~15 GB for images.
+need_gb=$(python3 -c "import math; print(math.ceil(2 * $PACK_GB + 15))")
 free_gb=$(df -Pk "$SCRIPT_DIR" | awk 'NR==2 {printf "%d", $4/1024/1024}')
-if [[ "$INSTALL_PACKS" == true && "$PACKS" == "--all" && "$free_gb" -lt 50 ]]; then
-  problem "only ${free_gb} GB free here; the full pack set needs about 50 GB  →  free space, or use --packs \"--blocks --condo --xfs\""
+if [[ "$INSTALL_PACKS" == true && "$free_gb" -lt "$need_gb" ]]; then
+  problem "only ${free_gb} GB free here; images + the selected packs (${PACK_GB} GB) need about ${need_gb} GB  →  free space, or install fewer packs with --packs"
 else
-  ok "${free_gb} GB free disk"
+  ok "${free_gb} GB free disk (about ${need_gb} GB needed)"
 fi
 
 if [[ -n "${DISPLAY:-}" ]]; then
@@ -195,13 +220,13 @@ fi
 
 # ---------------------------------------------------------------------------
 if [[ "$INSTALL_PACKS" == true ]]; then
-  step "5/5" "Content packs: levels and objects ($PACKS; about 15 GB for --all the first time)"
+  step "5/5" "Content packs: levels and objects ($PACKS, ${PACK_GB} GB the first time)"
   if ! make --no-print-directory stage-authoring-packs MNS_DEMO_PACKS="$PACKS"; then
     echo
-    echo "Pack install failed (message above). A 404 means your GitHub account cannot"
-    echo "read the pack releases: ask your MnS contact for access. Fix it and run"
-    echo "./setup.sh again (installed packs are kept), or run ./setup.sh --no-packs to"
-    echo "finish without them."
+    echo "Pack install failed; the install-demo-packs line above says why. A network"
+    echo "drop only needs ./setup.sh again (installed packs are kept); a 404 means your"
+    echo "GitHub account cannot read the pack releases (ask your MnS contact). Or run"
+    echo "./setup.sh --no-packs to finish without them."
     exit 1
   fi
 else

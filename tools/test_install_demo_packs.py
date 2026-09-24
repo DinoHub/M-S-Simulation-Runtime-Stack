@@ -142,6 +142,56 @@ class InstallerTests(unittest.TestCase):
             installer.check_disk_space(Path(self.tmp.name), _lock()["packs"])
 
 
+class ResumeDownloadTests(unittest.TestCase):
+    """A dropped connection resumes; an HTTP error does not retry."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.target = Path(self.tmp.name) / "pack.mnslevelpack"
+        self.calls = []
+        url = mock.patch.object(installer, "asset_api_url", return_value="https://api.example/asset/1")
+        nap = mock.patch.object(installer.time, "sleep")
+        url.start(); nap.start()
+        self.addCleanup(url.stop); self.addCleanup(nap.stop); self.addCleanup(self.tmp.cleanup)
+
+    def _curl(self, *exit_codes):
+        codes = list(exit_codes)
+        def fake_run(command, **_kwargs):
+            self.calls.append(command)
+            with self.target.open("ab") as out:
+                out.write(b"x" * 10)
+            code = codes.pop(0)
+            if code:
+                raise installer.subprocess.CalledProcessError(code, command)
+        return mock.patch.object(installer, "run", fake_run)
+
+    def test_a_dropped_stream_resumes_from_the_bytes_on_disk(self):
+        with self._curl(92, 18, 0), contextlib.redirect_stderr(io.StringIO()) as err:
+            installer._download_named_asset({}, "pack.mnslevelpack", "t", self.target)
+        self.assertEqual(len(self.calls), 3)
+        self.assertTrue(all("--continue-at" in c for c in self.calls))
+        self.assertIn("resuming (attempt 2 of", err.getvalue())
+        self.assertEqual(self.target.stat().st_size, 30)
+
+    def test_an_http_error_is_not_retried(self):
+        with self._curl(installer.CURL_HTTP_ERROR, 0):
+            with self.assertRaises(installer.subprocess.CalledProcessError):
+                installer._download_named_asset({}, "pack.mnslevelpack", "t", self.target)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_it_gives_up_after_the_last_attempt(self):
+        with self._curl(*([56] * installer.DOWNLOAD_ATTEMPTS)), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(installer.subprocess.CalledProcessError):
+                installer._download_named_asset({}, "pack.mnslevelpack", "t", self.target)
+        self.assertEqual(len(self.calls), installer.DOWNLOAD_ATTEMPTS)
+
+    def test_the_hint_separates_network_from_access_failures(self):
+        network = installer._hint_for(installer.subprocess.CalledProcessError(92, ["curl"]))
+        access = installer._hint_for(installer.subprocess.CalledProcessError(22, ["curl"]))
+        self.assertIn("network problem", network)
+        self.assertIn("404", access)
+
+
 
 class StagingStaysInItsOwnChannel(unittest.TestCase):
     """A store and an authoring data root are two halves of one channel."""
