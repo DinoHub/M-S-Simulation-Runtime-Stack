@@ -658,8 +658,7 @@ To free disk, delete old runs from `~/tevv-runs/`, and old scenarios with the
 
 Nothing here is needed for a normal run.
 
-**Settings in `.env`.** Uncomment the line in the *Dashboard* section at the
-top of `.env`:
+**Settings in `.env`.** Uncomment the line you need in `.env`:
 
 | Variable | Default | Change it to |
 |---|---|---|
@@ -749,8 +748,6 @@ overrides the release, so you would run a different image from everyone else.
   flights fly low.
 - **Bags are sqlite3 (`.db3`).** Convert with `ros2 bag convert` if you need
   MCAP.
-- **Legacy scenarios:** the scenarios under `scenarios/` marked *LEGACY v1
-  SCENARIO SPEC* cannot be generated; re-author them in ScenarioLab.
 - **ScenarioLab** has no mission or waypoint authoring. Fly missions from
   Monitor, QGroundControl or your own stack.
 

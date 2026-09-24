@@ -5,7 +5,7 @@
 # images/platform-images.generated.env,
 # images/standalone-v2-development.generated.env,
 # images/standalone-v2-images.generated.env,
-# images/legacy-images.generated.env) is generated and committed. See
+# ...) is generated and committed. See
 # docs/adr/0002-one-image-catalog.md.
 #
 #   tools/images.sh status          # START HERE: one prioritized "what needs you"

@@ -71,7 +71,7 @@ if [[ -n "$CHANNEL_AUTHORING_CONTRACT" ]]; then
 fi
 EXPORT_ROOT="$ROOT/scenarios"
 GENERATED_ROOT="$ROOT/generated"
-AUTHORING_AIRSIM_SETTINGS="$ROOT/config/unreal-airsim/authoring-preview.json"
+AUTHORING_AIRSIM_SETTINGS="$ROOT/config/scenariolab/airsim-settings.json"
 AUTHORING_DOCKER_ARGS="-v \"$AUTHORING_AIRSIM_SETTINGS:/tmp/Documents/AirSim/settings.json:ro\"${MNS_AUTHORING_DOCKER_ARGS:+ $MNS_AUTHORING_DOCKER_ARGS}"
 # 8760 (was 8765): 8765 is the Foxglove websocket standard — Lichtblick's
 # default connection URL and the dashboard backend's FOXGLOVE_PROBE_PORT both

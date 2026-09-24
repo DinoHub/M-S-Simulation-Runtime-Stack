@@ -18,12 +18,11 @@ on:
       - "tools/install_demo_packs.py"
       - "tools/test_install_demo_packs.py"
       - "tools/build_pack_lock.py"
-      - "tools/check_ue_candidate.py"
-      - "tools/test_check_ue_candidate.py"
       - "tools/load-images-env.sh"
       - "packs/**"
       - "docker-compose-dashboard.yml"
-      - "tests/full-product-e2e/run.sh"
+      - "setup.sh"
+      - "download-packs.sh"
       - "product.sh"
       - "Makefile"
       - ".github/workflows/images.yml"
@@ -72,17 +71,17 @@ jobs:
             tools/stage-authoring-packs.sh \
             tools/install-demo-packs.sh \
             tools/load-images-env.sh \
-            tests/full-product-e2e/run.sh
+            setup.sh \
+            download-packs.sh
 
       - name: python syntax
-        run: python -m compileall -q tools/images.py tools/install_demo_packs.py tools/build_pack_lock.py tools/check_ue_candidate.py
+        run: python -m compileall -q tools/images.py tools/install_demo_packs.py tools/build_pack_lock.py tools/preview_topics.py
 
       - name: tooling unit tests
-        # Offline: the installer's lock/store/contract logic and the UE
-        # candidate gate, both against synthetic fixtures.
+        # Offline: the installer's lock/store/contract/download logic against
+        # synthetic fixtures.
         run: |
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_install_demo_packs.py'
-          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_check_ue_candidate.py'
 
       - name: offline dry-run smoke
         # Every one of these resolves the catalog and prints; none contacts a

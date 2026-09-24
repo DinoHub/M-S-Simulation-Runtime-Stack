@@ -1,19 +1,18 @@
 .env
 .env.bridge
 **/.env.bridge
+*.log
+# Output folders the removed ./launch.sh stacks wrote; kept ignored so an
+# older checkout never commits them.
 metrics_outputs/
 logs/
 tmp/
 data/
-*.log
 .DS_Store
 .vscode/
 .idea/
 __pycache__/
 *.pyc
-
-# UE5 crash-dump captures pulled from xfs containers for local debugging
-xfs-container-crashes/
 # ScenarioSpec-generated runtime stacks
 generated/
 
@@ -23,17 +22,7 @@ generated/
 /.mns/
 /generated/
 /scenarios/*
-!/scenarios/blocks-quickstart/
-!/scenarios/blocks-quickstart/ScenarioSpec.yaml
-!/scenarios/condo-ardupilot/
-!/scenarios/condo-ardupilot/ScenarioSpec.yaml
-!/scenarios/condo-px4/
-!/scenarios/condo-px4/ScenarioSpec.yaml
-!/scenarios/xfs-ardupilot/
-!/scenarios/xfs-ardupilot/ScenarioSpec.yaml
-!/scenarios/xfs-scenario/
-!/scenarios/xfs-scenario/ScenarioSpec.yaml
-# The reference campaign, unlike the scenarios above, is a whole directory:
+# The reference campaign is a whole directory:
 # the spec, the campaign over it, the route it flies and the estimator
 # calibration are one committed unit, because a campaign that ships half of
 # itself cannot be copied and run.

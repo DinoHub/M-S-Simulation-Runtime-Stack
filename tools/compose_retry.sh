@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Retry wrapper around `docker compose`, sourced by launch.sh and the Makefile.
+# Retry wrapper around `docker compose`, sourced by the Makefile.
 #
 # Every mutable-tag service here carries `pull_policy: always`, so each `up`
 # contacts the registry — and a single failed manifest HEAD aborts the whole

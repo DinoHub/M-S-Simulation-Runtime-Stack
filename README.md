@@ -85,7 +85,7 @@ active engine line, the packs published for it, and installs the missing ones.
 
 The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
 generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
-(no source checkouts — same distribution contract as `./launch.sh`).
+(no source checkouts).
 **Monitor → Controls** edits the evaluation files in the shared runs directory
 (`TEVV_RUNS_DIR`, default `~/tevv-runs`; hot-reloaded). **Calibration**
 shows the sim-to-real verdicts the `sim-real-eval` worker writes there
@@ -93,8 +93,8 @@ automatically after each recorded run (enable with
 `runtime.features: { sim_real_eval: true }` in the scenario).
 
 The browser product shell (`./product.sh start`, port 8760) remains the
-visual ScenarioLab authoring surface. Grafana
-monitoring stays on :3000 — the dashboard uses :3001.
+visual ScenarioLab authoring surface. The dashboard's Grafana tab embeds
+`GRAFANA_URL` (default `localhost:3000`); MnS ships no Grafana of its own.
 
 ---
 
@@ -118,13 +118,13 @@ Use the pull helper directly when you only want to refresh the image cache:
 ./product.sh pull-images                 # active product set
 ./product.sh pull-images --dry-run       # print exact refs without pulling
 ./product.sh pull-images --development    # explicitly refresh dashboard development tags
-./product.sh pull-images --all-catalog   # legacy/optional catalog entries too
+./product.sh pull-images --all-catalog   # optional catalog entries too
 ./product.sh pull-images --refresh-moving
 ```
 
-`--refresh-moving` runs `tools/images.sh bump --channel moving`: it advances every `channel: moving` row — the legacy simulator, observability, and dashboard images, whose tags are republished in place — to whatever digest that tag resolves to now, regenerates the image files, and then pulls them. It deliberately does **not** touch the standalone-v2 rows: those are `channel: pinned`, and `bump` refuses pinned rows so a release pin only ever moves by hand. Because it rewrites `images/catalog.yaml`, it cannot be combined with `--dry-run`; use `tools/images.sh report` to preview instead. Commit and review those catalog changes before using them for a release. The normal command never silently changes a digest.
+`--refresh-moving` runs `tools/images.sh bump --channel moving`: it advances every `channel: moving` row — the dashboard, autopilot, QGroundControl and sim-real-eval images, whose tags are republished in place — to whatever digest that tag resolves to now, regenerates the image files, and then pulls them. It deliberately does **not** touch the standalone-v2 rows: those are `channel: pinned`, and `bump` refuses pinned rows so a release pin only ever moves by hand. Because it rewrites `images/catalog.yaml`, it cannot be combined with `--dry-run`; use `tools/images.sh report` to preview instead. Commit and review those catalog changes before using them for a release. The normal command never silently changes a digest.
 
-`make dashboard` installs the checksum-verified standalone-v2 demo catalog itself. For the product shell, or to install a subset by hand:
+`./download-packs.sh` installs content packs (see above). The underlying installer, for scripting or the product shell:
 
 ```bash
 tools/install-demo-packs.sh --all             # the default channel's (MnS 1.0) eleven packs
@@ -137,7 +137,7 @@ tools/install-demo-packs.sh --lock packs/standalone-v2-review.1.lock.json --help
 
 The installer downloads the assets declared in the selected lock (`--lock` or `MNS_DEMO_PACK_LOCK`; default `packs/v1.0.0.lock.json`), verifies their full SHA-256 checksums, installs them into the channel's content-addressed pack store, and refreshes ScenarioLab's resolved pack index. Selections are the lock's: `--warehouse`, `--office`, `--condo`, `--xfs`, `--safti`, `--fishermans-cabin`, `--office-props`, `--office-pack-vol-1`, `--warehouse-props`, `--fishermans-cabin-props`, `--mns_vehicle_models` on MnS 1.0. Run with `--dry-run` to inspect the selected immutable assets without downloading them. It refuses to start a download that cannot fit (archive plus store copy) and says how much room it needs; `MNS_DEMO_PACK_DOWNLOAD_DIR` moves the staging area. The product-shell image that performs the install is the lock's digest pin, or `MNS_PRODUCT_SHELL_IMAGE` when set, which is how `make dashboard` keeps install and staging on the selected `IMAGE_MODE`'s shell.
 
-Each generated ScenarioSpec selects an environment with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact. The specs committed under `scenarios/` predate this and carry only `environment.id`, so they cannot select a v2 level pack — each one now says so in its header, and `tools/images.sh drift` skips them by name rather than reporting a generation failure. They remain as a reference for the legacy static stacks under `compose/`; re-author them in ScenarioLab to migrate. The catalog includes six authoring vehicle models independently of the three placeable object-vehicle models.
+Each generated ScenarioSpec selects an environment with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact. The only spec committed under `scenarios/` is `vio-reference`, the reference campaign; your own exports land beside it. The catalog includes six authoring vehicle models independently of the three placeable object-vehicle models.
 
 Stop the browser shell with:
 
@@ -197,46 +197,26 @@ runtime — `settings.json` sensors/cameras, `topic_names.yaml` renames,
 before starting anything:
 
 ```bash
-make topics                                # default scenario
-make topics SCENARIO=ardupilot-xfs
-make topics STACK=generated/xfs-fisheye
-./tools/preview_topics.py ardupilot-xfs --json
-TOPIC_PREFIX=/ make topics SCENARIO=ardupilot-xfs   # preview the flattened names
+make topics STACK=generated/<name>
+./tools/preview_topics.py generated/<name> --json
 ```
-
-`./launch.sh` prints a short version of this before every `up`; set
-`PREVIEW_TOPICS=false` to skip it.
 
 The names come from the bridge image's own launch code (`_final_topic`,
 `_canonical_vehicle_topics`, `load_topic_renames`) and each entry launch file's
 declared argument defaults — not a second copy of the rules here — so a new
-bridge image changes this output with it. That matters because the two bridge
-images in use disagree: `airsim-ros2-bridge` defaults `topic_prefix` to
-`{vehicle}/` while `tevv-airsim-ros2-bridge-humble` defaults it to `/` and adds a
-canonical `lidar/points` alias.
+bridge image changes this output with it. The `tevv-airsim-ros2-bridge-humble`
+bridge defaults `topic_prefix` to `/` (flat names, one ROS domain per vehicle)
+and adds a canonical `lidar/points` alias.
 
 The output separates published topics from services and command inputs, and
 flags `topic_names.yaml` keys matching no topic on a vehicle — harmless for a
 sensor the scenario does not run, and identical to what a typo'd key looks like.
 
-Scope: the vehicle node's own graph. Checked against a live
-`generated/xfs-fisheye` stack, every name matched `ros2 topic list` — which also
-lists ROS's own `/clock`, `/rosout`, `/parameter_events`, `/tf`, `/tf_static`.
-Two cases the listing calls out rather than hides: with `enable_vio` or
-`enable_shm_fisheye` the camera rides iceoryx shared memory and the vehicle node
-publishes no camera topic at all, and the settings.json-named lidar is
-superseded by the canonical `lidar/points` alias. Nodes outside the bridge
-launch are not visible here.
-
-## Full Acceptance Test
-
-The existing acceptance harness below covers the previous v1/Blocks product release and is retained for rollback verification:
-
-```bash
-./tests/full-product-e2e/run.sh
-```
-
-See [Full Product E2E](tests/full-product-e2e/README.md). Do not treat that test as standalone-v2 acceptance. The v2 acceptance run requires a published pack whose digest loads in both ScenarioLab and TEVVRuntimeHost; it must also verify runtime cleanup.
+Scope: the vehicle node's own graph; `ros2 topic list` also shows ROS's own
+`/clock`, `/rosout`, `/parameter_events`, `/tf`, `/tf_static`. Cameras on the
+iceoryx shared-memory path are listed as not on ROS, but the v1 bridge
+republishes them as `/<camera>/image_raw` once the stack runs. Nodes outside
+the bridge launch are not visible here.
 
 ## Headless CLI
 
@@ -252,5 +232,3 @@ The same product shell image exposes equivalent CLI actions:
 ```
 
 Paths passed to the container must be under this repository, mounted as `/workspace`.
-
-The previous named Compose stacks remain documented in [Legacy static stacks](docs/legacy-static-stacks.md). They are compatibility workflows, not the product architecture.
