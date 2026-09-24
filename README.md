@@ -4,7 +4,7 @@ This repository is the customer distribution of the MnS product. Its historical 
 
 The first screen is the browser product shell. It launches ScenarioLab in a separate Unreal window for authoring, runs the stack generator image for validation and generation, and owns generated-stack run, status, logs, and stop actions.
 
-> **New here?** Run `./setup.sh`, then `make dashboard`, and follow the [User Guide](docs/USER_GUIDE.md) from scenario to recorded rosbag.
+> **New here?** Run `./setup.sh`, `./download-packs.sh`, then `make dashboard`, and follow the [User Guide](docs/USER_GUIDE.md) from scenario to recorded rosbag.
 
 ## Dashboard Entry Point (full loop in the browser)
 
@@ -19,12 +19,12 @@ make dashboard-down
 
 By default, `make dashboard` runs the transitional development workflow: it keeps any locally built matching image tags, pulls only tags absent from the Docker image store, and uses the tag-only development image-set overlay for generated stacks. It does not refresh an existing tag. Run `./product.sh setup` when you deliberately want the approved remote images refreshed; use `IMAGE_MODE=production` to test the immutable release pins.
 
-`make dashboard` also onboards the standalone-v2 content: on the first run it
-downloads the channel's checksum-locked demo packs (MnS 1.0: six levels, four
-object packs and the vehicle models, about 7.7 GB; Office Environment and XFS
-are the big ones)
-into the channel's pack store through the product-shell image, then stages them
-for ScenarioLab, and seeds ScenarioLab's
+Content packs are downloaded by `./download-packs.sh` (`--list` shows the
+channel's checksum-locked demo packs; MnS 1.0: six levels, four object packs
+and the vehicle models, about 7.7 GB), which installs them into the channel's
+pack store through the product-shell image. `make dashboard` itself does not
+download packs unless `MNS_DEMO_PACKS` is set; it stages what the store holds
+for ScenarioLab (warning when that is nothing), and seeds ScenarioLab's
 PackLibrary with the `mns_vehicle_models` and `scenario_runtime_basic` asset
 packs from the pinned v1 authoring image (the standalone-v2 authoring image
 ships no default packs, and the editor cannot add a drone without the vehicle
@@ -36,8 +36,9 @@ the generated stack's generic TEVVRuntimeHost loads the same immutable artifact
 ScenarioLab authored against.
 
 ```bash
-make dashboard MNS_DEMO_PACKS="--safti --office-props"   # a subset (selections are the lock's; --help lists them)
-make dashboard MNS_SKIP_PACK_INSTALL=1                   # offline, or v1-only work
+./download-packs.sh --warehouse --office                 # a subset (./download-packs.sh --list shows them)
+make dashboard MNS_DEMO_PACKS=--all                      # install missing packs, then start
+make dashboard MNS_SKIP_PACK_INSTALL=1                   # skip the pack store check too
 ```
 
 The Author tab's preflight reports `pack_store` (what is installed) and

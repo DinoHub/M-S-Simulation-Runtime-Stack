@@ -22,12 +22,13 @@ clicking. Section 5 explains each step in full.
 ```bash
 git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
 cd M-S-Simulation-Runtime-Stack
-./setup.sh           # checks the machine, logs you in, downloads images and packs
+./setup.sh           # checks the machine, logs in to Docker Hub, pulls the images
+./download-packs.sh  # downloads the Unreal levels and objects (logs in to GitHub)
 make dashboard       # run from a terminal on the desktop, not over SSH
 ```
 
-`./setup.sh` stops and tells you what to fix if anything is missing. Fix it and
-run `./setup.sh` again; it skips whatever is already done.
+Both scripts stop and tell you what to fix if anything is missing. Fix it and
+run the same script again; it skips whatever is already done.
 
 **In the browser**, at <http://localhost:3001> → **Scenario Configuration**:
 
@@ -109,8 +110,8 @@ Three things work differently from a typical ROS 2 sim setup:
 **Hardware**
 - An NVIDIA GPU with a current driver. Both the simulator and ScenarioLab
   render on it.
-- **About 35 GB of free disk** for the first setup. `./setup.sh` works out the
-  exact figure for your pack selection.
+- **About 35 GB of free disk** for the first setup. `./download-packs.sh` works
+  out the exact figure for your pack selection.
   - images: about 15 GB
   - content packs: about 8 GB to download, and briefly about twice that while
     they install
@@ -133,43 +134,57 @@ to:
 - **GitHub**, for the `DinoHub/TEVV-Airsim` releases that hold the content
   packs.
 
-`./setup.sh` asks you to log in to both when it needs to.
+`./setup.sh` asks you to log in to Docker Hub, and `./download-packs.sh` to GitHub.
 
 ---
 
 ## 3. Setup
 
-Run this from the repository root. You only need to do it once:
+Setup is two scripts, run once from the repository root:
 
 ```bash
-./setup.sh
+./setup.sh            # the machine, configuration, Docker Hub and images
+./download-packs.sh   # the content packs
 ```
 
-It works through five steps and prints a ✓ or ✗ for each check:
+### `./setup.sh`
+
+It works through four steps and prints a ✓ or ✗ for each check:
 
 | Step | What it does |
 |---|---|
 | **1. Checking this machine** | Checks Docker, Compose, the GPU runtime, tools, Python modules, free disk and the desktop display. |
 | **2. Local configuration** | Creates `.env` from `.env.example`, with defaults only; nothing needs editing. Also creates the working folders. |
-| **3. Accounts** | Checks your Docker Hub and GitHub logins. If one is missing, it runs `docker login` or `gh auth login` for you. |
+| **3. Docker Hub account** | Checks your Docker Hub login, and runs `docker login` for you if it is missing. |
 | **4. Container images** | Downloads the release images (several GB). Images you already have are kept. |
-| **5. Content packs** | Downloads, verifies and installs the level and object packs (about 8 GB), and makes them visible to ScenarioLab. |
 
-It ends with **Setup complete** and tells you to run `make dashboard`.
+It ends with **Setup complete** and tells you to run `./download-packs.sh`.
 
 If it stops early, it lists each problem with the command that fixes it, for
 example `✗ not logged in to Docker Hub → docker login`. Fix the problems and
 run it again. Work that is already done is skipped, so a re-run is quick.
 
-**Options**
+`./setup.sh --check` only checks the machine; it changes and downloads nothing.
 
-| Command | When to use it |
+### `./download-packs.sh`
+
+It downloads the level and object packs from GitHub, verifies their
+checksums, installs them, and makes them visible to ScenarioLab. If you are
+not logged in to GitHub, it runs `gh auth login` for you.
+
+| Command | What it does |
 |---|---|
-| `./setup.sh --check` | Only check the machine; change and download nothing. |
-| `./setup.sh --packs "--condo --xfs"` | Install only some packs, to save disk or time. Levels: `--condo --xfs --safti --warehouse --fishermans-cabin --office`. Props: `--office-props --office-pack-vol-1 --warehouse-props --fishermans-cabin-props`. |
-| `./setup.sh --no-packs` | Skip the pack download for now. `make dashboard` installs the packs later. |
+| `./download-packs.sh --list` | Shows every pack: size, whether it is installed, and whether ScenarioLab can open it. |
+| `./download-packs.sh` | Downloads everything (about 8 GB). Same as `--all`. |
+| `./download-packs.sh --warehouse --office` | Downloads only these; the vehicle models are always added. Enough for the walkthrough. |
+| `./download-packs.sh --objects` | Downloads every object pack. |
 
-You can add more packs at any time from the dashboard's **Content** step.
+A dropped connection resumes where it stopped, and packs already installed
+are skipped. So if it fails part-way, just run it again. You can also add packs
+later from the dashboard's **Content** step.
+
+`make dashboard` does not download packs. If none are installed, it warns you
+and starts anyway.
 
 **Display access.** `make dashboard` finds your X display cookie itself.
 Start it from a terminal on the desktop, not over SSH. If you must use SSH,
@@ -189,7 +204,8 @@ make dashboard-down
 git pull
 grep -n '_IMAGE=' .env        # delete any image lines this shows; they override the release
 ./product.sh pull-images      # refresh images whose tags were republished
-./setup.sh                    # installs any new packs
+./setup.sh                    # pulls any new images
+./download-packs.sh           # installs any new packs
 make dashboard
 ```
 
@@ -261,7 +277,7 @@ This step shows what is installed.
   generator and Product shell. Each should say **matches**.
 - **Level packs** and **Object packs** should say **ready**.
 
-`./setup.sh` has already done this work, so normally you just click
+`./download-packs.sh` has already done this work, so normally you just click
 **Continue to Author**.
 
 To add a pack later, tick it and click **Download & stage N**. The panel shows
@@ -637,7 +653,7 @@ top of `.env`:
 |---|---|
 | `DB=true` | Adds the telemetry history database. |
 | `IMAGE_MODE=production` | Uses only the exact, digest-pinned release images. |
-| `MNS_SKIP_PACK_INSTALL=1` | Skips the pack check, for offline starts. |
+| `MNS_DEMO_PACKS=--all` | Installs any missing packs before starting, like `./download-packs.sh --all`. |
 | `CHANNEL=ue582` / `CHANNEL=v2` | Runs an older pre-release line (UE 5.8.2 review set / UE 5.5.4). Each has its own packs and data. |
 
 **Keep image variables (`*_IMAGE`) out of `.env`.** An image set there
@@ -655,8 +671,9 @@ overrides the release, so you would run a different image from everyone else.
 | `✗ NVIDIA container runtime not usable` | Install the NVIDIA Container Toolkit. `./setup.sh` prints the exact commands. |
 | `pull access denied for dhdevspace/auto_mns` | Your Docker Hub account lacks access. Ask your MnS contact. |
 | Pack download fails with `404` | Your GitHub account cannot read the pack releases (they answer 404, not 401). Check `gh auth status` and ask for access. |
-| `only N GB free` | Free disk, or install fewer packs: `./setup.sh --packs "--condo --xfs"`. |
-| No internet on this machine | Copy the `.mnslevelpack` / `.mnsassetpack` files into `.mns/v1/packs/`, then run `tools/pull-packs.sh --import` and `./setup.sh --no-packs`. |
+| `only N GB free` | Free disk, or install fewer packs: `./download-packs.sh --warehouse`. |
+| Pack download stops part-way (`curl exit 92/18/56`) | A dropped connection; run `./download-packs.sh` again and it resumes. |
+| No internet on this machine | Copy the `.mnslevelpack` / `.mnsassetpack` files into `.mns/v1/packs/`, then run `tools/pull-packs.sh --import`. |
 
 **Dashboard and ScenarioLab**
 
@@ -719,7 +736,8 @@ overrides the release, so you would run a different image from everyone else.
 ## 11. Quick reference
 
 ```bash
-./setup.sh                      # once: check, log in, download
+./setup.sh                      # once: check, log in, pull images
+./download-packs.sh --list      # what packs exist; ./download-packs.sh to get them
 make dashboard                  # start → http://localhost:3001
 make topics STACK=generated/<name>    # what a stack publishes
 ls ~/tevv-runs/                 # runs; bag in <run>/bag/

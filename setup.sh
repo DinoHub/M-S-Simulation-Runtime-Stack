@@ -1,33 +1,27 @@
 #!/usr/bin/env bash
-# One-time setup for the MnS product: take a fresh clone to the point where
-# `make dashboard` starts in seconds.
+# One-time setup for the MnS product: check the machine, create .env, log in
+# to Docker Hub and pull the images. Content packs are a separate step:
+# ./download-packs.sh.
 #
-#   ./setup.sh                    check the machine, log in, pull images, install packs
-#   ./setup.sh --check            check only: change nothing, download nothing
-#   ./setup.sh --no-packs         everything except the pack download (do it later)
-#   ./setup.sh --packs "--condo --xfs"      install only these packs
+#   ./setup.sh            check, configure, log in, pull images
+#   ./setup.sh --check    check only: change nothing, download nothing
 #
 # Safe to re-run: every step skips what is already done. It never needs sudo;
 # where a host package is missing it prints the command to install it.
 #
-# Steps 4 and 5 are the same make targets `make dashboard` runs first
-# (ensure-images, then ensure-demo-packs + stage-authoring-packs), so what
-# setup installs is exactly what the dashboard expects.
+# Step 4 is the make target `make dashboard` runs first (ensure-images), so
+# what setup pulls is exactly what the dashboard expects.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 CHECK_ONLY=false
-INSTALL_PACKS=true
-PACKS="${MNS_DEMO_PACKS:---all}"
 
-usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK_ONLY=true ;;
-    --no-packs) INSTALL_PACKS=false ;;
-    --packs) PACKS="${2:?--packs needs a selection, e.g. \"--blocks --condo\"}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -49,7 +43,7 @@ echo " MnS product setup"
 echo "========================================"
 
 # ---------------------------------------------------------------------------
-step "1/5" "Checking this machine"
+step "1/4" "Checking this machine"
 
 . "$SCRIPT_DIR/tools/check_docker.sh"
 if check_docker; then
@@ -90,36 +84,12 @@ if command -v python3 >/dev/null 2>&1; then
   done
 fi
 
-# Size of the selected packs, from the lock tools/install_demo_packs.py reads
-# (MNS_DEMO_PACK_LOCK, else the default channel's). Also validates --packs.
-pack_info=$(PACKS="$PACKS" python3 - <<'PY' 2>&1
-import json, os, sys
-sys.path.insert(0, "tools")
-import install_demo_packs as m
-lock = json.load(open(os.environ.get("MNS_DEMO_PACK_LOCK") or m.DEFAULT_LOCK_PATH))
-names = [a[2:] for a in os.environ["PACKS"].split()]
-known = {p["selection"] for p in lock["packs"]}
-# ScenarioLab cannot place a drone without the vehicle models: always add them.
-if "all" not in names and "mns_vehicle_models" in known and "mns_vehicle_models" not in names:
-    names.append("mns_vehicle_models")
-bad = [n for n in names if n not in known | {"all", "objects"}]
-if bad:
-    sys.exit("unknown pack(s): " + " ".join("--" + b for b in bad)
-             + ". Choose from: " + " ".join("--" + k for k in sorted(known)))
-sel = [p for p in lock["packs"] if "all" in names or p["selection"] in names
-       or ("objects" in names and p["kind"] == "asset")]
-print(round(sum(p.get("size_bytes", 0) for p in sel) / 1e9, 1), " ".join("--" + n for n in names))
-PY
-) || { echo "  ✗ $pack_info"; exit 2; }
-PACK_GB="${pack_info%% *}"
-PACKS="${pack_info#* }"
-# Archive + store copy while installing, plus ~15 GB for images.
-need_gb=$(python3 -c "import math; print(math.ceil(2 * $PACK_GB + 15))")
+# Images take about 15 GB; packs are checked by ./download-packs.sh.
 free_gb=$(df -Pk "$SCRIPT_DIR" | awk 'NR==2 {printf "%d", $4/1024/1024}')
-if [[ "$INSTALL_PACKS" == true && "$free_gb" -lt "$need_gb" ]]; then
-  problem "only ${free_gb} GB free here; images + the selected packs (${PACK_GB} GB) need about ${need_gb} GB  →  free space, or install fewer packs with --packs"
+if [[ "$free_gb" -lt 15 ]]; then
+  problem "only ${free_gb} GB free here; the images need about 15 GB (content packs up to 16 GB more)  →  free space"
 else
-  ok "${free_gb} GB free disk (about ${need_gb} GB needed)"
+  ok "${free_gb} GB free disk (images about 15 GB; content packs up to 16 GB more)"
 fi
 
 if [[ -n "${DISPLAY:-}" ]]; then
@@ -129,7 +99,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-step "2/5" "Local configuration"
+step "2/4" "Local configuration"
 
 if [[ "$CHECK_ONLY" == false ]]; then
   chmod +x launch.sh stop.sh logs.sh setup.sh product.sh tools.sh 2>/dev/null || true
@@ -145,10 +115,9 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-step "3/5" "Accounts"
-# Both registries are private: images come from Docker Hub
-# (dhdevspace/auto_mns), packs from GitHub releases (DinoHub/TEVV-Airsim,
-# read by tools/install_demo_packs.py via GH_TOKEN, GITHUB_TOKEN or gh).
+step "3/4" "Docker Hub account"
+# The images are private (dhdevspace/auto_mns). GitHub, for the packs, is
+# ./download-packs.sh's step.
 
 docker_logged_in() {
   local cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
@@ -159,11 +128,6 @@ hub = any("docker.io" in k for k in cfg.get("auths", {}))
 sys.exit(0 if hub or cfg.get("credsStore") or cfg.get("credHelpers") else 1)
 PY
 }
-github_logged_in() {
-  [[ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]] && return 0
-  command -v gh >/dev/null 2>&1 && gh auth token >/dev/null 2>&1
-}
-
 if docker_logged_in; then
   ok "Docker Hub login"
 elif [[ "$CHECK_ONLY" == false && "$INTERACTIVE" == true ]]; then
@@ -173,26 +137,12 @@ else
   problem "not logged in to Docker Hub  →  docker login"
 fi
 
-if github_logged_in; then
-  ok "GitHub credentials"
-elif [[ "$CHECK_ONLY" == false && "$INTERACTIVE" == true ]] && command -v gh >/dev/null 2>&1; then
-  echo "  GitHub login needed for the MnS content packs:"
-  if gh auth login --hostname github.com --git-protocol https --web; then
-    ok "GitHub credentials"
-  else
-    problem "GitHub login failed  →  gh auth login"
-  fi
-elif command -v gh >/dev/null 2>&1; then
-  problem "no GitHub credentials  →  gh auth login   (or: export GH_TOKEN=<token>)"
-else
-  problem "no GitHub credentials  →  install the GitHub CLI (sudo apt-get install -y gh) then gh auth login, or export GH_TOKEN=<token>"
-fi
 
 # ---------------------------------------------------------------------------
 if [[ "$CHECK_ONLY" == true ]]; then
   echo
   if [[ ${#PROBLEMS[@]} -eq 0 ]]; then
-    echo "Check passed. Run ./setup.sh to download the images and packs."
+    echo "Check passed. Run ./setup.sh to pull the images."
     exit 0
   fi
   echo "Check found ${#PROBLEMS[@]} problem(s); fix them, then run ./setup.sh."
@@ -209,7 +159,7 @@ if [[ ${#PROBLEMS[@]} -gt 0 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-step "4/5" "Container images (several GB the first time)"
+step "4/4" "Container images (several GB the first time)"
 if ! make --no-print-directory ensure-images; then
   echo
   echo "Image download failed (message above). Usually: Docker Hub login lacks access to"
@@ -218,28 +168,14 @@ if ! make --no-print-directory ensure-images; then
   exit 1
 fi
 
-# ---------------------------------------------------------------------------
-if [[ "$INSTALL_PACKS" == true ]]; then
-  step "5/5" "Content packs: levels and objects ($PACKS, ${PACK_GB} GB the first time)"
-  if ! make --no-print-directory stage-authoring-packs MNS_DEMO_PACKS="$PACKS"; then
-    echo
-    echo "Pack install failed; the install-demo-packs line above says why. A network"
-    echo "drop only needs ./setup.sh again (installed packs are kept); a 404 means your"
-    echo "GitHub account cannot read the pack releases (ask your MnS contact). Or run"
-    echo "./setup.sh --no-packs to finish without them."
-    exit 1
-  fi
-else
-  step "5/5" "Content packs: skipped (--no-packs); 'make dashboard' installs them"
-fi
-
 echo
 echo "========================================"
 echo " Setup complete"
 echo "========================================"
 echo
-echo "Start the product from a terminal on this machine's desktop:"
+echo "Next:"
 echo
-echo "    make dashboard"
+echo "    ./download-packs.sh     # the Unreal levels and objects (./download-packs.sh --list to choose)"
+echo "    make dashboard          # from a terminal on the desktop, then http://localhost:3001"
 echo
-echo "then open http://localhost:3001. Walkthrough: docs/USER_GUIDE.md"
+echo "Walkthrough: docs/USER_GUIDE.md"
