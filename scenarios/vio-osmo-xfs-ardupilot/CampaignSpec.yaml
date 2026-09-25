@@ -1,6 +1,6 @@
 schema: mns.campaign.v1
-id: vio-osmo-xfs
-name: Stereo VIO over XFS, under OSMO
+id: vio-osmo-xfs-ardupilot
+name: Stereo VIO over XFS under OSMO, ArduPilot
 
 # The scenario this campaign is an experiment over. Everything about the
 # world, the rig and the estimator lives there; this file says how many times
@@ -16,7 +16,7 @@ scenario: ./ScenarioSpec.yaml
 extensions:
   mns.omega:
     tier: L1
-    verifies: [REQ-VIO-001]
+    verifies: [REQ-VIO-001, REQ-VIO-002]
 
 evaluation:
   # A dispatch key, not a command line. This is the campaign-level evaluator
@@ -39,7 +39,7 @@ mission:
   # workflow and the executor hands it the same compiled route. `autopilot`
   # and `timeout_s` are read by both.
   source: external
-  autopilot: px4
+  autopilot: ardupilot
   # The reference campaign's route -- a 10 m box at 2-4 m with two yaw steps,
   # the flight the frozen calibration in ./openvins was characterised on --
   # mirrored to the west of the container-yard spawn, where it is open.

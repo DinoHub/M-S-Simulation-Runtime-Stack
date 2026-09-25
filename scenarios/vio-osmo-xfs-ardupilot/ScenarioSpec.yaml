@@ -1,0 +1,147 @@
+schema: mns.scenario.v1
+id: vio-osmo-xfs-ardupilot
+name: Stereo VIO over XFS, ArduPilot
+stack_name: vio-osmo-xfs-ardupilot
+
+# scenarios/vio-osmo-xfs with one block changed: the flight controller, as
+# vio-osmo-condo-ardupilot is to vio-osmo-condo. Same level, spawn, rig,
+# frozen calibration and route, so a difference in the result is the
+# autopilot's. The PX4-only MAVROS port override below is dropped: ArduPilot's
+# MAVROS link is the generator's to set (profile airsim_unreal_ardupilot_docker).
+
+# scenarios/vio-osmo-condo with one block changed: the level.
+#
+# Condo proved the flow on a level a kind node can hold easily -- 7.3 MB, one
+# apartment, walls at 2.2 m. XFS is the opposite end: 1.7 GB, outdoors, and
+# the level the reference campaign was tuned against. It is here to ask
+# whether the OSMO path holds when the world is two orders of magnitude
+# larger, since every part of the flow that touches the level -- the pack
+# copy into the pod, the sim's memory, the ephemeral storage the gang is
+# sized for -- scales with it and none of that was exercised by condo.
+#
+# The route is the reference campaign's, not the bedroom loop: outdoors there
+# are no walls to stay under, and a 10 m box at 2-4 m is what the frozen
+# calibration was characterised on.
+
+environment:
+  # The v1 channel's XFS as packs/v1.0.0.lock.json pins it since MnS v1.0.0
+  # (PR #87): `xfs-level` at sha256:08fb1485..., the same release the ue582
+  # channel and scenarios/vio-reference use. The earlier v1 pin (`xfs` at
+  # sha256:6750aa11...) no longer resolves for the iostore-v2 runtime host.
+  id: xfs-level
+  version: 1.0.1
+  artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+
+runtime:
+  profile: airsim_unreal_ardupilot_docker
+  features:
+    sim_real_eval: true
+    ros2_bridge: true
+    qgroundcontrol: false
+    # Required, not optional. The flight goes through MAVROS inside the bridge
+    # container, because a generated stack's flight controller streams to its
+    # own loopback and publishes no host port. With this false the bridge starts
+    # without MAVROS and the pilot waits out its timeout on a flight controller
+    # that was never connected.
+    mavros: true
+
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  ros_domain_id: 1
+  # The container yard, on the ground. Measured on this build by holding the
+  # vehicle 160 m up for the terrain to stream in and letting it fall: it
+  # came to rest on the landscape at NED z = -18.70. The v1 XFS terrain sits
+  # tens of metres ABOVE the NED origin, so the origin (0, 0, 0) and the
+  # older xfs-level coordinates (z = 72) are both underground -- the vehicle
+  # spawns under the world and falls forever; spawn-eval reported 8.33 m/s
+  # of free fall on the first OSMO run. Condo taught the same lesson the
+  # other way up.
+  #
+  # -21.0 is 2.3 m above the measured ground, so the vehicle drops onto it
+  # rather than into it.
+  start:
+    x: 423
+    y: -906
+    z: -21.0
+  # Spawn pose taken from the condo compose stack's own settings, which is the
+  # known-good pose for this level:
+  #   config/unreal-airsim/condo/settings-px4.json -> X: 0, Y: -20, Z: 1.3
+  #
+  # It has to be stated, because (0, 0, 0) is not on the ground here. A run
+  # with the origin spawn free-falls indefinitely -- measured on
+  # sim-bridge-vio-13, /ground_truth/odom went from -71.7 m to -1216.4 m at
+  # ~9 m/s with x and y exactly 0.000, while the estimator reported z between
+  # 0.002 and 0.107 m. Not "below the floor": there is no floor under the
+  # level's world origin at all.
+  #
+  # This is the failure PR #87's findings describe -- "hand-authored scenarios
+  # ... need the level's PlayerStart as origin or the vehicle spawns
+  # kilometres above the ground". A pack does not carry its PlayerStart yet,
+  # so the pose has to be found by measurement.
+  #
+  # config/unreal-airsim/condo/settings-px4.json is NOT a source for it, though
+  # it looks like one: its Z: 1.3 places the vehicle 1.3 m BELOW the origin and
+  # so below condo's floor. Tried first, and the run fell 224 m in 25 s.
+  #
+  # AirSim NED metres relative to OriginGeopoint, and +Z is DOWN -- so a
+  # POSITIVE z spawns the vehicle BELOW the origin. The compose stack's
+  # Z: 1.3 was tried first and still fell: the sim placed it at
+  # world_cm Z=-130, i.e. 1.3 m under the floor. z: -2.0 puts it 2 m above.
+  # stackgen copies these straight into settings.json.
+  #
+  # Stereo pair, 0.12 m baseline. Camera Z is 0.25 m above the IMU: at zero the
+  # camera sits inside the airframe and the rotor arms fill about a third of
+  # every frame.
+  cameras:
+    front:
+      position:
+        x: 0.15
+        y: 0
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+    front_right:
+      position:
+        x: 0.15
+        y: 0.12
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+
+extensions:
+  mns.vio_estimator:
+    enabled: true
+    kind: openvins
+    # vio-reference's frozen calibration, copied verbatim beside this spec.
+    # Stereo: two cameras in the kalibr chain, the right one on the bridge's
+    # second-camera topic. Enabling this block makes the generator rewrite the
+    # bridge -- ENABLE_VIO false, AUTO_DISCOVER_CAMERAS false,
+    # DISABLE_RPC_AUX_SENSORS false -- so the estimator gets the 200 Hz IMU and
+    # images over RPC rather than shared memory. Read the resulting topic names
+    # out of the generated config/topic_names.yaml; do not assume them.
+    config_dir: ./openvins
+    odom_topic: /ov_msckf/odomimu
+    launch_args:
+      use_stereo: "true"
+      max_cameras: "2"
