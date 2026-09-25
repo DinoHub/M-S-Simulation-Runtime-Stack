@@ -546,18 +546,30 @@ def storage_endpoint() -> str:
     return f"http://{node_ip}:{port}"
 
 
-def download(workflow_id: str, task: str, dest: Path, endpoint: str) -> bool:
+def download(workflow_id: str, task: str, dest: Path, endpoint: str,
+             replace: tuple[str, ...] = (".",)) -> bool:
     """Pull one task's uploaded {{output}} into dest. The control plane writes
     every task's output under s3://osmo/workflows/<workflow>/<task>/; this
-    syncs that prefix with the aws CLI on the kind network, path-style, using
-    the quick-start chart's fixed test credentials."""
+    copies that prefix with the aws CLI on the kind network, path-style, using
+    the quick-start chart's fixed test credentials.
+
+    runs/<key>/ is reused by every attempt of a key, so what the previous
+    attempt left is removed first: `replace` names the paths under dest this
+    task owns ("." is all of dest). It used to be `s3 sync`, which skips a
+    file whose local copy has the same size and a newer mtime -- run 73 kept
+    run 65's verdict.json and vio.json that way, and was recorded passed on a
+    number from another flight. Removal happens in the container because the
+    files it wrote are root's."""
     dest.mkdir(parents=True, exist_ok=True)
+    clear = "; ".join(
+        "find /out -mindepth 1 -delete" if path == "." else f"rm -rf {shlex.quote('/out/' + path)}"
+        for path in replace)
     proc = sh(["docker", "run", "--rm", "--network", "kind", "-v", f"{dest.resolve()}:/out",
                "-e", "AWS_ACCESS_KEY_ID=test", "-e", "AWS_SECRET_ACCESS_KEY=test",
-               "-e", "AWS_DEFAULT_REGION=us-east-1",
-               AWS_CLI_IMAGE, "--endpoint-url", endpoint,
-               "s3", "sync", "--only-show-errors",
-               f"s3://osmo/workflows/{workflow_id}/{task}/", "/out"], check=False)
+               "-e", "AWS_DEFAULT_REGION=us-east-1", "--entrypoint", "sh",
+               AWS_CLI_IMAGE, "-c",
+               f"{clear}; exec aws --endpoint-url {shlex.quote(endpoint)} s3 cp --recursive "
+               f"--only-show-errors s3://osmo/workflows/{workflow_id}/{task}/ /out"], check=False)
     if proc.returncode != 0:
         print(f"[campaign]   no output for {task}: {proc.stderr.strip()[:160]}")
         return False
@@ -643,7 +655,7 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
     bundle.mkdir(parents=True, exist_ok=True)
 
     # Evidence, into the layout the scorecard reads.
-    download(workflow_id, "recorder", bundle, endpoint)
+    download(workflow_id, "recorder", bundle, endpoint, replace=("bag", "mission.json"))
     rec.status, rec.error = judge_flight(status, tasks, bundle)
     for evaluator in ("vio-eval", "spawn-eval", "validate", "verdict"):
         download(workflow_id, evaluator, bundle / "eval" / evaluator, endpoint)
@@ -750,6 +762,14 @@ def registry_outcome(flight: str, error: str | None, workflow_status: str,
             return "failed", "mission_failed"
         return "failed", "pod_crash"
     rc = (verdict or {}).get("rc")
+    # The verdict task's own status is the workflow's answer, and wins over a
+    # verdict.json that disagrees with it: a file can be stale, a task status
+    # cannot.
+    task_state = tasks.get("verdict", "")
+    if task_state.startswith("FAILED") and rc == 0:
+        rc = 1
+    if task_state == "COMPLETED" and rc not in (0, None):
+        rc = 0
     if rc == 42:
         return "infra_failed", "no_evidence"
     if rc == 0 or (rc is None and tasks.get("verdict") == "COMPLETED"):
