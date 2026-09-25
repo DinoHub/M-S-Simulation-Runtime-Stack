@@ -579,8 +579,12 @@ def judge_flight(status: str, tasks: dict[str, str], bundle: Path) -> tuple[str,
 def read_validation(bundle: Path) -> tuple[bool | None, list[str]]:
     """validate_recording.py's answer: `valid` plus the checks that failed.
     (Older readers looked for `ok`/`passed` and so took every recording as
-    valid; the tool has always written `valid`.)"""
-    path = bundle / "validation.json"
+    valid; the tool has always written `valid`.) The validate task's own
+    output wins over the copy at the top of the run directory, which can be
+    left over from an earlier attempt."""
+    path = bundle / "eval" / "validate" / "validation.json"
+    if not path.exists():
+        path = bundle / "validation.json"
     if not path.exists():
         return None, []
     try:
@@ -608,9 +612,15 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
     rec.status, rec.error = judge_flight(status, tasks, bundle)
     for evaluator in ("vio-eval", "spawn-eval", "validate", "verdict"):
         download(workflow_id, evaluator, bundle / "eval" / evaluator, endpoint)
-    validation = next(iter(bundle.rglob("validation.json")), None)
-    if validation and validation.parent != bundle:
-        (bundle / "validation.json").write_bytes(validation.read_bytes())
+    # runs/<key>/ is reused by every attempt of the key, and a sync adds files
+    # without removing old ones: the copy at the top must come from this
+    # attempt's validate task, or it is the last attempt's answer (run 62 was
+    # reported invalid from a 22 Sept file).
+    fresh = bundle / "eval" / "validate" / "validation.json"
+    if fresh.exists():
+        (bundle / "validation.json").write_bytes(fresh.read_bytes())
+    else:
+        (bundle / "validation.json").unlink(missing_ok=True)
     rec.recording_valid, rec.failed_checks = read_validation(bundle)
     if tasks.get("verdict", "").startswith("FAILED") and rec.status == "done":
         rec.failed_checks.append("gate")
@@ -730,11 +740,12 @@ def summary_metrics(bundle: Path) -> list[tuple[str, float, str | None, str]]:
     return rows
 
 
-def run_artifacts(bundle: Path) -> list[tuple[str, str, int | None]]:
+def run_artifacts(bundle: Path, workflow_id: str) -> list[tuple[str, str, int | None]]:
     def size(p: Path) -> int:
         return p.stat().st_size if p.is_file() else sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
     rows = []
-    for kind, path in (("bag", bundle / "bag"), ("eval", bundle / "eval"), ("logs", bundle / "logs")):
+    for kind, path in (("bag", bundle / "bag"), ("eval", bundle / "eval"),
+                       ("logs", bundle / "logs" / workflow_id)):
         if path.exists() and size(path):
             rows.append((kind, str(path), size(path)))
     reports = bundle.parent.parent / "reports"
@@ -748,7 +759,9 @@ def capture_logs(workflow_id: str, tasks: dict[str, str], bundle: Path) -> None:
     """Every task's stdout, kept with a run that did not pass. OSMO holds task
     logs only as long as it holds the workflow; this is the copy that stays
     with the evidence (and the one that works when no log store is up)."""
-    logs = bundle / "logs"
+    # Per workflow: the run directory outlives an attempt, its logs must not
+    # be mistaken for the next one's.
+    logs = bundle / "logs" / workflow_id
     logs.mkdir(parents=True, exist_ok=True)
     for task in tasks:
         proc = osmo("workflow", "logs", workflow_id, "--task", task, check=False)
@@ -773,7 +786,7 @@ def register_run(reg: Registry, workflow_id: str, bundle: Path, flight: str, err
                recording_valid=recording_valid, failed_checks=failed_checks, viz=viz,
                ended_at=ended_at)
     reg.results(workflow_id, gates=(verdict or {}).get("gates", []),
-                metrics=summary_metrics(bundle), artifacts=run_artifacts(bundle))
+                metrics=summary_metrics(bundle), artifacts=run_artifacts(bundle, workflow_id))
     print(f"[registry] {workflow_id}: {status}" + (f" ({reason})" if reason else ""))
 
 

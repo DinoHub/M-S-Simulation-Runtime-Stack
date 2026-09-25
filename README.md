@@ -208,6 +208,8 @@ estimator's `launch_args`); images come from `images/catalog.yaml`, and
   every field, the generated files it becomes, and the whole folder tree.
 - [OSMO runbook](docs/osmo-runbook.md): setting up the cluster, running, watching, and what to do when a run fails.
 - [OSMO and Kubernetes for this repo](docs/osmo-kubernetes-concepts.md): the concepts to learn first.
+- [One run, end to end](docs/osmo-run-flow.md): what each step writes, where, and who reads it,
+  from the CampaignSpec to the run registry and Grafana.
 
 ## What will this stack publish?
 

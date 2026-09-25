@@ -3,6 +3,8 @@
 How to get from a clean workstation to a green OSMO run, and what to do when
 one fails. [How the runtime stack maps onto OSMO](osmo-mapping.md) explains
 *why* each piece is shaped the way it is; this page is the sequence.
+[One run, end to end](osmo-run-flow.md) lists every artifact a run leaves
+behind, with a worked example.
 
 The run this describes is `osmo/sim-bridge-vio.workflow.yaml`: a simulator, the
 ROS 2 bridge and OpenVINS gang-scheduled as one group, with a lead task whose
