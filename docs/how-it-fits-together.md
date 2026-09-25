@@ -5,9 +5,8 @@ file next. Read this before any other page under `docs/`: the others each go
 deep on one box here.
 
 This page is about the **generated** path -- a ScenarioSpec turned into a
-stack by the platform's generator image. The hand-written stacks under
-`compose/<scenario>/` driven by `launch.sh` are the older path and have their
-own page, [Legacy static stacks](legacy-static-stacks.md).
+stack by the platform's generator image, which is the only path this
+repository ships.
 
 ## The actors
 
@@ -21,7 +20,6 @@ own page, [Legacy static stacks](legacy-static-stacks.md).
 | **ScenarioLab** | the Unreal editor, `MNS_AUTHORING_IMAGE`, on your X display | the backend's Author phase |
 | **a generated stack** | runtime host (Unreal + AirSim), ROS 2 bridge, autopilot SITL, optional VIO estimator and sim-real-eval worker -- `generated/<name>/compose.yml` | the backend's Launch, or `./product.sh cli` |
 | **ros2-tools** | one container from the bridge image, outside any compose project. Foxglove websocket for Lichtblick; bag recording execs into it. | the backend, when the bridge image changes |
-| **side stacks** | metrics, monitoring, logs (`docker-compose-{metrics,monitoring,logs}.yml`) | you, optionally |
 
 ```mermaid
 flowchart LR
@@ -60,7 +58,7 @@ this repository:
 | `/var/run/docker.sock` | it drives docker: runs the generator, `compose up`s stacks, creates `ros2-tools` |
 | `${DOCKER_CONFIG:-$HOME/.docker}` at `/root/.docker`, read-only | a pull uses **this container's** credentials, not your shell's ([details](dashboard-images.md#6-credentials-the-socket-alone-is-not-enough)) |
 | `${MSRS_ROOT:-$PWD}` at the **identical** host path | every path the backend writes is valid for the generator container and for compose on the host, unchanged |
-| `${TEVV_RUNS_DIR:-~/tevv-runs}` at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports |
+| `${TEVV_RUNS_DIR:-./runs}` (in this checkout) at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports |
 
 ## What lands on disk
 
@@ -73,7 +71,7 @@ phases without redoing them: phase completion is computed from what exists.
 | `images/catalog.yaml` | you (`tools/images.sh bump`, or by hand) | `tools/images.sh sync` -- and nothing else, directly |
 | `images/*.generated.env`, `images/image-set*.generated.yaml`, `product-images.env` | `tools/images.sh sync`; committed | `make dashboard` (env files), the generator (`MNS_IMAGE_SET_FILE`) |
 | `packs/*.lock.json` | the release | `tools/install-demo-packs.sh` |
-| `.mns/<channel>/pack-store/` | `make dashboard` -> the product-shell image's installer | the generator, ScenarioLab (staged copy), the runtime host |
+| `.mns/<channel>/pack-store/` | `./download-packs.sh` (or `make dashboard MNS_DEMO_PACKS=...`) -> the product-shell image's installer | the generator, ScenarioLab (staged copy), the runtime host |
 | `.mns/<channel>/authoring-data/ResolvedPacks/` | `tools/stage-authoring-packs.sh` | ScenarioLab |
 | `scenarios/<name>/ScenarioSpec.yaml` (+ `includes:` files) | ScenarioLab export, or the Generate form; `tevv-campaign init` | the generator; `CampaignSpec.scenario` |
 | `scenarios/<name>/ScenarioSpec.baseline.yaml` | the backend, a snapshot of the authored spec before the form's sensor edits | the backend, to show what the form changed |
@@ -150,7 +148,7 @@ sequenceDiagram
 ./product.sh setup                   # exact pins pulled, packs installed
 ./product.sh doctor                  # every channel ref present?
 ./product.sh cli runtime scenarios/<name>      # generate + up one stack
-./product.sh start                   # the launcher's own HTTP UI on :8765
+./product.sh start                   # the launcher's own HTTP UI on :8760
 ```
 
 `product.sh` runs the product-shell image with this repository mounted at its
@@ -212,9 +210,10 @@ cooperative -- the current flight is torn down cleanly and its bundle written.
 | the image catalog, channels, `sync`/`verify`/`bump` | [Changing a container image](images.md) |
 | `make dashboard` step by step, `IMAGE_MODE`, precedence, the credentials mount, the pull-policy override, `ros2-tools` | [How the dashboard gets its images](dashboard-images.md) |
 | why one catalog | [ADR 0002](adr/0002-one-image-catalog.md) |
-| the pack store and the UE 5.8.2 channel | [UE 5.8.2 candidate](ue582-candidate.md), [origin integration](origin-integration.md) |
-| the hand-written stacks and `launch.sh` | [Legacy static stacks](legacy-static-stacks.md) |
-| the sensor contract a generated stack has to meet | [Unreal sensor contract](integration/unreal-sensor-contract.md) |
-| the reference campaign itself | `scenarios/vio-reference/README.md` |
+| channels, the pack store, locks, installing and removing packs | [packs/README.md](../packs/README.md) |
+| `product.sh` and the headless CLI | [The product shell from a terminal](cli.md) |
+| which topics a generated stack publishes | [What will this stack publish?](topics.md) |
+| running campaigns | [Campaigns](campaigns.md) |
+| the reference campaign itself | [`scenarios/vio-reference/README.md`](../scenarios/vio-reference/README.md) |
 | the whole product across repositories, and the platform's internals | TEVV-Airsim docs, *Architecture -> TEVV Platform Map*; MnS-Integration-Platform `docs/running-a-campaign.md`, `docs/topic-and-frame-contracts.md` |
 | the compose file's own statement of the mounts and precedence | the header comment of `docker-compose-dashboard.yml` |

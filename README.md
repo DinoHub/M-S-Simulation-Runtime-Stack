@@ -1,234 +1,66 @@
 # MnS Product
 
-This repository is the customer distribution of the MnS product. Its historical repository name is `M-S-Simulation-Runtime-Stack`, but it contains the whole product shell, not a single runtime stack.
+MnS is a containerised simulation environment for testing drone autonomy. You
+author a scenario in ScenarioLab (an Unreal editor), MnS generates a stack from
+it (Unreal + Cosys-AirSim, PX4 or ArduPilot SITL, ROS 2 Humble), and you fly,
+record and evaluate it from a browser dashboard. Everything runs in Docker.
 
-The first screen is the browser product shell. It launches ScenarioLab in a separate Unreal window for authoring, runs the stack generator image for validation and generation, and owns generated-stack run, status, logs, and stop actions.
+This repository is the customer distribution. Its historical name is
+`M-S-Simulation-Runtime-Stack`, but it holds the whole product, not one stack.
 
-> **New here?** Run `./setup.sh`, `./download-packs.sh`, then `make dashboard`, and follow the [User Guide](docs/USER_GUIDE.md) from scenario to recorded rosbag.
+## Requirements
 
-## Dashboard Entry Point (full loop in the browser)
+- Ubuntu 22.04 or later with a desktop session, and an NVIDIA GPU with a current driver
+- Docker Engine with Compose v2, and the NVIDIA Container Toolkit
+- About 35 GB of free disk for the first setup
+- Google Chrome or Chromium for the dashboard
+- Access to the private `dhdevspace/auto_mns` images (Docker Hub) and the
+  `DinoHub/TEVV-Airsim` pack releases (GitHub). Ask your MnS contact.
 
-For teams that want configuration → run → evaluation in one UI instead of
-the CLI wrappers:
+`./setup.sh` checks each of these and prints the fix for anything missing.
 
-```bash
-make dashboard                         # local-first; pulls only missing tags
-make dashboard IMAGE_MODE=production   # exact release pins
-make dashboard-down
-```
-
-By default, `make dashboard` runs the transitional development workflow: it keeps any locally built matching image tags, pulls only tags absent from the Docker image store, and uses the tag-only development image-set overlay for generated stacks. It does not refresh an existing tag. Run `./product.sh setup` when you deliberately want the approved remote images refreshed; use `IMAGE_MODE=production` to test the immutable release pins.
-
-Content packs are downloaded by `./download-packs.sh` (`--list` shows the
-channel's checksum-locked demo packs; MnS 1.0: six levels, four object packs
-and the vehicle models, about 7.7 GB), which installs them into the channel's
-pack store through the product-shell image. `make dashboard` itself does not
-download packs unless `MNS_DEMO_PACKS` is set; it stages what the store holds
-for ScenarioLab (warning when that is nothing), and seeds ScenarioLab's
-PackLibrary with the `mns_vehicle_models` and `scenario_runtime_basic` asset
-packs from the pinned v1 authoring image (the standalone-v2 authoring image
-ships no default packs, and the editor cannot add a drone without the vehicle
-models). Later runs only compare
-the lock against the store (`tools/install-demo-packs.sh --missing`) and
-re-stage when `.mns/pack-store/index.json` changed, so they cost nothing. The
-dashboard, the product shell and the generator all read that one store, and
-the generated stack's generic TEVVRuntimeHost loads the same immutable artifact
-ScenarioLab authored against.
+## Quick start
 
 ```bash
-./download-packs.sh --warehouse --office                 # a subset (./download-packs.sh --list shows them)
-make dashboard MNS_DEMO_PACKS=--all                      # install missing packs, then start
-make dashboard MNS_SKIP_PACK_INSTALL=1                   # skip the pack store check too
+./setup.sh           # checks the machine, logs in to Docker Hub, pulls the images
+./download-packs.sh  # downloads the starter levels (logs in to GitHub)
+make dashboard       # then open http://localhost:3001 in Chrome
 ```
 
-The Author tab's preflight reports `pack_store` (what is installed) and
-`packs_staged` (whether ScenarioLab can see it); the wizard's Environment list
-is the staged level packs, and the spec it builds carries the pack's version
-and artifact digest.
+From there, the [User Guide](docs/USER_GUIDE.md) walks you from an empty
+scenario to a recorded rosbag. Stop with `make dashboard-down`.
 
-To run a dashboard backend or frontend you built locally from a
-TEVV-Web-Dashboard branch, put `DASHBOARD_BACKEND_IMAGE=` /
-`DASHBOARD_FRONTEND_IMAGE=` in `./.env`: a key set there (or in the shell) is
-never overridden by the generated image env files, and `pull_policy: missing`
-keeps a local tag.
+## Find your way
 
-The full route an image takes through the dashboard -- `ensure-images`, the
-`IMAGE_MODE` env layering, what the backend passes to generated stacks, the
-credentials mount and the `MNS_IMAGE_PULL_POLICY` override -- is in
-[docs/dashboard-images.md](docs/dashboard-images.md).
+**Use it**
 
-How the phases, the files they leave under `scenarios/` and `generated/`, the
-backend and the product shell fit together -- and how a campaign flies that loop
-N times -- is in [docs/how-it-fits-together.md](docs/how-it-fits-together.md).
+| I want to... | Read |
+| --- | --- |
+| go from a fresh clone to my first rosbag | [User Guide](docs/USER_GUIDE.md) |
+| connect my own autonomy stack to a running simulation | [User Guide: connecting your autonomy stack](docs/USER_GUIDE.md#connecting-your-autonomy-stack) |
+| know which ROS 2 topics a stack will publish | [What will this stack publish?](docs/topics.md) |
+| run stacks from a terminal or a script, without the browser | [The product shell from a terminal](docs/cli.md) |
+| fly a scored run matrix to characterise an estimator | [Campaigns](docs/campaigns.md), then [the reference campaign](scenarios/vio-reference/README.md) |
+| install on a machine with no network | [Offline setup](docs/offline-setup.md) |
+| fix something that went wrong | [User Guide: troubleshooting](docs/USER_GUIDE.md#9-troubleshooting) |
 
-### Engine lines
+**Understand it**
 
-`CHANNEL` picks which Unreal line the whole dashboard runs, from the images to
-the packs. Packs cooked for one engine never mount on another, so each channel
-owns its own pack store and authoring data under `.mns/` and its own lock and
-host contract under `packs/` (see [packs/README.md](packs/README.md)):
+| I want to... | Read |
+| --- | --- |
+| see which service does what, and which file each step leaves on disk | [How it fits together](docs/how-it-fits-together.md) |
+| know where runs, bags and packs are stored | [User Guide: where everything is stored](docs/USER_GUIDE.md#7-where-everything-is-stored) |
 
-```bash
-make dashboard                 # CHANNEL=v1, MnS 1.0 on UE 5.8.2 (default): 6 level + 5 object packs, ~7.7 GB
-make dashboard CHANNEL=ue582   # the earlier UE 5.8.2 review set
-make dashboard CHANNEL=v2      # the previous UE 5.5.4 set: 4 level + 3 object packs, ~2.6 GB
-MNS_CHANNEL=v2 ./product.sh start
-```
+**Maintain it**
 
-Every image on the default `v1` channel is a published digest pin of the
-non-Substrate MnS 1.0 baseline: runtime host, ScenarioLab, generator and shell
-`*-v1.0.0` ([docs/releases/v1.0.0.md](docs/releases/v1.0.0.md) says what they
-were built from). A channel may also carry `channel: local` rows for images built on this
-machine; `tools/ensure-images.sh` and `./product.sh doctor` refuse to start a
-channel whose local images are missing. The dashboard's Content phase shows the
-active engine line, the packs published for it, and installs the missing ones.
+| I want to... | Read |
+| --- | --- |
+| pick an engine line, or install, update or remove content packs | [packs/README.md](packs/README.md) |
+| change, pin or verify a container image | [Changing a container image](docs/images.md) |
+| understand which images `make dashboard` pulls, or run my own dashboard build | [How the dashboard gets its images](docs/dashboard-images.md) |
+| see what a release pins | [Release notes](docs/releases/v1.0.0.md) |
+| know why there is one image catalog | [ADR 0002](docs/adr/0002-one-image-catalog.md) |
+| use the sim-facing helper scripts | [tools/README.md](tools/README.md) |
 
-The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
-generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
-(no source checkouts).
-**Monitor → Controls** edits the evaluation files in the shared runs directory
-(`TEVV_RUNS_DIR`, default `runs/` in this checkout; hot-reloaded). **Calibration**
-shows the sim-to-real verdicts the `sim-real-eval` worker writes there
-automatically after each recorded run (enable with
-`runtime.features: { sim_real_eval: true }` in the scenario).
-
-The browser product shell (`./product.sh start`, port 8760) remains the
-visual ScenarioLab authoring surface. The dashboard's Grafana tab embeds
-`GRAFANA_URL` (default `localhost:3000`); MnS ships no Grafana of its own.
-
----
-
-## Quick Start
-
-Requirements: Docker Engine with Compose, Python 3 with `pip install -r tools/requirements.txt` (`./product.sh setup`, `doctor`, and `pull-images` resolve their image list through `tools/images.sh`, which needs PyYAML), an NVIDIA-capable runtime for Unreal images, X11 when opening ScenarioLab, and a Docker login that can pull the private `dhdevspace/auto_mns` images. The product wrapper mounts the active Docker config read-only so generated stacks can pull their pinned runtime dependencies.
-
-```bash
-./product.sh setup
-./product.sh doctor
-./product.sh start
-```
-
-Open <http://127.0.0.1:8760> (`MNS_SCENARIO_LAUNCHER_PORT`; it was 8765 until the Foxglove websocket claimed that port).
-
-`setup` creates the local content-addressed PackStore, refreshes the 14 immutable production pins, and then refreshes the 14 mutable development tags used by `make dashboard`. This is the deliberate operation that replaces matching local development tags with their published versions; normal dashboard starts never do that. No product configuration uses `local/...` repository names or per-level runtime images.
-
-Use the pull helper directly when you only want to refresh the image cache:
-
-```bash
-./product.sh pull-images                 # active product set
-./product.sh pull-images --dry-run       # print exact refs without pulling
-./product.sh pull-images --development    # explicitly refresh dashboard development tags
-./product.sh pull-images --all-catalog   # optional catalog entries too
-./product.sh pull-images --refresh-moving
-```
-
-`--refresh-moving` runs `tools/images.sh bump --channel moving`: it advances every `channel: moving` row — the dashboard, autopilot, QGroundControl and sim-real-eval images, whose tags are republished in place — to whatever digest that tag resolves to now, regenerates the image files, and then pulls them. It deliberately does **not** touch the standalone-v2 rows: those are `channel: pinned`, and `bump` refuses pinned rows so a release pin only ever moves by hand. Because it rewrites `images/catalog.yaml`, it cannot be combined with `--dry-run`; use `tools/images.sh report` to preview instead. Commit and review those catalog changes before using them for a release. The normal command never silently changes a digest.
-
-`./download-packs.sh` installs content packs (see above). The underlying installer, for scripting or the product shell:
-
-```bash
-tools/install-demo-packs.sh --all             # the default channel's (MnS 1.0) eleven packs
-tools/install-demo-packs.sh --safti --office-props
-tools/install-demo-packs.sh --objects         # every object pack in the lock
-tools/install-demo-packs.sh --missing --all   # only what the store lacks (what make dashboard runs)
-tools/install-demo-packs.sh --check --all     # offline: list installed/missing, exit 1 if any is missing
-tools/install-demo-packs.sh --lock packs/standalone-v2-review.1.lock.json --help   # the 5.5.4 set's selections
-```
-
-The installer downloads the assets declared in the selected lock (`--lock` or `MNS_DEMO_PACK_LOCK`; default `packs/v1.0.0.lock.json`), verifies their full SHA-256 checksums, installs them into the channel's content-addressed pack store, and refreshes ScenarioLab's resolved pack index. Selections are the lock's: `--warehouse`, `--office`, `--condo`, `--xfs`, `--safti`, `--fishermans-cabin`, `--office-props`, `--office-pack-vol-1`, `--warehouse-props`, `--fishermans-cabin-props`, `--mns_vehicle_models` on MnS 1.0. Run with `--dry-run` to inspect the selected immutable assets without downloading them. It refuses to start a download that cannot fit (archive plus store copy) and says how much room it needs; `MNS_DEMO_PACK_DOWNLOAD_DIR` moves the staging area. The product-shell image that performs the install is the lock's digest pin, or `MNS_PRODUCT_SHELL_IMAGE` when set, which is how `make dashboard` keeps install and staging on the selected `IMAGE_MODE`'s shell.
-
-Each generated ScenarioSpec selects an environment with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact. The only spec committed under `scenarios/` is `vio-reference`, the reference campaign; your own exports land beside it. The catalog includes six authoring vehicle models independently of the three placeable object-vehicle models.
-
-Stop the browser shell with:
-
-```bash
-./product.sh stop
-```
-
-The standalone-v2 image set contains ScenarioLab authoring, the product shell, the stack generator, and one generic TEVVRuntimeHost. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this consumer image set.
-
-Every image reference in this repository is authored in `images/catalog.yaml` and rendered by `tools/images.sh sync`. Pins use `repo:tag@sha256:...`: the digest is the release contract and the tag keeps the reference readable. `tools/images.sh report` shows staleness, `bump` rewrites both parts, and `verify` is the CI drift gate. See [Image operations](docs/images.md), [ADR 0002](docs/adr/0002-one-image-catalog.md), and the platform [image-versioning ADR](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md).
-
-ScenarioLab launches mount authoring-only AirSim settings that select `ComputerVision` mode with no AirSim vehicles, preventing the vehicle-type prompt from blocking the authoring UI.
-
-If Docker Hub is temporarily unreachable, `setup` retries each exact pull three times with backoff. Once all pins are cached, `./product.sh doctor` confirms the active set without contacting the registry. Generated stacks default to `MNS_IMAGE_PULL_POLICY=missing`, so they use cached, digest-verified images and pull only when a pin is absent. Set it to `always` only for a deliberate per-run registry check; use `./product.sh pull-images` for the normal refresh workflow.
-
-## Characterise an algorithm (campaigns)
-
-A campaign is a run matrix over one scenario: the same stack flown many times with one
-difference at a time, each flight recorded, gated and scored. The reference campaign ships
-in this repository and is meant to be copied.
-
-```bash
-./product.sh setup            # once: images, including the estimator and the shell
-make campaign                 # 12 flights: 4 wind strengths x 3 repeats, scored
-make campaign-status          # one row per flight
-```
-
-`make campaign` runs the product shell's CLI, so it needs no platform checkout. Anything the
-CLI accepts can go through it:
-
-```bash
-make campaign ARGS="validate vio-reference"   # spec, route and calibration; flies nothing
-make campaign ARGS="preflight vio-reference"  # + disk, ports, images
-make campaign ARGS="init my-test"             # your own copy of the reference campaign
-make campaign CAMPAIGN=my-test                # fly yours
-```
-
-A campaign is hours long and holds the GPU, the simulator ports and the X display, so only
-one runs at a time; a second is refused and told which one holds the machine. `make campaign
-ARGS="cancel <name>"` stops one cleanly — the flight in the air is finished and bundled,
-nothing further starts.
-
-To test your own estimator, copy the reference campaign and change one block in its
-`ScenarioSpec.yaml`. `scenarios/vio-reference/README.md` covers it, including the two things
-checked before anything flies: your calibration against the rig the scenario declares, and
-the topics your estimator subscribes to against the ones the stack publishes.
-
-Reading the result: the `valid` column is the recording's own verdict and sits left of the
-accuracy columns deliberately — a number computed from a recording that failed its gates is
-worse than no number.
-
-## What will this stack publish?
-
-The bridges' topic names are the product of four inputs that only meet at
-runtime — `settings.json` sensors/cameras, `topic_names.yaml` renames,
-`topic_prefix`/`TOPIC_PREFIX`, and the bridge's fixed topic list. Resolve them
-before starting anything:
-
-```bash
-make topics STACK=generated/<name>
-./tools/preview_topics.py generated/<name> --json
-```
-
-The names come from the bridge image's own launch code (`_final_topic`,
-`_canonical_vehicle_topics`, `load_topic_renames`) and each entry launch file's
-declared argument defaults — not a second copy of the rules here — so a new
-bridge image changes this output with it. The `tevv-airsim-ros2-bridge-humble`
-bridge defaults `topic_prefix` to `/` (flat names, one ROS domain per vehicle)
-and adds a canonical `lidar/points` alias.
-
-The output separates published topics from services and command inputs, and
-flags `topic_names.yaml` keys matching no topic on a vehicle — harmless for a
-sensor the scenario does not run, and identical to what a typo'd key looks like.
-
-Scope: the vehicle node's own graph; `ros2 topic list` also shows ROS's own
-`/clock`, `/rosout`, `/parameter_events`, `/tf`, `/tf_static`. Cameras on the
-iceoryx shared-memory path are listed as not on ROS, but the v1 bridge
-republishes them as `/<camera>/image_raw` once the stack runs. Nodes outside
-the bridge launch are not visible here.
-
-## Headless CLI
-
-The same product shell image exposes equivalent CLI actions:
-
-```bash
-./product.sh cli check
-./product.sh cli runtime --scenario /workspace/scenarios/<scenario> --out /workspace/generated/<scenario> --no-run
-./product.sh cli run-stack --stack /workspace/generated/my_scenario --detach
-./product.sh cli status --stack /workspace/generated/my_scenario
-./product.sh cli logs --stack /workspace/generated/my_scenario
-./product.sh cli stop --stack /workspace/generated/my_scenario
-```
-
-Paths passed to the container must be under this repository, mounted as `/workspace`.
+Updating an existing checkout is covered in the
+[User Guide](docs/USER_GUIDE.md#updating-an-existing-checkout).

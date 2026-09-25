@@ -19,6 +19,28 @@ own pack store and authoring data root under `.mns/`.
 | `ue582` | `ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2` | `standalone-v2-ue582.lock.json` | `runtime-host-compatibility.ue582.json` | `.mns/ue582/pack-store`, `.mns/ue582/authoring-data` |
 | `v2` | `ue-5.5.4-cl40574608-linux-development-vulkan-sm6-iostore-v2` | `standalone-v2-review.1.lock.json` | `runtime-host-compatibility.json` | `.mns/pack-store`, `.mns/authoring-data` |
 
+## Selecting a channel
+
+`CHANNEL` picks which Unreal line the whole dashboard runs, from the images to
+the packs. Packs cooked for one engine never mount on another, so each channel
+owns its own pack store and authoring data under `.mns/` and its own lock and
+host contract under `packs/`:
+
+```bash
+make dashboard                 # CHANNEL=v1, MnS 1.0 on UE 5.8.2 (default): 6 level + 5 object packs, ~7.7 GB
+make dashboard CHANNEL=ue582   # the earlier UE 5.8.2 review set
+make dashboard CHANNEL=v2      # the previous UE 5.5.4 set: 4 level + 3 object packs, ~2.6 GB
+MNS_CHANNEL=v2 ./product.sh start
+```
+
+Every image on the default `v1` channel is a published digest pin of the
+non-Substrate MnS 1.0 baseline: runtime host, ScenarioLab, generator and shell
+`*-v1.0.0` ([docs/releases/v1.0.0.md](../docs/releases/v1.0.0.md) says what they
+were built from). A channel may also carry `channel: local` rows for images built on this
+machine; `tools/ensure-images.sh` and `./product.sh doctor` refuse to start a
+channel whose local images are missing. The dashboard's Content phase shows the
+active engine line, the packs published for it, and installs the missing ones.
+
 ## The pack mount directory (`MNS_PACKS_DIR`)
 
 Every channel has one operator-facing directory for packs: `.mns/<channel>/packs`
@@ -123,13 +145,55 @@ the selected contract's `id`.
 
 ## Installing
 
-`make dashboard` installs whatever the selected channel's lock lists and the
-store lacks, then stages it for ScenarioLab. By hand:
+### From the dashboard and `./download-packs.sh`
+
+Content packs are downloaded by `./download-packs.sh` (`--list` shows the
+channel's checksum-locked demo packs; MnS 1.0: six levels, four object packs
+and the vehicle models, about 7.7 GB), which installs them into the channel's
+pack store through the product-shell image. `make dashboard` itself does not
+download packs unless `MNS_DEMO_PACKS` is set; it stages what the store holds
+for ScenarioLab (warning when that is nothing), and seeds ScenarioLab's
+PackLibrary with the `mns_vehicle_models` and `scenario_runtime_basic` asset
+packs from the pinned v1 authoring image (the standalone-v2 authoring image
+ships no default packs, and the editor cannot add a drone without the vehicle
+models). Later runs only compare
+the lock against the store (`tools/install-demo-packs.sh --missing`) and
+re-stage when `.mns/pack-store/index.json` changed, so they cost nothing. The
+dashboard, the product shell and the generator all read that one store, and
+the generated stack's generic TEVVRuntimeHost loads the same immutable artifact
+ScenarioLab authored against.
 
 ```bash
-tools/install-demo-packs.sh --all                          # 5.8.2 set (default lock)
-tools/install-demo-packs.sh --warehouse                    # baseline level
-tools/install-demo-packs.sh --check --all                  # offline: what is installed
+./download-packs.sh --warehouse --office                 # a subset (./download-packs.sh --list shows them)
+make dashboard MNS_DEMO_PACKS=--all                      # install missing packs, then start
+make dashboard MNS_SKIP_PACK_INSTALL=1                   # skip the pack store check too
+```
+
+The Author tab's preflight reports `pack_store` (what is installed) and
+`packs_staged` (whether ScenarioLab can see it); the wizard's Environment list
+is the staged level packs, and the spec it builds carries the pack's version
+and artifact digest.
+
+### The installer underneath
+
+`./download-packs.sh` installs content packs (see above). The underlying installer, for scripting or the product shell:
+
+```bash
+tools/install-demo-packs.sh --all             # the default channel's (MnS 1.0) eleven packs
+tools/install-demo-packs.sh --safti --office-props
+tools/install-demo-packs.sh --objects         # every object pack in the lock
+tools/install-demo-packs.sh --missing --all   # only what the store lacks (what make dashboard runs)
+tools/install-demo-packs.sh --check --all     # offline: list installed/missing, exit 1 if any is missing
+tools/install-demo-packs.sh --lock packs/standalone-v2-review.1.lock.json --help   # the 5.5.4 set's selections
+```
+
+The installer downloads the assets declared in the selected lock (`--lock` or `MNS_DEMO_PACK_LOCK`; default `packs/v1.0.0.lock.json`), verifies their full SHA-256 checksums, installs them into the channel's content-addressed pack store, and refreshes ScenarioLab's resolved pack index. Selections are the lock's: `--warehouse`, `--office`, `--condo`, `--xfs`, `--safti`, `--fishermans-cabin`, `--office-props`, `--office-pack-vol-1`, `--warehouse-props`, `--fishermans-cabin-props`, `--mns_vehicle_models` on MnS 1.0. Run with `--dry-run` to inspect the selected immutable assets without downloading them. It refuses to start a download that cannot fit (archive plus store copy) and says how much room it needs; `MNS_DEMO_PACK_DOWNLOAD_DIR` moves the staging area. The product-shell image that performs the install is the lock's digest pin, or `MNS_PRODUCT_SHELL_IMAGE` when set, which is how `make dashboard` keeps install and staging on the selected `IMAGE_MODE`'s shell.
+
+Each generated ScenarioSpec selects an environment with `environment.id`, `environment.version`, and `environment.artifact_digest`. ScenarioLab and the generic TEVVRuntimeHost load the exact same artifact. The only spec committed under `scenarios/` is `vio-reference`, the reference campaign; your own exports land beside it. The catalog includes six authoring vehicle models independently of the three placeable object-vehicle models.
+
+### Another channel's lock, into its own store
+
+```bash
 MNS_DEMO_PACK_LOCK=packs/standalone-v2-review.1.lock.json \
 MNS_PACK_STORE_ROOT=.mns/pack-store \
 MNS_AUTHORING_DATA_ROOT=.mns/authoring-data \
