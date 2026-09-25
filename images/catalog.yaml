@@ -542,11 +542,11 @@ images:
 
   v1_stack_generator:
     repo: dhdevspace/auto_mns
-    tag: mns-stack-generator-v1.0.0
-    digest: sha256:e2710b8ad05ac431545c1f6454be28aa15e77b8e47346816ed04dca831f85c40
+    tag: mns-stack-generator-v1.0.1
+    digest: sha256:983637e4c8addc91bf69126855e5a04cf61540bfd8a95d7a7c023124a4a1cb72
     channel: pinned
     purpose: >-
-      MnS 1.0 stack generator (MnS-Integration-Platform release/v1.0.0) with the v1 runtime contract baked; stages pack payloads by hard link. Rebuilt with advisory base-cook validation; capability and integrity checks remain enforced.
+      MnS 1.0.1 stack generator: MnS-Integration-Platform release/v1.0.0 plus #111 (SteppableClock for ArduPilot stacks, the wall clock for PX4) and #112 (weather.wind_mps / wind_from_deg written as settings.json Wind, so the vehicle feels wind). The v1 runtime contract is baked; stages pack payloads by hard link; advisory base-cook validation, with capability and integrity checks enforced.
 
   v1_product_shell:
     repo: dhdevspace/auto_mns
