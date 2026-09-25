@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -257,16 +258,37 @@ def asset_api_url(release: dict, pack: dict, token: str) -> str:
     )
 
 
+# A slow link drops long GitHub transfers mid-stream (curl 92 "HTTP/2 stream
+# was not closed cleanly", 18 partial file, 56 recv failure), which --retry
+# does not cover and which used to throw away a 1.9 GB archive at 55%. Each
+# attempt resumes from the bytes already on disk instead.
+DOWNLOAD_ATTEMPTS = 8
+CURL_HTTP_ERROR = 22  # --fail on a 4xx/5xx: repeating the request will not help
+
+
 def _download_named_asset(release: dict, asset_name: str, token: str, target: Path) -> None:
-    """Fetch one release asset by name. The token goes in via a curl config on
-    stdin, not as -H on the command line, so it never appears in argv or `ps`."""
-    run(
-        ["curl", "--fail", "--location", "--retry", "3",
-         "--config", "-",
-         "--output", str(target), asset_api_url(release, {"asset_name": asset_name}, token)],
-        stdin=f'header = "Authorization: Bearer {token}"\n'
-              f'header = "Accept: application/octet-stream"\n',
-    )
+    """Fetch one release asset by name, resuming after a dropped connection.
+    The token goes in via a curl config on stdin, not as -H on the command
+    line, so it never appears in argv or `ps`."""
+    url = asset_api_url(release, {"asset_name": asset_name}, token)
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            run(
+                ["curl", "--fail", "--location", "--http1.1", "--retry", "3",
+                 "--continue-at", "-", "--config", "-",
+                 "--output", str(target), url],
+                stdin=f'header = "Authorization: Bearer {token}"\n'
+                      f'header = "Accept: application/octet-stream"\n',
+            )
+            return
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode == CURL_HTTP_ERROR or attempt == DOWNLOAD_ATTEMPTS:
+                raise
+            done = target.stat().st_size if target.exists() else 0
+            print(f"  connection dropped (curl exit {exc.returncode}) after "
+                  f"{done / 1e6:.0f} MB; resuming (attempt {attempt + 1} of "
+                  f"{DOWNLOAD_ATTEMPTS})", file=sys.stderr)
+            time.sleep(min(5 * attempt, 30))
 
 
 def download_asset(release: dict, pack: dict, token: str, target: Path) -> None:
@@ -981,6 +1003,10 @@ def stage(image: str, store_root: Path) -> int:
 def _hint_for(exc: BaseException) -> str:
     if isinstance(exc, subprocess.CalledProcessError):
         tool = str(exc.cmd[0]) if exc.cmd else ""
+        if tool == "curl" and exc.returncode != CURL_HTTP_ERROR:
+            return (f"the download from GitHub kept failing (curl exit {exc.returncode}): "
+                    "a network problem, not an access one. Re-run the same command; "
+                    "packs already installed are kept.")
         if tool == "curl":
             return ("could not fetch from GitHub Releases. The pack releases are on "
                     "PRIVATE repositories, and GitHub answers 404 (not 401) to a client "

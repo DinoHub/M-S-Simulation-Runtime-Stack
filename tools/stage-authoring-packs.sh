@@ -177,8 +177,7 @@ PY
 # which it never did) and aborted `make dashboard` outright if it failed.
 if [[ ! -f "$STORE_INDEX" ]]; then
   echo "No packs installed yet ($STORE_INDEX absent); nothing to stage."
-  echo "Install some with: tools/install-demo-packs.sh --all"
-  echo "(make dashboard does this itself unless MNS_SKIP_PACK_INSTALL=1)"
+  echo "Install some with: ./download-packs.sh   (./download-packs.sh --list to choose)"
   exit 0
 fi
 

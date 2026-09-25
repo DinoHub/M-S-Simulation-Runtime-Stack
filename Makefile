@@ -28,6 +28,16 @@ ALL             ?= false
 # Also forwarded to `make stop` (stop.sh auto-detects when empty).
 SCENARIO        ?=
 
+# X11 cookie for ScenarioLab and the simulator window. A desktop terminal
+# already exports it; SSH, tmux and some Wayland shells do not, and then
+# Unreal containers crash-loop. Keep a valid XAUTHORITY, otherwise use the
+# newest GNOME/Wayland (mutter) cookie, then the GDM one. Empty when none
+# exists, and tools/check_docker.sh's check_x11 then says what to do.
+XAUTHORITY := $(shell f="$$XAUTHORITY"; [ -f "$$f" ] && { echo "$$f"; exit; }; \
+	for c in $$(ls -t /run/user/$$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null) /run/user/$$(id -u)/gdm/Xauthority; do \
+	[ -f "$$c" ] && { echo "$$c"; exit; }; done)
+export XAUTHORITY
+
 # Transitional image workflow: development is local-first and tag-only;
 # production keeps the immutable catalog pins.
 IMAGE_MODE ?= development
@@ -39,16 +49,15 @@ IMAGE_MODE ?= development
 #   ue582  UE 5.8.2 (default):  packs/standalone-v2-ue582.lock.json,      .mns/ue582/{pack-store,authoring-data}
 #   v2     UE 5.5.4 (previous): packs/standalone-v2-review.1.lock.json, .mns/{pack-store,authoring-data}
 CHANNEL ?= v1
-# Standalone-v2 demo packs `make dashboard` guarantees are installed before
-# ScenarioLab opens, as tools/install-demo-packs.sh selections. Only packs
-# MISSING from .mns/pack-store are downloaded (--missing), so a re-run costs one
-# offline lock/index comparison. The 5.8.2 set is ~5.7 GB (Office 1.93 GB,
-# XFS 1.74 GB, SAFTI 0.86 GB, Warehouse 0.8 GB, Warehouse Props 0.25 GB,
-# Office Props 95 MB, Condo 6 MB); the 5.5.4 set ~2.6 GB. Selections are the
-# lock's (tools/install-demo-packs.sh --help lists them).
-#   make dashboard MNS_DEMO_PACKS="--safti --office-props"   # a small subset
-#   make dashboard MNS_SKIP_PACK_INSTALL=1             # offline / v1-only
-MNS_DEMO_PACKS ?= --all
+# Content packs are downloaded by ./download-packs.sh (or the dashboard's
+# Content phase), not by `make dashboard`: it stages whatever the channel's
+# store holds and warns when that is nothing. Set MNS_DEMO_PACKS to have it
+# install missing packs first, as tools/install-demo-packs.sh selections
+# (--missing, so a re-run costs one offline lock/index comparison):
+#   make dashboard MNS_DEMO_PACKS=--all
+#   make dashboard MNS_DEMO_PACKS="--warehouse --office"
+#   make dashboard MNS_SKIP_PACK_INSTALL=1             # skip the store check too
+MNS_DEMO_PACKS ?=
 MNS_SKIP_PACK_INSTALL ?= 0
 # Fixed rather than derived from the checkout directory. The dashboard services
 # carry daemon-global container_names (airsim-dashboard-api, ...), so two
@@ -173,7 +182,7 @@ endif
 
 SCENARIOS := ardupilot-xfs ardupilot-urbansim px4-xfs px4-condo ardupilot-condo
 
-.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images ensure-demo-packs pack-lock stage-authoring-packs dashboard dashboard-down
+.PHONY: help $(SCENARIOS) dev attach teleop stop logs ps generate check self-test topics verify-images pull-images ensure-images ensure-demo-packs pack-lock stage-authoring-packs dashboard dashboard-down print-channel-env
 
 ensure-images:  ## Use local image tags; pull only those that are missing
 	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
@@ -182,12 +191,18 @@ ensure-images:  ## Use local image tags; pull only those that are missing
 # -latest alias in development, the digest pin in production), not from the
 # pack lock's pin, so install and the staging step right after it use ONE
 # shell image and stage-authoring-packs.sh's .staged-with stamp stays current.
-ensure-demo-packs: ensure-images  ## Install any standalone-v2 demo packs missing from .mns/pack-store
+ensure-demo-packs: ensure-images  ## Install the MNS_DEMO_PACKS selection if set; otherwise check the store has packs
 	@if [ "$(MNS_SKIP_PACK_INSTALL)" = "1" ]; then \
 	  echo "MNS_SKIP_PACK_INSTALL=1: not installing demo packs."; \
-	else \
+	elif [ -n "$(MNS_DEMO_PACKS)" ]; then \
 	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 	  ./tools/install-demo-packs.sh --missing $(MNS_DEMO_PACKS); \
+	else \
+	  export $(CHANNEL_ENV_EXPORTS); \
+	  if ! ./tools/install-demo-packs.sh --check --all 2>/dev/null | grep -q 'installed:'; then \
+	    echo "WARNING: no content packs are installed for channel $(CHANNEL). Run ./download-packs.sh,"; \
+	    echo "         or install them from the dashboard's Content step."; \
+	  fi; \
 	fi
 
 # The lock is a snapshot of what packaging had published when it was built;
@@ -208,6 +223,12 @@ pack-lock: ensure-images  ## Rebuild the channel's pack lock from every pack rel
 	  --shell "$$MNS_PRODUCT_SHELL_IMAGE" --cache .mns/downloads/pack-cache \
 	  --output $(CHANNEL_LOCK) --lock-tag $(notdir $(basename $(basename $(CHANNEL_LOCK))))
 
+# The channel's lock, contracts and pack roots as shell assignments, for
+# scripts that must follow CHANNEL= exactly as the dashboard does
+# (download-packs.sh):  eval "$(make -s print-channel-env)"
+print-channel-env:
+	@for kv in $(CHANNEL_ENV_EXPORTS); do printf 'export %s\n' "$$kv"; done
+
 stage-authoring-packs: ensure-demo-packs  ## Refresh ScenarioLab's view of installed immutable packs
 	@. ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
@@ -218,6 +239,18 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	# container runs as root, so if it mkdirs generated/ itself the directory
 	# lands root-owned and the generator image cannot write into it.
 	@mkdir -p generated scenarios
+	# Same for the runs directory: compose would create a missing bind source
+	# as root, and the recorder (the host uid) then cannot write a bag into it
+	# ("Failed to create database directory"). TEVV_RUNS_DIR may come from the
+	# shell or ./.env, as it does for compose.
+	@runs="$${TEVV_RUNS_DIR:-$$(sed -n 's/^TEVV_RUNS_DIR=//p' .env 2>/dev/null | tail -1)}"; \
+	runs="$${runs:-$$HOME/tevv-runs}"; case "$$runs" in "~"*) runs="$$HOME$${runs#\~}" ;; esac; \
+	mkdir -p "$$runs" 2>/dev/null; \
+	if [ ! -w "$$runs" ]; then \
+	  echo "ERROR: the runs directory $$runs is not writable by you (owner: $$(stat -c %U "$$runs" 2>/dev/null)),"; \
+	  echo "       so recordings would fail. Fix it with:  sudo chown -R $$(id -un): $$runs"; \
+	  exit 1; \
+	fi
 	# Fail early on Docker, X11, or host-port problems.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
 	. ./tools/load-images-env.sh; \
