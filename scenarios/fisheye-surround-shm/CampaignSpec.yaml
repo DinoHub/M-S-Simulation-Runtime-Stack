@@ -46,6 +46,7 @@ variants:
       render:
         system_settings:
           r.Fisheye.SyncCaptureFPS: 30
+          r.Fisheye.LensRainWeatherScale: 0
     vehicles:
     - id: drone_1
       name: Drone1

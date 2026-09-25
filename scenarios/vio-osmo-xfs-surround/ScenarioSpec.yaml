@@ -40,6 +40,16 @@ environment:
   version: 1.0.1
   artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
 
+# r.Fisheye.LensRainWeatherScale 0: stopgap for runtime hosts without the UDW
+# effective-rain fix (TEVV-Airsim fix/udw-effective-rain). The XFS level ships its
+# weather actor with an inert manual Rain = 6.0 that older hosts read as live rain,
+# so every fisheye frame got lens drops at 0.6 in dry weather. Drop this line once
+# the host has the fix; rain zones still wet the lens.
+conditions:
+  render:
+    system_settings:
+      r.Fisheye.LensRainWeatherScale: 0
+
 runtime:
   profile: airsim_unreal_ardupilot_docker
   features:

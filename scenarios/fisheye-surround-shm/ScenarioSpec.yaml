@@ -27,10 +27,16 @@ environment:
 # on the tiled path. 16 keeps the look (parked frames identical) and cuts Lumen
 # 738 -> 44 ms/frame. -ini:Engine:[SystemSettings], so it survives scalability.
 # docs/fisheye-rig-performance.md
+# r.Fisheye.LensRainWeatherScale 0: stopgap for runtime hosts without the UDW
+# effective-rain fix (TEVV-Airsim fix/udw-effective-rain). The XFS level ships its
+# weather actor with an inert manual Rain = 6.0 that older hosts read as live rain,
+# so every fisheye frame got lens drops at 0.6 in dry weather. Drop this line once
+# the host has the fix; rain zones still wet the lens.
 conditions:
   render:
     system_settings:
       r.LumenScene.SurfaceCache.CardCapturesPerFrame: 16
+      r.Fisheye.LensRainWeatherScale: 0
 
 runtime:
   profile: airsim_unreal_ardupilot_docker
