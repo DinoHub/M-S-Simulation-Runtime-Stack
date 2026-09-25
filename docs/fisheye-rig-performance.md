@@ -122,14 +122,17 @@ lands at about 19–25 real frames per second per camera.
    The generator emits `system_settings` as `-ini:Engine:[SystemSettings]:<cvar>=<value>`,
    which survives scalability settings, and the sim log confirms `Set CVar` at startup. The
    `r.Fisheye.*` CVars are the workaround until the generator aliases in (2) land.
-2. **Generator (MnS-Integration-Platform):** alias `fisheye_sync_capture_fps`,
+2. **Generator (MnS-Integration-Platform), [#114](https://github.com/DinoHub/MnS-Integration-Platform/pull/114):** alias `fisheye_sync_capture_fps`,
    `fisheye_publish_fps`, `fisheye_capture_fps` and `fisheye_max_cameras_per_frame`. Today they
    CamelCase onto the camera block and nothing reads them, the same gap platform #83 closed for
    the shared-cubemap keys.
-3. **Bridge (TEVV-Airsim-ROS2-Bridge):** drop an iceoryx sample whose capture stamp equals the
-   previous one. That cuts about 70% of the fisheye traffic with no loss.
-4. **Runtime host (TEVV-Airsim):** publish a shared group on burst completion instead of on a
-   timer.
+3. **Bridge (TEVV-Airsim-ROS2-Bridge), [#75](https://github.com/DinoHub/TEVV-Airsim-ROS2-Bridge/pull/75):**
+   drop an iceoryx sample whose capture stamp equals the previous one, and publish each bundled
+   IMU stamp once. Checked live with the shared group at 30 Hz: 30.0 Hz delivered with 18.9
+   distinct before; 18.03 delivered = 18.03 distinct after, with `repeats_dropped` in
+   `/diagnostics`.
+4. **Runtime host (TEVV-Airsim), [issue #200](https://github.com/DinoHub/TEVV-Airsim/issues/200):**
+   publish a shared group on burst completion instead of on a timer.
 
 ## Bugs found on the way
 
@@ -139,7 +142,7 @@ lands at about 19–25 real frames per second per camera.
 | 2 | product shell, `campaign run` | compose gets container `/workspace/...` paths; the host daemon mounts empty stubs; the sim sits on `/Engine/Maps/Entry` ("environment failure") | generate with `product.sh cli runtime --no-run`, run compose from the host |
 | 3 | stackgen networking | `sim` subnet hardcoded in `172.30.x.0/24`; a sibling auto-pool network takes `172.30.0.0/16` ("Pool overlaps") | guard network on `172.30.0.0/24` |
 | 4 | iceoryx2 teardown | stale nodes and services in `/tmp/iceoryx2` and `/dev/shm/iox2_*`; the next sim can't create publishers (`error=1`) | clean both between stacks |
-| 5 | product shell pilot | `fly_mission_mavros.py` in the shell has no ArduPilot takeoff; ArduPilot arms, never climbs, and disarms | use this repo's `osmo/files/fly_mission_mavros.py` |
+| 5 | product shell pilot | `fly_mission_mavros.py` in the shell has no ArduPilot takeoff; ArduPilot arms, never climbs, and disarms | use this repo's `osmo/files/fly_mission_mavros.py`; the fix is in [MnS-Integration-Platform#109](https://github.com/DinoHub/MnS-Integration-Platform/pull/109) |
 
 ## Reproducing
 
