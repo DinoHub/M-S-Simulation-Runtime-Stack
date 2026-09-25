@@ -77,9 +77,14 @@ off it:
   wind-6 runs' longer end-to-end times are all queue.
 - **A run's evaluation waits behind the next run's flight.** When calm-r1's
   flight ended, calm-r2's gang was placed on the GPU node first, and
-  calm-r1's evaluate group waited 138 s for it to finish. Evaluation needs no
-  GPU, so letting it run on the service node would overlap it with the next
-  flight. That would save about 2 minutes per pair of runs. Not done yet.
+  calm-r1's evaluate group waited 138 s for it to finish.
+- **The GPU was busy meanwhile.** The flight groups ran back to back, with
+  gaps of 5 s, 31 s and 5 s. The 31 s is two evaluations holding the node's
+  cores until the next gang fitted.
+- **What running evaluation on the service node would change.** Evaluation
+  needs no GPU. Moving it there gets each run's verdict about 2 minutes
+  sooner, and removes the 31 s gaps, about 5% of this matrix. It is mostly
+  a latency gain, not a throughput one. Not done yet.
 
 ## Step by step
 
