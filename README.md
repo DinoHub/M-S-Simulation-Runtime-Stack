@@ -181,38 +181,6 @@ Reading the result: the `valid` column is the recording's own verdict and sits l
 accuracy columns deliberately — a number computed from a recording that failed its gates is
 worse than no number.
 
-### The same campaign on a cluster (OSMO)
-
-`osmo/campaign.py` flies a CampaignSpec on NVIDIA OSMO instead of compose: one
-workflow per run, the evidence pulled back into the same
-`generated/campaigns/<id>/` layout, so `status` and the dashboard read it
-unchanged. Three campaigns ship ready: `vio-osmo-condo` (PX4),
-`vio-osmo-condo-ardupilot` and `vio-osmo-xfs`.
-
-```bash
-osmo/campaign.py run    vio-osmo-condo                  # every run in the matrix
-osmo/campaign.py run    vio-osmo-condo --only calm-r1 --viz
-osmo/campaign.py watch  <workflow id>                   # Foxglove at ws://<GPU node IP>:30765
-osmo/campaign.py status vio-osmo-condo
-```
-
-You edit two files per campaign, `scenarios/<campaign>/CampaignSpec.yaml` and
-`ScenarioSpec.yaml`, plus the routes and estimator config beside them. Not every field
-reaches an OSMO run, and some are silently ignored there (`recording.topics`, the
-estimator's `launch_args`); images come from `images/catalog.yaml`, and
-`osmo/campaign.py images` checks the GPU node holds them. The live view is
-`runtime.features.foxglove_bridge` in the spec, or `--viz` / `--no-viz`. One pair has to be changed together:
-`mission.autopilot` and `runtime.profile`.
-
-- [Authoring for OSMO](docs/osmo-runbook.md#authoring-for-osmo-what-you-edit-and-what-the-run-reads-from-it):
-  every field, the generated files it becomes, and the whole folder tree.
-- [OSMO runbook](docs/osmo-runbook.md): setting up the cluster, running, watching, and what to do when a run fails.
-- [OSMO and Kubernetes for this repo](docs/osmo-kubernetes-concepts.md): the concepts to learn first.
-- [One run, end to end](docs/osmo-run-flow.md): what each step writes, where, and who reads it,
-  from the CampaignSpec to the run registry and Grafana.
-- [Logs on OSMO](docs/osmo-logs.md): what Loki and Alloy are for, what they are not, and how to
-  tell whether they are working.
-
 ## What will this stack publish?
 
 The bridges' topic names are the product of four inputs that only meet at
@@ -278,14 +246,3 @@ The same product shell image exposes equivalent CLI actions:
 Paths passed to the container must be under this repository, mounted as `/workspace`.
 
 The previous named Compose stacks remain documented in [Legacy static stacks](docs/legacy-static-stacks.md). They are compatibility workflows, not the product architecture.
-
-## Platform architecture (TEVV)
-
-The Autonomy TEVV platform specs this stack is being mapped onto — Argo
-baseline, NVIDIA OSMO orchestration variant, Jenkins CI plane — are vendored as
-a dated snapshot under [docs/platform-architecture/](docs/platform-architecture/README.md),
-together with the AirSim ROS 2 bridge's side of the mapping
-([bridge-platform-map.md](docs/platform-architecture/bridge-platform-map.md)) and its
-component contract. In the platform's terms this repo is the reused "existing
-asset": scenario generator → `tevv-compile` compose renderer, metrics /
-`/run_state` lifecycle → harness, compose overlays → the manual path.

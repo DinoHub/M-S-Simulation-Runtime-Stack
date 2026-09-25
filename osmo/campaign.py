@@ -191,7 +191,26 @@ def host_path(container_path: str) -> Path:
 
 
 def container_path(p: Path) -> str:
-    return "/workspace/" + str(p.resolve().relative_to(WORKSPACE_HOST))
+    try:
+        return "/workspace/" + str(p.resolve().relative_to(WORKSPACE_HOST))
+    except ValueError:
+        # The product shell only sees this repository, mounted at /workspace;
+        # a path outside it cannot be handed to it. Exit 2, the usage code.
+        print(f"[campaign] {p} is outside {WORKSPACE_HOST}; the product shell only "
+              "sees paths under this repository", file=sys.stderr)
+        raise SystemExit(2)
+
+
+def worse_rc(rc: int, new: int) -> int:
+    """Fold one evaluator exit code into the running one.
+
+    vio-stress exits 0 on pass and 1 when a gate failed; anything else means
+    the evaluator itself failed. An evaluator failure outranks a gate failure,
+    so a later crash is never hidden behind an earlier gate result.
+    """
+    if new and rc in (0, 1):
+        return new
+    return rc
 
 
 # --------------------------------------------------------------------------
@@ -1041,7 +1060,7 @@ def evaluate(root: Path, campaign: dict[str, Any] | None = None,
                    "--est", str(pair / "estimate.tum"),
                    "--gt", str(pair / "ground_truth.tum"),
                    "--out", str(reports / r["run_key"])], check=False, capture=False)
-        rc = rc or proc.returncode
+        rc = worse_rc(rc, proc.returncode)
         if reg is not None and r.get("run_id"):
             for report in sorted(reports.glob(f"{r['run_key']}.*")):
                 reg.add_artifact(r["run_id"], "report", str(report), report.stat().st_size)
@@ -1149,8 +1168,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         rc = 1
     register_campaign(reg, root.name, campaign, campaign_file, platform)
     if campaign.get("evaluation") and not args.no_evaluate:
-        ev = evaluate(root, campaign, reg)
-        if ev == 3:
+        # 1 is a failed gate, anything else non-zero an evaluator that could
+        # not score: both mean this campaign did not pass.
+        if evaluate(root, campaign, reg) != 0:
             rc = 1
     write_manifest(root, campaign_file, campaign, records, platform)
     print(f"[campaign] manifest: {root / 'campaign_manifest.json'}")
