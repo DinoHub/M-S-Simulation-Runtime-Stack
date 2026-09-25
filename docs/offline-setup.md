@@ -6,6 +6,10 @@ connected host, carry it over, and bring the dashboard up on the target.
 Proven end to end on 2026-09-18: Ubuntu 24.04.5, Docker CE 29.8.1 with the
 containerd image store, RTX 5080 — `make dashboard` up with no registry access.
 
+> **Channel.** The bundle and `./.env` this procedure writes are for the `ue582`
+> channel. `make dashboard` now defaults to `CHANNEL=v1`, so on the target start it
+> with `make dashboard CHANNEL=ue582` until the scripts learn the v1 image set.
+
 Three scripts do the work; everything below is the manual procedure around them.
 
 | script | runs on | what it does |
@@ -65,7 +69,7 @@ contend for one tag, the digest-pinned one wins.
   is **not** part of the bundle
 - X11, for ScenarioLab and QGroundControl
 - ~85 GB free: ~30 GB for the copied bundle, ~25 GB of Docker images once
-  loaded, and ~28 GB under `.mns/`, before generated stacks and `~/tevv-runs`.
+  loaded, and ~28 GB under `.mns/`, before generated stacks and `runs/`.
   Around 30 GB of that is reclaimable once the dashboard is up (see step 3), and
   importing straight off the drive instead needs only ~55 GB
 
@@ -81,7 +85,7 @@ tools/offline-export.sh ~/ECW/deployment/mns-offline-bundle
 Roughly 30 GB and a long download. Options:
 
 ```bash
-tools/offline-export.sh ~/ECW/deployment/mns-offline-bundle --all-catalog   # + monitoring, metrics, logs, legacy sims
+tools/offline-export.sh ~/ECW/deployment/mns-offline-bundle --all-catalog   # + the optional catalog entries
 MNS_DEMO_PACKS="--safti --office-props" tools/offline-export.sh ~/ECW/deployment/mns-offline-bundle
 MNS_TARGET_PY=3.12 tools/offline-export.sh ~/ECW/deployment/mns-offline-bundle
 ```
@@ -91,9 +95,8 @@ MNS_TARGET_PY=3.12 tools/offline-export.sh ~/ECW/deployment/mns-offline-bundle
 runs, and a 3.13/3.14 host would produce `cp313`/`cp314` binary wheels (pyyaml,
 markupsafe) that cannot install on the target.
 
-The default set is the 15 references the product path needs. `--all-catalog`
-adds 42 more for the monitoring, metrics, logs and legacy `compose/<scenario>/`
-stacks.
+The default set is the references the product path needs. `--all-catalog`
+adds the catalog's optional entries.
 
 Bundle layout:
 
@@ -156,7 +159,7 @@ cp -r "$USB/M-S-Simulation-Runtime-Stack" ~/               # 56 MB
 sync
 
 cd ~/M-S-Simulation-Runtime-Stack
-chmod +x tools/*.sh launch.sh product.sh setup.sh stop.sh logs.sh tools.sh
+chmod +x tools/*.sh product.sh setup.sh download-packs.sh tools.sh
 
 tools/offline-verify.sh ~/ECW/deployment/mns-offline-bundle    # verify the LOCAL copy
 tools/offline-import.sh ~/ECW/deployment/mns-offline-bundle
@@ -240,7 +243,7 @@ tools/images.sh verify                                                         #
 docker run --rm --gpus all --entrypoint nvidia-smi \
   dhdevspace/auto_mns:tevv-runtime-host-20260910.1                             # NVIDIA runtime
 
-make dashboard          # http://127.0.0.1:3001
+make dashboard CHANNEL=ue582   # http://127.0.0.1:3001
 ```
 
 The NVIDIA check uses an image the import just loaded, because you cannot pull
@@ -261,8 +264,7 @@ SHA-256 match the lock.
 with a matching value.
 
 **`pip: command not found`.** Not fatal. The only required dep is PyYAML, which
-Ubuntu ships as `python3-yaml`; `jinja2` and `python-dotenv` are used solely by
-`tools/generate_scenario.py` on the legacy `./launch.sh` path, not by
+Ubuntu ships as `python3-yaml`; `jinja2` and `python-dotenv` are not needed by
 `make dashboard`. Install `python3-pip` from an apt bundle if you want them.
 
 **`error: externally-managed-environment`.** Ubuntu 24.04 marks the system
@@ -271,7 +273,7 @@ interpreter as PEP 668. `offline-import.sh` retries with
 
 **A compose service tries to pull.** Its image variable is not in `./.env`.
 Images outside the exported set are written there commented out — re-export with
-`--all-catalog` if you need the monitoring, metrics, logs or legacy stacks.
+`--all-catalog` if you need an optional catalog image.
 
 **`container ...-unreal-airsim is unhealthy`.** Usually X11, not the container.
 `tools/check_docker.sh` warns about a broken cookie or unset `DISPLAY` before it
@@ -293,5 +295,5 @@ cd ~/ECW/deployment/mns-offline-bundle/images
 comm -23 <(ls -1 *.tar | sort) <(cut -f1 manifest.tsv | sort -u) | xargs -r rm -v
 ```
 
-Switching `CHANNEL` away from the default `ue582` means re-running the import so
+Switching `CHANNEL` away from `ue582` means re-running the import so
 `./.env` is regenerated for that channel's image set.

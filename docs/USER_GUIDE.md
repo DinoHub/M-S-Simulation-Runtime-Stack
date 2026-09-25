@@ -113,6 +113,9 @@ Three things work differently from a typical ROS 2 sim setup:
 - **The environment is exact.** A scenario pins a level pack by version *and*
   digest, and ScenarioLab and the simulator load the same artifact.
 
+Which service does what, and which file each step leaves on disk, is in
+[How it fits together](how-it-fits-together.md).
+
 ---
 
 ## 2. Requirements
@@ -565,6 +568,9 @@ memory (iceoryx), and the bridge publishes them as `/<camera>/image_raw`.
 the iceoryx SHM path*. That line is out of date: the image topic is there once
 the stack runs.
 
+How the names are resolved, and what `make topics` can and cannot see, is in
+[What will this stack publish?](topics.md).
+
 ### Connecting your autonomy stack
 
 **Over ROS 2.** The stack's ROS traffic lives on Docker bridge networks, one
@@ -640,11 +646,15 @@ docker run --rm --network <stack>_agent_internal-1 --ipc host -v /dev/shm:/dev/s
 Press Ctrl-C to stop recording. The bag is finalized when `ros2 bag record`
 exits cleanly.
 
+Every `product.sh` command, including setup and the image cache, is in
+[The product shell from a terminal](cli.md).
+
 ### Repeatable test campaigns
 
 `make campaign` flies a *campaign*: a scored matrix of runs over one scenario,
 for example 4 wind strengths × 3 repeats, each recorded, validity-gated and
-scored. `scenarios/vio-reference/README.md` shows how to copy the reference
+scored. [Campaigns](campaigns.md) covers the commands, and
+[`scenarios/vio-reference/README.md`](../scenarios/vio-reference/README.md) shows how to copy the reference
 campaign and swap in your own estimator.
 
 ---
@@ -698,6 +708,15 @@ Nothing here is needed for a normal run.
 | `IMAGE_MODE=production` | Uses only the exact, digest-pinned release images. |
 | `MNS_DEMO_PACKS=--all` | Installs any missing packs before starting, like `./download-packs.sh --all`. |
 | `CHANNEL=ue582` / `CHANNEL=v2` | Runs an older pre-release line (UE 5.8.2 review set / UE 5.5.4). Each has its own packs and data. |
+
+**Evaluation and sim-to-real.** The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
+generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
+(no source checkouts).
+**Monitor → Controls** edits the evaluation files in the shared runs directory
+(`TEVV_RUNS_DIR`, default `runs/` in this checkout; hot-reloaded). **Calibration**
+shows the sim-to-real verdicts the `sim-real-eval` worker writes there
+automatically after each recorded run (enable with
+`runtime.features: { sim_real_eval: true }` in the scenario).
 
 **Keep image variables (`*_IMAGE`) out of `.env`.** An image set there
 overrides the release, so you would run a different image from everyone else.

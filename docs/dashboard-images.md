@@ -16,6 +16,22 @@ Both come from the same place — `images/catalog.yaml`, rendered by
 they reach the dashboard by different routes and are pulled by different
 rules.
 
+## Starting it, and running your own build
+
+```bash
+make dashboard                         # local-first; pulls only missing tags
+make dashboard IMAGE_MODE=production   # exact release pins
+make dashboard-down
+```
+
+By default, `make dashboard` runs the transitional development workflow: it keeps any locally built matching image tags, pulls only tags absent from the Docker image store, and uses the tag-only development image-set overlay for generated stacks. It does not refresh an existing tag. Run `./product.sh setup` when you deliberately want the approved remote images refreshed; use `IMAGE_MODE=production` to test the immutable release pins.
+
+To run a dashboard backend or frontend you built locally from a
+TEVV-Web-Dashboard branch, put `DASHBOARD_BACKEND_IMAGE=` /
+`DASHBOARD_FRONTEND_IMAGE=` in `./.env`: a key set there (or in the shell) is
+never overridden by the generated image env files, and `pull_policy: missing`
+keeps a local tag.
+
 ## What `make dashboard` does, in order
 
 ```
