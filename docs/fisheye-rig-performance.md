@@ -100,21 +100,97 @@ Four 1000×1000 fisheyes at 30 Hz (120 fisheye fps needed), XFS, flying. DSTA me
   uncapped and 120 ms with cards 16, not the ~5 ms DSTA measured.
 - Sim RTF stays 1.000; DSTA's sim ran at 0.13×.
 
-## Exposure on the shared path
+## Exposure: HDR bloom ran before exposure
 
-No exposure setting changes the shared image (TEVV-Airsim #201). Circle mean for the front camera:
-- auto-exposure target 0.45 / 0.30 / 0.20: 153.5 / 152.9 / 153.4;
-- manual EV −3 / −2 / −1 / 0 / +9: 147.1 / 153.4 / 158.1 / 153.5 / 166.5.
+The washed-out fisheye image comes from HDR bloom running in the wrong units. It is not specific
+to the shared path; the tiled path has the same bug. #201 first read it as "exposure ignored",
+but EV does apply (EV −12 darkens the shared image to 48).
 
-Auto-exposure can't meter there, because its luminance measurement only runs on the tiled/6-cam
-readback. Manual EV doesn't reach the published image either. Face renders also strip shadows,
-fog and atmosphere, which gives the washed-out look.
+The face and tile captures hold absolute scene luminance (`SCS_SceneColorHDR`). The ISP applies
+`0.0001 × 2^EV` last, but HDR bloom and veiling glare ran before it, on the raw values:
+
+- Bloom's threshold (1.0) is meant for exposed values, so every raw pixel passed it.
+- The bloom term `hdr × bright × (lum − threshold) × intensity` then grew with luminance squared.
+- The frame sat about 12 stops hot on the Reinhard shoulder. EV 0 to 9 barely moved it, and
+  auto-exposure sat on its MinEV −2 clamp for every target.
+- Veiling glare, added in raw units, did nothing.
+
+[TEVV-Airsim #202](https://github.com/DinoHub/TEVV-Airsim/pull/202) applies exposure first.
+Front camera, parked in the XFS yard, 1000×1000. Circle mean is 0–255 inside 0.95 of the image
+circle; clip is the share of pixels at or above 250:
+
+| setting | shared, before | shared, #202 | tiled, before | tiled, #202 |
+|---|---|---|---|---|
+| EV −3 | 147.2 (5.9% clip) | 18.8 | 94.1 | 17.6 |
+| EV 0 | 161.4 (8.4%) | 39.4 | 94.0 | 32.0 |
+| EV 4 | 165.9 (10.4%) | 117.9 (4.1%) | 98.9 | 80.9 |
+| EV 9 | 166.5 (10.8%) | 166.1 (10.5%) | 105.5 | 97.8 |
+| auto-exposure target 0.45 / 0.30 / 0.20 | EV −2 for all three, 153.8 | EV +2.1 / +0.7 / −0.6, 78 / 50 / 33 | EV −2 for all three, 90.8 | EV +5.2 / +1.6 / +0.1, 86 / 50 / 33 |
+
+What changes for users:
+- Manual EVs and SceneTypes that were tuned against the washed-out image now look different.
+  The XFS yard is mid-grey at EV 4–5, and `SceneType: outdoor` (EV 9) is close to the old look.
+- Auto-exposure, the default when no exposure key is set, needs no retuning.
+- Workaround on older runtime-host images: `HDRBloomEnabled: false` and a manual EV of about 4.
+
+Face renders still strip shadows, fog and atmosphere (`StripShowFlags`). That is a separate
+fidelity gap, not part of the exposure bug.
+
+## Lens model and CameraInfo
+
+The shader lens math is correct. Kannala-Brandt runs with a Newton inverse, Double Sphere
+matches Usenko 2018 (eq. 40 and the closed-form inverse), and the resolve-map bake uses the
+exact K-B series of the stereographic and equisolid lenses (0.14% off at θ = 95°). Where it goes
+wrong is keeping the published calibration consistent with what is rendered:
+
+- **CameraInfo reports a distortion that is not rendered.** Every fisheye topic in these runs
+  publishes `kannala_brandt`, `d = [0.03, 0, 0, 0]`, `fx = fy = 301.56`. The tiled and shared
+  paths render pure equidistant (k = 0). The 0.03 is `FisheyePolynomialK`, a default that only
+  the legacy 6-cam shader applies, and that the SHM bridge folds into d[0].
+  - A consumer that trusts CameraInfo is about 8% off in angle at the image rim (θ = 95°).
+  - Even on the 6-cam path the fold is only first-order, and it has the wrong sign. The shader
+    maps pixel angle θd to ray angle θd(1 + Kθd²), which is K-B with k1 ≈ −K.
+- **The three paths render different lenses from the same settings.**
+  - Only the 6-cam path applies `FisheyePolynomialK` and the optional barrel distortion.
+  - Only the tiled and shared bake applies `FisheyeK` to an equidistant lens.
+- **Automatic focal length assumes equidistant.** Without `FisheyeFx`/`FisheyeFy`,
+  `PIPCamera.cpp` uses `f = r / θmax` for every lens. For stereographic, equisolid or K-B lenses
+  with non-zero k, the image circle then doesn't match the image size. The SHM bridge falls back
+  to `f = width / 2` for K-B and Double Sphere, which doesn't match the sim either.
+- **"plumb_bob" is published for a zero-distortion equidistant lens.** A zero-distortion
+  plumb_bob is a pinhole camera, not equidistant. It isn't hit today only because K = 0.03 is on
+  by default.
+
+What to do: the SHM bridge should publish CameraInfo from the sim's runtime calibration
+(`simGetFisheyeCameraInfo`, which the RPC camera path already uses) instead of re-deriving it
+from settings.json. The sim should report the lens it actually renders on each path. Until
+then, for fisheye VIO on the shared or tiled path, calibrate from K and D = 0 (equidistant),
+not from the published D.
+
+## Do the default values make sense?
+
+- **Tone curve: no display gamma.** The ISP writes `pow(x/(x+1), 0.85)` straight into 8-bit
+  (linear render targets, and the format convert only clamps). A real camera applies an sRGB or
+  BT.709 curve (about 1/2.2). Here an 18% grey at unit exposure encodes to 52 instead of about
+  118, so shadows are darker and flatter than a real image. That is a sim-to-real gap for
+  feature detectors tuned on real footage.
+- **Bloom threshold 1.0 is the mid-tone.** Even with #202, bloom reaches everything brighter
+  than mid-grey (+10 levels at EV 4, clip 0.8% to 4.1%). Real lens scatter shows only near
+  saturation, so a threshold of about 4–8 fits better.
+- **The SceneType table assumes physical light levels.** `outdoor` = EV 9 is about 4 stops too
+  bright for the XFS yard, which is mid-grey at EV 4–5. Prefer auto-exposure.
+- **Auto-exposure metering.** It meters mean max(R,G,B) over 0.7 of the circle radius, so target
+  0.45 gives a luma circle mean of about 0.31 (78/255). That is reasonable for sky-heavy frames.
+  The MinEV −2 floor never binds after #202.
+- **Veiling glare** with `VeilingGlareStrength` 0.25 now adds about +1.4 levels at EV 4 in sun.
+  That is plausible.
 
 ## Other observations
 
-- **Exposure differs between the paths.** For the same camera and pose, tiled renders the
-  ground almost black under a blown-out sky, and shared renders the ground near-white. Mean
-  luminance was 66 against 108.
+- **Exposure differs between the paths.** For the same camera and pose, tiled renders
+  darker than shared. Before #202 the means were 66 against 108; with #202 at EV 4, the circle
+  means are 81 against 118, and tiled keeps about 5% of the circle crushed to black. The
+  bloom bug hit both paths; this remaining gap between them is not explained yet.
 - **The shared rig sees the airframe.** With `fisheye_shared_cubemap_offset_z: -0.15` the
   drone's arms and propellers fill the bottom third of each view. The group renders from its
   anchor, not from each camera's pose. At −0.35 m they shrink to a band at the bottom, and at
@@ -160,8 +236,10 @@ fog and atmosphere, which gives the washed-out look.
    `/diagnostics`.
 4. **Runtime host (TEVV-Airsim), [issue #200](https://github.com/DinoHub/TEVV-Airsim/issues/200):**
    publish a shared group on burst completion instead of on a timer.
-5. **Runtime host (TEVV-Airsim), [issue #201](https://github.com/DinoHub/TEVV-Airsim/issues/201):**
-   pass exposure (manual and auto) through to the shared-cubemap image.
+5. **Runtime host (TEVV-Airsim), [PR #202](https://github.com/DinoHub/TEVV-Airsim/pull/202)
+   (fixes #201):** apply exposure before HDR bloom and veiling glare.
+6. **Bridge SHM CameraInfo:** publish from `simGetFisheyeCameraInfo`, not from settings.json. See
+   "Lens model and CameraInfo".
 
 ## Bugs found on the way
 
