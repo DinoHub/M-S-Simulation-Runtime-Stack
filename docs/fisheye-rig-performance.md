@@ -174,9 +174,13 @@ not from the published D.
   BT.709 curve (about 1/2.2). Here an 18% grey at unit exposure encodes to 52 instead of about
   118, so shadows are darker and flatter than a real image. That is a sim-to-real gap for
   feature detectors tuned on real footage.
+  [TEVV-Airsim #204](https://github.com/DinoHub/TEVV-Airsim/pull/204) makes ISP mode Reinhard
+  plus the sRGB curve. A pixelwise check against a RAW frame matches it (median error −0.03
+  levels), and 18% grey now lands at 109. The old curve stays as `TonemapMode: 3`.
 - **Bloom threshold 1.0 is the mid-tone.** Even with #202, bloom reaches everything brighter
   than mid-grey (+10 levels at EV 4, clip 0.8% to 4.1%). Real lens scatter shows only near
-  saturation, so a threshold of about 4–8 fits better.
+  saturation, so a threshold of about 4–8 fits better. #204 sets the default to 4.0, and bloom
+  now adds +1.6 levels at EV 4.
 - **The SceneType table assumes physical light levels.** `outdoor` = EV 9 is about 4 stops too
   bright for the XFS yard, which is mid-grey at EV 4–5. Prefer auto-exposure.
 - **Auto-exposure metering.** It meters mean max(R,G,B) over 0.7 of the circle radius, so target
@@ -240,6 +244,9 @@ not from the published D.
    (fixes #201):** apply exposure before HDR bloom and veiling glare.
 6. **Bridge SHM CameraInfo:** publish from `simGetFisheyeCameraInfo`, not from settings.json. See
    "Lens model and CameraInfo".
+8. **Runtime host (TEVV-Airsim), [PR #204](https://github.com/DinoHub/TEVV-Airsim/pull/204)
+   (stacked on #203):** sRGB display curve in ISP mode (legacy curve as `TonemapMode: 3`) and a
+   bloom threshold of 4.0.
 7. **Runtime host (TEVV-Airsim), [PR #203](https://github.com/DinoHub/TEVV-Airsim/pull/203)
    (stacked on #202):** lens-rain fixes. Beads are no longer sliced across the head, drawn on
    the masked rim, or clipped to white. Tails are no longer cut at the drop grid, drops no
