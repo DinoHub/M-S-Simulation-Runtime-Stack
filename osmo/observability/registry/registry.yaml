@@ -1,0 +1,61 @@
+# The TEVV run registry: one Postgres, run by the CloudNativePG operator the
+# setup script already installs (cnpg-system). Holds what a run's lifecycle is
+# -- campaign, attempt, status, verdict per gate -- not its time series (that
+# is ClickHouse) and not its logs (Loki). Schema: schema.sql, applied by
+# `setup-local-osmo.sh observability`.
+#
+# Pinned to the service node, like OSMO's own control plane, so it is up
+# whether or not the GPU node is. One instance: this is a workstation cluster,
+# and the run directories on disk stay the source the registry can be rebuilt
+# from (`osmo/campaign.py registry sync`).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tevv
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: tevv-registry
+  namespace: tevv
+spec:
+  instances: 1
+  storage:
+    size: 5Gi
+    storageClass: standard
+  affinity:
+    nodeSelector:
+      node_group: service
+  bootstrap:
+    initdb:
+      database: tevv
+      owner: tevv
+  enableSuperuserAccess: false
+  # The app secret (tevv-registry-app, made by the operator) is the writer's.
+  # Grafana reads with its own role, whose password the setup script puts in
+  # tevv-registry-grafana before this is applied; schema.sql grants it SELECT.
+  managed:
+    roles:
+    - name: grafana_ro
+      ensure: present
+      login: true
+      passwordSecret:
+        name: tevv-registry-grafana
+---
+# The host reaches the registry the way it reaches object storage: the
+# service node's InternalIP on the kind network plus a NodePort.
+apiVersion: v1
+kind: Service
+metadata:
+  name: tevv-registry-nodeport
+  namespace: tevv
+spec:
+  type: NodePort
+  selector:
+    cnpg.io/cluster: tevv-registry
+    cnpg.io/instanceRole: primary
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+    nodePort: 30432

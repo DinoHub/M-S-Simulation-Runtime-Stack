@@ -315,6 +315,8 @@ workflow:
       environment:
         REPORT_DIR: /osmo/data/input
         GATES: '{{ gates_json }}'
+        # verdict.json, one row per gate, for the run registry.
+        OUTPUT_DIR: "{{output}}"
       files:
       - {localpath: files/verdict.py, path: /tmp/verdict.py}
       command: ["python3", "/tmp/verdict.py"]

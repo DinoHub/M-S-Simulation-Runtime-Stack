@@ -4,6 +4,7 @@
     osmo/campaign.py run    vio-osmo-condo            # materialise, generate, submit, collect
     osmo/campaign.py run    vio-osmo-condo --only calm-r1
     osmo/campaign.py status vio-osmo-condo            # the platform's scorecard, unchanged
+    osmo/campaign.py registry sync [vio-osmo-condo]   # the run registry, rebuilt from runs/
 
 This is an executor, not a runner. The platform's campaign runner
 (MnS-Integration-Platform apps/scenario_launcher/campaign.py) already does
@@ -65,6 +66,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+from registry import Registry
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / "osmo" / "sim-bridge-vio.workflow.yaml"
@@ -367,6 +370,9 @@ def verify_images(refs: dict[str, str]) -> dict[str, dict[str, Any]]:
         node_ids = set((row.get("nodes") or {}).values())
         if not digest:
             row["problem"] = "the image set pins no digest"
+        elif not nodes:
+            row["problem"] = ("no node advertises a GPU (nvidia.com/gpu allocatable is 0 or absent): "
+                              "is the device plugin running on the GPU node?")
         elif pinned_id is None:
             row["problem"] = f"{repo}@{digest} is not on this host: docker pull it, then kind load"
         elif None in node_ids or not node_ids:
@@ -481,11 +487,14 @@ def query(workflow_id: str) -> tuple[str, dict[str, str]]:
     return status, tasks
 
 
-def wait(workflow_id: str, poll_s: float = 20.0) -> tuple[str, dict[str, str]]:
+def wait(workflow_id: str, poll_s: float = 20.0,
+         on_poll: Any = None) -> tuple[str, dict[str, str]]:
     while True:
         status, tasks = query(workflow_id)
         if status in TERMINAL:
             return status, tasks
+        if on_poll is not None:
+            on_poll(status, tasks)
         time.sleep(poll_s)
 
 
@@ -533,59 +542,76 @@ def download(workflow_id: str, task: str, dest: Path, endpoint: str) -> bool:
 # One run
 # --------------------------------------------------------------------------
 
-def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any],
-            workflow_id: str, platform: dict[str, str], run_gates: dict[str, Any],
-            endpoint: str, images: dict[str, Any] | None = None) -> None:
-    status, tasks = wait(workflow_id)
-    rec.finished_at = now()
-    bundle = root / "runs" / rec.run_key
-    bundle.mkdir(parents=True, exist_ok=True)
+def judge_flight(status: str, tasks: dict[str, str], bundle: Path) -> tuple[str, str | None]:
+    """Whether a run flew: the RunRecord's done/failed, and why not.
 
-    # A run that produced evidence flew; the campaign-level evaluator judges it.
-    # That is the compose runner's semantics and the scorecard depends on it.
-    # "Flew" is literal: the pilot task has to exist and have completed. Run
-    # 25 had a COMPLETED recorder, a full bag, and no pilot task at all,
-    # because the submit's values never reached the workflow.
+    A run that produced evidence flew; the campaign-level evaluator judges it.
+    That is the compose runner's semantics and the scorecard depends on it.
+    "Flew" is literal: the pilot task has to exist and have completed. Run
+    25 had a COMPLETED recorder, a full bag, and no pilot task at all,
+    because the submit's values never reached the workflow."""
     if tasks.get("recorder") == "COMPLETED" and tasks.get("pilot") == "COMPLETED":
-        rec.status = "done"
+        verdict, error = "done", None
     elif "pilot" not in tasks:
-        rec.status = "failed"
-        rec.error = f"workflow {status}: no pilot task -- the workflow ran on its defaults"
+        return "failed", f"workflow {status}: no pilot task -- the workflow ran on its defaults"
     else:
-        rec.status = "failed"
         failed = [f"{t}={s}" for t, s in tasks.items() if s.startswith("FAILED")]
-        rec.error = f"workflow {status}: " + (", ".join(failed) or "no recorder output")
-
-    # Evidence, into the layout the scorecard reads.
-    download(workflow_id, "recorder", bundle, endpoint)
+        return "failed", f"workflow {status}: " + (", ".join(failed) or "no recorder output")
     # The recorder writes how the flight ended beside the bag. A pilot task
     # exits 0 or 1 as COMPLETED -- a failed flight must not take the gang
     # down with it -- so the task table cannot tell a flight from a refusal
     # to arm; this can.
     mission = bundle / "mission.json"
-    if rec.status == "done" and mission.exists():
+    if mission.exists():
         try:
             m = json.loads(mission.read_text())
             if not m.get("announced"):
-                rec.status, rec.error = "failed", "the pilot never reported the mission done"
-            elif m.get("pilot_exit") not in (0, None):
-                rec.status, rec.error = "failed", f"pilot exited {m['pilot_exit']}"
-            elif not (m.get("messages") or {}).get("/ov_msckf/odomimu"):
-                rec.status, rec.error = "failed", "the estimator never published"
+                return "failed", "the pilot never reported the mission done"
+            if m.get("pilot_exit") not in (0, None):
+                return "failed", f"pilot exited {m['pilot_exit']}"
+            if not (m.get("messages") or {}).get("/ov_msckf/odomimu"):
+                return "failed", "the estimator never published"
         except (OSError, json.JSONDecodeError):
             pass
-    for evaluator in ("vio-eval", "spawn-eval", "validate"):
+    return verdict, error
+
+
+def read_validation(bundle: Path) -> tuple[bool | None, list[str]]:
+    """validate_recording.py's answer: `valid` plus the checks that failed.
+    (Older readers looked for `ok`/`passed` and so took every recording as
+    valid; the tool has always written `valid`.)"""
+    path = bundle / "validation.json"
+    if not path.exists():
+        return None, []
+    try:
+        v = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None, []
+    valid = v.get("valid", v.get("ok", v.get("passed")))
+    if valid is None:
+        valid = not v.get("failed")
+    return bool(valid), [str(c) for c in (v.get("failed_checks") or v.get("failed") or [])]
+
+
+def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any],
+            workflow_id: str, platform: dict[str, str], run_gates: dict[str, Any],
+            endpoint: str, images: dict[str, Any] | None = None,
+            reg: Registry | None = None) -> None:
+    reg = reg or Registry(dsn="")
+    status, tasks = wait(workflow_id, on_poll=lambda s, t: reg.progress(workflow_id, s, t))
+    rec.finished_at = now()
+    bundle = root / "runs" / rec.run_key
+    bundle.mkdir(parents=True, exist_ok=True)
+
+    # Evidence, into the layout the scorecard reads.
+    download(workflow_id, "recorder", bundle, endpoint)
+    rec.status, rec.error = judge_flight(status, tasks, bundle)
+    for evaluator in ("vio-eval", "spawn-eval", "validate", "verdict"):
         download(workflow_id, evaluator, bundle / "eval" / evaluator, endpoint)
     validation = next(iter(bundle.rglob("validation.json")), None)
     if validation and validation.parent != bundle:
         (bundle / "validation.json").write_bytes(validation.read_bytes())
-    if (bundle / "validation.json").exists():
-        try:
-            v = json.loads((bundle / "validation.json").read_text())
-            rec.recording_valid = bool(v.get("ok", v.get("passed", not v.get("failed"))))
-            rec.failed_checks = [str(c) for c in (v.get("failed_checks") or v.get("failed") or [])]
-        except (OSError, json.JSONDecodeError):
-            pass
+    rec.recording_valid, rec.failed_checks = read_validation(bundle)
     if tasks.get("verdict", "").startswith("FAILED") and rec.status == "done":
         rec.failed_checks.append("gate")
     rec.bundle = str(bundle)
@@ -612,6 +638,158 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
                 "chase_cam": (Path(rec.stack) / "config" / "unreal-airsim" / "settings.json").exists()
                 and '"chase"' in (Path(rec.stack) / "config" / "unreal-airsim" / "settings.json").read_text()},
     }, indent=2))
+
+    outcome, _ = registry_outcome(rec.status, rec.error, status, tasks, load_verdict(bundle, run_gates))
+    if outcome != "passed":
+        capture_logs(workflow_id, tasks, bundle)
+    register_run(reg, workflow_id, bundle, rec.status, rec.error, status, tasks, run_gates,
+                 rec.recording_valid, rec.failed_checks, rec.finished_at)
+
+
+# --------------------------------------------------------------------------
+# The run registry (osmo/registry.py): what the files say, where Grafana reads
+# --------------------------------------------------------------------------
+
+VERDICT_PY = ROOT / "osmo" / "files" / "verdict.py"
+
+# The registry's headline numbers, from vio-eval's report. The full set stays
+# in ClickHouse; these are what a campaign is compared on.
+SUMMARY_METRICS = {
+    "ate_rmse_m": ("ate_trans_m", "rmse", "m"),
+    "ate_max_m": ("ate_trans_m", "max", "m"),
+    "rpe_rmse_m": ("rpe_trans_m", "rmse", "m"),
+    "ate_rot_rmse_deg": ("ate_rot_deg", "rmse", "deg"),
+    "yaw_drift_deg_per_min": ("yaw_drift_deg_per_min", None, "deg/min"),
+    "flight_s": ("duration_s", None, "s"),
+}
+
+
+def load_verdict(bundle: Path, run_gates: dict[str, Any]) -> dict[str, Any] | None:
+    """The verdict task's verdict.json; for a run flown before the task wrote
+    one, the same verdict.py rerun here over the same evaluator outputs."""
+    path = bundle / "eval" / "verdict" / "verdict.json"
+    if not path.exists() and (bundle / "eval").is_dir() and any((bundle / "eval").rglob("*.json")):
+        proc = subprocess.run([sys.executable, str(VERDICT_PY)], capture_output=True, text=True,
+                              env={**os.environ, "REPORT_DIR": str(bundle / "eval"),
+                                   "OUTPUT_DIR": str(path.parent), "GATES": json.dumps(run_gates)})
+        if path.exists():
+            doc = json.loads(path.read_text())
+            doc["recomputed_on_host"] = True
+            path.write_text(json.dumps(doc, indent=2))
+        elif proc.returncode not in (0, 1):
+            return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def registry_outcome(flight: str, error: str | None, workflow_status: str,
+                     tasks: dict[str, str], verdict: dict[str, Any] | None) -> tuple[str, str | None]:
+    """The registry's status and failure_reason for a finished workflow."""
+    if workflow_status == "FAILED_IMAGE_PULL":
+        return "infra_failed", "image_pull"
+    if workflow_status == "FAILED_SERVER_ERROR":
+        return "infra_failed", "infra"
+    if workflow_status in ("CANCELLED", "FAILED_CANCELED"):
+        return "aborted", "cancelled"
+    if flight != "done":
+        err = error or ""
+        if "no pilot task" in err:
+            return "failed", "no_pilot"
+        if "estimator never published" in err:
+            return "failed", "no_estimate"
+        if "pilot never reported" in err or "pilot exited" in err:
+            return "failed", "mission_failed"
+        return "failed", "pod_crash"
+    rc = (verdict or {}).get("rc")
+    if rc == 42:
+        return "infra_failed", "no_evidence"
+    if rc == 0 or (rc is None and tasks.get("verdict") == "COMPLETED"):
+        return "passed", None
+    if any(g.get("gate") == "spawn" and not g.get("passed") for g in (verdict or {}).get("gates", [])):
+        return "failed", "spawn_failed"
+    if rc == 1 or tasks.get("verdict", "").startswith("FAILED"):
+        return "failed", "gate_failed"
+    return "failed", "no_evidence"
+
+
+def summary_metrics(bundle: Path) -> list[tuple[str, float, str | None, str]]:
+    path = bundle / "eval" / "vio-eval" / "vio.json"
+    try:
+        traj = json.loads(path.read_text())["categories"]["trajectory"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return []
+    rows = []
+    for name, (field_, stat, unit) in SUMMARY_METRICS.items():
+        value = traj.get(field_)
+        if stat is not None:
+            value = value.get(stat) if isinstance(value, dict) else None
+        if isinstance(value, (int, float)):
+            rows.append((name, float(value), unit, "vio-eval"))
+    return rows
+
+
+def run_artifacts(bundle: Path) -> list[tuple[str, str, int | None]]:
+    def size(p: Path) -> int:
+        return p.stat().st_size if p.is_file() else sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+    rows = []
+    for kind, path in (("bag", bundle / "bag"), ("eval", bundle / "eval"), ("logs", bundle / "logs")):
+        if path.exists() and size(path):
+            rows.append((kind, str(path), size(path)))
+    reports = bundle.parent.parent / "reports"
+    for report in sorted(reports.glob(f"{bundle.name}.*")) + sorted(reports.glob(f"{bundle.name}/*")):
+        if report.is_file():
+            rows.append(("report", str(report), report.stat().st_size))
+    return rows
+
+
+def capture_logs(workflow_id: str, tasks: dict[str, str], bundle: Path) -> None:
+    """Every task's stdout, kept with a run that did not pass. OSMO holds task
+    logs only as long as it holds the workflow; this is the copy that stays
+    with the evidence (and the one that works when no log store is up)."""
+    logs = bundle / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    for task in tasks:
+        proc = osmo("workflow", "logs", workflow_id, "--task", task, check=False)
+        if proc.stdout.strip():
+            (logs / f"{task}.log").write_text(proc.stdout)
+    print(f"[campaign]   task logs kept in {logs}")
+
+
+def register_run(reg: Registry, workflow_id: str, bundle: Path, flight: str, error: str | None,
+                 workflow_status: str, tasks: dict[str, str], run_gates: dict[str, Any],
+                 recording_valid: bool | None, failed_checks: list[str],
+                 ended_at: str | None) -> None:
+    if not reg.on:
+        return
+    verdict = load_verdict(bundle, run_gates)
+    status, reason = registry_outcome(flight, error, workflow_status, tasks, verdict)
+    viz = None
+    if (bundle / "run.json").exists():
+        viz = json.loads((bundle / "run.json").read_text()).get("viz")
+    reg.finish(workflow_id, status=status, reason=reason, error=error,
+               workflow_status=workflow_status, tasks=tasks, run_dir=str(bundle),
+               recording_valid=recording_valid, failed_checks=failed_checks, viz=viz,
+               ended_at=ended_at)
+    reg.results(workflow_id, gates=(verdict or {}).get("gates", []),
+                metrics=summary_metrics(bundle), artifacts=run_artifacts(bundle))
+    print(f"[registry] {workflow_id}: {status}" + (f" ({reason})" if reason else ""))
+
+
+def git_sha() -> str | None:
+    proc = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
+                          capture_output=True, text=True)
+    return proc.stdout.strip() or None
+
+
+def register_campaign(reg: Registry, campaign_id: str, campaign: dict[str, Any],
+                      campaign_file: Path, platform: dict[str, str] | None) -> None:
+    om = omega_fields(campaign)
+    reg.upsert_campaign(campaign, campaign_id=campaign_id, spec_path=str(campaign_file),
+                        scenario=str((campaign_file.parent / str(campaign["scenario"])).resolve()),
+                        tier=om["tier"], verifies=om["verifies"], platform=platform,
+                        gates=gates(campaign), git_sha=git_sha())
 
 
 # --------------------------------------------------------------------------
@@ -671,7 +849,8 @@ def write_manifest(root: Path, campaign_file: Path, campaign: dict[str, Any],
     (root / "campaign_manifest.json").write_text(json.dumps(doc, indent=2))
 
 
-def evaluate(root: Path, campaign: dict[str, Any] | None = None) -> int:
+def evaluate(root: Path, campaign: dict[str, Any] | None = None,
+             reg: Registry | None = None) -> int:
     """The platform's campaign-level evaluator, via its image, once per run.
 
     The runner scores a whole manifest in one call, which reads each run's bag
@@ -721,6 +900,9 @@ def evaluate(root: Path, campaign: dict[str, Any] | None = None) -> int:
                    "--gt", str(pair / "ground_truth.tum"),
                    "--out", str(reports / r["run_key"])], check=False, capture=False)
         rc = rc or proc.returncode
+        if reg is not None and r.get("run_id"):
+            for report in sorted(reports.glob(f"{r['run_key']}.*")):
+                reg.add_artifact(r["run_id"], "report", str(report), report.stat().st_size)
     return rc
 
 
@@ -766,6 +948,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     runs = materialise(campaign_file, CAMPAIGNS_HOST, args.only or [])
     print(f"[campaign] {len(runs)} run(s) materialised under {root}")
     endpoint = storage_endpoint()
+    # Keyed by the campaign directory, so a chase-camera copy is its own
+    # campaign in the registry as it is on disk.
+    reg = Registry()
+    register_campaign(reg, root.name, campaign, campaign_file, None)
 
     records: list[RunRecord] = []
     submitted: list[tuple[RunRecord, Path, str]] = []
@@ -780,6 +966,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                         started_at=now())
         platform = platform or derive_platform(spec)
         records.append(rec)
+        attempt = reg.plan_attempt(root.name, key, variant=rec.variant, repeat=rec.repeat,
+                                   seed=rec.seed, scenario_id=rec.scenario_id, vehicle=rec.vehicle,
+                                   run_dir=str(root / "runs" / key))
         stack_dir = root / "stacks" / key
         try:
             if args.chase_cam:
@@ -790,30 +979,33 @@ def cmd_run(args: argparse.Namespace) -> int:
             viz = wants_viz(spec, args.viz)
             wf = submit(stack_dir, campaign, run_gates, campaign_file, images, viz=viz)
             rec.run_id = wf
+            reg.submitted(root.name, key, attempt, wf, images=image_record, viz=viz, at=now())
             print(f"[campaign] {key}: submitted {wf}" + (" (live view on)" if viz else ""))
             if viz:
                 print(f"[campaign] {key}: watch live with  osmo/campaign.py watch {wf}")
             submitted.append((rec, spec_file, wf))
         except RuntimeError as exc:
             rec.status, rec.error, rec.finished_at = "failed", str(exc), now()
+            reg.not_submitted(root.name, key, attempt, "stack_generation", str(exc))
         write_manifest(root, campaign_file, campaign, records, platform)
         if args.serial and submitted:
             rec_s, spec_s, wf_s = submitted.pop()
             run_one(rec_s, spec_s, root, campaign, wf_s, platform or {}, run_gates, endpoint,
-                    image_record)
+                    image_record, reg)
             write_manifest(root, campaign_file, campaign, records, platform)
 
     for rec, spec_file, wf in submitted:
         run_one(rec, spec_file, root, campaign, wf, platform or {}, run_gates, endpoint,
-                image_record)
+                image_record, reg)
         print(f"[campaign] {rec.run_key}: {rec.status}" + (f" ({rec.error})" if rec.error else ""))
         write_manifest(root, campaign_file, campaign, records, platform)
 
     rc = 0
     if any(r.status != "done" for r in records):
         rc = 1
+    register_campaign(reg, root.name, campaign, campaign_file, platform)
     if campaign.get("evaluation") and not args.no_evaluate:
-        ev = evaluate(root, campaign)
+        ev = evaluate(root, campaign, reg)
         if ev == 3:
             rc = 1
     write_manifest(root, campaign_file, campaign, records, platform)
@@ -978,15 +1170,7 @@ def cmd_reindex(args: argparse.Namespace) -> int:
     for meta_file in sorted((root / "runs").glob("*/run.json")):
         meta = json.loads(meta_file.read_text())
         bundle = meta_file.parent
-        validation = bundle / "validation.json"
-        valid, failed = None, []
-        if validation.exists():
-            try:
-                v = json.loads(validation.read_text())
-                valid = bool(v.get("ok", v.get("passed", not v.get("failed"))))
-                failed = [str(c) for c in (v.get("failed_checks") or v.get("failed") or [])]
-            except (OSError, json.JSONDecodeError):
-                pass
+        valid, failed = read_validation(bundle)
         tasks = meta.get("tasks") or {}
         done = tasks.get("recorder") == "COMPLETED" and tasks.get("pilot") == "COMPLETED"
         records.append(RunRecord(
@@ -1007,12 +1191,72 @@ def cmd_reindex(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_registry(args: argparse.Namespace) -> int:
+    """`registry sync`: write what runs/ holds into the run registry.
+
+    The registry is fed live by `run`; this is how it is filled for runs
+    flown before it existed, or after it was down, or on a new cluster. Every
+    run bundle's run.json names its workflow, so an attempt the registry
+    already has is updated in place and one it lacks is added after the ones
+    it holds. Nothing is re-flown and nothing on disk changes, except that a
+    run flown before the verdict task wrote verdict.json gets one, from the
+    same verdict.py run here."""
+    reg = Registry()
+    if not reg.on:
+        return 42
+    roots = ([CAMPAIGNS_HOST / args.campaign] if args.campaign
+             else sorted(p.parent for p in CAMPAIGNS_HOST.glob("*/campaign_manifest.json")))
+    total = 0
+    for root in roots:
+        manifest_file = root / "campaign_manifest.json"
+        if not manifest_file.exists():
+            print(f"[registry] no manifest in {root}", file=sys.stderr)
+            continue
+        manifest = json.loads(manifest_file.read_text())
+        spec_file = Path(manifest["spec"])
+        campaign = (yaml.safe_load(spec_file.read_text()) if spec_file.exists()
+                    else {"id": manifest["campaign_id"], "name": manifest.get("name"),
+                          "scenario": manifest.get("scenario"),
+                          "evaluation": manifest.get("evaluation")})
+        register_campaign(reg, root.name, campaign, spec_file, manifest.get("platform"))
+        rows = {r.get("run_key"): r for r in manifest.get("runs", [])}
+        for meta_file in sorted((root / "runs").glob("*/run.json")):
+            meta = json.loads(meta_file.read_text())
+            bundle, wf = meta_file.parent, meta.get("workflow_id") or meta.get("run_id")
+            if not wf:
+                continue
+            reg.adopt(root.name, meta["run_key"], wf, variant=meta.get("variant"),
+                      repeat=meta.get("repeat", 1), seed=meta.get("seed"),
+                      scenario_id=meta.get("scenario_id"), vehicle=meta.get("vehicle"),
+                      run_dir=str(bundle))
+            row = rows.get(meta["run_key"]) or {}
+            same = row.get("run_id") == wf
+            reg.submitted(root.name, meta["run_key"], _attempt_of(reg, wf), wf,
+                          images=meta.get("images"), viz=(meta.get("viz") or {}).get("foxglove"),
+                          at=row.get("started_at") if same else None)
+            tasks = meta.get("tasks") or {}
+            flight, error = judge_flight(meta.get("workflow_status", ""), tasks, bundle)
+            ended = row.get("finished_at") if same else None
+            ended = ended or datetime.fromtimestamp(meta_file.stat().st_mtime, timezone.utc).isoformat()
+            valid, failed = read_validation(bundle)
+            register_run(reg, wf, bundle, flight, error, meta.get("workflow_status", ""), tasks,
+                         meta.get("gates") or gates(campaign), valid, failed, ended)
+            total += 1
+    print(f"[registry] {total} run(s) synced")
+    return 0 if reg.on else 42
+
+
+def _attempt_of(reg: Registry, workflow_ref: str) -> int | None:
+    key = reg._key(workflow_ref)
+    return key[2] if key else None
+
+
 def cmd_evaluate(args: argparse.Namespace) -> int:
     """Score an existing manifest again -- after a scorer fix, or a rebuild."""
     campaign_file = find_campaign(args.campaign)
     campaign = yaml.safe_load(campaign_file.read_text())
     root = CAMPAIGNS_HOST / str(campaign["id"])
-    return 0 if evaluate(root, campaign) in (0, 1) else 1
+    return 0 if evaluate(root, campaign, Registry()) in (0, 1) else 1
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -1060,6 +1304,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("reindex", help="rebuild the manifest's runs from the evidence on disk")
     p.add_argument("campaign")
     p.set_defaults(fn=cmd_reindex)
+    p = sub.add_parser("registry", help="the run registry (osmo/registry.py)")
+    p.add_argument("action", choices=["sync"], help="sync: write runs/ into the registry")
+    p.add_argument("campaign", nargs="?", help="campaign directory name (default: every one)")
+    p.set_defaults(fn=cmd_registry)
     p = sub.add_parser("evaluate", help="run the campaign-level scorer over the manifest again")
     p.add_argument("campaign")
     p.set_defaults(fn=cmd_evaluate)

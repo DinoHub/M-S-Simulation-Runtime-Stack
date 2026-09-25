@@ -10,18 +10,38 @@ interchangeable:
   0   gates met
   1   a real verdict -- the stack ran and was wrong. Never retried.
   42  no evidence to judge. The platform failed, so reschedule.
+
+With OUTPUT_DIR set it also writes OUTPUT_DIR/verdict.json -- the same
+decisions as the PASS/FAIL lines, one row per gate -- so the run registry
+records which gate failed, not only that one did. stdout and the exit code
+are unchanged by it.
 """
 import json, os, pathlib, sys
 
 ALIASES = {"ate_rmse_m": "ate_trans_m.rmse", "ate_max_m": "ate_trans_m.max",
            "rpe_rmse_m": "rpe_trans_m.rmse"}
 measured = set()
+results = []   # one row per decision: gate, value, bound, passed, detail
+
+def record(gate, passed, value=None, bound=None, detail=None):
+    results.append({"gate": gate, "passed": passed, "value": value,
+                    "bound": bound, "detail": detail})
+
+def write(status, missing=()):
+    out = os.environ.get("OUTPUT_DIR")
+    if not out:
+        return
+    pathlib.Path(out).mkdir(parents=True, exist_ok=True)
+    (pathlib.Path(out) / "verdict.json").write_text(json.dumps(
+        {"schema": "mns.verdict.v1", "rc": status, "gates": results,
+         "missing": list(missing)}, indent=2))
 
 def main():
     reports_dir = pathlib.Path(os.environ["REPORT_DIR"])
-    reports = sorted(reports_dir.rglob("*.json"))
+    reports = sorted(p for p in reports_dir.rglob("*.json") if p.name != "verdict.json")
     if not reports:
         print("NO EVIDENCE: no *.json under %s" % reports_dir, file=sys.stderr)
+        write(42, ["*.json"])
         return 42
 
     status = 0
@@ -30,6 +50,7 @@ def main():
             data = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
             print("FAIL: %s unreadable (%s)" % (path.name, exc))
+            record("report:" + path.name, False, detail="unreadable: %s" % exc)
             status = 1
             continue
         print("--- %s" % path.name)
@@ -44,8 +65,10 @@ def main():
         if isinstance(spawn, dict):
             if spawn.get("spawn_ok"):
                 print("PASS: spawn -- %s" % spawn.get("reason"))
+                record("spawn", True, detail=spawn.get("reason"))
             else:
                 print("FAIL: spawn -- %s" % spawn.get("reason"))
+                record("spawn", False, detail=spawn.get("reason"))
                 print("      every other number from this run is "
                       "measuring the fall, not the estimator")
                 status = 1
@@ -66,20 +89,27 @@ def main():
             measured.add(metric)
             if "max" in bound and value > float(bound["max"]):
                 print("FAIL: %s %.3f over the %.3f gate" % (metric, value, float(bound["max"])))
+                record(metric, False, value, bound, path.name)
                 status = 1
             elif "min" in bound and value < float(bound["min"]):
                 print("FAIL: %s %.3f under the %.3f gate" % (metric, value, float(bound["min"])))
+                record(metric, False, value, bound, path.name)
                 status = 1
             else:
                 print("PASS: %s %.3f within %s" % (metric, value, bound))
+                record(metric, True, value, bound, path.name)
 
-    for metric in json.loads(os.environ.get("GATES") or "{}"):
+    missing = []
+    for metric, bound in json.loads(os.environ.get("GATES") or "{}").items():
         if metric not in measured:
             print("FAIL: gate %r -- no report measured it (the estimate "
                   "never published, or the evaluator crashed)" % metric)
+            record(metric, False, None, bound, "no report measured it")
+            missing.append(metric)
             status = 1
 
     print("verdict rc=%d" % status)
+    write(status, missing)
     return status
 
 def _find(node, names):

@@ -3,6 +3,9 @@
 #
 #   osmo/setup-local-osmo.sh cpu     three CPU nodes, no GPU, no sudo anywhere
 #   osmo/setup-local-osmo.sh gpu     compute node gets the host GPU (see below)
+#   osmo/setup-local-osmo.sh observability
+#                                    on a cluster already up: the run registry
+#                                    and Grafana's view of it (observability/install.sh)
 #
 # The GPU variant needs three things done on the host first, all requiring root,
 # and none of which this script will attempt:
@@ -24,12 +27,14 @@ set -euo pipefail
 
 MODE="${1:-cpu}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Not a cluster build: the steps below start by deleting the cluster.
+[[ "$MODE" == observability ]] && exec "$HERE/observability/install.sh"
 OSMO_SRC="${OSMO_SRC:-$HOME/OSMO}"
 OSMO_631="${OSMO_631:-$HOME/OSMO-6.3.1}"
 CHART="$OSMO_631/deployments/charts/quick-start"
 export PATH="$HOME/.local/bin:$PATH"
 
-case "$MODE" in cpu|gpu) ;; *) echo "usage: $0 [cpu|gpu]" >&2; exit 2 ;; esac
+case "$MODE" in cpu|gpu) ;; *) echo "usage: $0 [cpu|gpu|observability]" >&2; exit 2 ;; esac
 
 for tool in kind kubectl helm osmo; do
   command -v "$tool" >/dev/null || { echo "missing $tool; see docs/osmo-mapping.md" >&2; exit 1; }

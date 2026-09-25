@@ -1,5 +1,5 @@
 %% TEVV: from a CampaignSpec, through OSMO, to evaluation, to metrics stored and shown.
-%% State as of 25 Sept 2026. Three states, by style:
+%% State as of 25 Sept 2026 (run registry built). Three states, by style:
 %%   built       green, solid  - runs today in the OSMO flow (PR #91)
 %%   exists      amber, solid  - built and running elsewhere, not connected to OSMO runs
 %%   target      grey, dashed  - designed (autonomy-tevv-architecture), not built
@@ -36,7 +36,7 @@ flowchart TB
     VE["vio-eval<br/>flight window, ATE, RPE"]
     SE["spawn-eval"]
     VA["validate<br/>recording gates"]
-    VD["verdict<br/>CampaignSpec gates"]
+    VD["verdict<br/>CampaignSpec gates,<br/>verdict.json"]
     VE --> VD
     SE --> VD
     VA --> VD
@@ -50,7 +50,7 @@ flowchart TB
     MAN["campaign_manifest.json"]
     KAF["Kafka topics<br/>robotics.state, events,<br/>scenario.events"]
     CH["ClickHouse<br/>events, metric_results"]
-    REG["Postgres run registry<br/>runs, gate results, metrics"]
+    REG["Postgres run registry (CNPG)<br/>attempts, status, gate results,<br/>metrics summary, artifacts"]
     PROM["Prometheus<br/>run-labelled metrics"]
     LOKI["Loki + Alloy<br/>run-labelled logs"]
     S3 --> BUN --> REP --> MAN
@@ -62,7 +62,7 @@ flowchart TB
     STAT["campaign status<br/>scorecard, CLI"]
     FOXV["Foxglove<br/>live, node:30765; MCAP replay"]
     DASH["TEVV web dashboard<br/>campaign pages"]
-    GRAF["Grafana<br/>live, post-run, compare"]
+    GRAF["Grafana :3000<br/>campaign progress, gates, ATE;<br/>ClickHouse panels"]
     PRF["PR feedback<br/>status + verdict comment"]
   end
 
@@ -82,8 +82,9 @@ flowchart TB
   CH --> GRAF
   CH --> DASH
   MAN -.->|"dashboard reads another folder"| DASH
-  VD -.-> REG
-  REG -.-> GRAF
+  SUB -->|"status as it flies"| REG
+  VD -->|"verdict.json"| REG
+  REG --> GRAF
   REG -.-> PRF
   STACK -.->|exporters| PROM
   PROM -.-> GRAF
@@ -93,6 +94,6 @@ flowchart TB
   classDef built fill:#DCEFE2,stroke:#2E7D4F,color:#14213D
   classDef exists fill:#FBEBD2,stroke:#B4501E,color:#14213D
   classDef target fill:#F1F1EE,stroke:#8A8F99,color:#4A5160,stroke-dasharray:6 4
-  class CS,SS,CAT,PLAN,GEN,IMG,SUB,SIM,STACK,REC,FOXT,VE,SE,VA,VD,S3,BUN,REP,MAN,STAT,FOXV built
-  class KAF,CH,DASH,GRAF exists
-  class REG,PROM,LOKI,PRF target
+  class CS,SS,CAT,PLAN,GEN,IMG,SUB,SIM,STACK,REC,FOXT,VE,SE,VA,VD,S3,BUN,REP,MAN,STAT,FOXV,REG,GRAF built
+  class KAF,CH,DASH exists
+  class PROM,LOKI,PRF target

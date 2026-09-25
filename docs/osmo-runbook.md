@@ -890,7 +890,7 @@ separately vendored repository, so the fields `omega.yaml` has and
 
 | omega | in the CampaignSpec | consumed by |
 | --- | --- | --- |
-| `tier`, `verifies` | `extensions.mns.omega` | manifest top level; a registry, when one exists |
+| `tier`, `verifies` | `extensions.mns.omega` | manifest top level; the run registry's `campaigns` row |
 | `evaluation.gates` | `evaluation.gates` (the message allows unknown fields) | the workflow's verdict, as `GATES` JSON |
 | `platform.{sim,autopilot,middleware,comms}` | **not authored** — derived from `runtime.profile` | manifest and `run.json` |
 | `matrix` | `variants[]` — structured overrides, strictly more expressive | the platform's own expansion |
@@ -908,6 +908,110 @@ runner's semantics: run status says whether the flight happened; the
 campaign-level evaluator and the gates say whether it was any good. A verdict
 FAIL on a `done` run lands in `failed_checks` as `gate`, where the scorecard
 shows it.
+
+## The run registry, and campaign progress in Grafana
+
+The files above stay the evidence. The registry is where the runs are *read*:
+one Postgres that `campaign.py` writes as a campaign flies, so progress,
+gate results and a run's history can be seen in Grafana without opening a
+manifest. It is never the only copy of anything; `registry sync` rebuilds it
+from `runs/`.
+
+```bash
+osmo/setup-local-osmo.sh observability     # once per cluster, safe to re-run
+osmo/campaign.py registry sync             # backfill every campaign under generated/campaigns
+```
+
+Then open http://localhost:3000/d/tevv-campaign-progress. The dashboard has:
+
+- progress per campaign;
+- the latest attempt of every run, with status, reason, duration and ATE;
+- every gate the verdict applied;
+- ATE per run;
+- attempts per day.
+
+**What `observability` sets up** (`osmo/observability/install.sh`):
+
+| Piece | Where |
+| --- | --- |
+| Postgres `tevv-registry` (CloudNativePG, 1 instance, 5Gi) | namespace `tevv`, on the service node, so it is up when the GPU node is not |
+| Host address | `<osmo-worker IP>:30432` (NodePort `tevv-registry-nodeport`) |
+| Writer credentials | secret `tevv-registry-app`, made by the operator |
+| Grafana's read-only role `grafana_ro` | secret `tevv-registry-grafana`, made once and kept |
+| Schema | `osmo/observability/registry/schema.sql`, applied by `osmo/registry.py migrate` |
+| Grafana | the host's `metrics-grafana` joins the `kind` docker network (bridge networks are isolated from each other) and gets the `tevv-registry` datasource and the dashboard |
+
+**What a row is.** A run is a point of a campaign's matrix, identified by
+`(campaign_id, run_key)`, and it is flown one or more times. Each flight is an
+*attempt*: the registry numbers attempts `max + 1`, and each attempt is exactly
+one OSMO workflow.
+
+The workflow ID is stored as `workflow_ref`. It is the key the other stores
+share:
+- ClickHouse `metric_results.run_id` under OSMO;
+- the `osmo.workflow_id` pod label, which is what Loki will carry.
+
+OSMO 6.3.1 cannot put custom labels on pods, so nothing in the cluster knows
+the campaign or the run key. The registry is the join.
+
+**When `run` writes it:**
+
+| Moment | Row |
+| --- | --- |
+| after `campaign plan` | campaign upserted; one `pending` attempt per run key |
+| submit | `submitted`, with the workflow ID, the images block and whether the live view is on |
+| every 20 s poll | `running` once any flight task is active, then `evaluating` once the evaluate group is; never moves back |
+| stack generation fails | `failed`, `stack_generation` |
+| workflow terminal | `passed`, `failed`, `infra_failed` or `aborted`, with a `failure_reason`; then `gate_results` from `verdict.json`, `metrics_summary` from vio-eval (ATE, RPE, yaw drift, flight time) and `artifacts` (bag, eval, logs, reports) |
+
+`failure_reason` values, and what each means:
+
+| Reason | Meaning |
+| --- | --- |
+| `image_pull` | the workflow ended FAILED_IMAGE_PULL (status `infra_failed`) |
+| `infra` | the workflow ended FAILED_SERVER_ERROR (status `infra_failed`) |
+| `cancelled` | the workflow was cancelled (status `aborted`) |
+| `no_evidence` | the verdict found no report to judge (exit 42), or never ran |
+| `no_pilot` | the workflow ran on its defaults (run 25) |
+| `pod_crash` | a flight task failed |
+| `mission_failed` | the pilot did not finish (from `mission.json`) |
+| `no_estimate` | the estimator never published |
+| `spawn_failed` | the vehicle left the world |
+| `gate_failed` | a CampaignSpec gate failed |
+
+`passed` means the verdict's gates held. That is stricter than the manifest's
+`done`, which only says the flight happened (see the section above).
+
+**The verdict writes `verdict.json`.** The `verdict` task was the only pass/fail
+decision, but it said which gate failed only in its stdout. It now also writes:
+
+```
+{schema: mns.verdict.v1, rc, gates: [{gate, passed, value, bound, detail}], missing: [...]}
+```
+
+Its stdout and exit codes are unchanged. `campaign.py` downloads it to
+`runs/<key>/eval/verdict/`. For a run flown before this, `registry sync` runs
+the same `verdict.py` over the same evaluator outputs on the host, and marks
+the file `recomputed_on_host`.
+
+**Recording checks are advisory here.** `recording_valid` and `failed_checks`
+come from `validation.json`. Its field is `valid`; the executor used to read
+`ok`/`passed`, which that file never has, and so reported every recording as
+valid. The condo runs all fail `imu_gravity` because the role map has no IMU
+topic. They are shown, but they do not change a run's status; the gates do.
+
+**Task logs are kept with a run that did not pass.** `osmo workflow logs` for
+every task goes to `runs/<key>/logs/<task>.log`, and is registered as an
+artifact. OSMO keeps task logs only as long as it keeps the workflow. This copy
+works with no log store running; Loki, next, makes every run's logs
+searchable.
+
+**If the registry is down,** `run` warns once
+(`[registry] off for this invocation: ...`) and flies anyway. Other
+controls:
+- `MNS_REGISTRY=off` turns it off;
+- `MNS_REGISTRY_URL` points at another Postgres;
+- `python3 osmo/registry.py url` prints what would be used.
 
 ## Teardown
 
