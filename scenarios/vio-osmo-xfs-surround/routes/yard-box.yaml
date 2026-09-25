@@ -1,0 +1,29 @@
+# The reference box, mirrored west: x -> -x, yaw -> pi - yaw.
+#
+# From the container-yard spawn a container stack stands about 4 m to the
+# east, two high; the reference route's first leg is 10 m east. West and
+# north are open for 20-30 m. Same legs, same timings, same altitudes,
+# same excitation -- only the side of the start it flies on.
+#
+# Local ENU relative to the takeoff point: +x east (NED +Y), +y north
+# (NED +X). Yaw is ENU, 0 facing east.
+name: xfs_yard_box_v1
+frame_id: map
+relative_to_start: true
+rate_hz: 20
+prestream_seconds: 2
+finish_hold_seconds: 3
+waypoints:
+  - {t: 0, position: [0, 0, 0], yaw: 3.1416}
+  - {t: 8, position: [0, 0, 0], yaw: 3.1416}
+  - {t: 11, position: [0, 0, 2], yaw: 3.1416}
+  - {t: 15, position: [0, 0, 2], yaw: 3.1416}
+  - {t: 25, position: [-10, 0, 2], yaw: 3.1416}
+  - {t: 31, position: [-10, 6, 2], yaw: 3.1416}
+  - {t: 34, position: [-10, 6, 4], yaw: 3.1416}
+  - {t: 37, position: [-10, 6, 4], yaw: 1.5708}
+  - {t: 43, position: [-10, 12, 4], yaw: 1.5708}
+  - {t: 46, position: [-10, 12, 4], yaw: -0.0}
+  - {t: 56, position: [0, 12, 4], yaw: -0.0}
+  - {t: 68, position: [0, 0, 2], yaw: -0.0}
+  - {t: 72, position: [0, 0, 2], yaw: -0.0}
