@@ -210,6 +210,8 @@ estimator's `launch_args`); images come from `images/catalog.yaml`, and
 - [OSMO and Kubernetes for this repo](docs/osmo-kubernetes-concepts.md): the concepts to learn first.
 - [One run, end to end](docs/osmo-run-flow.md): what each step writes, where, and who reads it,
   from the CampaignSpec to the run registry and Grafana.
+- [Logs on OSMO](docs/osmo-logs.md): what Loki and Alloy are for, what they are not, and how to
+  tell whether they are working.
 
 ## What will this stack publish?
 
