@@ -1,0 +1,98 @@
+%% TEVV: from a CampaignSpec, through OSMO, to evaluation, to metrics stored and shown.
+%% State as of 25 Sept 2026. Three states, by style:
+%%   built       green, solid  - runs today in the OSMO flow (PR #91)
+%%   exists      amber, solid  - built and running elsewhere, not connected to OSMO runs
+%%   target      grey, dashed  - designed (autonomy-tevv-architecture), not built
+%% Render: npx -y @mermaid-js/mermaid-cli -i campaign-to-metrics.mermaid -o campaign-to-metrics.png -w 2400 -b white
+%%   (add -p with {"args":["--no-sandbox"]} if Chromium reports no usable sandbox)
+flowchart TB
+  subgraph SPEC["1. Spec, in git"]
+    direction LR
+    CS["CampaignSpec<br/>variants, repeats, route,<br/>gates, extensions.mns.omega"]
+    SS["ScenarioSpec<br/>level, rig, weather,<br/>estimator"]
+    CAT["images/catalog.yaml<br/>digest-pinned images"]
+  end
+
+  subgraph COMPILE["2. Compile and submit, on the host: osmo/campaign.py"]
+    direction LR
+    PLAN["campaign plan<br/>merged spec per run"]
+    GEN["runtime --no-run<br/>stack per run"]
+    IMG["image check<br/>vs GPU node"]
+    SUB["osmo workflow submit<br/>one per run"]
+    PLAN --> GEN --> IMG --> SUB
+  end
+
+  subgraph RUNG["3. OSMO: one gang per run, scheduled by KAI"]
+    direction LR
+    SIM["sim<br/>UE 5.8 + AirSim<br/>MetricsEmitter :9700"]
+    STACK["autopilot, bridge,<br/>OpenVINS, pilot"]
+    REC["recorder<br/>MCAP bag, mission.json"]
+    FOXT["foxglove<br/>optional"]
+    SIM --> STACK --> REC
+  end
+
+  subgraph EVALG["4. Evaluate and judge, next OSMO groups"]
+    direction LR
+    VE["vio-eval<br/>flight window, ATE, RPE"]
+    SE["spawn-eval"]
+    VA["validate<br/>recording gates"]
+    VD["verdict<br/>CampaignSpec gates"]
+    VE --> VD
+    SE --> VD
+    VA --> VD
+  end
+
+  subgraph STORE["5. Stored"]
+    direction LR
+    S3["OSMO object storage<br/>task outputs"]
+    BUN["runs/run on the host<br/>bag, eval JSON, run.json"]
+    REP["vio-stress<br/>reports/run"]
+    MAN["campaign_manifest.json"]
+    KAF["Kafka topics<br/>robotics.state, events,<br/>scenario.events"]
+    CH["ClickHouse<br/>events, metric_results"]
+    REG["Postgres run registry<br/>runs, gate results, metrics"]
+    PROM["Prometheus<br/>run-labelled metrics"]
+    LOKI["Loki + Alloy<br/>run-labelled logs"]
+    S3 --> BUN --> REP --> MAN
+    KAF --> CH
+  end
+
+  subgraph SHOW["6. Shown"]
+    direction LR
+    STAT["campaign status<br/>scorecard, CLI"]
+    FOXV["Foxglove<br/>live, node:30765; MCAP replay"]
+    DASH["TEVV web dashboard<br/>campaign pages"]
+    GRAF["Grafana<br/>live, post-run, compare"]
+    PRF["PR feedback<br/>status + verdict comment"]
+  end
+
+  CS --> PLAN
+  SS --> PLAN
+  CAT --> IMG
+  SUB --> SIM
+  REC --> VE
+  REC --> SE
+  REC --> VA
+  REC --> S3
+  VD --> S3
+  MAN --> STAT
+  FOXT --> FOXV
+
+  SIM -.->|"no consumer under OSMO"| KAF
+  CH --> GRAF
+  CH --> DASH
+  MAN -.->|"dashboard reads another folder"| DASH
+  VD -.-> REG
+  REG -.-> GRAF
+  REG -.-> PRF
+  STACK -.->|exporters| PROM
+  PROM -.-> GRAF
+  RUNG -.->|"pod stdout"| LOKI
+  LOKI -.-> GRAF
+
+  classDef built fill:#DCEFE2,stroke:#2E7D4F,color:#14213D
+  classDef exists fill:#FBEBD2,stroke:#B4501E,color:#14213D
+  classDef target fill:#F1F1EE,stroke:#8A8F99,color:#4A5160,stroke-dasharray:6 4
+  class CS,SS,CAT,PLAN,GEN,IMG,SUB,SIM,STACK,REC,FOXT,VE,SE,VA,VD,S3,BUN,REP,MAN,STAT,FOXV built
+  class KAF,CH,DASH,GRAF exists
+  class REG,PROM,LOKI,PRF target
