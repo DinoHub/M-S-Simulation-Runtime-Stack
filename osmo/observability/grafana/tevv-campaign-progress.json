@@ -85,6 +85,30 @@
               {
                 "id": "max",
                 "value": 100
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 50
+                    },
+                    {
+                      "color": "green",
+                      "value": 90
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "percent"
               }
             ]
           }
@@ -298,7 +322,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "m",
+          "unit": "lengthm",
           "decimals": 3
         },
         "overrides": []
