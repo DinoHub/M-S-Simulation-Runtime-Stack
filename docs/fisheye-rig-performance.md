@@ -83,6 +83,33 @@ Parked, with the settings applied at startup rather than live, shared delivered 
 18.9 Hz distinct at 33 engine fps. **30 Hz is reachable with the shared cubemap only**, and
 lands at about 19–25 real frames per second per camera.
 
+## At 1000×1000: replicating DSTA's test
+
+Four 1000×1000 fisheyes at 30 Hz (120 fisheye fps needed), XFS, flying. DSTA measured about
+25 fisheye fps (0.19×) on an RTX 4090, at 22.7/24 GB VRAM.
+
+| Setup (RTX 5080, 16 GB) | Engine fps | Fisheye fps (all 4) | × of 120 | GPU ms per fisheye frame | VRAM peak |
+| --- | --- | --- | --- | --- | --- |
+| tiled, defaults | 1.4 | 1.4 | 0.012 | ~205 | 15.5 GiB |
+| tiled, cards 16, 30 Hz sync | 3.8 | 15.2 | 0.13 | ~74 | 15.5 GiB |
+| shared, cards 16, 30 Hz burst (3 runs) | 21.9–22.1 | 83–87 | 0.70–0.73 | ~9 | 7.8 GiB |
+
+- Resolution barely matters for tiled (1.4 fps at 1000² against 1.5 at 512²). Lumen card captures
+  dominate.
+- A single 1920×1080 pinhole renders five capture passes per frame. That's 1,217 ms per frame
+  uncapped and 120 ms with cards 16, not the ~5 ms DSTA measured.
+- Sim RTF stays 1.000; DSTA's sim ran at 0.13×.
+
+## Exposure on the shared path
+
+No exposure setting changes the shared image (TEVV-Airsim #201). Circle mean for the front camera:
+- auto-exposure target 0.45 / 0.30 / 0.20: 153.5 / 152.9 / 153.4;
+- manual EV −3 / −2 / −1 / 0 / +9: 147.1 / 153.4 / 158.1 / 153.5 / 166.5.
+
+Auto-exposure can't meter there, because its luminance measurement only runs on the tiled/6-cam
+readback. Manual EV doesn't reach the published image either. Face renders also strip shadows,
+fog and atmosphere, which gives the washed-out look.
+
 ## Other observations
 
 - **Exposure differs between the paths.** For the same camera and pose, tiled renders the
@@ -133,6 +160,8 @@ lands at about 19–25 real frames per second per camera.
    `/diagnostics`.
 4. **Runtime host (TEVV-Airsim), [issue #200](https://github.com/DinoHub/TEVV-Airsim/issues/200):**
    publish a shared group on burst completion instead of on a timer.
+5. **Runtime host (TEVV-Airsim), [issue #201](https://github.com/DinoHub/TEVV-Airsim/issues/201):**
+   pass exposure (manual and auto) through to the shared-cubemap image.
 
 ## Bugs found on the way
 
