@@ -29,6 +29,11 @@ workflow:
     worker:    {cpu: 2, memory: 4Gi,  storage: 2Gi}
     autopilot: {cpu: 6, memory: 4Gi,  storage: 2Gi}
     sim:       {cpu: 6, memory: 16Gi, storage: 8Gi, gpu: 1}
+    # The evaluate and aggregate groups need no GPU and no /workspace, so they
+    # run on the service node (platform cpu, osmo/cpu-platform.sh). On the GPU
+    # node they queued behind the next run's flight gang -- 138 s on XFS.
+    eval:       {cpu: 2, memory: 4Gi, storage: 2Gi, platform: cpu}
+    eval-light: {cpu: 1, memory: 1Gi, storage: 1Gi, platform: cpu}
 
   groups:
   # ---- run: everything that must be alive at once ---------------------------
@@ -237,7 +242,7 @@ workflow:
     - name: vio-eval
       lead: true
       image: "{{ sim_real_eval_image }}"
-      resource: worker
+      resource: eval
       inputs: [{task: recorder}]
       environment:
         RUN_ID: "{{workflow_id}}"
@@ -263,7 +268,7 @@ workflow:
     # Did the vehicle stay in the world? Free fall, sinking, or fell-and-put-back.
     - name: spawn-eval
       image: "{{ bridge_image }}"
-      resource: light
+      resource: eval-light
       inputs: [{task: recorder}]
       environment:
         MAX_FALL_MS: "{{ max_fall_ms }}"
@@ -280,7 +285,7 @@ workflow:
     # The recording's own gates; writes the validation.json `campaign status` reads.
     - name: validate
       image: "{{ bridge_image }}"
-      resource: light
+      resource: eval-light
       inputs: [{task: recorder}]
       environment:
         VEHICLE: "{{ vehicle }}"
@@ -310,7 +315,7 @@ workflow:
     - name: verdict
       lead: true
       image: "{{ sim_real_eval_image }}"
-      resource: default
+      resource: eval-light
       inputs: [{task: vio-eval}, {task: spawn-eval}, {task: validate}]
       environment:
         REPORT_DIR: /osmo/data/input

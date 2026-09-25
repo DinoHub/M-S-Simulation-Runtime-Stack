@@ -51,6 +51,8 @@ scenario to a recorded rosbag. Stop with `make dashboard-down`.
 | --- | --- |
 | see which service does what, and which file each step leaves on disk | [How it fits together](docs/how-it-fits-together.md) |
 | see how OSMO and Kubernetes map onto this repo | [OSMO and Kubernetes for this repo](docs/osmo-kubernetes-concepts.md), [One run, end to end](docs/osmo-run-flow.md) |
+| know what each evaluator measures, and what decides pass or fail on OSMO | [Evaluation on OSMO](docs/osmo-evaluation.md) |
+| know what Loki and Alloy keep, and how to check them | [Logs on OSMO](docs/osmo-logs.md) |
 | read the TEVV platform architecture this stack maps onto | [docs/platform-architecture/](docs/platform-architecture/README.md) |
 | know where runs, bags and packs are stored | [User Guide: where everything is stored](docs/USER_GUIDE.md#7-where-everything-is-stored) |
 
