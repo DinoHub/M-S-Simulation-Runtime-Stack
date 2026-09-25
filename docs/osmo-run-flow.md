@@ -84,7 +84,9 @@ off it:
 - **What running evaluation on the service node would change.** Evaluation
   needs no GPU. Moving it there gets each run's verdict about 2 minutes
   sooner, and removes the 31 s gaps, about 5% of this matrix. It is mostly
-  a latency gain, not a throughput one. Not done yet.
+  a latency gain, not a throughput one. Done since: `osmo/cpu-platform.sh`,
+  and [osmo-evaluation.md](osmo-evaluation.md) for what each evaluator does
+  and where it runs.
 
 ## Step by step
 

@@ -347,6 +347,12 @@ def split_ref(ref: str) -> tuple[str, str | None]:
     return tag_ref, digest or None
 
 
+# The images the evaluate and aggregate groups run. Those groups are on the
+# service node (platform cpu), so the images must be there too.
+EVAL_IMAGES = ("bridge_image", "sim_real_eval_image")
+SERVICE_NODE = "osmo-worker"
+
+
 def gpu_nodes() -> list[str]:
     out = subprocess.run(["kubectl", "get", "nodes", "-o",
                           "jsonpath={range .items[*]}{.metadata.name} "
@@ -377,7 +383,7 @@ def verify_images(refs: dict[str, str]) -> dict[str, dict[str, Any]]:
                                    "--format", "{{.Id}}"], capture_output=True, text=True)
             pinned_id = proc.stdout.strip() if proc.returncode == 0 else None
         row["pinned_image_id"] = pinned_id
-        for node in nodes:
+        for node in nodes + ([SERVICE_NODE] if var in EVAL_IMAGES else []):
             proc = subprocess.run(["docker", "exec", node, "crictl", "inspecti", "-o", "json",
                                    f"docker.io/{tag_ref}" if tag_ref.count("/") == 1 else tag_ref],
                                   capture_output=True, text=True)
@@ -395,7 +401,9 @@ def verify_images(refs: dict[str, str]) -> dict[str, dict[str, Any]]:
         elif pinned_id is None:
             row["problem"] = f"{repo}@{digest} is not on this host: docker pull it, then kind load"
         elif None in node_ids or not node_ids:
-            row["problem"] = f"{tag_ref} is not on the GPU node: kind load docker-image {tag_ref}"
+            missing = [n for n, i in (row.get("nodes") or {}).items() if i is None]
+            row["problem"] = (f"{tag_ref} is not on {', '.join(missing) or 'the GPU node'}: "
+                              f"kind load docker-image --name osmo --nodes {','.join(missing)} {tag_ref}")
         elif node_ids != {pinned_id}:
             row["problem"] = (f"the node's {tag_ref} is not the pinned image "
                               f"(node {sorted(i[:19] for i in node_ids)}, pinned {pinned_id[:19]})")

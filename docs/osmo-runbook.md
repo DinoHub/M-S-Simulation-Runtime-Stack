@@ -82,6 +82,22 @@ it causes. `osmo config show <TYPE> > f.json`, edit, `osmo config update <TYPE>
 | `WORKFLOW` | `credential_config.disable_registry_validation: ["docker.io", "registry-1.docker.io"]` | *Unable to authenticate for pulling image …* at submit, for an image the run never pulls |
 | `POD_TEMPLATE default_compute` | `imagePullPolicy: IfNotPresent` on both containers | every task `FAILED_IMAGE_PULL` despite the image being in the node |
 
+### A fourth: evaluation on the service node
+
+```bash
+osmo/cpu-platform.sh
+```
+
+It gives pool `default` a second platform, `cpu`, on `osmo-worker`, and loads
+the bridge and sim_real_eval images there. The workflow's `eval` and
+`eval-light` resources name that platform, so the evaluate and aggregate
+groups run there and the flight stays on the GPU node.
+
+Without it, a submit is refused: the platform does not exist. The script is
+idempotent. [osmo-evaluation.md](osmo-evaluation.md) explains why the
+platform needs its own user template: OSMO's shared one requests
+`nvidia.com/gpu: "0"`, and KAI then gives the pod the `nvidia` runtime.
+
 ## Per run
 
 ```bash
