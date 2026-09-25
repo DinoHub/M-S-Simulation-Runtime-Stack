@@ -143,10 +143,17 @@ matches Usenko 2018 (eq. 40 and the closed-form inverse), and the resolve-map ba
 exact K-B series of the stereographic and equisolid lenses (0.14% off at θ = 95°). Where it goes
 wrong is keeping the published calibration consistent with what is rendered:
 
-- **CameraInfo reports a distortion that is not rendered.** Every fisheye topic in these runs
-  publishes `kannala_brandt`, `d = [0.03, 0, 0, 0]`, `fx = fy = 301.56`. The tiled and shared
-  paths render pure equidistant (k = 0). The 0.03 is `FisheyePolynomialK`, a default that only
-  the legacy 6-cam shader applies, and that the SHM bridge folds into d[0].
+- **CameraInfo reports neither the focal length nor the distortion that is rendered.** Every
+  fisheye topic in these runs publishes `kannala_brandt`, `d = [0.03, 0, 0, 0]`,
+  `fx = fy = 301.56`. The running sim (`simGetFisheyeCameraInfo`) renders **fx = 426.47** with
+  k = 0 (pure equidistant):
+  - `FisheyeLensType` defaults to Diagonal, so θmax = 95° lands on the image corners
+    (f = half diagonal / θmax). The bridge assumed a circular lens (f = (W/2)/(fov/2)).
+  - So the published focal length is 41% off. Inside the visible circle the camera sees about
+    ±67°, not ±95°: the cosmetic lens mask blacks out the corners that hold the rest of the
+    190°. `FisheyeLensType: Circular` puts all 190° inside the circle.
+  - The 0.03 is `FisheyePolynomialK`, a default that only the legacy 6-cam shader applies, and
+    that the SHM bridge folds into d[0].
   - A consumer that trusts CameraInfo is about 8% off in angle at the image rim (θ = 95°).
   - Even on the 6-cam path the fold is only first-order, and it has the wrong sign. The shader
     maps pixel angle θd to ray angle θd(1 + Kθd²), which is K-B with k1 ≈ −K.
@@ -161,11 +168,53 @@ wrong is keeping the published calibration consistent with what is rendered:
   plumb_bob is a pinhole camera, not equidistant. It isn't hit today only because K = 0.03 is on
   by default.
 
-What to do: the SHM bridge should publish CameraInfo from the sim's runtime calibration
-(`simGetFisheyeCameraInfo`, which the RPC camera path already uses) instead of re-deriving it
-from settings.json. The sim should report the lens it actually renders on each path. Until
-then, for fisheye VIO on the shared or tiled path, calibrate from K and D = 0 (equidistant),
-not from the published D.
+Fixed in [TEVV-Airsim #206](https://github.com/DinoHub/TEVV-Airsim/pull/206) plus
+[bridge #76](https://github.com/DinoHub/TEVV-Airsim-ROS2-Bridge/pull/76). The sim renders and
+reports one lens: `FisheyePolynomialK` defaults to 0, barrel distortion is opt-in, the 6-cam
+path uses K-B like the bake, and the automatic focal length follows the model. The bridge
+publishes the sim's runtime calibration, so it now reads `kannala_brandt`, d = [0, 0, 0, 0],
+fx = 426.47, which matches the sim. `gen_vio_calib.py` mirrors the sim's focal rule. Until
+those land, calibrate the default 190° 1000×1000 shared/tiled camera as equidistant with
+**f = 426.47, D = 0**, not from the published CameraInfo.
+
+## Lens rain was on in every XFS run
+
+Fisheye lens rain is `max(UDW rain / 10 × r.Fisheye.LensRainWeatherScale, the degradation
+zone's cam_rain_intensity)`. The XFS level's weather actor loads `Partly_Cloudy` (dry) but
+carries an inert manual `Rain = 6.0`, with `Rain - Manual Override` off. The runtime host read
+that manual value regardless, so **every XFS fisheye frame in this document has lens drops at
+0.6**, including the exposure and tone measurements. The drops cover a small area; feature
+trackers see them.
+
+- Fix: [TEVV-Airsim #205](https://github.com/DinoHub/TEVV-Airsim/pull/205) reads UDW's
+  effective rain (the manual value only while overridden; otherwise UDW's own
+  `Get Local Weather State Values`). Verified: dry = no drops, `simSetWeatherParameter` rain
+  0.8 = drops, 0 = none.
+- Stopgap on current hosts: `r.Fisheye.LensRainWeatherScale: 0` in
+  `conditions.render.system_settings`. Both fisheye scenarios here now set it.
+- Intensity is linear in the weather rain. Drop density goes from 12% to 34% of cells, tails
+  from 2.2 to 5.2 radii, refraction from 0.46° to 1.4°. There is no wetting/drying over time
+  and no dependence on camera orientation, airspeed or shelter.
+
+## Rolling shutter and motion blur
+
+[TEVV-Airsim #207](https://github.com/DinoHub/TEVV-Airsim/pull/207) adds both to the tiled and
+shared paths. They are rotation-only, from the camera body rate estimated from pose changes, and
+off by default: `FisheyeRollingShutterReadoutMs`, `FisheyeExposureTimeMs`,
+`FisheyeMotionBlurMaxTaps`, or live `r.Fisheye.RollingShutterReadoutMs` /
+`r.Fisheye.ExposureTimeMs`. Checked against a numpy model of the warp on a static camera with
+an injected 2 rad/s rate:
+
+| render | vs global shutter | vs model | vs model with −ω |
+|---|---|---|---|
+| rolling shutter 30 ms, yaw | 6.38 | **3.62** | 7.57 |
+| rolling shutter 30 ms, pitch | 6.28 | **3.30** | 7.54 |
+| exposure 15 ms, yaw | 5.80 | **3.03** | 3.03 |
+
+Values are mean absolute error in grey levels; the noise floor is 3.6–4.3. With a live spin at
+2 rad/s, the estimator logs 114–116 °/s and the ground-band gradient energy falls from 8.6 to 2.0
+at 15 ms exposure. Translation is not modelled. Typical cheap CMOS fisheye values: readout
+15–30 ms, exposure 1–20 ms.
 
 ## Do the default values make sense?
 
@@ -252,6 +301,16 @@ not from the published D.
 8. **Runtime host (TEVV-Airsim), [PR #204](https://github.com/DinoHub/TEVV-Airsim/pull/204)
    (stacked on #203):** sRGB display curve in ISP mode (legacy curve as `TonemapMode: 3`) and a
    bloom threshold of 4.0.
+9. **Runtime host, [PR #205](https://github.com/DinoHub/TEVV-Airsim/pull/205) (off main):**
+   lens rain from UDW's effective rain. Until then `r.Fisheye.LensRainWeatherScale: 0`.
+10. **Runtime host [#206](https://github.com/DinoHub/TEVV-Airsim/pull/206) + bridge
+    [#76](https://github.com/DinoHub/TEVV-Airsim-ROS2-Bridge/pull/76):** one lens, published as
+    rendered (fx 426.47, D = 0 for the default 190° camera).
+11. **Runtime host, [PR #207](https://github.com/DinoHub/TEVV-Airsim/pull/207) (stacked on #206):**
+    rolling shutter and motion blur.
+12. **Decide the lens type.** For a 190° surround rig, set `fisheye_lens_type: Circular` in
+    the camera's `capture_settings` so the whole field of view is inside the image circle.
+    The default Diagonal shows about ±67° there.
 
 ## Bugs found on the way
 
