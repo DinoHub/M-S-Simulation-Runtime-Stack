@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Print the ROS 2 topics a stack's bridges will publish — BEFORE it is started.
 
-    ./tools/preview_topics.py ardupilot-xfs          # a scenario in compose/
     ./tools/preview_topics.py generated/xfs-fisheye  # a generated stack
     ./tools/preview_topics.py ardupilot-xfs --json   # machine-readable
 

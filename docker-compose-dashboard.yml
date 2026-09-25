@@ -45,7 +45,7 @@
 # files above) against this repository's directory, mounted at its identical
 # host path so the generated stacks' bind mounts resolve on the host. Scenario
 # specs land in ./scenarios/<name>/, generated stacks in ./generated/<name>/ —
-# the same places ./product.sh and ./launch.sh use. Standalone-v2 level and
+# the same places ./product.sh uses. Standalone-v2 level and
 # asset packs live in ./.mns/pack-store (installed by `make dashboard` via
 # tools/install-demo-packs.sh) and are staged for ScenarioLab under
 # ./.mns/authoring-data/ResolvedPacks; both paths are handed to the backend
@@ -201,7 +201,7 @@ services:
       - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?add --env-file images/standalone-v2-development.generated.env (or the -images- variant), or use make dashboard}
       - ROS2_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}ros2-tools
       - MNS_AUTHORING_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}mns-scenariolab-editor
-      - MNS_AUTHORING_DOCKER_ARGS=-v "${MSRS_ROOT:-${PWD}}/config/unreal-airsim/authoring-preview.json:/tmp/Documents/AirSim/settings.json:ro" ${MNS_AUTHORING_DOCKER_ARGS:-}
+      - MNS_AUTHORING_DOCKER_ARGS=-v "${MSRS_ROOT:-${PWD}}/config/scenariolab/airsim-settings.json:/tmp/Documents/AirSim/settings.json:ro" ${MNS_AUTHORING_DOCKER_ARGS:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
       - MNS_HOST_GID=${HOST_GID:-1000}
       # ScenarioLab editor (X11): the backend only forwards these VALUES to
@@ -239,7 +239,7 @@ services:
       - ${MSRS_ROOT:-${PWD}}:${MSRS_ROOT:-${PWD}}
       # the pack mount directory (may live outside the checkout), read-only
       - ${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}:${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}:ro
-      - ${TEVV_RUNS_DIR:-~/tevv-runs}:/data/runs
+      - ${TEVV_RUNS_DIR:-${MSRS_ROOT:-${PWD}}/runs}:/data/runs
     # No depends_on the database, deliberately. It used to gate on
     # postgres-telemetry being healthy (required: false, so the db stayed
     # opt-in), which was right while this container ran the schema init. Now
@@ -312,10 +312,7 @@ services:
       # This one is stuck on 8082: the frontend is a Next.js production build,
       # so NEXT_PUBLIC_LICHTBLICK_URL was inlined into the client bundle at
       # BUILD time (localhost:8082 appears ~15x under /app/.next) and cannot be
-      # moved from here. The monitoring stack's own lichtblick used to claim
-      # 8082 too, which is why `./launch.sh --with-monitoring` died with
-      # "Bind for 0.0.0.0:8082 failed: port is already allocated" whenever the
-      # dashboard was up; that one moved to MONITORING_LICHTBLICK_PORT (8084).
+      # moved from here.
       - "${DASHBOARD_LICHTBLICK_PORT:-8082}:8080"
     restart: unless-stopped
 

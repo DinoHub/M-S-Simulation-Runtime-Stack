@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Docker preflight, sourced by launch.sh (hard guard) and setup.sh (advisory).
+# Docker preflight, sourced by the Makefile (hard guard) and setup.sh.
 #
 # Every entrypoint in this repo is a thin wrapper around `docker compose`, so a
-# daemon we cannot talk to surfaces as a confusing mid-run failure — the first
-# thing launch.sh does is start the monitoring stack, so an unreachable daemon
-# reads as "unable to get image 'sid220/lichtblick:latest'" rather than "you are
-# not in the docker group". This turns that into a diagnosis up front.
+# daemon we cannot talk to surfaces as a confusing mid-run failure (an image
+# pull error rather than "you are not in the docker group"). This turns that
+# into a diagnosis up front.
 #
 # Sourced, not executed: it only defines a function and deliberately does not
 # touch the caller's shell options.
@@ -263,7 +262,7 @@ EOF
 
 # Print the best X11 cookie path on this host, or nothing if there is none.
 #
-# The historical fallbacks — $HOME/.Xauthority (launch.sh) and
+# The historical fallbacks — $HOME/.Xauthority and
 # /run/user/<uid>/gdm/Xauthority (the generated stacks) — are both wrong on a
 # GNOME/Wayland desktop, where the cookie is a per-session
 # /run/user/<uid>/.mutter-Xwaylandauth.XXXXXX. Naming a path that does not
@@ -350,15 +349,12 @@ check_x11() {
 
       export XAUTHORITY=$(ls -t /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -1)
 
-  Or skip the display entirely: ./launch.sh <scenario> --headless
-
 EOF
   } >&2
   return 1
 }
 
-# GPU passthrough preflight. dcgm-exporter (docker-compose-monitoring.yml),
-# airsim-xfs and the display container all carry a `driver: nvidia` device
+# GPU passthrough preflight. The runtime host and ScenarioLab carry a `driver: nvidia` device
 # reservation; without the NVIDIA Container Toolkit those fail deep inside the
 # `up` with the opaque "could not select device driver \"nvidia\" with
 # capabilities: [[gpu]]".

@@ -1,79 +1,22 @@
 # tools/
 
-This dir holds host-run helpers for the runtime stack (`generate_scenario.py`).
-Sim-facing dev/user tools (weather control, etc.) live in **Cosys-AirSim** under
-`rpc-clients/python/tools/` and are reached via `./tools.sh` or run on the host —
-see [Sim-facing tools](#sim-facing-tools-toolssh) below.
+Host-run helpers behind `./setup.sh`, `./download-packs.sh`, `make dashboard`
+and `./product.sh`. Users run those entry points, not these directly.
 
-## generate_scenario.py
-
-Jinja2-templated regenerator for scenario compose files (currently
-ardupilot-xfs, ardupilot-urbansim, px4-xfs, px4-condo, and ardupilot-condo —
-any scenario with a `templates/` dir; more register via the `SCENARIOS`
-dict).
-Single source of truth: the runtime-stack root `.env`.
-
-### What it generates
-
-| Output | Template |
+| Tool | Does |
 |---|---|
-| `compose/ardupilot-xfs/docker-compose.yml` | `compose/ardupilot-xfs/templates/docker-compose.yml.j2` |
-| `compose/ardupilot-xfs/docker-compose.mavros-test.yml` | `compose/ardupilot-xfs/templates/docker-compose.mavros-test.yml.j2` |
-| `config/unreal-airsim/xfs/settings-ardupilot.json` | `config/unreal-airsim/xfs/templates/settings-ardupilot.json.j2` |
-| `compose/ardupilot-urbansim/docker-compose.yml` | `compose/ardupilot-urbansim/templates/docker-compose.yml.j2` |
-| `config/unreal-airsim/urbansim/settings-ardupilot.json` | `config/unreal-airsim/urbansim/templates/settings-ardupilot.json.j2` |
-| `compose/px4-xfs/docker-compose.yml` | `compose/px4-xfs/templates/docker-compose.yml.j2` |
-| `compose/px4-condo/docker-compose.yml` | `compose/px4-condo/templates/docker-compose.yml.j2` |
-| `compose/ardupilot-condo/docker-compose.yml` | `compose/ardupilot-condo/templates/docker-compose.yml.j2` |
-
-### Inputs (from root `.env`)
-
-```
-NUM_DRONES                  drones in the fleet (1..16; bump MAX_DRONES if more)
-VEHICLE_PREFIX              default vehicle name prefix (e.g. "Copter")
-DRONE_X_SPACING_M           per-drone X offset in AirSim NED frame
-MAVLINK_PORT_BASE/STRIDE    SITL N -> MAVLink TCP base + N*stride
-FDM_{TCP,UDP}_PORT_BASE     ArduPilot ↔ AirSim FDM ports
-FDM_PORT_STRIDE
-AGENT_INTERNAL_SUBNET_BASE  /24 prefix for agent_internal-N (e.g. "172.28")
-```
-
-Per-drone overrides remain optional: `VEHICLE_{N}_NAME` and
-`DRONE_{N}_DOMAIN_ID` fall back to `${VEHICLE_PREFIX}{N}` and `{N}`.
-
-### Usage
-
-```bash
-# Regenerate (default)
-python3 tools/generate_scenario.py
-
-# Self-test (renders for N in {1, 2, 4, 8, 16}; no write)
-python3 tools/generate_scenario.py --self-test
-
-# Drift check (exit 0 = outputs match .env+templates, 1 = drift)
-python3 tools/generate_scenario.py --check
-```
-
-`launch.sh ardupilot-xfs` runs `--check` first and only regenerates if
-drift is detected, so the dev flow is simply: edit `.env`, run
-`./launch.sh ardupilot-xfs`.
-
-### Dependencies
-
-```bash
-pip install -r tools/requirements.txt   # jinja2, python-dotenv
-```
-
-### Editing the templates
-
-The Jinja2 templates live next to their outputs:
-
-- `compose/ardupilot-xfs/templates/*.j2`
-- `config/unreal-airsim/xfs/templates/*.j2`
-
-After editing, regenerate and run `--self-test`. Self-test invariants
-catch most copy-paste mistakes (port arithmetic, clock-master uniqueness,
-unsubstituted Jinja tokens, expected service counts).
+| `images.sh` / `images.py` | The image catalog (`images/catalog.yaml`): `sync` renders the generated env and image-set files, `verify` is the CI drift gate, `report` / `bump` / `drift`. See [docs/images.md](../docs/images.md). |
+| `ensure-images.sh` | Uses local image tags and pulls only missing ones (`make ensure-images`). |
+| `pull-all-images.sh` | Refreshes every published pin (`./product.sh setup` / `pull-images`). |
+| `check-image-pins.sh` | CI check that nothing pins an image outside the catalog. |
+| `load-images-env.sh` | Sources a generated image env without overriding the shell or `./.env`. |
+| `install-demo-packs.sh` / `install_demo_packs.py` | Downloads, verifies and installs content packs from the channel's lock (behind `./download-packs.sh`). |
+| `pull-packs.sh` | Installs packs by release tag, lists remote releases, or imports archives from the pack mount directory. |
+| `stage-authoring-packs.sh` | Stages installed packs for ScenarioLab. |
+| `build_pack_lock.py` | Rebuilds a channel's pack lock from published releases (`make pack-lock`). |
+| `preview_topics.py` | The ROS 2 topics a generated stack will publish (`make topics STACK=generated/<name>`). |
+| `check_docker.sh`, `compose_retry.sh` | Docker / X11 / port preflights and a retrying `docker compose` wrapper. |
+| `test_install_demo_packs.py` | Offline tests: `python3 -m pytest tools/`. |
 
 ## Sim-facing tools (`./tools.sh`)
 

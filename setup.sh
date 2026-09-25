@@ -76,12 +76,6 @@ if command -v python3 >/dev/null 2>&1; then
   else
     problem "Python PyYAML missing  →  sudo apt-get install -y python3-yaml"
   fi
-  # Only the legacy ./launch.sh stacks render templates with these.
-  for mod_pkg in "jinja2:python3-jinja2" "dotenv:python3-dotenv"; do
-    mod="${mod_pkg%%:*}"; pkg="${mod_pkg##*:}"
-    python3 -c "import $mod" >/dev/null 2>&1 \
-      || note "optional: Python $mod (legacy ./launch.sh stacks only)  →  sudo apt-get install -y $pkg"
-  done
 fi
 
 # Images take about 15 GB; packs are checked by ./download-packs.sh.
@@ -102,8 +96,8 @@ fi
 step "2/4" "Local configuration"
 
 if [[ "$CHECK_ONLY" == false ]]; then
-  chmod +x launch.sh stop.sh logs.sh setup.sh product.sh tools.sh 2>/dev/null || true
-  mkdir -p metrics_outputs logs tmp generated scenarios
+  chmod +x setup.sh download-packs.sh product.sh tools.sh 2>/dev/null || true
+  mkdir -p generated scenarios runs
 fi
 if [[ -f .env ]]; then
   ok ".env exists (kept as is)"

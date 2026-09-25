@@ -77,7 +77,6 @@ IMAGE_SET_PATH = ROOT / "images" / "image-set.generated.yaml"
 DEVELOPMENT_IMAGE_SET_PATH = ROOT / "images" / "image-set.development.generated.yaml"
 DEVELOPMENT_ENV_PATH = ROOT / "images" / "standalone-v2-development.generated.env"
 PLATFORM_ENV_PATH = ROOT / "images" / "platform-images.generated.env"
-LEGACY_ENV_PATH = ROOT / "images" / "legacy-images.generated.env"
 STANDALONE_V2_ENV_PATH = ROOT / "images" / "standalone-v2-images.generated.env"
 ENV_EXAMPLE_PATH = ROOT / ".env.example"
 DOTENV_PATH = ROOT / ".env"
@@ -91,18 +90,7 @@ VALID_CHANNELS = {"review", "moving", "upstream", "local", "unpublished", "pinne
 VALID_RESOLVERS = {"hub", "imagetools"}
 
 COMPOSE_FILE_FOR_GROUP = {
-    "monitoring": "docker-compose-monitoring.yml",
-    "metrics": "docker-compose-metrics.yml",
-    "logs": "docker-compose-logs.yml",
     "dashboard": "docker-compose-dashboard.yml, inline images",
-}
-
-COMPOSE_FILE_FOR_LEGACY_GROUP = {
-    "ardupilot_condo": "compose/ardupilot-condo/docker-compose.yml",
-    "ardupilot_urbansim": "compose/ardupilot-urbansim/docker-compose.yml",
-    "ardupilot_xfs": "compose/ardupilot-xfs/docker-compose.yml",
-    "px4_condo": "compose/px4-condo/docker-compose.yml",
-    "px4_xfs": "compose/px4-xfs/docker-compose.yml",
 }
 
 
@@ -235,7 +223,7 @@ def _validate_catalog(data: Any) -> None:
     consumers = data.get("consumers")
     if not isinstance(consumers, dict):
         raise CatalogError("consumers: must be a mapping")
-    for group_name in ("product_env", "image_sets", "compose_env", "legacy_env"):
+    for group_name in ("product_env", "image_sets", "compose_env"):
         if group_name not in consumers:
             raise CatalogError(f"consumers.{group_name} missing")
     # Optional: a catalog with no pre-release channel is an ordinary catalog.
@@ -557,74 +545,6 @@ def render_platform_env(catalog: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def render_legacy_env(catalog: dict[str, Any]) -> str:
-    """images/legacy-images.generated.env — the legacy static scenario
-    stacks (compose/<scenario>/docker-compose.yml). Unlike compose_env,
-    consumers.legacy_env is grouped by SCENARIO, and the same var name can
-    legitimately be bound to a DIFFERENT image key in two scenario groups
-    (AIRSIM_IMAGE, AIRSIM_CONDO_IMAGE — see images/catalog.yaml's "Legacy
-    static scenario stacks" section and docs/adr/0002-one-image-catalog.md
-    "Legacy scenario stacks: conflicting defaults"). A var whose resolved
-    ref is identical across every scenario that binds it gets ONE line
-    here; a var that disagrees gets NO line — emitting either side's value
-    would silently override the other scenario's default the moment a
-    developer removes the var from ./.env, so this renderer refuses to
-    guess and documents the disagreement in a comment block instead.
-    """
-    images = catalog["images"]
-    groups = catalog["consumers"]["legacy_env"]
-
-    # var -> {ref: [group, ...]}
-    var_refs: dict[str, dict[str, list[str]]] = {}
-    for group, mapping in groups.items():
-        for var, key in mapping.items():
-            ref = image_ref(images, key)
-            var_refs.setdefault(var, {}).setdefault(ref, []).append(group)
-
-    consistent = {var: refs for var, refs in var_refs.items() if len(refs) == 1}
-    conflicting = {var: refs for var, refs in var_refs.items() if len(refs) > 1}
-
-    lines = [
-        GENERATED_MARKER,
-        "",
-        "# Legacy static scenario stacks (compose/<scenario>/docker-compose.yml).",
-        "# Loaded by tools/load-images-env.sh from launch.sh/stop.sh/logs.sh: a key",
-        "# below is exported ONLY if it is unset in the shell AND absent from",
-        "# ./.env. Precedence: shell env > ./.env > this file > the compose",
-        "# ${VAR:-default} fallback (itself UNCHANGED by this file). Until a var",
-        "# is removed from ./.env, its value below does NOT take effect for that",
-        "# developer — see docs/adr/0002-one-image-catalog.md \"Legacy scenario",
-        "# stacks\".",
-        "",
-    ]
-    for var in sorted(consistent):
-        (ref,) = consistent[var].keys()
-        used_by = ", ".join(
-            COMPOSE_FILE_FOR_LEGACY_GROUP.get(g, g) for g in sorted(consistent[var][ref])
-        )
-        lines.append(f"# {var} — {used_by}")
-        lines.append(f"{var}={ref}")
-        lines.append("")
-
-    if conflicting:
-        lines.append(
-            "# NOT emitted below — each var's bound image differs by scenario, so no"
-        )
-        lines.append(
-            "# single value here would be safe. See docs/adr/0002-one-image-catalog.md"
-        )
-        lines.append("# \"Legacy scenario stacks: conflicting defaults\":")
-        for var in sorted(conflicting):
-            for ref, group_list in sorted(conflicting[var].items()):
-                compose_files = ", ".join(
-                    COMPOSE_FILE_FOR_LEGACY_GROUP.get(g, g) for g in sorted(group_list)
-                )
-                lines.append(f"#   {var}={ref}   ({compose_files})")
-        lines.append("")
-
-    return "\n".join(lines).rstrip("\n") + "\n"
-
-
 def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
     out = {
         PRODUCT_ENV_PATH: render_product_env(catalog),
@@ -632,7 +552,6 @@ def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
         DEVELOPMENT_IMAGE_SET_PATH: render_development_image_set(catalog),
         DEVELOPMENT_ENV_PATH: render_development_env(catalog),
         PLATFORM_ENV_PATH: render_platform_env(catalog),
-        LEGACY_ENV_PATH: render_legacy_env(catalog),
     }
     for name, spec in (catalog["consumers"].get("release_channels") or {}).items():
         out[ROOT / spec["emits"]] = render_standalone_v2_env(catalog, name)
@@ -645,16 +564,10 @@ def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
 
 def _all_env_vars(catalog: dict[str, Any]) -> dict[str, str]:
     """var -> image key, across product_env and compose_env (image_sets has
-    no env vars of its own). Deliberately excludes legacy_env and
-    release_channels: legacy_env's vars
-    are expected to already be in .env.example (that IS the legacy stack's
-    .env — see images/legacy-images.generated.env's header), and legacy_env
-    is also the one group where the same var name is allowed to map to a
-    different key per scenario (AIRSIM_IMAGE, AIRSIM_CONDO_IMAGE), which
-    the invariant below would otherwise reject. release_channels is excluded
-    for the same reason from the other direction: a channel exists precisely to
-    bind the review channel's variable names to a different set of images, and
-    it emits to its own file so the two never meet."""
+    no env vars of its own). Deliberately excludes release_channels: a
+    channel exists precisely to bind the review channel's variable names to a
+    different set of images, and it emits to its own file so the two never
+    meet."""
     out: dict[str, str] = {}
     for group in catalog["consumers"]["product_env"].values():
         out.update(group)
@@ -668,12 +581,7 @@ def dotenv_overrides(catalog: dict[str, Any]) -> list[tuple[str, str, str]]:
     sets. Compose auto-loads ./.env, and tools/load-images-env.sh deliberately
     skips any key .env already defines, so for these vars the catalog's pin is
     NOT what runs. That is the intended local-override escape hatch — the bug
-    is only ever that it is invisible, which is what this surfaces. Unlike
-    _all_env_vars() this DOES include legacy_env: those are precisely the vars
-    .env sets today, so excluding them would blind the check to every real
-    case. A legacy var mapping to different keys per scenario is reported
-    against the first key seen; the point is that .env wins, not which pin it
-    beat."""
+    is only ever that it is invisible, which is what this surfaces."""
     if not DOTENV_PATH.is_file():
         return []
     env: dict[str, str] = {}
@@ -682,9 +590,6 @@ def dotenv_overrides(catalog: dict[str, Any]) -> list[tuple[str, str, str]]:
         if m:
             env[m.group(1)] = m.group(2)
     var_to_key = dict(_all_env_vars(catalog))
-    for group in catalog["consumers"]["legacy_env"].values():
-        for var, key in group.items():
-            var_to_key.setdefault(var, key)
     out = []
     for var, key in sorted(var_to_key.items()):
         if var in env:
@@ -694,7 +599,7 @@ def dotenv_overrides(catalog: dict[str, Any]) -> list[tuple[str, str, str]]:
 
 _MUTABLE_SCAN_GLOBS = ("*.yml", "*.yaml", "*.sh", "*.md", "Makefile")
 _MUTABLE_SCAN_SKIP_DIRS = {
-    ".git", "graphify-out", "generated", "images", "docs/superpowers", "docs/adr",
+    ".git", "graphify-out", "generated", "images", "docs/adr",
 }
 
 
@@ -774,7 +679,7 @@ def assert_invariants(catalog: dict[str, Any]) -> None:
         collide = sorted(set(all_vars) & example_vars)
         if collide:
             raise CatalogError(
-                "catalog var(s) collide with .env.example (legacy stack): " + ", ".join(collide)
+                "catalog var(s) collide with .env.example: " + ", ".join(collide)
             )
 
     # 2. no two images map to one var — recompute per-group and check for a
@@ -958,7 +863,6 @@ consumers:
   product_env: {{}}
   image_sets: {{}}
   compose_env: {{}}
-  legacy_env: {{}}
 """
 
 
@@ -1027,7 +931,7 @@ def run_selftest() -> None:
             },
         },
         "consumers": {
-            "product_env": {}, "image_sets": {}, "compose_env": {}, "legacy_env": {},
+            "product_env": {}, "image_sets": {}, "compose_env": {},
         },
     }
     try:
@@ -1090,7 +994,7 @@ def _selftest_source_block() -> None:
             row["source"] = src
         return {"schema": "mns.images.v1", "images": {"fixture": row},
                 "consumers": {"product_env": {}, "compose_env": {},
-                              "image_sets": {}, "legacy_env": {}}}
+                              "image_sets": {}}}
 
     # the sha comes from the traced tag when the block does not state one
     assert _sha_from_tag("img-v1.0.0-gee99b9d") == "ee99b9d"
