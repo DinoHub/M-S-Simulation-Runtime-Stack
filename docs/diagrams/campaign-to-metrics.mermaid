@@ -1,5 +1,5 @@
 %% TEVV: from a CampaignSpec, through OSMO, to evaluation, to metrics stored and shown.
-%% State as of 25 Sept 2026 (run registry built). Three states, by style:
+%% State as of 25 Sept 2026 (run registry, Loki and Alloy built). Three states, by style:
 %%   built       green, solid  - runs today in the OSMO flow (PR #91)
 %%   exists      amber, solid  - built and running elsewhere, not connected to OSMO runs
 %%   target      grey, dashed  - designed (autonomy-tevv-architecture), not built
@@ -52,7 +52,7 @@ flowchart TB
     CH["ClickHouse<br/>events, metric_results"]
     REG["Postgres run registry (CNPG)<br/>attempts, status, gate results,<br/>metrics summary, artifacts"]
     PROM["Prometheus<br/>run-labelled metrics"]
-    LOKI["Loki + Alloy<br/>run-labelled logs"]
+    LOKI["Loki + Alloy<br/>every task and the control plane,<br/>by workflow, 30 days"]
     S3 --> BUN --> REP --> MAN
     KAF --> CH
   end
@@ -62,7 +62,7 @@ flowchart TB
     STAT["campaign status<br/>scorecard, CLI"]
     FOXV["Foxglove<br/>live, node:30765; MCAP replay"]
     DASH["TEVV web dashboard<br/>campaign pages"]
-    GRAF["Grafana :3000<br/>campaign progress, gates, ATE;<br/>ClickHouse panels"]
+    GRAF["Grafana :3000<br/>campaign progress, gates, ATE,<br/>run logs; ClickHouse panels"]
     PRF["PR feedback<br/>status + verdict comment"]
   end
 
@@ -88,12 +88,13 @@ flowchart TB
   REG -.-> PRF
   STACK -.->|exporters| PROM
   PROM -.-> GRAF
-  RUNG -.->|"pod stdout"| LOKI
-  LOKI -.-> GRAF
+  RUNG -->|"container logs"| LOKI
+  EVALG -->|"container logs"| LOKI
+  LOKI --> GRAF
 
   classDef built fill:#DCEFE2,stroke:#2E7D4F,color:#14213D
   classDef exists fill:#FBEBD2,stroke:#B4501E,color:#14213D
   classDef target fill:#F1F1EE,stroke:#8A8F99,color:#4A5160,stroke-dasharray:6 4
-  class CS,SS,CAT,PLAN,GEN,IMG,SUB,SIM,STACK,REC,FOXT,VE,SE,VA,VD,S3,BUN,REP,MAN,STAT,FOXV,REG,GRAF built
+  class CS,SS,CAT,PLAN,GEN,IMG,SUB,SIM,STACK,REC,FOXT,VE,SE,VA,VD,S3,BUN,REP,MAN,STAT,FOXV,REG,GRAF,LOKI built
   class KAF,CH,DASH exists
-  class PROM,LOKI,PRF target
+  class PROM,PRF target

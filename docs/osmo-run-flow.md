@@ -130,7 +130,7 @@ the files the scorecard and the registry read.
 | `validation.json` | executor | a copy of this attempt's `eval/validate/validation.json`, where the platform's scorecard looks |
 | `topics.yaml` | executor | the stack's role map, copied so the bundle is self-describing |
 | `run.json` | executor | `mns.vio_run_meta.v1`: campaign, key, variant, repeat, workflow ID and status, every task's status, platform axes, gates, the images block (pinned, submitted, node image IDs), viz |
-| `logs/<workflow>/<task>.log` | executor | only for a run that did not pass: `osmo workflow logs` for every task |
+| `logs/<workflow>/<task>.log`, `<task>.sidecar.log` | executor | only for a run that did not pass: every task's output, from Loki (or `osmo workflow logs` if Loki is down) |
 
 **One directory per run key, not per attempt.** A re-fly writes into the same
 `runs/<key>/`, and a sync adds files without deleting old ones. So:
@@ -183,13 +183,27 @@ read-only role:
 - ATE per run;
 - attempts per day.
 
+### 9. Logs, alongside all of it
+
+While the run flies, Alloy reads every task's container log on the node into
+Loki. The same happens for the OSMO control plane. Each line carries the task,
+its source (task, sidecar or control plane) and the workflow ID. Grafana's
+"TEVV run logs" dashboard picks a run from the registry and shows:
+- its verdict lines;
+- errors across tasks;
+- lines per task;
+- any one task's output.
+
+See the runbook's "Logs" section for why this, and not `osmo workflow logs`,
+is the complete copy.
+
 ## Where to look
 
 | Question | Look at |
 | --- | --- |
 | Is my campaign done, and how is it doing? | Grafana "Campaign progress", or `v_campaign_progress` |
 | Did this run pass, and which gate failed? | Grafana "Gates per run", `eval/verdict/verdict.json`, or `osmo workflow logs <wf> --task verdict` |
-| Why did it fail? | registry `failure_reason` and `error`, then `runs/<key>/logs/<wf>/` |
+| Why did it fail? | registry `failure_reason` and `error`; Grafana "TEVV run logs" for that run; `runs/<key>/logs/<wf>/` |
 | What did the drone actually do? | `bag/bag_0.mcap` in Foxglove; `mission.json` for how it ended |
 | Is the number trustworthy? | `eval/validate/validation.json` (recording checks) and `eval/spawn-eval/spawn.json` |
 | Which images flew? | `run.json` `images`, or registry `runs.images` |
@@ -199,8 +213,6 @@ read-only role:
 
 ## Not yet in the flow
 
-- **Loki and Alloy:** every task's logs, searchable by workflow ID. Until
-  then, logs are kept on disk only for runs that did not pass.
 - **Prometheus:** live, run-labelled rates.
 - **The simulator's event stream:** MetricsEmitter to Kafka to ClickHouse has
   no consumer under OSMO.

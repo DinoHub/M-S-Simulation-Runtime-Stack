@@ -651,7 +651,7 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
 
     outcome, _ = registry_outcome(rec.status, rec.error, status, tasks, load_verdict(bundle, run_gates))
     if outcome != "passed":
-        capture_logs(workflow_id, tasks, bundle)
+        capture_logs(workflow_id, tasks, bundle, since=rec.started_at)
     register_run(reg, workflow_id, bundle, rec.status, rec.error, status, tasks, run_gates,
                  rec.recording_valid, rec.failed_checks, rec.finished_at)
 
@@ -755,19 +755,89 @@ def run_artifacts(bundle: Path, workflow_id: str) -> list[tuple[str, str, int | 
     return rows
 
 
-def capture_logs(workflow_id: str, tasks: dict[str, str], bundle: Path) -> None:
-    """Every task's stdout, kept with a run that did not pass. OSMO holds task
-    logs only as long as it holds the workflow; this is the copy that stays
-    with the evidence (and the one that works when no log store is up)."""
+LOKI_NODE_PORT = 31100
+
+
+def loki_url() -> str | None:
+    """Loki as the host reaches it: MNS_LOKI_URL, else the service node's
+    InternalIP plus the NodePort observability/install.sh made. None when
+    there is no Loki (MNS_LOKI=off, or not installed)."""
+    if os.environ.get("MNS_LOKI", "").lower() in ("off", "0", "false", "no"):
+        return None
+    if os.environ.get("MNS_LOKI_URL"):
+        return os.environ["MNS_LOKI_URL"].rstrip("/")
+    node_ip = subprocess.run(["kubectl", "get", "node", "osmo-worker", "-o",
+                              'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}'],
+                             capture_output=True, text=True).stdout.strip()
+    return f"http://{node_ip}:{LOKI_NODE_PORT}" if node_ip else None
+
+
+def loki_logs(workflow_id: str, since: str | None) -> dict[str, list[str]] | None:
+    """Every line Loki holds for a workflow, per task and source, in order.
+    None when Loki cannot be asked; an empty dict when it has nothing."""
+    import urllib.parse
+    import urllib.request
+    base = loki_url()
+    if not base:
+        return None
+    start_ns = int((datetime.fromisoformat(since).timestamp() - 600) * 1e9) if since else \
+        time.time_ns() - 24 * 3600 * 10**9
+    end_ns = time.time_ns() + 60 * 10**9
+    expr = f'{{job="osmo/workflow"}} | workflow_id="{workflow_id}"'
+    out: dict[str, list[tuple[int, str]]] = {}
+    limit = 5000
+
+    # By window, not by "start after the last line": Loki's limit is not the
+    # earliest N lines across streams, so paging from the last timestamp
+    # skipped lines (a 7,675-line sim log came back as 4,293). A window that
+    # fills the limit is split until each half fits.
+    def fetch(lo: int, hi: int) -> None:
+        url = base + "/loki/api/v1/query_range?" + urllib.parse.urlencode(
+            {"query": expr, "start": lo, "end": hi, "limit": limit, "direction": "forward"})
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            result = json.load(resp)["data"]["result"]
+        if sum(len(st["values"]) for st in result) >= limit and hi - lo > 1_000_000:
+            mid = (lo + hi) // 2
+            fetch(lo, mid)
+            fetch(mid, hi)
+            return
+        for stream in result:
+            labels = stream["stream"]
+            name = labels.get("task", "unknown") + (
+                ".sidecar" if labels.get("source") == "sidecar" else "")
+            out.setdefault(name, []).extend((int(ts), line) for ts, line, *_ in stream["values"])
+
+    try:
+        fetch(start_ns, end_ns)
+    except Exception as exc:  # noqa: BLE001 -- any failure means "ask OSMO instead"
+        print(f"[campaign]   Loki unavailable ({str(exc)[:120]}); using osmo workflow logs")
+        return None
+    return {name: [line for _, line in sorted(rows)] for name, rows in out.items()}
+
+
+def capture_logs(workflow_id: str, tasks: dict[str, str], bundle: Path,
+                 since: str | None = None) -> None:
+    """Every task's output, kept with a run that did not pass.
+
+    From Loki when it is up: Alloy read it from the node's container logs, all
+    of it. OSMO's own copy (`osmo workflow logs`) is the fallback. It drops
+    lines under load -- half of a 20,000-line burst -- and says so in the
+    simulator's log as "Maximum logging rate exceeded"."""
     # Per workflow: the run directory outlives an attempt, its logs must not
     # be mistaken for the next one's.
     logs = bundle / "logs" / workflow_id
     logs.mkdir(parents=True, exist_ok=True)
+    found = loki_logs(workflow_id, since)
+    if found:
+        for name, lines in found.items():
+            (logs / f"{name}.log").write_text("\n".join(lines) + "\n")
+        print(f"[campaign]   task logs from Loki kept in {logs}")
+        return
     for task in tasks:
         proc = osmo("workflow", "logs", workflow_id, "--task", task, check=False)
         if proc.stdout.strip():
             (logs / f"{task}.log").write_text(proc.stdout)
-    print(f"[campaign]   task logs kept in {logs}")
+    print(f"[campaign]   task logs from OSMO kept in {logs}")
 
 
 def register_run(reg: Registry, workflow_id: str, bundle: Path, flight: str, error: str | None,

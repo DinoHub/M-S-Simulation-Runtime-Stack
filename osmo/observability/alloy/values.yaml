@@ -1,0 +1,18 @@
+# Grafana Alloy for the local OSMO cluster: a DaemonSet that reads the node's
+# container logs into Loki. grafana/alloy 1.12.1 (Alloy v1.19), installed by
+# observability/install.sh, which passes config.alloy beside this file.
+#
+# Requests are kept small on purpose: a run's gang takes about 22 of the GPU
+# node's 24 cores, and KAI places the whole gang or nothing.
+alloy:
+  configMap:
+    create: true
+  mounts:
+    varlog: true
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 256Mi}
+  clustering:
+    enabled: false
+controller:
+  type: daemonset

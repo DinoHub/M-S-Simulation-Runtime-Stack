@@ -1002,11 +1002,10 @@ come from `validation.json`. Its field is `valid`; the executor used to read
 valid. The condo runs all fail `imu_gravity` because the role map has no IMU
 topic. They are shown, but they do not change a run's status; the gates do.
 
-**Task logs are kept with a run that did not pass.** `osmo workflow logs` for
-every task goes to `runs/<key>/logs/<task>.log`, and is registered as an
-artifact. OSMO keeps task logs only as long as it keeps the workflow. This copy
-works with no log store running; Loki, next, makes every run's logs
-searchable.
+**Task logs are kept with a run that did not pass.** Every task's output goes
+to `runs/<key>/logs/<workflow>/<task>.log`, plus `<task>.sidecar.log` for
+OSMO's sidecar, and is registered as an artifact. It comes from Loki (next
+section), or from `osmo workflow logs` when Loki is not up.
 
 **If the registry is down,** `run` warns once
 (`[registry] off for this invocation: ...`) and flies anyway. Other
@@ -1014,6 +1013,81 @@ controls:
 - `MNS_REGISTRY=off` turns it off;
 - `MNS_REGISTRY_URL` points at another Postgres;
 - `python3 osmo/registry.py url` prints what would be used.
+
+## Logs: Loki and Alloy
+
+Every task's output, and the OSMO control plane's, searchable by workflow for
+30 days. It is installed by the same `osmo/setup-local-osmo.sh observability`
+(`SKIP_LOGS=1` leaves it out). Open http://localhost:3000/d/tevv-run-logs and
+pick a run. The "workflow" column of the progress dashboard links there too.
+
+The run-logs dashboard shows:
+- the run's registry row;
+- the verdict's lines;
+- errors and failures across every task;
+- lines per task over time;
+- one task's output;
+- OSMO's sidecar;
+- control-plane lines that name the workflow.
+
+**Where the logs come from.** OSMO runs a task's command under `osmo_exec`.
+That re-emits the command's stdout and stderr on the container's stderr, with
+a `YYYY/MM/DD HH:MM:SS` prefix. So the node's container log
+(`/var/log/pods/<pod>/<task>/0.log`) holds everything the task printed.
+
+Alloy, a DaemonSet on both workers, reads those files while the pods are
+alive. Pods are deleted seconds after their task ends, and their log files go
+with them. Nothing reaches back for a run that finished before Alloy was up,
+so runs from before Loki are not in it.
+
+**Why not `osmo workflow logs`.** OSMO's own copy drops lines under load. A
+20,000-line burst arrived in Loki whole; `osmo workflow logs` returned 10,001
+of it on one read and 1,040 on another. The simulator's log says so itself:
+`Maximum logging rate exceeded, N lines have been dropped!`.
+
+The burst also held its pod for 16.5 minutes after the command exited, while
+the sidecar shipped the lines to OSMO. Loki does not change that. A task that
+prints heavily takes longer to finish, whatever reads its logs.
+
+| Piece | Where |
+| --- | --- |
+| Loki (`grafana/loki` 7.3.0, Loki 3.6) | one process, filesystem store on a 20Gi volume, namespace `tevv`, service node; `<osmo-worker IP>:31100` (`loki-nodeport`) |
+| Alloy (`grafana/alloy` 1.12.1) | DaemonSet `alloy`, namespace `tevv`, on `osmo-worker` and `osmo-worker2`; config `osmo/observability/alloy/config.alloy` |
+| Retention | 30 days (compactor) |
+| Grafana | datasource `tevv-loki`; dashboard "TEVV run logs" |
+
+On the GPU node Alloy requests 50m CPU and 64Mi. A run's gang takes about 22 of
+that node's 24 cores, and KAI places the whole gang or nothing.
+
+**Labels.** Indexed labels are few, to keep the index small:
+
+| Label | Values |
+| --- | --- |
+| `job` | `osmo/workflow` (workflow pods, namespace `default`) or `osmo/control-plane` (namespace `osmo`) |
+| `task` | the workflow's task name (`sim`, `bridge`, `verdict`, ...), or the control-plane component (`osmo-service`, `osmo-worker`, `osmo-logger`, ...) |
+| `source` | `task` (what the command printed), `sidecar` (`osmo-ctrl`: inputs, barrier, uploads) or `control-plane` |
+| `namespace`, `stream` | the pod's namespace; stdout or stderr |
+
+`workflow_id` and `pod` ride as structured metadata, not labels, so a run is a
+filter, not a new stream:
+
+```
+{job="osmo/workflow", task="verdict"} | workflow_id="sim-bridge-vio-63"
+{job="osmo/workflow", source="task"} | workflow_id="sim-bridge-vio-63" |~ "(?i)error|traceback"
+sum by (task) (count_over_time({job="osmo/workflow"} | workflow_id="sim-bridge-vio-63" [1m]))
+{job="osmo/control-plane"} |= "sim-bridge-vio-63"
+```
+
+Campaign, run key and attempt are not in the cluster: OSMO 6.3.1 cannot label
+pods. The run registry maps `workflow_ref` to them. That is why the run-logs
+dashboard picks runs from the registry.
+
+**Pass/fail never comes from here.** Gates are `verdict.json`, in the registry.
+Logs explain a result; they do not decide it.
+
+Other controls:
+- `MNS_LOKI_URL` points `campaign.py` at another Loki;
+- `MNS_LOKI=off` makes it use `osmo workflow logs`.
 
 ## Teardown
 

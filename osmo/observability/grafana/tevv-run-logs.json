@@ -1,0 +1,280 @@
+{
+  "uid": "tevv-run-logs",
+  "title": "TEVV run logs",
+  "tags": [
+    "tevv",
+    "osmo",
+    "logs"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "workflow",
+        "label": "Run",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "tevv-registry"
+        },
+        "query": "SELECT campaign_id || ' / ' || run_key || ' #' || attempt || ' (' || workflow_ref || ')' AS __text, workflow_ref AS __value FROM runs WHERE workflow_ref IS NOT NULL ORDER BY submitted_at DESC NULLS LAST",
+        "definition": "runs, newest first",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "task",
+        "label": "Task",
+        "type": "custom",
+        "multi": true,
+        "includeAll": true,
+        "query": "sim,autopilot,bridge,vio,pilot,recorder,discovery-server,foxglove,vio-eval,spawn-eval,validate,verdict",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "allValue": ".+"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Run",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "tevv-registry"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "tevv-registry"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT campaign_id AS campaign, run_key AS run, attempt, status, failure_reason AS reason, submitted_at AS submitted, ended_at AS ended, round(extract(epoch FROM ended_at - submitted_at))::int AS \"duration s\", run_dir FROM runs WHERE workflow_ref = '$workflow'"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Verdict: the gate decisions",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "tevv-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "tevv-loki"
+          },
+          "expr": "{job=\"osmo/workflow\", task=\"verdict\", source=\"task\"} | workflow_id=\"$workflow\" |~ \"^(PASS|FAIL|NO EVIDENCE|verdict rc)\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Ascending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Errors and failures, every task",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "tevv-loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "tevv-loki"
+          },
+          "expr": "{job=\"osmo/workflow\", source=\"task\"} | workflow_id=\"$workflow\" |~ \"(?i)(error|fatal|traceback|exception|failed|refused|timed? ?out)\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Ascending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Lines per task",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "tevv-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "tevv-loki"
+          },
+          "expr": "sum by (task) (count_over_time({job=\"osmo/workflow\"} | workflow_id=\"$workflow\" [15s]))",
+          "queryType": "range",
+          "legendFormat": "{{task}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Task output: $task",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "tevv-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "tevv-loki"
+          },
+          "expr": "{job=\"osmo/workflow\", task=~\"$task\", source=\"task\"} | workflow_id=\"$workflow\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Ascending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 6,
+      "title": "OSMO sidecar: inputs, barrier, uploads",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "tevv-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "tevv-loki"
+          },
+          "expr": "{job=\"osmo/workflow\", source=\"sidecar\"} | workflow_id=\"$workflow\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Ascending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 7,
+      "title": "OSMO control plane lines naming this workflow",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "tevv-loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 33,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "tevv-loki"
+          },
+          "expr": "{job=\"osmo/control-plane\"} |= \"$workflow\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Ascending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    }
+  ]
+}
