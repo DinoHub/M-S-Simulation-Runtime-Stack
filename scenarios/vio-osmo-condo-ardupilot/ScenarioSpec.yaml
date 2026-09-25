@@ -19,9 +19,9 @@ stack_name: vio-osmo-condo-ardupilot
 # spec only names the profile.
 
 environment:
-  id: condo
+  id: condo-level
   version: 1.0.1
-  artifact_digest: sha256:ea8439ecca82eb1b1a3ff1d02e1f9178b2746b685fa28b67c46f4e185e9b29e5
+  artifact_digest: sha256:f41caf8f80fa0814e724fbfa1e94c89f7576fb3f1d4054e259e07144cfbffbb9
 
 runtime:
   profile: airsim_unreal_ardupilot_docker
