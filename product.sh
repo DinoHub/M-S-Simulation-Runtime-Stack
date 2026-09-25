@@ -35,8 +35,17 @@ case "$CHANNEL" in
     ;;
   *) echo "ERROR: MNS_CHANNEL must be v1, ue582 or v2; got: $CHANNEL" >&2; exit 2 ;;
 esac
+# An image already set in the environment wins over the channel file, the
+# precedence tools/load-images-env.sh gives `make dashboard` (shell > ./.env >
+# generated file). Sourcing the file used to overwrite it silently, so the only
+# way to try a candidate release here was to edit a tracked, generated file.
+_preset_images="$(env | grep -E '^(MNS|DASHBOARD)_[A-Z0-9_]*_IMAGE=' || true)"
 # shellcheck disable=SC1090
 source "$CHANNEL_ENV"
+while IFS= read -r _kv; do
+  [ -n "$_kv" ] && export "${_kv%%=*}=${_kv#*=}"
+done <<< "$_preset_images"
+unset _preset_images _kv
 # The generated env names the channel's image_sets entry (MNS_IMAGE_SET);
 # `published` is the 5.5.4 set's name and the fallback for an older file.
 IMAGE_SET="${MNS_IMAGE_SET:-published}"
