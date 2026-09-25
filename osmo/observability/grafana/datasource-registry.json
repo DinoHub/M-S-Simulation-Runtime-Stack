@@ -1,0 +1,17 @@
+{
+  "uid": "tevv-registry",
+  "name": "TEVV run registry",
+  "type": "grafana-postgresql-datasource",
+  "access": "proxy",
+  "url": "${REGISTRY_ADDR}",
+  "user": "grafana_ro",
+  "jsonData": {
+    "database": "tevv",
+    "sslmode": "disable",
+    "postgresVersion": 1600,
+    "timescaledb": false
+  },
+  "secureJsonData": {
+    "password": "${REGISTRY_GRAFANA_PASSWORD}"
+  }
+}

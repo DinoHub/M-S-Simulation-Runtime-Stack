@@ -1,0 +1,352 @@
+# One VIO run on OSMO: fly a scenario, record evidence, judge it.
+#
+#   run        discovery-server, sim, [autopilot, pilot], bridge, vio, recorder (lead), [foxglove]
+#   evaluate   vio-eval (lead), spawn-eval, validate      -- each reads the recorder's output
+#   aggregate  verdict                                     -- gates from the CampaignSpec
+#
+# Exit codes: 0 pass, 1 a real verdict (never retried), 42 the platform was not
+# ready (rescheduled), 137 OOM. Scripts live in osmo/files/; why each task
+# looks the way it does is in docs/osmo-runbook.md, "Workflow anatomy".
+#
+#   osmo workflow submit osmo/sim-bridge-vio.workflow.yaml --set stack=<generated/...> fly=true
+#   osmo/campaign.py run <campaign>          (what normally submits this)
+#
+# Two rules for editing: pass several values as ONE --set / --set-string
+# (both are nargs="+"; a repeated flag keeps only the last), and never put a
+# Jinja tag in a comment -- it is parsed.
+
+workflow:
+  name: sim-bridge-vio
+  timeout:
+    exec_timeout: 25m
+    queue_timeout: 1h
+
+  # Every task pod also carries an osmo-ctrl sidecar requesting 250m CPU, so
+  # the run group totals ~21 of the GPU node's 24 cores.
+  resources:
+    default:   {cpu: 1, memory: 1Gi,  storage: 1Gi}
+    light:     {cpu: 1, memory: 1Gi,  storage: 1Gi}
+    worker:    {cpu: 2, memory: 4Gi,  storage: 2Gi}
+    autopilot: {cpu: 6, memory: 4Gi,  storage: 2Gi}
+    sim:       {cpu: 6, memory: 16Gi, storage: 8Gi, gpu: 1}
+
+  groups:
+  # ---- run: everything that must be alive at once ---------------------------
+  # Gang-scheduled (barrier). Any task failing ends the run (ignoreNonleadStatus
+  # false); the recorder is the lead, so its exit ends the group.
+  - name: run
+    barrier: true
+    ignoreNonleadStatus: false
+    tasks:
+
+    # Pods have no multicast, so DDS discovery goes through a server.
+    - name: discovery-server
+      image: "{{ bridge_image }}"
+      resource: default
+      command: ["/bin/bash", "/tmp/discovery_server.sh"]
+      files:
+      - {localpath: files/discovery_server.sh, path: /tmp/discovery_server.sh}
+
+    - name: sim
+      image: "{{ runtime_host_image }}"
+      resource: sim
+      volumeMounts: ["/workspace"]
+      command: ["/bin/bash", "/tmp/sim.sh"]
+      environment:
+        NVIDIA_DRIVER_CAPABILITIES: all
+        STACK: "{{ stack }}"
+{% if fly and autopilot == 'ardupilot' %}
+        AUTOPILOT_HOST: "{{host:autopilot}}"   # AirSim sends ArduPilot its sensors
+{% endif %}
+      files:
+      - {localpath: files/sim.sh, path: /tmp/sim.sh}
+      exitActions: {COMPLETE: "0", RESCHEDULE: "42,137"}
+
+{% if fly %}
+{% if autopilot == 'ardupilot' %}
+    - name: autopilot
+      image: "{{ ardupilot_image }}"
+      resource: autopilot
+      command: ["/bin/bash", "/tmp/autopilot.sh"]
+      environment:
+        SIM_HOST: "{{host:sim}}"
+        SIM_PORT: "41451"
+        SIM_DIAL_WAIT_SEC: "900"
+        MAVLINK_GCS_HOST: "127.0.0.1"
+        MAVLINK_C2_HOST: "127.0.0.1"
+        MAVLINK_C2_PORT: "14552"
+        HOST_NETWORK_MODE: "false"
+        ARDUPILOT_HOME_LAT: "42.764938"
+        ARDUPILOT_HOME_LON: "-115.579201"
+        ARDUPILOT_HOME_ALT: "1183.0"
+        INSTANCE_NUM: "0"
+      files:
+      - {localpath: files/autopilot_ardupilot.sh, path: /tmp/autopilot.sh}
+      exitActions: {COMPLETE: "0", RESCHEDULE: "42,137"}
+{% else %}
+    - name: autopilot
+      image: "{{ px4_image }}"
+      resource: autopilot
+      command: ["/bin/bash", "/tmp/autopilot.sh"]
+      environment:
+        SIM_HOST: "{{host:sim}}"
+        SIM_PORT: "41451"
+        SIM_DIAL_WAIT_SEC: "900"
+        MAVLINK_TARGET: "127.0.0.1"
+        PX4_INSTANCE: "0"          # the image bakes 1; compose overrides it to 0
+        PX4_SIM_MODEL: none_iris
+        PX4_SIMULATOR: none
+        PX4_SYS_AUTOSTART: "10016"
+        PX4_HOME_LAT: "42.764938"
+        PX4_HOME_LON: "-115.579201"
+        PX4_HOME_ALT: "1183.0"
+        MAV_0_BROADCAST: "1"
+        MAV_1_BROADCAST: "1"
+        MAV_2_BROADCAST: "1"
+        MAVLINK_MODE: router
+        HOST_NETWORK_MODE: "false"
+        SWARM_ID: "1"
+        SWARM_SIZE: "1"
+      files:
+      - {localpath: files/autopilot_px4.sh, path: /tmp/autopilot.sh}
+      exitActions: {COMPLETE: "0", RESCHEDULE: "42,137"}
+{% endif %}
+{% endif %}
+
+    - name: bridge
+      image: "{{ bridge_image }}"
+      resource: worker
+      volumeMounts: ["/workspace"]
+      command: ["/bin/bash", "/tmp/bridge.sh"]
+      environment:
+        STACK: "{{ stack }}"
+        VEHICLE: "{{ vehicle }}"
+        SIM_HOST: "{{host:sim}}"
+        SIM_PORT: "41451"
+        SIM_DIAL_WAIT_SEC: "900"
+        DS_HOST: "{{host:discovery-server}}"
+        AUTOPILOT: "{{ autopilot }}"
+        AUTOPILOT_HOST: "{% if fly %}{{host:autopilot}}{% else %}127.0.0.1{% endif %}"
+        ENABLE_MAVROS: "{{ fly | lower }}"
+        TRANSPORT: rpc              # SHM needs one IPC namespace; tasks do not share one
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        RCUTILS_COLORIZED_OUTPUT: "0"
+      files:
+      - {localpath: files/bridge.sh, path: /tmp/bridge.sh}
+      exitActions: {COMPLETE: "0", RESCHEDULE: "42,137"}
+
+    - name: vio
+      image: "{{ vio_estimator_image }}"
+      resource: worker
+      volumeMounts: ["/workspace"]
+      command: ["/bin/bash", "/tmp/vio.sh"]
+      environment:
+        STACK: "{{ stack }}"
+        DS_HOST: "{{host:discovery-server}}"
+        HOME: /tmp
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+      files:
+      - {localpath: files/vio.sh, path: /tmp/vio.sh}
+      exitActions: {COMPLETE: "0", RESCHEDULE: "42,137"}
+
+{% if fly %}
+    # Flies the CampaignSpec's route (ROUTE_B64) or, without one, a corridor.
+    # Exits 0 or 1 as COMPLETE: a failed flight must not take the gang down;
+    # the recorder's mission.json says whether it actually flew.
+    - name: pilot
+      image: "{{ bridge_image }}"
+      resource: light
+      command: ["/bin/bash", "/tmp/pilot.sh"]
+      environment:
+        VEHICLE: "{{ vehicle }}"
+        AUTOPILOT: "{{ autopilot }}"
+        ROUTE_B64: "{{ route_b64 }}"
+        FLY_DISTANCE_M: "{{ fly_distance_m }}"
+        FLY_ALTITUDE_M: "{{ fly_altitude_m }}"
+        FLY_SPEED_MS: "{{ fly_speed_ms }}"
+        DS_HOST: "{{host:discovery-server}}"
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        PYTHONUNBUFFERED: "1"
+      files:
+      - {localpath: files/pilot.sh, path: /tmp/pilot.sh}
+      - {localpath: files/fly_mission_mavros.py, path: /tmp/fly_mission_mavros.py}
+      - {localpath: files/announce_done.py, path: /tmp/announce_done.py}
+      exitActions: {COMPLETE: "0,1", RESCHEDULE: "42,137"}
+{% endif %}
+
+    # The lead. Records until the pilot announces the mission done (or
+    # RECORD_SEC), writes the bag and mission.json to its output directory,
+    # which OSMO uploads and hands to the evaluate group.
+    - name: recorder
+      lead: true
+      image: "{{ bridge_image }}"
+      resource: worker
+      command: ["/bin/bash", "/tmp/record.sh"]
+      environment:
+        OUT_DIR: "{{output}}"
+        RUN_ID: "{{workflow_id}}"
+        RECORD_SEC: "{{ record_sec }}"
+        READY_WAIT_SEC: "900"
+        VIZ_HOLD_SEC: "{% if viz | string | lower == 'true' %}{{ viz_hold_sec }}{% else %}0{% endif %}"
+        VIZ_IDLE_SEC: "{{ viz_idle_sec }}"
+        DS_HOST: "{{host:discovery-server}}"
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        PYTHONUNBUFFERED: "1"
+      files:
+      - {localpath: files/record.sh, path: /tmp/record.sh}
+      - {localpath: files/record.py, path: /tmp/record.py}
+      exitActions: {COMPLETE: "0", FAIL: "1", RESCHEDULE: "42,137"}
+
+{% if viz | string | lower == 'true' %}
+    # Live view: `osmo/campaign.py watch <workflow>` prints its address. Also
+    # publishes /viz/viewers, which decides how long the recorder holds the
+    # run open. A viewer never decides a run, whatever it exits with.
+    - name: foxglove
+      image: "{{ bridge_image }}"
+      resource: light
+      command: ["/bin/bash", "/tmp/foxglove.sh"]
+      environment:
+        DS_HOST: "{{host:discovery-server}}"
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+      files:
+      - {localpath: files/foxglove.sh, path: /tmp/foxglove.sh}
+      - {localpath: files/viewer_count.py, path: /tmp/viewer_count.py}
+      exitActions: {COMPLETE: "0-255"}
+{% endif %}
+
+  # ---- evaluate: one versioned container per question ------------------------
+  # `inputs: [{task: recorder}]` both orders this group after the run and
+  # delivers the recorder's output as input 0. Evaluators report; they
+  # never veto (0 and 1 both COMPLETE) -- the verdict decides.
+  - name: evaluate
+    barrier: true
+    ignoreNonleadStatus: false
+    tasks:
+
+    # Trajectory error over the flight window only (flight_window.py cuts it).
+    - name: vio-eval
+      lead: true
+      image: "{{ sim_real_eval_image }}"
+      resource: worker
+      inputs: [{task: recorder}]
+      environment:
+        RUN_ID: "{{workflow_id}}"
+      files:
+      - {localpath: files/flight_window.py, path: /tmp/flight_window.py}
+      - path: /tmp/topics.yaml
+        contents: |
+          sim:
+            ground_truth: /ground_truth/odom
+            estimate: {{ est_topic }}
+            clock: /clock
+      command: ["/bin/sh", "-c"]
+      args:
+      - >-
+        mkdir -p "{{output}}" &&
+        python3 /tmp/flight_window.py "{{input:0}}/bag" "{{output}}" "{{ est_topic }}" &&
+        exec sim-real-eval trajectory "{{input:0}}"
+        --topics /tmp/topics.yaml --profile sim
+        --est "{{output}}/estimate.tum" --gt "{{output}}/ground_truth.tum"
+        --out "{{output}}/vio"
+      exitActions: {COMPLETE: "0,1", RESCHEDULE: "137"}
+
+    # Did the vehicle stay in the world? Free fall, sinking, or fell-and-put-back.
+    - name: spawn-eval
+      image: "{{ bridge_image }}"
+      resource: light
+      inputs: [{task: recorder}]
+      environment:
+        MAX_FALL_MS: "{{ max_fall_ms }}"
+      files:
+      - {localpath: files/spawn_check.py, path: /tmp/spawn_check.py}
+      command: ["/bin/bash", "-c"]
+      args:
+      - >-
+        source /opt/ros/humble/setup.bash &&
+        mkdir -p "{{output}}" &&
+        exec python3 /tmp/spawn_check.py "{{input:0}}/bag" "{{output}}/spawn.json"
+      exitActions: {COMPLETE: "0,1", RESCHEDULE: "137"}
+
+    # The recording's own gates; writes the validation.json `campaign status` reads.
+    - name: validate
+      image: "{{ bridge_image }}"
+      resource: light
+      inputs: [{task: recorder}]
+      environment:
+        VEHICLE: "{{ vehicle }}"
+      files:
+      - {localpath: files/validate_recording.py, path: /tmp/validate_recording.py}
+      - path: /tmp/topics.yaml
+        contents: |
+          sim:
+            ground_truth: /ground_truth/odom
+            estimate: {{ est_topic }}
+            clock: /clock
+      command: ["/bin/bash", "-c"]
+      args:
+      - >-
+        source /opt/ros/humble/setup.bash && source /ws/install/setup.bash &&
+        mkdir -p "{{output}}" &&
+        python3 /tmp/validate_recording.py "{{input:0}}/bag"
+        --topics /tmp/topics.yaml --json "{{output}}/validation.json";
+        rc=$?; cat "{{output}}/validation.json" 2>/dev/null | head -c 2000; exit $rc
+      exitActions: {COMPLETE: "0,1,2", RESCHEDULE: "137"}
+
+  # ---- aggregate: the one pass/fail decision ---------------------------------
+  - name: aggregate
+    barrier: true
+    ignoreNonleadStatus: false
+    tasks:
+    - name: verdict
+      lead: true
+      image: "{{ sim_real_eval_image }}"
+      resource: default
+      inputs: [{task: vio-eval}, {task: spawn-eval}, {task: validate}]
+      environment:
+        REPORT_DIR: /osmo/data/input
+        GATES: '{{ gates_json }}'
+        # verdict.json, one row per gate, for the run registry.
+        OUTPUT_DIR: "{{output}}"
+      files:
+      - {localpath: files/verdict.py, path: /tmp/verdict.py}
+      command: ["python3", "/tmp/verdict.py"]
+      exitActions: {COMPLETE: "0", FAIL: "1", RESCHEDULE: "42,137"}
+
+default-values:
+  stack: vio-osmo-condo              # path under generated/
+  fly: false
+  autopilot: px4                     # px4 | ardupilot
+  vehicle: Drone1
+  route_b64: ""                      # a declared route; empty = corridor mission
+  fly_distance_m: "8"
+  fly_altitude_m: "3.0"
+  fly_speed_ms: "1.0"
+  record_sec: "300"                  # a cap: the recorder stops when the pilot is done
+  est_topic: /ov_msckf/odomimu
+  gates_json: '{"ate_trans_m.rmse": {"max": 1.0}}'
+  max_fall_ms: "0.5"
+  viz: false                         # tested as a string: --set viz=false arrives as "false"
+  viz_hold_sec: "0"                  # with viz, how long the run may stay up for a viewer after the
+                                     # bag closes; 0 (default) never: watching must not delay a campaign
+  viz_idle_sec: "60"                 # ...and it is released after this long with nobody watching
+  # Images: none named here. images/catalog.yaml pins them, and
+  # osmo/campaign.py passes the channel's set on every submit, checked against
+  # what the GPU node holds. By hand: `osmo/campaign.py images` prints the
+  # --set-string to use. Empty is deliberate -- a submit without them is
+  # refused, rather than flying whatever an old default named.
+  runtime_host_image: ""
+  bridge_image: ""
+  vio_estimator_image: ""
+  px4_image: ""
+  ardupilot_image: ""
+  sim_real_eval_image: ""

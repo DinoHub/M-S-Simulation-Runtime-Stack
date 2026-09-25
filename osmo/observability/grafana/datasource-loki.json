@@ -1,0 +1,10 @@
+{
+  "uid": "tevv-loki",
+  "name": "TEVV logs (Loki)",
+  "type": "loki",
+  "access": "proxy",
+  "url": "http://${LOKI_ADDR}",
+  "jsonData": {
+    "maxLines": 5000
+  }
+}

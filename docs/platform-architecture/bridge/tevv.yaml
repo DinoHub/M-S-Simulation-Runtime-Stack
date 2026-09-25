@@ -1,0 +1,176 @@
+# copied from TEVV-Airsim-ROS2-Bridge@2007b6c (tevv.yaml); edit there, not here
+# tevv.yaml — this repository's component contract for the Autonomy TEVV platform.
+#
+# One file per component repo (platform spec 2026-07-10 §5.1 layer 2). The
+# platform's scenario compiler (tevv-compile) reads it to pin the image, wire
+# provides/requires against the other components in a suite (interface + QoS
+# check: a mismatch is a compile error, not a dead sim run), size the task, and
+# know which tests are CI-only (`unit_tests`, never a registry verdict) versus
+# orchestrator-run (`l0_tests`, `certification` — DO produce registry rows).
+#
+# STATUS: the platform's tevv.schema.json (doc-set plan Task 3) is not written
+# yet. This file follows the shape given in the spec's §5.1 / §6.2 examples so it
+# can be the first real instance the schema is validated against. Field names
+# marked (draft) are this repo's proposal where the spec is silent.
+#
+# The `provides` block is derived from src/airsim_ros2_bridge/config/topic_contract.yaml,
+# which stays the AUTHORITATIVE topic list (asserted live by
+# test/test_topic_contract.py). Keep the two in step in the same PR.
+
+schema_version: 0.1-draft
+
+component: airsim-ros2-bridge
+type: sim-adapter-bridge            # (draft) part of the `sim: cosys-airsim-ue5` platform profile,
+                                    # not a stack-under-test component. See docs/OSMO.md.
+repo: https://github.com/DinoHub/TEVV-Airsim-ROS2-Bridge
+
+image:
+  repo: ghcr.io/dinohub/tevv-airsim-ros2-bridge
+  dockerfile: docker/Dockerfile
+  # tevv-compile pins this to a Harbor digest at compile time; the tag is a
+  # human hint only (spec §5.2 step 2).
+  tag: humble
+
+launch:
+  # Default container CMD. Orchestrated runs pass topic_prefix:={vehicle}/ so the
+  # graph carries the /<vehicle>/... names the platform contract expects (the
+  # image default is BARE topics for single-drone dev use).
+  entrypoint: ["ros2", "launch", "airsim_ros2_bridge", "single_vehicle.launch.py"]
+  args:
+    vehicle_name: "{{ vehicle }}"
+    host_ip: "{{ sim_host }}"           # AirSim RPC endpoint (AirLib TCP 41451)
+    host_port: 41451
+    topic_prefix: "{vehicle}/"
+    use_sim_time: true
+  env:
+    RCUTILS_LOGGING_USE_STDOUT: "1"     # spec §9.3: stdout only, no log files in pods
+    RCUTILS_COLORIZED_OUTPUT: "0"
+    AIRSIM_DIAL_WAIT_SEC: "300"         # entrypoint TCP dial-wait on the sim RPC port;
+                                        # exit 42 (platform fault) on timeout
+    TRANSPORT: rpc                      # shm requires sim + bridge in ONE task (docs/OSMO.md)
+
+# Platform axes this component participates in (spec §5.4). It is the ROS 2 face
+# of the sim profile and the ROS-side half of the ros2-mavros middleware profile.
+platform_axes:
+  sim: [cosys-airsim-ue5]
+  middleware: [ros2-mavros]
+  comms: [fastdds-ds, zenoh-bridge]   # zenoh here = zenoh-bridge-ros2dds gateway over a
+                                      # Cyclone graph, NOT rmw_zenoh (spec §16 defers rmw_zenoh
+                                      # to component owners). See docs/integration/README.md.
+
+# Contract time base (spec §5.4): sim time is authoritative. The bridge publishes
+# /clock from the AirSim sim clock and stamps every tick-derived message with it.
+time_base:
+  publishes_clock: true               # coordination node, or first vehicle node
+  use_sim_time: true
+  requires_lockstep: true             # settings variants ship LockStep: true (px4, ardupilot)
+
+requires:
+  - kind: rpc
+    name: airsim-rpc
+    endpoint: "tcp://{{ sim_host }}:41451"
+    notes: Cosys-AirSim RPC server (AirLib). Reconnect = launch respawn (respawn_delay 5 s).
+  - kind: topic
+    name: /run_state
+    type: airsim_interfaces/msg/RunState
+    optional: true
+    notes: published by the scenario controller (M-S-Simulation-Runtime-Stack); the bridge
+      only defines the message type.
+
+# QoS classes map 1:1 to topic_contract.yaml:
+#   sensor  = best_effort / volatile / keep_last
+#   state   = reliable / volatile / keep_last(10)
+#   latched = reliable / transient_local / keep_last(1)
+provides:
+  global_topics:
+    - { name: /clock,             type: rosgraph_msgs/msg/Clock,  qos: state,   rate_hz: 50 }
+    - { name: /tf,                type: tf2_msgs/msg/TFMessage,   qos: state }
+    - { name: /tf_static,         type: tf2_msgs/msg/TFMessage,   qos: latched }
+    - { name: /origin_geo_point,  type: airsim_interfaces/msg/GPSYaw, qos: state }
+  vehicle_topics:                     # prefixed /<vehicle>/ when topic_prefix={vehicle}/
+    - { name: ground_truth/odom,  type: nav_msgs/msg/Odometry,        qos: state, rate_hz: 50,
+        frame_id: "<v>/odom", child_frame_id: "<v>/base_link",
+        notes: platform contract topic; the odom->base_link TF is built from this message }
+    - { name: collision,          type: airsim_interfaces/msg/CollisionInfo, qos: latched,
+        notes: platform contract topic; publish-on-change + one initial sample }
+    - { name: pose,               type: geometry_msgs/msg/PoseStamped, qos: state }
+    - { name: global_gps,         type: sensor_msgs/msg/NavSatFix,     qos: state }
+    - { name: environment,        type: airsim_interfaces/msg/Environment, qos: state }
+    - { name: "<imu>",            type: sensor_msgs/msg/Imu,           qos: sensor }
+    - { name: "<magnetometer>",   type: sensor_msgs/msg/MagneticField, qos: sensor }
+    - { name: "<barometer>",      type: airsim_interfaces/msg/Altimeter, qos: sensor }
+    - { name: "<distance>",       type: sensor_msgs/msg/Range,         qos: sensor }
+    - { name: "<lidar>/points",   type: sensor_msgs/msg/PointCloud2,   qos: sensor }
+    - { name: "gpulidar/points<sensor>", type: sensor_msgs/msg/PointCloud2, qos: sensor }
+    - { name: lidar/points,       type: sensor_msgs/msg/PointCloud2,   qos: sensor,
+        notes: canonical alias of the first enabled lidar (lidar_topic_suffix=auto) }
+    - { name: "<camera>_<ImageType>/image",       type: sensor_msgs/msg/Image,      qos: sensor }
+    - { name: "<camera>_<ImageType>/camera_info", type: sensor_msgs/msg/CameraInfo, qos: sensor }
+    - { name: registered_point_cloud, type: sensor_msgs/msg/PointCloud2, qos: sensor,
+        optional: true, notes: enable_local_obs (default on under make) }
+    - { name: /diagnostics,       type: diagnostic_msgs/msg/DiagnosticArray, qos: latched,
+        notes: per-stream rate/latency/stall health }
+  tf:
+    - { parent: map,          child: "<v>/odom",      type: dynamic, owner: localization_node,
+        gated_by: localization_source=sim }
+    - { parent: "<v>/odom",   child: "<v>/base_link", type: dynamic, owner: vehicle node,
+        gated_by: suppress_bridge_odom_tf=false }
+    - { parent: "<v>/base_link", child: "<v>/<sensor>_link", type: static }
+  services:
+    - { name: takeoff, type: airsim_interfaces/srv/Takeoff }
+    - { name: land,    type: airsim_interfaces/srv/Land }
+    - { name: gps_waypoint, type: airsim_interfaces/srv/GpsWaypoint }
+    - { name: enable_api_control, type: airsim_interfaces/srv/EnableAPIControl }
+
+resources:
+  # Per bridge process, one vehicle, RPC transport, lidar 10 Hz. Cameras over RPC
+  # add ~1 CPU per 30 Hz stream. No GPU (the nvenc decoder addon is opt-in and
+  # not part of this profile).
+  cpu: "2"
+  memory: "3Gi"
+  ephemeral-storage: "4Gi"          # spec §7: explicit on every run pod
+  gpu: 0
+  platform: cpu
+
+# CI-only. Never a registry verdict; `verifies:` is illegal here (spec 2026-08-18 §6.2).
+unit_tests:
+  - name: colcon-test
+    command: ["colcon", "test", "--packages-select", "airsim_ros2_bridge", "airsim_interfaces",
+              "--event-handlers", "console_direct+"]
+    timeout_sec: 900
+    resources: { cpu: "4", memory: "8Gi", ephemeral-storage: "20Gi" }
+    artifacts: ["build/**/test_results/**/*.xml"]
+    required: true
+  - name: tf-frames-drift-guard
+    command: ["python3", "-m", "pytest", "-q", "src/airsim_ros2_bridge/test/test_tf_frames.py",
+              "src/airsim_ros2_bridge/test/test_topic_naming.py"]
+    timeout_sec: 300
+    required: true
+  - name: dep-surface-core-only
+    command: ["bash", "-c",
+      "! ldd install/airsim_ros2_bridge/lib/airsim_ros2_bridge/multirotor_node | grep -E 'iceoryx|avcodec|pcl_filters'"]
+    timeout_sec: 60
+    required: true
+
+# Orchestrator-run, live sim. This is the sim profile's certification suite
+# (spec §5.4 "platform certification suite"): any new sim/autopilot/comms
+# combination must pass it before an omega.yaml may reference it.
+certification:                        # (draft) name; spec has no schema for this yet
+  - name: bridge-contract
+    command: ["python3", "/opt/airsim/test/test_topic_contract.py",
+              "--vehicle", "{{ vehicle }}", "--check-stamps", "--stamp-window", "0.5"]
+    timeout_sec: 120
+  - name: bridge-validate
+    # test_tf_tree + test_sensor_fidelity merged into one mns.bridge.validation.v1 report
+    command: ["bash", "-lc",
+      "python3 /opt/airsim/test/test_tf_tree.py --report /out/tf.json && \
+       python3 /opt/airsim/test/test_sensor_fidelity.py --report /out/sensors.json && \
+       python3 /opt/airsim/test/merge_validation.py --out /out/validation.json /out/tf.json /out/sensors.json"]
+    timeout_sec: 300
+    artifacts: ["/out/validation.json"]
+
+l0_tests: []                          # no replay datasets yet; candidates: bag-replay TF/contract checks
+
+# Sim-backend faults this profile can honour (spec §6 `fault_capabilities`).
+# Executed by the platform fault-injector over AirSim RPC, not by the bridge.
+fault_capabilities: []

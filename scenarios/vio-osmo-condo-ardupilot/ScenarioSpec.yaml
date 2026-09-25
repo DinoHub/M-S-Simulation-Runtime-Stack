@@ -1,0 +1,103 @@
+schema: mns.scenario.v1
+id: vio-osmo-condo-ardupilot
+name: Stereo VIO over Condo, ArduPilot
+stack_name: vio-osmo-condo-ardupilot
+
+# scenarios/vio-osmo-condo with one block changed: the flight controller.
+#
+# The same level, the same rig, the same frozen calibration, the same route.
+# What differs is the autopilot, and the point of the pair is that the only
+# thing that differs is the autopilot: two runs of one estimator over one
+# world, so a difference in the result is a difference in the flight
+# controller rather than in anything else.
+#
+# ArduPilot is not PX4 with another name. Its SITL serves MAVLink over TCP
+# 5760 where PX4's mavlink-router serves UDP; AirSim reaches it over the
+# ArduPilot connector's UDP pair (9003 out, 9002 in) rather than PX4's TCP
+# 4560 HIL link; and the pilot arms and flies it through GUIDED rather than
+# OFFBOARD. All of that is the generator's and the pilot's to know -- the
+# spec only names the profile.
+
+environment:
+  id: condo-level
+  version: 1.0.1
+  artifact_digest: sha256:f41caf8f80fa0814e724fbfa1e94c89f7576fb3f1d4054e259e07144cfbffbb9
+
+runtime:
+  profile: airsim_unreal_ardupilot_docker
+  features:
+    sim_real_eval: true
+    ros2_bridge: true
+    qgroundcontrol: false
+    # Required, not optional. The flight goes through MAVROS inside the bridge
+    # container, because a generated stack's flight controller streams to its
+    # own loopback and publishes no host port. With this false the bridge starts
+    # without MAVROS and the pilot waits out its timeout on a flight controller
+    # that was never connected.
+    mavros: true
+
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  ros_domain_id: 1
+  start:
+    x: 0
+    y: -20
+    z: -2.0
+    yaw: 0
+  # No connection block. The PX4 spec pins mavros_udp_port because that
+  # image's mavlink-router has two UDP servers and the generator picks the
+  # wrong one; ArduPilot's SITL serves MAVLink over TCP 5760 and the
+  # generator's default (tcp://<autopilot host>:5760) is already right.
+  cameras:
+    front:
+      position:
+        x: 0.15
+        y: 0
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+    front_right:
+      position:
+        x: 0.15
+        y: 0.12
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+
+extensions:
+  mns.vio_estimator:
+    enabled: true
+    kind: openvins
+    # vio-reference's frozen calibration, copied verbatim beside this spec.
+    # Stereo: two cameras in the kalibr chain, the right one on the bridge's
+    # second-camera topic. Enabling this block makes the generator rewrite the
+    # bridge -- ENABLE_VIO false, AUTO_DISCOVER_CAMERAS false,
+    # DISABLE_RPC_AUX_SENSORS false -- so the estimator gets the 200 Hz IMU and
+    # images over RPC rather than shared memory. Read the resulting topic names
+    # out of the generated config/topic_names.yaml; do not assume them.
+    config_dir: ./openvins
+    odom_topic: /ov_msckf/odomimu
+    launch_args:
+      use_stereo: "true"
+      max_cameras: "2"

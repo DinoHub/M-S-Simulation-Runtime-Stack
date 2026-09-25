@@ -38,4 +38,9 @@ generated/
 # calibration are one committed unit, because a campaign that ships half of
 # itself cannot be copied and run.
 !/scenarios/vio-reference/
+# Same reasoning: the spec is meaningless without the calibration beside it.
+!/scenarios/vio-osmo-condo/
+!/scenarios/vio-osmo-condo-ardupilot/
+!/scenarios/vio-osmo-xfs/
+!/scenarios/vio-osmo-xfs-ardupilot/
 !/scenarios/vio-reference/**

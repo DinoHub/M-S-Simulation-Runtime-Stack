@@ -1,0 +1,225 @@
+# copied from TEVV-Airsim-ROS2-Bridge@2007b6c (osmo/bridge-certify.workflow.yaml); edit there, not here
+# OSMO workflow: certify the AirSim ROS 2 bridge against the platform contract.
+#
+# One gang-scheduled group = one TEVV run (platform spec 2026-07-13 §7). Tasks:
+#   discovery-server  FastDDS Discovery Server -- the `comms: fastdds-ds`
+#                     rendezvous. DDS multicast does not survive pod networking,
+#                     so every participant dials {{host:discovery-server}}.
+#   sim               Cosys-AirSim UE5 headless (GPU). Image/settings come from
+#                     M-S-Simulation-Runtime-Stack; this file only names the
+#                     interface: RPC on 41451, settings.json injected via files:.
+#   bridge            this repo's image. Dial-waits on the sim RPC port, then
+#                     launches single_vehicle with topic_prefix={vehicle}/.
+#   certify (lead)    runs the contract + validation suites against the live
+#                     graph. Its exit code IS the group outcome.
+#
+# Exit-code contract (spec 2026-07-13 §8, rendered by tevv-compile in the real
+# platform; hand-written here so the file is submittable standalone):
+#   0   PASSED         all checks green
+#   1   FAILED         contract/validation violation -- a real verdict, never retried
+#   42  INFRA_FAILED   readiness timeout (sim never answered RPC) -> reschedule
+#   137 INFRA_FAILED   OOM/SIGKILL -> reschedule (OSMO default)
+#   3006               preempted by KAI -> reschedule (OSMO default)
+# ignoreNonleadStatus: false -- any task death fails the whole gang; a fresh
+# sim or bridge rejoining a half-run graph would corrupt it silently.
+#
+# Submit:
+#   osmo workflow submit osmo/bridge-certify.workflow.yaml \
+#     --set vehicle=Drone1 --set sim_image=<harbor>/airsim-ue5-safticity@sha256:... \
+#     --label suite=bridge-certify --label tier=L1 --priority HIGH
+# Dry run (schema only): add --dry-run.
+#
+# NOT covered here (deliberately): PX4/ArduPilot SITL + MAVROS tasks (add them
+# as more tasks in the same group, addressing the sim by {{host:sim}}), the
+# iceoryx2 SHM transport (needs sim + bridge in ONE task -- see docs/OSMO.md),
+# registry writes and PR feedback (the run-conductor's job, not the bridge's).
+
+workflow:
+  name: bridge-certify-{{ vehicle | lower }}
+  labels:
+    component: airsim-ros2-bridge
+    suite: bridge-certify
+    tier: L1
+  timeout:
+    exec_timeout: 30m       # wall-clock phase budget only; sim time is authoritative inside
+    queue_timeout: 2h
+  resources:
+    default:
+      cpu: 1
+      memory: 1Gi
+      storage: 1Gi
+    bridge:
+      cpu: 2
+      memory: 3Gi
+      storage: 4Gi
+      platform: "{{ cpu_platform }}"
+    sim:
+      cpu: 8
+      memory: 32Gi
+      storage: 40Gi
+      gpu: 1
+      platform: "{{ gpu_platform }}"
+
+  groups:
+  - name: run
+    barrier: true                 # default; all images pulled before any task starts
+    ignoreNonleadStatus: false    # gang integrity: any death fails the group
+    tasks:
+
+    - name: discovery-server
+      image: "{{ ros_base_image }}"
+      resource: default
+      command: ["/bin/bash", "/tmp/ds.sh"]
+      files:
+      - path: /tmp/ds.sh
+        contents: |
+          #!/bin/bash
+          set -e
+          source /opt/ros/humble/setup.bash
+          exec fastdds discovery -i 0 -l 0.0.0.0 -p 11811
+
+    - name: sim
+      image: "{{ sim_image }}"
+      resource: sim
+      # Mirrors the runtime stack's compose command for its UE5 images
+      # (AIRSIM_HEADLESS=true -> -RenderOffScreen -NoSound -Unattended -NoSplash;
+      # never -NullRHI, it breaks AirSim cameras). AirSim reads settings.json once,
+      # at startup, from ~/Documents/AirSim/settings.json of the image user.
+      command: ["/bin/bash", "/tmp/sim.sh"]
+      environment:
+        AIRSIM_SETTINGS: /settings/settings.json
+        SIM_BINARY: "{{ sim_binary }}"
+        SIM_SETTINGS_PATH: "{{ sim_settings_path }}"
+      files:
+      - path: /settings/settings.json
+        contents: |
+          {{ airsim_settings_json | indent(10) }}
+      - path: /tmp/sim.sh
+        contents: |
+          #!/bin/bash
+          set -e
+          mkdir -p "$(dirname "$SIM_SETTINGS_PATH")"
+          cp "$AIRSIM_SETTINGS" "$SIM_SETTINGS_PATH"
+          echo "AirSim display mode: -RenderOffScreen (headless)"
+          exec "$SIM_BINARY" -RenderOffScreen -NoSound -Unattended -NoSplash -ResX=1280 -ResY=720
+      exitActions:
+        COMPLETE: "0"
+        RESCHEDULE: "42,137"
+
+    - name: bridge
+      image: "{{ bridge_image }}"
+      resource: bridge
+      # Image ENTRYPOINT (/entrypoint.sh) does the dial-wait and env->launch-arg
+      # injection; the CMD below is the launch itself.
+      command: ["/entrypoint.sh"]
+      args:
+      - ros2
+      - launch
+      - airsim_ros2_bridge
+      - single_vehicle.launch.py
+      - "vehicle_name:={{ vehicle }}"
+      - "topic_prefix:={vehicle}/"
+      - "use_sim_time:=true"
+      - "enable_local_obs:=false"
+      environment:
+        AIRSIM_HOST_IP: "{{host:sim}}"
+        AIRSIM_HOST_PORT: "41451"
+        AIRSIM_DIAL_WAIT_SEC: "600"        # UE5 cold start; exit 42 after this
+        TRANSPORT: rpc                     # SHM needs same-task co-location (docs/OSMO.md)
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        ROS_DISCOVERY_SERVER: "{{host:discovery-server}}:11811"
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        RCUTILS_COLORIZED_OUTPUT: "0"
+      exitActions:
+        COMPLETE: "0"
+        RESCHEDULE: "42,137"
+
+    - name: certify
+      lead: true
+      image: "{{ bridge_image }}"
+      resource: default
+      command: ["/bin/bash", "/tmp/certify.sh"]
+      environment:
+        RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+        # SUPER_CLIENT: tooling must see the whole discovery database, a plain
+        # client only sees what it matches. Same XML as the Makefile ships.
+        FASTRTPS_DEFAULT_PROFILES_FILE: /cfg/fastdds-discovery-superclient.xml
+        ROS_DISCOVERY_SERVER_ADDR: "{{host:discovery-server}}"
+        ROS_DISCOVERY_SERVER_PORT: "11811"
+        ROS_DOMAIN_ID: "0"
+        RCUTILS_LOGGING_USE_STDOUT: "1"
+        VEHICLE: "{{ vehicle }}"
+        # Sim-time freshness window for the contract stamp check.
+        STAMP_WINDOW: "0.5"
+        # Bridge readiness budget before the suites start. Independent of the
+        # bridge's own dial-wait: this waits for /clock + ground_truth/odom to exist.
+        READY_WAIT_SEC: "720"
+      files:
+      - path: /tmp/certify.sh
+        contents: |
+          #!/bin/bash
+          # Lead task. Exit code = run verdict (see header).
+          set -uo pipefail
+          source /opt/ros/humble/setup.bash
+          source /ws/install/setup.bash
+          out="{{output}}"; mkdir -p "$out"
+
+          # --- semantic go-barrier: contract topics present -----------------
+          deadline=$(( $(date +%s) + READY_WAIT_SEC ))
+          until ros2 topic list 2>/dev/null | grep -qx "/${VEHICLE}/ground_truth/odom" \
+                && ros2 topic list 2>/dev/null | grep -qx "/clock"; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "READINESS TIMEOUT: /${VEHICLE}/ground_truth/odom or /clock never appeared" >&2
+              ros2 topic list 2>/dev/null | tee "$out/topics_at_timeout.txt" >&2
+              exit 42
+            fi
+            sleep 5
+          done
+          echo "contract topics present; running suites"
+
+          # --- suites (any failure -> 1, a real verdict) -----------------------
+          rc=0
+          python3 /opt/airsim/test/test_topic_contract.py --vehicle "$VEHICLE" \
+              --check-stamps --stamp-window "$STAMP_WINDOW" | tee "$out/contract.log" || rc=1
+          python3 /opt/airsim/test/test_tf_tree.py --report "$out/tf.json" \
+              | tee "$out/tf.log" || rc=1
+          python3 /opt/airsim/test/test_sensor_fidelity.py --report "$out/sensors.json" \
+              | tee "$out/sensors.log" || rc=1
+          python3 /opt/airsim/test/merge_validation.py --out "$out/validation.json" \
+              "$out/tf.json" "$out/sensors.json" || true
+          echo "certify rc=$rc"
+          exit $rc
+      exitActions:
+        COMPLETE: "0"
+        FAIL: "1"
+        RESCHEDULE: "42,137"
+
+default-values:
+  vehicle: Drone1
+  bridge_image: ghcr.io/dinohub/tevv-airsim-ros2-bridge:humble
+  sim_image: dhdevspace/auto_mns:condo-latest
+  sim_binary: /app/Condo/Condo.sh                 # xfs images: their own <Project>.sh
+  sim_settings_path: /home/airsim_user/Documents/AirSim/settings.json
+  ros_base_image: osrf/ros:humble-ros-base
+  cpu_platform: cpu
+  gpu_platform: gpu-sim
+  # Minimal single-drone settings; the real platform injects the compiled
+  # settings.json from tevv-compile's Jinja partials.
+  airsim_settings_json: |
+    {
+      "SettingsVersion": 2.0,
+      "SimMode": "Multirotor",
+      "ClockType": "ScalableClock",
+      "ApiServerPort": 41451,
+      "Vehicles": {
+        "Drone1": {
+          "VehicleType": "SimpleFlight",
+          "LockStep": true,
+          "Sensors": {
+            "imu": { "SensorType": 2, "Enabled": true },
+            "LidarSensor1": { "SensorType": 6, "Enabled": true, "NumberOfChannels": 16 }
+          }
+        }
+      }
+    }

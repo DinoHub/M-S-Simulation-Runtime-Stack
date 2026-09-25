@@ -1,0 +1,38 @@
+graph TD
+  GH["GitHub / on-prem SCM<br/>push, pull request"] -->|"webhook, HMAC-verified"| JC
+
+  subgraph CTRL["Controller node — kube-master"]
+    JC["Jenkins controller<br/>multibranch + JCasC + shared library<br/>milestone() supersedes older builds"]
+  end
+
+  subgraph AG["Jenkins agent pods — cpu nodes, KAI queue ci"]
+    B0["stage resolve<br/>tevv-compile --emit-ci → ci.json"]
+    B1["stage build<br/>Kaniko → digest<br/>--cache-repo → registry"]
+    B2["stage unit<br/>from ci.json unit[] → JUnit XML"]
+    B3["stage submit<br/>tevv submit"]
+  end
+
+  JC --> B0 --> B1 --> B2 --> B3
+  B1 -->|"push by digest"| REG
+  B3 -->|"cancel superseded runs via registry query"| API
+  B3 -->|"POST one workflow per run"| API["OSMO API"]
+  B3 -->|"INSERT PENDING rows + manifest URIs"| PG
+  B3 -.->|"pipeline ends here"| DONE(["build green = submitted,<br/>not passed"])
+
+  REG["Artifactory<br/>pull-through cache + hosted repos<br/>age policy + components veto"]
+
+  subgraph CC["Compute cluster"]
+    API --> ENG["OSMO workflow engine"] --> KAI["KAI scheduler<br/>gang-schedule, preempt LOW"]
+    KAI --> RP["run plane — one group per run<br/>conductor lead + sim + SITL + comms + harness"]
+  end
+
+  REG -->|"digest-pinned LAN pulls"| RP
+  RP --> PG["Postgres run registry (NAS)<br/>system of record"]
+  RP --> MINIO["MinIO S3 (NAS)<br/>MCAP, eval, manifests"]
+  RP --> LOKI["Loki + Alloy"]
+  RP --> PROM["Prometheus"]
+  RP --> PRFB["PR commit status + verdict comment<br/>posted by conductor, janitor backstop"]
+  PG --> GRAF["Grafana"]
+  LOKI --> GRAF
+  PROM --> GRAF
+  MINIO --> FOX["Foxglove / Lichtblick"]
