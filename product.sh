@@ -43,7 +43,7 @@ _preset_images="$(env | grep -E '^(MNS|DASHBOARD)_[A-Z0-9_]*_IMAGE=' || true)"
 # shellcheck disable=SC1090
 source "$CHANNEL_ENV"
 while IFS= read -r _kv; do
-  [ -n "$_kv" ] && export "$_kv"
+  [ -n "$_kv" ] && export "${_kv%%=*}=${_kv#*=}"
 done <<< "$_preset_images"
 unset _preset_images _kv
 # The generated env names the channel's image_sets entry (MNS_IMAGE_SET);
