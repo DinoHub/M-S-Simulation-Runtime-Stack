@@ -22,6 +22,16 @@ environment:
   id: xfs-level
   version: 1.0.1
   artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+# Lumen re-runs its surface-cache card captures inside every fisheye capture
+# view at the default budget (300 per frame): ~206 ms of each ~210 ms capture
+# on the tiled path. 16 keeps the look (parked frames identical) and cuts Lumen
+# 738 -> 44 ms/frame. -ini:Engine:[SystemSettings], so it survives scalability.
+# docs/fisheye-rig-performance.md
+conditions:
+  render:
+    system_settings:
+      r.LumenScene.SurfaceCache.CardCapturesPerFrame: 16
+
 runtime:
   profile: airsim_unreal_ardupilot_docker
   features:

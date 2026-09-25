@@ -40,8 +40,12 @@ variants:
   name: '4x 190-deg fisheye, per-camera tiled render (AirLib default: round-robin,
     1 camera per frame)'
 - id: shared
-  name: 4x 190-deg fisheye, one shared cubemap (implied 10 Hz synchronized burst)
+  name: 4x 190-deg fisheye, one shared cubemap, 30 Hz synchronized burst
   overrides:
+    conditions:
+      render:
+        system_settings:
+          r.Fisheye.SyncCaptureFPS: 30
     vehicles:
     - id: drone_1
       name: Drone1
@@ -66,7 +70,7 @@ variants:
             fov_degrees: 190
             fisheye_shared_cubemap: true
             fisheye_shared_cubemap_group: surround
-            fisheye_shared_cubemap_offset_z: -0.15
+            fisheye_shared_cubemap_offset_z: -0.35
         fisheye_right:
           position:
             x: 0
