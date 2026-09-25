@@ -40,6 +40,7 @@ scenario to a recorded rosbag. Stop with `make dashboard-down`.
 | connect my own autonomy stack to a running simulation | [User Guide: connecting your autonomy stack](docs/USER_GUIDE.md#connecting-your-autonomy-stack) |
 | know which ROS 2 topics a stack will publish | [What will this stack publish?](docs/topics.md) |
 | run stacks from a terminal or a script, without the browser | [The product shell from a terminal](docs/cli.md) |
+| choose a fisheye rig (tiled or shared cubemap) and set it up for VIO | [Fisheye rig performance](docs/fisheye-rig-performance.md) |
 | fly a scored run matrix to characterise an estimator | [Campaigns](docs/campaigns.md), then [the reference campaign](scenarios/vio-reference/README.md) |
 | fly the same campaign on a GPU cluster (NVIDIA OSMO) | [Campaigns: OSMO](docs/campaigns.md#the-same-campaign-on-a-cluster-osmo), then the [OSMO runbook](docs/osmo-runbook.md) |
 | install on a machine with no network | [Offline setup](docs/offline-setup.md) |
