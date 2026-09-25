@@ -244,14 +244,14 @@ not from the published D.
    (fixes #201):** apply exposure before HDR bloom and veiling glare.
 6. **Bridge SHM CameraInfo:** publish from `simGetFisheyeCameraInfo`, not from settings.json. See
    "Lens model and CameraInfo".
-8. **Runtime host (TEVV-Airsim), [PR #204](https://github.com/DinoHub/TEVV-Airsim/pull/204)
-   (stacked on #203):** sRGB display curve in ISP mode (legacy curve as `TonemapMode: 3`) and a
-   bloom threshold of 4.0.
 7. **Runtime host (TEVV-Airsim), [PR #203](https://github.com/DinoHub/TEVV-Airsim/pull/203)
    (stacked on #202):** lens-rain fixes. Beads are no longer sliced across the head, drawn on
    the masked rim, or clipped to white. Tails are no longer cut at the drop grid, drops no
    longer teleport, and the clock is world seconds instead of a per-dispatch counter. The rain
    rays also use the lens the resolve map was baked with.
+8. **Runtime host (TEVV-Airsim), [PR #204](https://github.com/DinoHub/TEVV-Airsim/pull/204)
+   (stacked on #203):** sRGB display curve in ISP mode (legacy curve as `TonemapMode: 3`) and a
+   bloom threshold of 4.0.
 
 ## Bugs found on the way
 
