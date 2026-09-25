@@ -133,6 +133,25 @@ def main():
     print("bridge publishing; recording %.0fs into %s"
           % (record_sec, bag_dir))
 
+    # Every other camera the bridge serves, by its CameraInfo: one small
+    # message per delivered frame, so the bag carries each camera's real
+    # rate without the images. The two above are the estimator's; a rig
+    # added for render load (a fisheye surround, say) shows up here with
+    # no change to this file. The bridge advertises all its topics at once,
+    # so one look shortly after readiness finds them.
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.2)
+    for topic, types in sorted(node.get_topic_names_and_types()):
+        if topic in counts or "sensor_msgs/msg/CameraInfo" not in types:
+            continue
+        writer.create_topic(rosbag2_py.TopicMetadata(
+            name=topic, type="sensor_msgs/msg/CameraInfo", serialization_format="cdr"))
+        counts[topic] = 0
+        node.create_subscription(CameraInfo, topic, make_writer(topic), qos_profile_sensor_data)
+        TOPICS.append((topic, CameraInfo, "sensor_msgs/msg/CameraInfo", qos_profile_sensor_data))
+        print("  also recording %s" % topic)
+
     start = time.time()
     while time.time() - start < record_sec:
         rclpy.spin_once(node, timeout_sec=0.2)
