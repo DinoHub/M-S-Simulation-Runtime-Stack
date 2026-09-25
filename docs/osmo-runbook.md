@@ -577,8 +577,7 @@ Editing rules that each cost a run to learn:
 
 ## Watching a run
 
-A pod has no screen and the v1 runtime host has no Pixel Streaming (see
-`docs/osmo-pixel-streaming.md`), so the view into a live run is the vehicle's
+A pod has no screen and the v1 runtime host has no Pixel Streaming, so the view into a live run is the vehicle's
 own: its cameras, TF, ground truth and the estimate, over Foxglove.
 
 ```bash

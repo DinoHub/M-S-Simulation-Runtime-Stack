@@ -3,7 +3,7 @@
 How this repository maps onto [NVIDIA OSMO](https://nvidia.github.io/OSMO/),
 what a generated stack would have to give up to run as an OSMO workflow, and
 what is already in place. Companion to the bridge's own
-[`docs/OSMO.md`](https://github.com/DinoHub/TEVV-Airsim-ROS2-Bridge/blob/feat/tevv-platform-contract/docs/OSMO.md),
+[`docs/OSMO.md`](https://github.com/DinoHub/TEVV-Airsim-ROS2-Bridge/blob/main/docs/OSMO.md),
 which covers the same ground from the ROS 2 side.
 
 Read `docs/how-it-fits-together.md` first if the phases and the generated-stack
