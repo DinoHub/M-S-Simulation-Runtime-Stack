@@ -436,7 +436,8 @@ def route_blob(campaign_file: Path, campaign: dict[str, Any]) -> str:
 
 
 def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
-           campaign_file: Path, images: dict[str, str], viz: bool = False) -> str:
+           campaign_file: Path, images: dict[str, str], viz: bool = False,
+           viz_hold_sec: int = 0) -> str:
     mission = campaign.get("mission") or {}
     inputs = (campaign.get("evaluation") or {}).get("inputs") or {}
     stack_rel = os.path.relpath(stack_dir.resolve(), WORKSPACE_HOST / "generated")
@@ -456,6 +457,9 @@ def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
     }
     strings = {
         "record_sec": str(int(mission.get("timeout_s", 300))),
+        # A viewer never holds a run open unless asked: the flight's end ends
+        # the run, and the next one in the queue starts.
+        "viz_hold_sec": str(int(viz_hold_sec)),
         "gates_json": json.dumps(run_gates),
         "route_b64": route_blob(campaign_file, campaign),
         # The workflow names no image of its own; each comes from the catalog.
@@ -1095,7 +1099,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 generate_stack(spec_file, stack_dir)
             rec.stack = str(stack_dir)
             viz = wants_viz(spec, args.viz)
-            wf = submit(stack_dir, campaign, run_gates, campaign_file, images, viz=viz)
+            wf = submit(stack_dir, campaign, run_gates, campaign_file, images, viz=viz,
+                        viz_hold_sec=args.viz_hold)
             rec.run_id = wf
             reg.submitted(root.name, key, attempt, wf, images=image_record, viz=viz, at=now())
             print(f"[campaign] {key}: submitted {wf}" + (" (live view on)" if viz else ""))
@@ -1143,9 +1148,11 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
     By default it puts a NodePort Service in front of the pod and exits; the
     Service dies with the pod. `--tunnel` instead holds a `kubectl
-    port-forward` to localhost until the run ends. The run stays up while
-    someone is connected (the recorder watches /viz/viewers), so connect
-    within a minute of the recording closing.
+    port-forward` to localhost until the run ends. The view lasts as long as
+    the flight: when the recording closes the run ends and the view with it,
+    whoever is connected -- a viewer never delays a campaign. A run submitted
+    with `--viz-hold SEC` instead stays up for a viewer after the recording,
+    up to SEC seconds and 60 s after the last one leaves.
     """
     wf = args.workflow
     selector = f"osmo.workflow_id={wf},osmo.task_name=foxglove"
@@ -1198,7 +1205,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
         return 0
 
     url = expose_nodeport(wf, pod, args.node_port)
-    print(f"[campaign] {wf}: open Foxglove at {url}", flush=True)
+    print(f"[campaign] {wf}: open Foxglove at {url}  (live until the recording ends; "
+          f"the recorded bag opens in Foxglove afterwards)", flush=True)
     print(f"[campaign] {wf}: from another machine: ssh -L 8765:{url.split('//')[1]} <this host>, "
           f"then ws://localhost:8765", flush=True)
     return 0
@@ -1401,6 +1409,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--viz", action=argparse.BooleanOptionalAction, default=None,
                    help="the live Foxglove task on (--viz) or off (--no-viz) for every run; "
                         "default: each run's runtime.features.foxglove_bridge, else off")
+    p.add_argument("--viz-hold", type=int, default=0, metavar="SEC",
+                   help="with --viz: keep a run up to SEC seconds after its recording ends while "
+                        "someone is watching (released 60 s after the last viewer leaves). "
+                        "Default 0: a viewer never delays the campaign")
     p.add_argument("--allow-image-drift", action="store_true",
                    help="fly even if a node's image is not the one the catalog pins "
                         "(each run.json records what flew)")

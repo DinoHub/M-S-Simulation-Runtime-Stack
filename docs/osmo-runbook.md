@@ -555,7 +555,7 @@ Python that can be read and tested on their own.
 | bridge | `bridge.sh` | resolves the discovery server to an IP (Fast DDS rejects names there); waits for the sim's RPC, or the topic remap is silently partial; MAVROS on PX4's router `MAVROS_UDP` 14555 (not `AirSim_Inbound` 14580) or ArduPilot's TCP 5760 |
 | vio | `vio.sh` | OpenVINS with the stack's generated config; publishes nothing until the vehicle moves |
 | pilot | `pilot.sh`, `fly_mission_mavros.py`, `announce_done.py` | waits for MAVROS and a still EKF height; flies the route; retries a refused arming once; always announces `/mission/done`. Exits 0 or 1 as COMPLETE so a failed flight cannot take the gang down |
-| recorder (lead) | `record.sh`, `record.py` | subscribes with named types (a plain DDS client's graph cannot resolve them); starts on ground truth, stops a few seconds after `/mission/done`; writes `mission.json`; with viz, holds the gang open after the bag closes |
+| recorder (lead) | `record.sh`, `record.py` | subscribes with named types (a plain DDS client's graph cannot resolve them); starts on ground truth, stops a few seconds after `/mission/done`; writes `mission.json`; with `--viz-hold`, holds the gang open for a viewer after the bag closes |
 | foxglove | `foxglove.sh` | a SUPER_CLIENT, so foxglove_bridge sees every topic; can never fail the run |
 | vio-eval | `flight_window.py` + sim-real-eval | cuts the flight out of the bag (resting height read where the estimator starts), then scores that |
 | spawn-eval | `spawn_check.py` | free fall, sinking after landing, or fell through and was put back |
@@ -619,14 +619,26 @@ the pod, so Kubernetes deletes it with the pod -- nothing to keep running,
 nothing to clean up. `--tunnel` is the fallback: a `kubectl port-forward` to
 localhost, held until the run ends.
 
-**How long it stays up.** Normally the gang ends a minute after touchdown,
-when the recorder (the lead) closes the bag. On a viz run the recorder then
-holds the gang for viewers: the foxglove task publishes `/viz/viewers` (TCP
-connections on its port, read from `/proc/net/tcp`, so it counts NodePort and
-tunnel clients alike), and the run is released once nobody has been connected
-for `viz_idle_sec` (60 s) or after `viz_hold_sec` (600 s) at most. Connect
-within a minute of the flight ending and it stays as long as you do. The
-evidence is final before the hold starts; only the verdict waits.
+**How long it stays up.** As long as the flight, and no longer. The gang ends
+when the recorder (the lead) closes the bag, a few seconds after the pilot
+announces the mission done, and the live view goes with it. A viewer never
+delays a campaign. To look around afterwards, open the run's
+`runs/<key>/bag/bag_0.mcap` in Foxglove.
+
+To keep a run up after its flight, for inspecting the final state in the
+simulator, submit it with `--viz-hold SEC`. The recorder then holds the gang
+while anyone is connected, and releases it:
+- 60 s (`viz_idle_sec`) after the last viewer leaves;
+- or after SEC seconds at most.
+
+The count of viewers comes from the foxglove task, which publishes
+`/viz/viewers`: TCP connections on its port, read from `/proc/net/tcp`, so it
+counts NodePort and tunnel clients alike.
+
+The hold was on by default (600 s) until 25 Sept 2026. It held XFS run 77
+open for as long as a viewer stayed connected, and the next run queued behind
+it. The evidence is final before any hold starts; only the verdict, and the
+queue behind it, wait.
 
 What makes it work, each learned the hard way:
 

@@ -336,7 +336,8 @@ default-values:
   gates_json: '{"ate_trans_m.rmse": {"max": 1.0}}'
   max_fall_ms: "0.5"
   viz: false                         # tested as a string: --set viz=false arrives as "false"
-  viz_hold_sec: "600"                # with viz, the most the run stays up after the bag closes
+  viz_hold_sec: "0"                  # with viz, how long the run may stay up for a viewer after the
+                                     # bag closes; 0 (default) never: watching must not delay a campaign
   viz_idle_sec: "60"                 # ...and it is released after this long with nobody watching
   # Images: none named here. images/catalog.yaml pins them, and
   # osmo/campaign.py passes the channel's set on every submit, checked against
