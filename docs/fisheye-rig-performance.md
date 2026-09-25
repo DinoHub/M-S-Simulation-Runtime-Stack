@@ -240,6 +240,11 @@ not from the published D.
    (fixes #201):** apply exposure before HDR bloom and veiling glare.
 6. **Bridge SHM CameraInfo:** publish from `simGetFisheyeCameraInfo`, not from settings.json. See
    "Lens model and CameraInfo".
+7. **Runtime host (TEVV-Airsim), [PR #203](https://github.com/DinoHub/TEVV-Airsim/pull/203)
+   (stacked on #202):** lens-rain fixes. Beads are no longer sliced across the head, drawn on
+   the masked rim, or clipped to white. Tails are no longer cut at the drop grid, drops no
+   longer teleport, and the clock is world seconds instead of a per-dispatch counter. The rain
+   rays also use the lens the resolve map was baked with.
 
 ## Bugs found on the way
 
