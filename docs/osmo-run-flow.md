@@ -194,8 +194,8 @@ its source (task, sidecar or control plane) and the workflow ID. Grafana's
 - lines per task;
 - any one task's output.
 
-See the runbook's "Logs" section for why this, and not `osmo workflow logs`,
-is the complete copy.
+[osmo-logs.md](osmo-logs.md) explains why this, and not `osmo workflow
+logs`, is the complete copy, and what it deliberately leaves out.
 
 ## Where to look
 

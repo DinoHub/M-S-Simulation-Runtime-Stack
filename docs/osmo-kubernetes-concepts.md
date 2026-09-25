@@ -188,7 +188,7 @@ deployment from the 6.3.1 chart (`osmo/setup-local-osmo.sh`).
 | `quick-start-envoy` | the gateway: NodePort 30080, mapped to host port 80, so `osmo login http://localhost` |
 | `osmo-worker`, `osmo-osmo-backend-listener` / `-worker`, `osmo-agent` | turn workflows into pods and track them |
 | `osmo-delayed-job-monitor` | timeouts and delayed transitions |
-| `osmo-logger`, `osmo-router` | task log streaming and routing |
+| `osmo-logger`, `osmo-router` | task log streaming and routing: what `osmo workflow logs` reads. It drops lines under load; the complete copy is Loki's, see [osmo-logs.md](osmo-logs.md) |
 | `osmo-ui` | the web UI behind the workflow "Overview" URL |
 | `postgres`, `redis` | state |
 | `localstack-s3` | object storage (a local S3) for task inputs and outputs |

@@ -1016,6 +1016,10 @@ controls:
 
 ## Logs: Loki and Alloy
 
+What they are for, what they deliberately do not do, and how to check them:
+[osmo-logs.md](osmo-logs.md). This section is how they are installed and
+set.
+
 Every task's output, and the OSMO control plane's, searchable by workflow for
 30 days. It is installed by the same `osmo/setup-local-osmo.sh observability`
 (`SKIP_LOGS=1` leaves it out). Open http://localhost:3000/d/tevv-run-logs and
