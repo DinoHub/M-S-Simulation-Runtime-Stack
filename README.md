@@ -41,6 +41,7 @@ scenario to a recorded rosbag. Stop with `make dashboard-down`.
 | know which ROS 2 topics a stack will publish | [What will this stack publish?](docs/topics.md) |
 | run stacks from a terminal or a script, without the browser | [The product shell from a terminal](docs/cli.md) |
 | fly a scored run matrix to characterise an estimator | [Campaigns](docs/campaigns.md), then [the reference campaign](scenarios/vio-reference/README.md) |
+| fly the same campaign on a GPU cluster (NVIDIA OSMO) | [Campaigns: OSMO](docs/campaigns.md#the-same-campaign-on-a-cluster-osmo), then the [OSMO runbook](docs/osmo-runbook.md) |
 | install on a machine with no network | [Offline setup](docs/offline-setup.md) |
 | fix something that went wrong | [User Guide: troubleshooting](docs/USER_GUIDE.md#9-troubleshooting) |
 
@@ -49,6 +50,8 @@ scenario to a recorded rosbag. Stop with `make dashboard-down`.
 | I want to... | Read |
 | --- | --- |
 | see which service does what, and which file each step leaves on disk | [How it fits together](docs/how-it-fits-together.md) |
+| see how OSMO and Kubernetes map onto this repo | [OSMO and Kubernetes for this repo](docs/osmo-kubernetes-concepts.md), [One run, end to end](docs/osmo-run-flow.md) |
+| read the TEVV platform architecture this stack maps onto | [docs/platform-architecture/](docs/platform-architecture/README.md) |
 | know where runs, bags and packs are stored | [User Guide: where everything is stored](docs/USER_GUIDE.md#7-where-everything-is-stored) |
 
 **Maintain it**
