@@ -32,6 +32,11 @@ runtime:
     sim_real_eval: true
     ros2_bridge: true
     qgroundcontrol: false
+    # The live Foxglove task on every run: `osmo/campaign.py watch <workflow>`
+    # gives it an address. It costs 1 CPU / 1 Gi beside the flight and
+    # subscribes to nothing until a viewer asks. `--no-viz` turns it off for a
+    # measurement run.
+    foxglove_bridge: true
     # Required, not optional. The flight goes through MAVROS inside the bridge
     # container, because a generated stack's flight controller streams to its
     # own loopback and publishes no host port. With this false the bridge starts

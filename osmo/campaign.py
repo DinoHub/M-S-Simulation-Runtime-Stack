@@ -1073,9 +1073,9 @@ def wants_viz(spec: dict[str, Any], flag: bool | None) -> bool:
     The ScenarioSpec's own switch, `runtime.features.foxglove_bridge`, so a
     campaign can turn it on for every run or, through a variant's overrides,
     for some; `--viz` / `--no-viz` override it for one invocation. Absent, it
-    is off under OSMO -- the compose generator defaults it on, but here it adds
-    a pod and holds the gang for viewers, which a scored matrix should not pay
-    for by default."""
+    is off under OSMO (the compose generator defaults it on): it adds a pod,
+    1 CPU / 1 Gi beside the flight. It holds the gang for a viewer only when
+    --viz-hold asks it to. The committed OSMO scenarios turn it on."""
     if flag is not None:
         return flag
     runtime = spec.get("runtime")
