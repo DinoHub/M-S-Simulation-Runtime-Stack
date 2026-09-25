@@ -196,22 +196,22 @@
       "kind": "asset",
       "id": "mns_vehicle_models",
       "display_name": "MnS Vehicle Models",
-      "version": "1.0.3",
-      "asset_name": "mns_vehicle_models-1.0.3.mnsassetpack",
-      "size_bytes": 409690,
-      "sha256": "620f3cedb43088c3740fde95e627d33a25a4a261f02c4b18fa47beaa8b1e2cd6",
-      "artifact_digest": "sha256:cf805949f2ede5e1c35e9c13d74bdc0b43d7677cf6ddad368f044ad83a9f4271",
-      "payload_digest": "sha256:66c4172db5845f82867ab4d72d0898f6d8e88e717ae06a6c432454cb610b28d8",
-      "source_manifest_digest": "sha256:3143f0d9e554b723640ed5d82ad7993379df1eb4eeda9d4737713b1be39e80fe",
+      "version": "1.0.4",
+      "asset_name": "mns_vehicle_models-1.0.4.mnsassetpack",
+      "size_bytes": 1084092,
+      "sha256": "26305c6adc4e9a572703178a9a26cec970fc67fe06c82e34fe24c9c3a0de426d",
+      "artifact_digest": "sha256:317a6dd71df24e58b8e34fd0ea2d46a3f24a9eb3e1312eacf5eac621a1512f63",
+      "payload_digest": "sha256:acee2153737cf10b0d22b266699fd2fd9acdd27eee32464cee46db165a6272a1",
+      "source_manifest_digest": "sha256:ccb29bf0d07836e4b608e340ae3047d4f69786c850bb2c112448209378f9f2fb",
       "map_path": "",
       "required_plugins": [
         "TEVVContentPackSDK"
       ],
       "release": {
         "repository": "DinoHub/TEVV-Airsim",
-        "tag": "pack-asset-mns_vehicle_models-1.0.3-iostore-v2"
+        "tag": "pack-asset-mns_vehicle_models-1.0.4-iostore-v2"
       },
-      "published_at": "2026-09-18T02:44:38Z"
+      "published_at": "2026-09-23T04:58:12Z"
     },
     {
       "selection": "office-pack-vol-1",
