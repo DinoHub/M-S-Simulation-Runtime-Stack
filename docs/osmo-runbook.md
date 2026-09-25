@@ -745,7 +745,7 @@ CampaignSpec mission / evaluation --osmo/campaign.py submit--> --set / --set-str
 | `vehicles[0].cameras`, `sensors`, `dynamics` | `settings.json`, `topic_names.yaml` | sim and bridge |
 | `extensions.mns.vio_estimator.config_dir` | `vio/estimator_config.yaml`, the kalibr chains | vio |
 | `seed` (set per run by `seeds`) | `scenario/scenario_runtime.json`, `object_clutter.yaml` | sim |
-| `runtime.features.foxglove_bridge` | -- (read by `osmo/campaign.py`) | whether the run gets the live Foxglove task. **Off when absent** under OSMO, although the compose generator defaults it on; `--viz` / `--no-viz` override it. Set it in a variant's `overrides` to watch only some runs |
+| `runtime.features.foxglove_bridge` | -- (read by `osmo/campaign.py`) | whether the run gets the live Foxglove task. **Off when absent** under OSMO, although the compose generator defaults it on; the four committed `vio-osmo-*` scenarios set it `true`. `--viz` / `--no-viz` override it; use `--no-viz` for a measurement run. Set it in a variant's `overrides` to watch only some runs |
 
 What a ScenarioSpec says and OSMO does **not** honour, each a silent no-op
 rather than an error:
