@@ -141,8 +141,6 @@ class InstallerTests(unittest.TestCase):
         with patch.object(installer.shutil, "disk_usage", return_value=Usage()):
             installer.check_disk_space(Path(self.tmp.name), _lock()["packs"])
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class StagingStaysInItsOwnChannel(unittest.TestCase):
@@ -197,3 +195,151 @@ class UnpublishedLockEntries(unittest.TestCase):
     def test_a_lock_level_release_still_covers_a_pack_without_one(self):
         lock = {"release": {"repository": "DinoHub/M-S-Simulation-Runtime-Stack", "tag": "v1"}}
         self.assertEqual(installer.pack_release(lock, {"id": "x"})["tag"], "v1")
+
+
+DIGEST = "sha256:" + "b" * 64
+OTHER = "sha256:" + "c" * 64
+
+
+def _pack_store(root: Path, *digests: str) -> Path:
+    """A pack store holding one blob dir per digest."""
+    store = root / "pack-store"
+    (store / "blobs" / "sha256").mkdir(parents=True)
+    packs = []
+    for digest in digests:
+        blob = f"blobs/sha256/{digest.removeprefix('sha256:')}"
+        (store / blob).mkdir(parents=True)
+        (store / blob / "payload.bin").write_bytes(b"x" * 2048)
+        packs.append({"blob": blob, "digest": digest, "id": digest[7:11], "kind": "level",
+                      "version": "1.0.0"})
+    (store / "index.json").write_text(json.dumps({"schema": "mns.pack_store.v1", "packs": packs}))
+    return store
+
+
+def _removal_lock(*digests: str) -> dict:
+    return {"packs": [{"selection": d[7:11], "id": d[7:11], "kind": "level", "version": "1.0.0",
+                       "artifact_digest": d, "release": {"repository": "o/r", "tag": "t"}}
+                      for d in digests],
+            "required_images": {"product_shell": "shell:image"}}
+
+
+def _staged_data(root: Path, *digests: str) -> Path:
+    data = root / "authoring-data"
+    (data / "ResolvedPacks").mkdir(parents=True)
+    (data / "ResolvedPacks" / "index.json").write_text(json.dumps(
+        {"level_packs": [{"id": d[7:11], "artifact_digest": d} for d in digests],
+         "asset_packs": []}))
+    return data
+
+
+class PackRemoval(unittest.TestCase):
+    """Removing a pack must not break something that still needs it."""
+
+    def test_an_unreferenced_pack_is_removed_and_the_index_rewritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store, data = _pack_store(root, DIGEST, OTHER), _staged_data(root)
+            removed, warnings = installer.remove_packs(
+                [DIGEST[7:11]], _removal_lock(DIGEST, OTHER), store, data, workspace=root)
+            self.assertEqual([r["digest"] for r in removed], [DIGEST])
+            self.assertFalse((store / "blobs/sha256" / DIGEST.removeprefix("sha256:")).exists())
+            index = json.loads((store / "index.json").read_text())
+            self.assertEqual([p["digest"] for p in index["packs"]], [OTHER])
+            self.assertEqual(warnings, [])
+
+    def test_it_refuses_while_a_generated_stack_uses_the_pack(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store, data = _pack_store(root, DIGEST), _staged_data(root)
+            resolved = root / "generated" / "condo-px4" / "config" / "content-packs"
+            resolved.mkdir(parents=True)
+            (resolved / "resolved-pack-set.json").write_text(json.dumps(
+                {"environment": {"artifact_digest": DIGEST}, "asset_packs": []}))
+            with self.assertRaises(RuntimeError) as caught:
+                installer.remove_packs([DIGEST[7:11]], _removal_lock(DIGEST), store, data, workspace=root)
+            self.assertIn("condo-px4", str(caught.exception))
+            self.assertTrue((store / "blobs/sha256" / DIGEST.removeprefix("sha256:")).exists())
+
+    def test_it_refuses_while_staged_unless_unstage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store, data = _pack_store(root, DIGEST), _staged_data(root, DIGEST)
+            with self.assertRaises(RuntimeError) as caught:
+                installer.remove_packs([DIGEST[7:11]], _removal_lock(DIGEST), store, data, workspace=root)
+            self.assertIn("--unstage", str(caught.exception))
+            removed, _ = installer.remove_packs(
+                [DIGEST[7:11]], _removal_lock(DIGEST), store, data, unstage=True, workspace=root)
+            self.assertEqual(len(removed), 1)
+
+    def test_an_authored_scenario_warns_but_does_not_block(self):
+        """A spec is a record of what was authored, not something running."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store, data = _pack_store(root, DIGEST), _staged_data(root)
+            spec = root / "scenarios" / "my-scenario"
+            spec.mkdir(parents=True)
+            (spec / "ScenarioSpec.yaml").write_text(f"environment:\n  artifact_digest: {DIGEST}\n")
+            removed, warnings = installer.remove_packs(
+                [DIGEST[7:11]], _removal_lock(DIGEST), store, data, workspace=root)
+            self.assertEqual(len(removed), 1)
+            self.assertTrue(any("my-scenario" in w for w in warnings))
+
+    def test_an_asset_pack_in_a_split_spec_is_found_too(self):
+        """A split spec keeps its asset packs in a sibling AssetPacks.yaml."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            spec = root / "scenarios" / "split"
+            spec.mkdir(parents=True)
+            (spec / "AssetPacks.yaml").write_text(f"asset_packs:\n  - artifact_digest: {DIGEST}\n")
+            found = installer.pack_references(DIGEST, root / "nowhere", workspace=root)
+            self.assertEqual(found["scenario_files"], ["scenarios/split/AssetPacks.yaml"])
+
+    def test_orphan_blobs_are_reported_and_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = _pack_store(root, DIGEST)
+            orphan = store / "blobs" / "sha256" / ("d" * 64)
+            orphan.mkdir()
+            (orphan / "payload.bin").write_bytes(b"y" * 4096)
+            found = installer.remove_orphan_blobs(store)
+            self.assertEqual([o["digest"] for o in found], ["sha256:" + "d" * 64])
+            self.assertFalse(orphan.exists())
+            self.assertTrue((store / "blobs/sha256" / DIGEST.removeprefix("sha256:")).exists())
+
+
+class PackStatus(unittest.TestCase):
+    """The join of locked, installed and published."""
+
+    def test_it_reports_a_newer_published_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = _pack_store(root, DIGEST)
+            lock = _removal_lock(DIGEST)
+            with patch.object(installer, "installed_digests", lambda _: {DIGEST}), \
+                    patch("build_pack_lock.discover_latest",
+                          lambda *a, **k: {("level", DIGEST[7:11]): {"version": "2.0.0", "tag": "t2"}}):
+                status = installer.pack_status(lock, Path("lock.json"), store,
+                                               "host-id", "o/r", root)
+            row = status["packs"][0]
+            self.assertTrue(row["update_available"])
+            self.assertEqual(row["latest_version"], "2.0.0")
+            self.assertTrue(status["remote_checked"])
+
+    def test_offline_says_so_rather_than_implying_currency(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = installer.pack_status(_removal_lock(DIGEST), Path("lock.json"),
+                                           _pack_store(root, DIGEST), "host", "o/r", root, offline=True)
+            self.assertFalse(status["remote_checked"])
+            self.assertFalse(status["packs"][0]["update_available"])
+
+    def test_an_installed_pack_outside_the_lock_is_listed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = installer.pack_status(_removal_lock(DIGEST), Path("lock.json"),
+                                           _pack_store(root, DIGEST, OTHER), "host", "o/r", root,
+                                           offline=True)
+            self.assertEqual(status["installed_not_locked"], [OTHER])
+
+if __name__ == "__main__":
+    unittest.main()

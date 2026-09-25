@@ -5,6 +5,9 @@
 #   tools/pull-packs.sh --release-tag pack-level-blocks-1.0.1 [--release-tag ...] [--repo owner/repo]
 #   tools/pull-packs.sh --import [DIR]                     # archives already in the mount directory
 #   tools/pull-packs.sh --all                              # everything in the channel's lock
+#   tools/pull-packs.sh --status                           # locked vs installed vs published
+#   tools/pull-packs.sh --remove blocks [--unstage]        # uninstall one pack
+#   tools/pull-packs.sh --check                            # offline: what is installed
 #
 # Thin wrapper over tools/install_demo_packs.py so the channel roots (lock,
 # store, contract, pack mount directory MNS_PACKS_DIR) come from the same env

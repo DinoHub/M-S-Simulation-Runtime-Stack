@@ -31,6 +31,8 @@ tools/pull-packs.sh --list-remote                             # releases cooked 
 tools/pull-packs.sh --release-tag pack-level-blocks-1.0.1     # pull one published pack (parts are reassembled)
 tools/pull-packs.sh --import                                  # install archives already in the mount directory
 tools/install-demo-packs.sh --all                             # the channel's locked set
+tools/pull-packs.sh --status                                  # locked vs installed vs published
+tools/pull-packs.sh --remove blocks --unstage                 # uninstall one, then re-stage
 ```
 
 Staging never copies a payload twice any more: ScenarioLab's `ResolvedPacks/`
@@ -40,6 +42,49 @@ blob (falling back to a copy across filesystems, or with
 No level pack is baked into any image. The v1 authoring image bakes exactly one
 pack, `mns_vehicle_models` (drone placement is core authoring); the same pack is
 also in the lock so generated stacks resolve it from the store.
+
+## Knowing when a pack is out of date
+
+`--check` compares the lock against the store and never looks remotely.
+`--list-remote` looks remotely and never reads the lock or the store. Neither
+answers "is there anything newer than what I am running", so `--status` joins
+all three into one prioritised list, the way `tools/images.sh status` does for
+images:
+
+```bash
+tools/pull-packs.sh --status             # or: make pack-status [CHANNEL=v1|ue582|v2]
+tools/pull-packs.sh --status --offline   # skip the published-version check
+```
+
+It exits nonzero while its NEEDS YOU list is non-empty, so CI can gate on it.
+`--json` additionally writes `.mns/<channel>/pack-status.json`, which the
+dashboard's Content phase reads: the backend ships no `gh` and gets no GitHub
+credentials, so the browser cannot check for itself and shows this file's
+`generated_at` rather than implying it is current.
+
+A newer version still reaches everyone the same way — `make pack-lock`, review
+the diff, commit. `--status` only removes the guesswork about when to run it.
+
+## Removing a pack
+
+```bash
+tools/pull-packs.sh --remove xfs               # refuses if anything still needs it
+tools/pull-packs.sh --remove xfs --unstage     # ... and re-stage what is left
+tools/pull-packs.sh --remove-orphans           # blob directories the index no longer lists
+```
+
+Removal refuses while a generated stack under `generated/` references the
+digest, because that stack is still launchable, and while the pack is staged
+for ScenarioLab unless `--unstage` is given. It warns, but does not refuse, when
+an exported `ScenarioSpec.yaml` or `AssetPacks.yaml` names the digest: a spec is
+a record of what was authored, and it becomes generatable again as soon as the
+pack is reinstalled. A pack in the lock can always be removed -- the lock is how
+you get it back.
+
+Liveness comes from those index files, never from inode link counts: the v1
+product shell hard-links payloads out of the store, so a link count says how the
+bytes are shared, not whether anything still needs the pack. For the same reason
+`--remove` reports the space actually freed rather than the pack's size.
 
 ## Files
 
