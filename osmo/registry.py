@@ -186,17 +186,24 @@ class Registry:
     def finish(self, workflow_ref: str, *, status: str, reason: str | None, error: str | None,
                workflow_status: str, tasks: dict[str, str], run_dir: str | None,
                recording_valid: bool | None, failed_checks: list[str],
-               viz: dict[str, Any] | None = None, ended_at: str | None = None) -> None:
+               viz: dict[str, Any] | None = None, ended_at: str | None = None,
+               submitted_at: str | None = None, started_at: str | None = None,
+               eval_started_at: str | None = None) -> None:
+        """A finished workflow. Times given here are OSMO's own and win over
+        the ones progress() stamped from polling."""
         self._exec("""
             UPDATE runs SET status = %s, failure_reason = %s, error = %s, workflow_status = %s,
                             tasks = %s, run_dir = COALESCE(%s, run_dir),
                             recording_valid = %s, failed_checks = %s,
                             viz = COALESCE(%s, viz),
-                            started_at = COALESCE(started_at, submitted_at),
+                            submitted_at = COALESCE(%s::timestamptz, submitted_at),
+                            started_at = COALESCE(%s::timestamptz, started_at, submitted_at),
+                            eval_started_at = COALESCE(%s::timestamptz, eval_started_at),
                             ended_at = COALESCE(%s::timestamptz, now()), updated_at = now()
             WHERE workflow_ref = %s""",
             (status, reason, (error or None) and error[:2000], workflow_status, _j(tasks), run_dir,
-             recording_valid, list(failed_checks or []), _j(viz), ended_at, workflow_ref))
+             recording_valid, list(failed_checks or []), _j(viz), submitted_at, started_at,
+             eval_started_at, ended_at, workflow_ref))
 
     def results(self, workflow_ref: str, *, gates: list[dict[str, Any]],
                 metrics: list[tuple[str, float, str | None, str]],

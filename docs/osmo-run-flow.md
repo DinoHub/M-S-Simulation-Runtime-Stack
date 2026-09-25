@@ -57,6 +57,30 @@ python3 osmo/campaign.py run vio-osmo-condo --only calm-r1 --no-viz
 That is about 2 min 50 s from submit to verdict for a 51 s flight window.
 After this, `vio-stress` scores every `done` run of the campaign on the host.
 
+## A campaign's timeline: four XFS runs on one GPU
+
+`osmo/campaign.py run vio-osmo-xfs` (25 Sept) submits all four runs at once.
+KAI then flies them one gang at a time. Times are OSMO's own, as the registry
+records them.
+
+| Run | Workflow | Queued | Flight group | Wait before evaluate | Evaluate + verdict | ATE rmse |
+| --- | --- | --- | --- | --- | --- | --- |
+| calm-r1 | sim-bridge-vio-65 | 5 s | 128 s | 138 s | 47 s | 0.817 m |
+| calm-r2 | sim-bridge-vio-66 | 132 s | 129 s | 8 s | 71 s | 0.523 m |
+| wind-6-r1 | sim-bridge-vio-67 | 286 s | 128 s | 138 s | 45 s | 0.620 m |
+| wind-6-r2 | sim-bridge-vio-68 | 412 s | 128 s | 9 s | 45 s | 0.659 m |
+
+The whole matrix took 10 min 15 s, submit to last verdict. Two things to read
+off it:
+
+- **Every flight group took the same time**, wind or calm, at 128-129 s. The
+  wind-6 runs' longer end-to-end times are all queue.
+- **A run's evaluation waits behind the next run's flight.** When calm-r1's
+  flight ended, calm-r2's gang was placed on the GPU node first, and
+  calm-r1's evaluate group waited 138 s for it to finish. Evaluation needs no
+  GPU, so letting it run on the service node would overlap it with the next
+  flight. That would save about 2 minutes per pair of runs. Not done yet.
+
 ## Step by step
 
 ### 1. Inputs, in git

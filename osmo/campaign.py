@@ -487,6 +487,28 @@ def query(workflow_id: str) -> tuple[str, dict[str, str]]:
     return status, tasks
 
 
+def workflow_times(workflow_id: str) -> dict[str, str | None]:
+    """OSMO's own clock for a workflow: submitted, started (the run group left
+    the queue), evaluating (the evaluate group started) and ended, as UTC ISO
+    strings. The registry records these rather than when this script happened
+    to poll: with several runs submitted at once, the one being waited on is
+    the only one polled, and the rest were timed by when their turn came."""
+    proc = osmo("workflow", "query", workflow_id, "-t", "json", check=False)
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {}
+
+    def utc(value: Any) -> str | None:
+        return f"{value}+00:00" if value and "+" not in str(value) else value
+
+    groups = {g.get("name"): g for g in doc.get("groups") or []}
+    return {"submitted": utc(doc.get("submit_time")),
+            "started": utc((groups.get("run") or {}).get("start_time") or doc.get("start_time")),
+            "evaluating": utc((groups.get("evaluate") or {}).get("start_time")),
+            "ended": utc(doc.get("end_time"))}
+
+
 def wait(workflow_id: str, poll_s: float = 20.0,
          on_poll: Any = None) -> tuple[str, dict[str, str]]:
     while True:
@@ -600,9 +622,18 @@ def read_validation(bundle: Path) -> tuple[bool | None, list[str]]:
 def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any],
             workflow_id: str, platform: dict[str, str], run_gates: dict[str, Any],
             endpoint: str, images: dict[str, Any] | None = None,
-            reg: Registry | None = None) -> None:
+            reg: Registry | None = None, others: list[str] | None = None) -> None:
     reg = reg or Registry(dsn="")
-    status, tasks = wait(workflow_id, on_poll=lambda s, t: reg.progress(workflow_id, s, t))
+
+    def progress(s: str, t: dict[str, str]) -> None:
+        # The runs still queued or flying behind this one, so the registry's
+        # progress is live for the whole campaign, not only the run waited on.
+        reg.progress(workflow_id, s, t)
+        for other in others or []:
+            if other != workflow_id and reg.on:
+                reg.progress(other, *query(other))
+
+    status, tasks = wait(workflow_id, on_poll=progress)
     rec.finished_at = now()
     bundle = root / "runs" / rec.run_key
     bundle.mkdir(parents=True, exist_ok=True)
@@ -654,6 +685,8 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
         capture_logs(workflow_id, tasks, bundle, since=rec.started_at)
     register_run(reg, workflow_id, bundle, rec.status, rec.error, status, tasks, run_gates,
                  rec.recording_valid, rec.failed_checks, rec.finished_at)
+    if others is not None and workflow_id in others:
+        others.remove(workflow_id)
 
 
 # --------------------------------------------------------------------------
@@ -851,10 +884,12 @@ def register_run(reg: Registry, workflow_id: str, bundle: Path, flight: str, err
     viz = None
     if (bundle / "run.json").exists():
         viz = json.loads((bundle / "run.json").read_text()).get("viz")
+    times = workflow_times(workflow_id) if reg.on else {}
     reg.finish(workflow_id, status=status, reason=reason, error=error,
                workflow_status=workflow_status, tasks=tasks, run_dir=str(bundle),
                recording_valid=recording_valid, failed_checks=failed_checks, viz=viz,
-               ended_at=ended_at)
+               ended_at=times.get("ended") or ended_at, submitted_at=times.get("submitted"),
+               started_at=times.get("started"), eval_started_at=times.get("evaluating"))
     reg.results(workflow_id, gates=(verdict or {}).get("gates", []),
                 metrics=summary_metrics(bundle), artifacts=run_artifacts(bundle, workflow_id))
     print(f"[registry] {workflow_id}: {status}" + (f" ({reason})" if reason else ""))
@@ -1077,9 +1112,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                     image_record, reg)
             write_manifest(root, campaign_file, campaign, records, platform)
 
+    outstanding = [wf for _, _, wf in submitted]
     for rec, spec_file, wf in submitted:
         run_one(rec, spec_file, root, campaign, wf, platform or {}, run_gates, endpoint,
-                image_record, reg)
+                image_record, reg, outstanding)
         print(f"[campaign] {rec.run_key}: {rec.status}" + (f" ({rec.error})" if rec.error else ""))
         write_manifest(root, campaign_file, campaign, records, platform)
 
