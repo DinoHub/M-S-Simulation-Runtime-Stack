@@ -71,6 +71,10 @@ vehicles:
         width: 512
         height: 512
         fov_degrees: 190
+        # A 190-deg lens is circular: all 190 deg inside the image circle. The
+        # runtime default (Diagonal) puts 95 deg at the corners and the lens mask
+        # then leaves only about +-66 deg visible. Also what CameraInfo assumed.
+        fisheye_lens_type: Circular
         fisheye_shared_cubemap: false
     fisheye_right:
       position:

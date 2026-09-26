@@ -84,7 +84,7 @@ variants:
         fisheye_front:
           position: {x: 0, y: 0, z: -0.15}
           rotation: {roll: 0, pitch: 0, yaw: 0}
-          capture_settings: [&tiled {image_type: 0, width: 512, height: 512, fov_degrees: 190, fisheye_shared_cubemap: false}]
+          capture_settings: [&tiled {image_type: 0, width: 512, height: 512, fov_degrees: 190, fisheye_lens_type: Circular, fisheye_shared_cubemap: false}]
         fisheye_right:
           position: {x: 0, y: 0, z: -0.15}
           rotation: {roll: 0, pitch: 0, yaw: 90}
@@ -111,7 +111,7 @@ variants:
           rotation: {roll: 0, pitch: 0, yaw: 0}
           # The rig renders from its group's anchor, not each camera's pose:
           # put it where the cameras are, 0.15 m above the body origin.
-          capture_settings: [&shared {image_type: 0, width: 512, height: 512, fov_degrees: 190, fisheye_shared_cubemap: true, fisheye_shared_cubemap_group: surround, fisheye_shared_cubemap_offset_z: -0.15}]
+          capture_settings: [&shared {image_type: 0, width: 512, height: 512, fov_degrees: 190, fisheye_lens_type: Circular, fisheye_shared_cubemap: true, fisheye_shared_cubemap_group: surround, fisheye_shared_cubemap_offset_z: -0.15}]
         fisheye_right:
           position: {x: 0, y: 0, z: -0.15}
           rotation: {roll: 0, pitch: 0, yaw: 90}

@@ -69,6 +69,7 @@ variants:
             width: 512
             height: 512
             fov_degrees: 190
+            fisheye_lens_type: Circular   # see ScenarioSpec.yaml
             fisheye_shared_cubemap: true
             fisheye_shared_cubemap_group: surround
             fisheye_shared_cubemap_offset_z: -0.35
