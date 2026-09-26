@@ -308,9 +308,20 @@ at 15 ms exposure. Translation is not modelled. Typical cheap CMOS fisheye value
     rendered (fx 426.47, D = 0 for the default 190° camera).
 11. **Runtime host, [PR #207](https://github.com/DinoHub/TEVV-Airsim/pull/207) (stacked on #206):**
     rolling shutter and motion blur.
-12. **Decide the lens type.** For a 190° surround rig, set `fisheye_lens_type: Circular` in
-    the camera's `capture_settings` so the whole field of view is inside the image circle.
-    The default Diagonal shows about ±67° there.
+12. **Lens type, done in both fisheye scenarios:** `fisheye_lens_type: Circular`, so the full
+    190° sits inside the image circle (f = 301.6 px at 1000×1000). The runtime default stays
+    Diagonal (θmax at the corners, about ±67° inside the circle), which suits real diagonal
+    fisheyes. Match the lens type to the hardware being simulated.
+13. **Runtime host, [PR #208](https://github.com/DinoHub/TEVV-Airsim/pull/208) (stacked on #207):**
+    vignettes and the lens mask are measured on the lens's image circle, so a Diagonal lens
+    keeps its corners. A >180° Diagonal lens logs a warning. The lens mask is off by default:
+    without it the image already ends at the circle (level 0.0 outside), its "housing shadow"
+    ring isn't physical, and it cost 8% of the rim corners.
+14. **Recalibrate the rim vignettes (open).** The two vignette defaults together leave 0.32 of
+    the brightness at 0.9 R and 0.15 at 0.95 R, and remove 74% of the FAST corners in the outer
+    quarter of the radius (1334 → 352). Real fisheye relative illumination is typically
+    0.5–0.85 at the edge. Replace both with one relative-illumination curve fitted to the real
+    lens (datasheet or a flat-field capture).
 
 ## Bugs found on the way
 
