@@ -1,0 +1,122 @@
+# Render and transport cost of a four-camera 190-degree fisheye surround rig
+# on the iceoryx2 shared-memory path, tiled vs one shared cubemap.
+#
+# vio-osmo-xfs-surround's world, vehicle, route and autopilot, with two changes
+# so the generator puts every camera on SHM by its own default: no stereo pair
+# and no VIO estimator (an estimator forces the RPC image path, and the bridge
+# cannot run SHM fisheye beside RPC cameras: enabling the iceoryx subscribers
+# sets disable_rpc_cameras for the vehicle). The generator then sets
+# ENABLE_VIO=true and camera_names to the four fisheyes, so the bridge
+# subscribes to the sim's fisheye SHM publishers and publishes
+# /<camera>/image_raw and /<camera>/camera_info.
+#
+# Compose only: SHM needs one IPC namespace (ipc: host), which an OSMO gang
+# does not give two tasks. The Foxglove bridge is off so nothing else pulls
+# images during the measurement.
+
+schema: mns.scenario.v1
+id: fisheye-surround-shm
+name: XFS, ArduPilot, 4x190-deg fisheye surround rig over iceoryx2
+stack_name: fisheye-surround-shm
+environment:
+  id: xfs-level
+  version: 1.0.1
+  artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+# Lumen re-runs its surface-cache card captures inside every fisheye capture
+# view at the default budget (300 per frame): ~206 ms of each ~210 ms capture
+# on the tiled path. 16 keeps the look (parked frames identical) and cuts Lumen
+# 738 -> 44 ms/frame. -ini:Engine:[SystemSettings], so it survives scalability.
+# docs/fisheye-rig-performance.md
+# r.Fisheye.LensRainWeatherScale 0: stopgap for runtime hosts without the UDW
+# effective-rain fix (TEVV-Airsim fix/udw-effective-rain). The XFS level ships its
+# weather actor with an inert manual Rain = 6.0 that older hosts read as live rain,
+# so every fisheye frame got lens drops at 0.6 in dry weather. Drop this line once
+# the host has the fix; rain zones still wet the lens.
+conditions:
+  render:
+    system_settings:
+      r.LumenScene.SurfaceCache.CardCapturesPerFrame: 16
+      r.Fisheye.LensRainWeatherScale: 0
+
+runtime:
+  profile: airsim_unreal_ardupilot_docker
+  features:
+    sim_real_eval: true
+    ros2_bridge: true
+    qgroundcontrol: false
+    mavros: true
+    foxglove_bridge: false
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  ros_domain_id: 1
+  start:
+    x: 423
+    y: -906
+    z: -21.0
+  cameras:
+    fisheye_front:
+      position:
+        x: 0
+        y: 0
+        z: -0.15
+      rotation:
+        roll: 0
+        pitch: 0
+        yaw: 0
+      capture_settings:
+      - &id001
+        image_type: 0
+        width: 512
+        height: 512
+        fov_degrees: 190
+        # A 190-deg lens is circular: all 190 deg inside the image circle. The
+        # runtime default (Diagonal) puts 95 deg at the corners and the lens mask
+        # then leaves only about +-66 deg visible. Also what CameraInfo assumed.
+        fisheye_lens_type: Circular
+        fisheye_shared_cubemap: false
+    fisheye_right:
+      position:
+        x: 0
+        y: 0
+        z: -0.15
+      rotation:
+        roll: 0
+        pitch: 0
+        yaw: 90
+      capture_settings:
+      - *id001
+    fisheye_back:
+      position:
+        x: 0
+        y: 0
+        z: -0.15
+      rotation:
+        roll: 0
+        pitch: 0
+        yaw: 180
+      capture_settings:
+      - *id001
+    fisheye_left:
+      position:
+        x: 0
+        y: 0
+        z: -0.15
+      rotation:
+        roll: 0
+        pitch: 0
+        yaw: 270
+      capture_settings:
+      - *id001
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
