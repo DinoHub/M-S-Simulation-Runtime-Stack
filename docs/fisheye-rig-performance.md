@@ -216,6 +216,49 @@ Values are mean absolute error in grey levels; the noise floor is 3.6–4.3. Wit
 at 15 ms exposure. Translation is not modelled. Typical cheap CMOS fisheye values: readout
 15–30 ms, exposure 1–20 ms.
 
+## VIO: OpenVINS on the shared rig
+
+One recorded flight (XFS yard, 98 s, 50 m path; 4 × 190° at 512×512, shared cubemap, Circular
+lens, anchor at z −0.35 m, 30 Hz synchronized capture, about 28 Hz delivered) was replayed into
+OpenVINS and scored with the tevv_ws metrics collector (ATE after alignment). The calibration
+came from the bridge's `gen_vio_calib.py` (bridge #76: anchor extrinsics, fx 154.40). Masks
+cover the airframe (about 22% of each circle) plus everything past θ = 85°, where OpenVINS's
+equidistant unprojection breaks. Three replays per config:
+
+| config | cameras | ATE runs (m) | median ATE | median RPE (m/1 s) |
+|---|---|---|---|---|
+| campaign-v1 (frozen) | front | 4.08, 9.06, 4.12 | 4.12 | 0.74 |
+| campaign-v1 | front + back | 10.49, 8.96, 2.55 | 8.96 | 1.20 |
+| campaign-v1 | all 4 | 2.78, 2.11, 2.80 | 2.78 | 0.48 |
+| fisheye-tuned | front | 2.94, 6.37, 6.20 | 6.20 | 0.88 |
+| fisheye-tuned | front + back | 1.39, 1.41, 1.58 | **1.41** | 0.36 |
+| fisheye-tuned | all 4 | 1.66, 6.75, 5.89 | 5.89 | 0.82 |
+
+"fisheye-tuned" is campaign-v1 plus `max_clones` 15, `max_slam` 40, `max_msckf_in_update` 60,
+`fi_max_dist` 150 and `fi_max_baseline` 120.
+
+- **It works, but not well yet.** Every config initialises and tracks. The best result is
+  about 3% of the path length, against 0.13–0.64 m for the pinhole stereo campaign on the same
+  level.
+- **Why the frozen config struggles:** it averages about 2 features per MSCKF update. The yard's
+  features are 20–100 m away, and the airframe hides the near ground. `fi_max_baseline` 40
+  (a depth-to-baseline ratio) rejects most far points over a 0.4 s window. 512 px across 190° is
+  also about 3× coarser per pixel than the campaign's pinhole.
+- **Replays are not deterministic.** One config spans 2.6–10.5 m. Front + back tuned is the only
+  config that is tight (1.39–1.58 m).
+- **Four cameras don't beat two.** Stock OpenVINS treats more than two cameras as independent
+  mono trackers, one update per image. In the 4-camera tuned runs no feature was promoted to
+  SLAM. A multi-camera estimator (e.g. OpenVINS with a synchronized multi-camera update,
+  Kimera-Multi, or MCVIO) is the real test of this rig.
+- **Gotchas:**
+  - OpenVINS divides `init_max_features` by the camera count. campaign-v1's 50 gives each of
+    four cameras 12, the tracker never fills and initialisation fails silently. Use 50 × N.
+  - The bag's image topics are best-effort. Replay with a reliable QoS override or OpenVINS
+    receives nothing.
+  - The ArduPilot profile turns off AirSim's own IMU (`DISABLE_RPC_AUX_SENSORS=true`) unless
+    the scenario names a VIO estimator. A recording for offline VIO needs it set to false
+    (200 Hz `/imu/data`).
+
 ## Do the default values make sense?
 
 - **Tone curve: no display gamma.** The ISP writes `pow(x/(x+1), 0.85)` straight into 8-bit
@@ -322,6 +365,12 @@ at 15 ms exposure. Translation is not modelled. Typical cheap CMOS fisheye value
     `FisheyeRelativeIlluminationCurve`. It matches its model to 0.001 in RAW. FAST corners in
     the outer quarter of the circle go from 352 to 1317 (1370 with no falloff at all). The old
     vignette keys and the lens mask are deprecated and log warnings.
+15. **Runtime host, [PR #210](https://github.com/DinoHub/TEVV-Airsim/pull/210) (stacked on #209):**
+    lens-flare ghosts from the scene's sun, gated on the sun disc being visible in the image. On
+    XFS the sky preset keeps the sun behind cloud, so no ghosts appear by default.
+16. **Recording for offline VIO on ArduPilot:** set `DISABLE_RPC_AUX_SENSORS=false` in the stack
+    `.env`, or the bag has no IMU. The generator should turn it on for any SHM fisheye scenario,
+    not only when a VIO estimator is named.
 
 ## Bugs found on the way
 
