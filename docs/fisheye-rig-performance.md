@@ -308,20 +308,20 @@ at 15 ms exposure. Translation is not modelled. Typical cheap CMOS fisheye value
     rendered (fx 426.47, D = 0 for the default 190° camera).
 11. **Runtime host, [PR #207](https://github.com/DinoHub/TEVV-Airsim/pull/207) (stacked on #206):**
     rolling shutter and motion blur.
-12. **Lens type, done in both fisheye scenarios:** `fisheye_lens_type: Circular`, so the full
-    190° sits inside the image circle (f = 301.6 px at 1000×1000). The runtime default stays
-    Diagonal (θmax at the corners, about ±67° inside the circle), which suits real diagonal
-    fisheyes. Match the lens type to the hardware being simulated.
+12. **Lens type.** The scenarios set `fisheye_lens_type: Circular`, so the full 190° sits inside
+    the image circle (f = 301.6 px at 1000×1000). That also works on older hosts.
+    [TEVV-Airsim #209](https://github.com/DinoHub/TEVV-Airsim/pull/209) makes Circular the
+    runtime default, the usual VIO fisheye. Diagonal stays available for real diagonal fisheyes.
 13. **Runtime host, [PR #208](https://github.com/DinoHub/TEVV-Airsim/pull/208) (stacked on #207):**
-    vignettes and the lens mask are measured on the lens's image circle, so a Diagonal lens
-    keeps its corners. A >180° Diagonal lens logs a warning. The lens mask is off by default:
-    without it the image already ends at the circle (level 0.0 outside), its "housing shadow"
-    ring isn't physical, and it cost 8% of the rim corners.
-14. **Recalibrate the rim vignettes (open).** The two vignette defaults together leave 0.32 of
-    the brightness at 0.9 R and 0.15 at 0.95 R, and remove 74% of the FAST corners in the outer
-    quarter of the radius (1334 → 352). Real fisheye relative illumination is typically
-    0.5–0.85 at the edge. Replace both with one relative-illumination curve fitted to the real
-    lens (datasheet or a flat-field capture).
+    rim effects are measured on the lens's image circle, a >180° Diagonal lens logs a warning,
+    and the lens mask is off by default. The mask was redundant: the image already ends at the
+    circle (level 0.0 outside), its ring isn't physical, and it cost 8% of the rim corners.
+14. **Runtime host, [PR #209](https://github.com/DinoHub/TEVV-Airsim/pull/209) (stacked on #208):**
+    one relative-illumination curve over the field angle θ/θmax, applied in linear light,
+    replaces the two vignettes. Default 0.7 at the edge; a datasheet curve can be given with
+    `FisheyeRelativeIlluminationCurve`. It matches its model to 0.001 in RAW. FAST corners in
+    the outer quarter of the circle go from 352 to 1317 (1370 with no falloff at all). The old
+    vignette keys and the lens mask are deprecated and log warnings.
 
 ## Bugs found on the way
 
