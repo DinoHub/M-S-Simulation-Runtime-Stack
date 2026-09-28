@@ -54,6 +54,17 @@ owns its version (`tooling/asset_packs/default_vehicle_pack.json`, now 1.0.4);
 the lock's entry and the `v1_authoring` pin in `images/catalog.yaml` move with
 it, never on their own.
 
+**The lock decides each pack's version.** `make dashboard` (and
+`./download-packs.sh`) run `tools/install-demo-packs.sh --missing --sync`, which
+fetches the lock's version of the vehicle models and of every pack already
+installed in any version, so a lock bump arrives on the next start; packs never
+chosen are never fetched, and a pack `--sync` cannot fetch (no credentials, a
+failed download) is a warning, not a failure. `tools/stage-authoring-packs.sh` then
+stages only the lock's version of each pack it pins, and sets ScenarioLab's
+PackLibrary copy to it, creating the vehicle models there before the authoring
+image's entrypoint can copy its baked copy in. Older versions stay in the store
+for generated stacks that reference them.
+
 ## Knowing when a pack is out of date
 
 `--check` compares the lock against the store and never looks remotely.
@@ -74,7 +85,8 @@ credentials, so the browser cannot check for itself and shows this file's
 `generated_at` rather than implying it is current.
 
 A newer version still reaches everyone the same way — `make pack-lock`, review
-the diff, commit. `--status` only removes the guesswork about when to run it.
+the diff, commit; each checkout's next `make dashboard` then fetches it
+(`--sync`). `--status` only removes the guesswork about when to run it.
 
 ## Removing a pack
 
@@ -134,9 +146,10 @@ the selected contract's `id`.
 whether it is installed, and whether ScenarioLab can open it). With no options
 it installs the starter set (Warehouse and the vehicle models). It installs
 into the channel's pack store through the product-shell image and stages what
-ScenarioLab can open. `make dashboard` does not download packs unless
-`MNS_DEMO_PACKS` is set; it stages what the store holds and warns when that is
-nothing. The dashboard, the product shell and the generator all read that one
+ScenarioLab can open. `make dashboard` downloads only
+the lock's version of packs you already have (and the vehicle models), or
+`MNS_DEMO_PACKS` when set; it stages what the store holds and warns when that
+is nothing. The dashboard, the product shell and the generator all read that one
 store, and the generated stack's TEVVRuntimeHost loads the same immutable
 artifact ScenarioLab authored against.
 
@@ -155,6 +168,7 @@ The installer underneath, for scripting:
 tools/install-demo-packs.sh --all             # the lock's eleven packs
 tools/install-demo-packs.sh --objects         # every object pack in the lock
 tools/install-demo-packs.sh --missing --all   # only what the store lacks
+tools/install-demo-packs.sh --missing --sync  # the lock's version of what is installed (what make dashboard runs)
 tools/install-demo-packs.sh --check --all     # offline: list installed/missing, exit 1 if any is missing
 ```
 

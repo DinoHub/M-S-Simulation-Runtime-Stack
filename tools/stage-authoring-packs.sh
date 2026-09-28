@@ -124,6 +124,56 @@ if [[ ! -f "$STORE_INDEX" ]]; then
   exit 0
 fi
 
+# The lock decides which version of a pack ScenarioLab sees; this step and
+# drop_superseded_staged_packs below make it so. ScenarioLab places vehicles
+# from its PackLibrary copy, not from ResolvedPacks, and the authoring image's
+# entrypoint fills that copy from the pack it bakes (mns_vehicle_models 1.0.3,
+# the untextured quadrotor) with `cp -n`, which never replaces an existing one.
+# So set each PackLibrary asset pack to the lock's pin from the store: replace
+# one at another digest, and create the required packs (REQUIRED_PACK_IDS in
+# install_demo_packs.py) when missing, before the entrypoint copies the baked
+# one in. A pin whose blob is not installed yet leaves the library as it is.
+sync_library_packs_to_lock() {
+  local lock="${MNS_DEMO_PACK_LOCK:-}"
+  [[ -n "$lock" && -f "$lock" ]] || return 0
+  python3 - "$lock" "$PACK_LIBRARY/asset_packs" "$STORE_ROOT/blobs/sha256" "$ROOT/tools" <<'PY'
+import json, shutil, sys
+from pathlib import Path
+
+lock, library, blobs = json.load(open(sys.argv[1])), Path(sys.argv[2]), Path(sys.argv[3])
+try:
+    sys.path.insert(0, sys.argv[4])
+    from install_demo_packs import REQUIRED_PACK_IDS
+except ImportError:
+    REQUIRED_PACK_IDS = ("mns_vehicle_models",)
+for pack in lock.get("packs", []):
+    if pack.get("kind") != "asset":
+        continue
+    target = library / f"{pack['id']}.mnsassetpack"
+    digest_file = target.with_name(target.name + ".digest")
+    pinned = str(pack.get("artifact_digest", ""))
+    blob = blobs / pinned.removeprefix("sha256:")
+    if not pinned.startswith("sha256:") or not blob.is_dir():
+        continue
+    if not target.is_dir() and pack["id"] not in REQUIRED_PACK_IDS:
+        continue
+    current = digest_file.read_text().strip() if digest_file.is_file() else ""
+    if target.is_dir() and current == pinned:
+        continue
+    library.mkdir(parents=True, exist_ok=True)
+    staging = target.with_name(target.name + ".new")
+    shutil.rmtree(staging, ignore_errors=True)
+    shutil.copytree(blob, staging, symlinks=True)
+    shutil.rmtree(target, ignore_errors=True)
+    staging.rename(target)
+    digest_file.write_text(pinned)
+    print(f"PackLibrary {pack['id']}: {current or 'none'} -> {pack['version']} ({pinned})")
+PY
+  [[ "$(id -u)" == 0 && -d "$PACK_LIBRARY" ]] && find "$PACK_LIBRARY" -user 0 -exec chown "$HOST_UID:$HOST_GID" {} + 2>/dev/null
+  return 0
+}
+sync_library_packs_to_lock
+
 IMAGE="${MNS_PRODUCT_SHELL_IMAGE:?MNS_PRODUCT_SHELL_IMAGE is required}"
 PULL_POLICY="${MNS_IMAGE_PULL_POLICY:-missing}"
 case "$PULL_POLICY" in
@@ -134,8 +184,62 @@ case "$PULL_POLICY" in
     ;;
 esac
 
+# `packs stage-authoring` stages every pack in the store, so after a lock
+# moves a pack to a new version the store still holds the old one and both are
+# staged under one id. ScenarioLab then refuses to mount any level: "asset pack
+# definition identity is invalid or duplicated: mns_vehicle_models". Keep only
+# the lock's pin for each id it pins (when that pin was staged), in the index
+# and in every staged environment's resolved-pack-set.json. The store keeps the
+# old blob: generated stacks that reference it by digest still resolve.
+drop_superseded_staged_packs() {
+  local lock="${MNS_DEMO_PACK_LOCK:-}"
+  [[ -n "$lock" && -f "$lock" && -f "$STAGED_INDEX" ]] || return 0
+  python3 - "$lock" "$STAGED_INDEX" "$DATA_ROOT" <<'PY'
+import json, sys
+from pathlib import Path
+
+lock, index_path, data_root = json.load(open(sys.argv[1])), Path(sys.argv[2]), Path(sys.argv[3])
+pins = {p["id"]: p["artifact_digest"] for p in lock.get("packs", []) if p.get("artifact_digest")}
+
+def keep(entries, where):
+    staged = {(e.get("id"), e.get("artifact_digest")) for e in entries}
+    kept = []
+    for entry in entries:
+        pack_id, digest = entry.get("id"), entry.get("artifact_digest")
+        if pack_id in pins and digest != pins[pack_id] and (pack_id, pins[pack_id]) in staged:
+            print(f"Not staging {pack_id}@{entry.get('version', '?')} ({digest}) in {where}: "
+                  f"the lock pins {pins[pack_id]}")
+            continue
+        kept.append(entry)
+    return kept
+
+index = json.loads(index_path.read_text(encoding="utf-8"))
+changed = False
+for key in ("asset_packs", "level_packs"):
+    entries = index.get(key) or []
+    kept = keep(entries, index_path.name)
+    changed |= len(kept) != len(entries)
+    index[key] = kept
+if changed:
+    index_path.write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
+
+for level in index.get("level_packs") or []:
+    relative = level.get("resolved_pack_set")
+    pack_set_path = data_root / str(relative or "")
+    if not relative or not pack_set_path.is_file():
+        continue
+    pack_set = json.loads(pack_set_path.read_text(encoding="utf-8"))
+    entries = pack_set.get("asset_packs") or []
+    kept = keep(entries, f"{level.get('id')}/{pack_set_path.name}")
+    if len(kept) != len(entries):
+        pack_set["asset_packs"] = kept
+        pack_set_path.write_text(json.dumps(pack_set, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 if [[ -f "$STAGED_INDEX" && ! "$STORE_INDEX" -nt "$STAGED_INDEX" \
       && -f "$STAGED_STAMP" && "$(cat "$STAGED_STAMP")" == "$IMAGE" ]]; then
+  drop_superseded_staged_packs
   echo "ScenarioLab pack index is current: $STAGED_INDEX"
   report_unexportable_library_packs
   exit 0
@@ -157,6 +261,7 @@ docker run --pull "$PULL_POLICY" --rm \
   -v "$ROOT:/workspace:rw" \
   "$IMAGE" packs stage-authoring
 
+drop_superseded_staged_packs
 mkdir -p "$STAGED_DIR"
 printf '%s\n' "$IMAGE" >"$STAGED_STAMP"
 own_by_host "$STAGED_DIR" "$STAGED_STAMP"

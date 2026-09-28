@@ -97,6 +97,33 @@ def container_path(host_path: Path) -> str:
                            f"shell only sees paths under it") from exc
 
 
+# Packs every flow needs whatever else is chosen: ScenarioLab cannot place a
+# drone without the vehicle models. --sync always brings these to the lock's
+# pin, and stage-authoring-packs.sh seeds ScenarioLab's PackLibrary with them.
+REQUIRED_PACK_IDS = ("mns_vehicle_models",)
+
+
+def store_packs(store_root: Path) -> list[dict]:
+    """The store index's pack entries; empty when there is no store."""
+    index = store_root / "index.json"
+    if not index.is_file():
+        return []
+    try:
+        packs = json.loads(index.read_text(encoding="utf-8")).get("packs") or []
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return []
+    return [pack for pack in packs if isinstance(pack, dict)]
+
+
+def sync_scope(lock: dict, store_root: Path) -> list[dict]:
+    """--sync: the lock's pin of each required pack and of each pack that has
+    any version installed. The lock decides the version; what is installed
+    only decides which packs the operator wants. Packs never chosen are never
+    downloaded."""
+    wanted = {str(pack.get("id")) for pack in store_packs(store_root)} | set(REQUIRED_PACK_IDS)
+    return [pack for pack in lock["packs"] if pack["id"] in wanted]
+
+
 def installed_digests(store_root: Path) -> set[str]:
     """artifact digests of every pack in the store; empty when there is no store."""
     index = store_root / "index.json"
@@ -437,6 +464,12 @@ def build_parser(lock: dict | None) -> argparse.ArgumentParser:
              "exits 0 without touching the registry when nothing is missing",
     )
     result.add_argument(
+        "--sync", action="store_true",
+        help="Also select the lock's version of the vehicle models and of every pack "
+             "already installed in any version (what `make dashboard` runs). "
+             "Best effort: a pack it cannot fetch is reported and skipped",
+    )
+    result.add_argument(
         "--check", action="store_true",
         help="Report which selected packs are installed and exit 1 if any is missing; "
              "offline, no docker",
@@ -451,6 +484,9 @@ def main(argv: list[str] | None = None) -> int:
     if not lock_path.is_file():
         raise RuntimeError(f"pack lock does not exist: {lock_path}")
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    # stage-authoring-packs.sh brings ScenarioLab's view to this lock's pins,
+    # so it must see the lock chosen here (--lock), not only the env's.
+    os.environ["MNS_DEMO_PACK_LOCK"] = str(lock_path)
     argument_parser = build_parser(lock)
     args = argument_parser.parse_args(argv)
 
@@ -520,9 +556,15 @@ def main(argv: list[str] | None = None) -> int:
         requested |= selections
     if args.objects:
         requested |= {pack["selection"] for pack in lock["packs"] if pack["kind"] == "asset"}
-    extra_mode = bool(args.release_tag) or args.import_dir is not None
+    # Selected only because --sync brought them in: fetched if possible, never
+    # the reason a run fails (offline, no credentials, a flaky release host).
+    best_effort: set[str] = set()
+    if args.sync:
+        best_effort = {pack["selection"] for pack in sync_scope(lock, store_root)} - requested
+        requested |= best_effort
+    extra_mode = bool(args.release_tag) or args.import_dir is not None or args.sync
     if not requested and not extra_mode:
-        argument_parser.error("select --all, --objects, at least one pack, --release-tag TAG, "
+        argument_parser.error("select --all, --objects, at least one pack, --sync, --release-tag TAG, "
                               "--import [DIR] or --list-remote: "
                               + " ".join(f"--{s}" for s in sorted(selections)))
     selected = [pack for pack in lock["packs"] if pack["selection"] in requested]
@@ -544,9 +586,14 @@ def main(argv: list[str] | None = None) -> int:
               f"({lock['capability_id']})")
         for pack in present:
             print(f"  installed: {pack['id']}@{pack['version']} ({pack['selection']})")
+        installed_versions = {}
+        for entry in store_packs(store_root):
+            installed_versions.setdefault(str(entry.get("id")), []).append(str(entry.get("version")))
         for pack in missing:
             fetchable = bool(pack.get("release") or lock.get("release"))
             note = "" if fetchable else "  [no release - cannot be downloaded]"
+            if installed_versions.get(pack["id"]):
+                note += f"  [lock update from {', '.join(sorted(installed_versions[pack['id']]))}]"
             print(f"  missing:   {pack['id']}@{pack['version']} ({pack['selection']}){note}")
         unpublished = [pack for pack in missing
                        if not (pack.get("release") or lock.get("release"))]
@@ -636,6 +683,13 @@ def main(argv: list[str] | None = None) -> int:
     # when something actually has to be downloaded -- a fully cached run, and
     # every --check/--dry-run run, stays credential-free.
     token = github_token() if to_download else None
+    if to_download and not token and best_effort:
+        skipped = [pack for pack in to_download if pack["selection"] in best_effort]
+        for pack in skipped:
+            print(f"WARNING: not fetching {pack['id']}@{pack['version']} (the lock's version): "
+                  "no GitHub credentials. Staying on what is installed.", file=sys.stderr)
+        selected = [pack for pack in selected if pack not in skipped]
+        to_download = [pack for pack in to_download if pack not in skipped]
     if to_download and not token:
         repos = sorted({pack_release(lock, pack)["repository"] for pack in to_download})
         raise RuntimeError(
@@ -658,23 +712,29 @@ def main(argv: list[str] | None = None) -> int:
         for pack in selected:
             cached = cache_dir / pack["asset_name"]
             archive = download_root / pack["asset_name"]
-            if cached.is_file() and cached.stat().st_size == pack["size_bytes"] \
-                    and sha256_file(cached) == pack["sha256"]:
-                print(f"Using cached {pack['display_name']} ({cached})")
-                archive = cached
-            else:
-                print(f"Downloading {pack['display_name']} ({pack['size_bytes'] / 1e6:.0f} MB)...")
-                download_asset(pack_release(lock, pack), pack, token, archive)
-                if archive.stat().st_size != pack["size_bytes"]:
-                    raise RuntimeError(f"size mismatch for {archive.name}")
-                actual_sha256 = sha256_file(archive)
-                if actual_sha256 != pack["sha256"]:
-                    raise RuntimeError(
-                        f"SHA-256 mismatch for {archive.name}: "
-                        f"{actual_sha256} != {pack['sha256']}"
-                    )
             try:
+                if cached.is_file() and cached.stat().st_size == pack["size_bytes"] \
+                        and sha256_file(cached) == pack["sha256"]:
+                    print(f"Using cached {pack['display_name']} ({cached})")
+                    archive = cached
+                else:
+                    print(f"Downloading {pack['display_name']} ({pack['size_bytes'] / 1e6:.0f} MB)...")
+                    download_asset(pack_release(lock, pack), pack, token, archive)
+                    if archive.stat().st_size != pack["size_bytes"]:
+                        raise RuntimeError(f"size mismatch for {archive.name}")
+                    actual_sha256 = sha256_file(archive)
+                    if actual_sha256 != pack["sha256"]:
+                        raise RuntimeError(
+                            f"SHA-256 mismatch for {archive.name}: "
+                            f"{actual_sha256} != {pack['sha256']}"
+                        )
                 digest = install_archive(image, archive, pack["artifact_digest"] or None, store_root)
+            except Exception as exc:  # noqa: BLE001 - fatal unless --sync added the pack
+                if pack["selection"] not in best_effort:
+                    raise
+                print(f"WARNING: could not fetch {pack['id']}@{pack['version']} (the lock's "
+                      f"version): {exc}. Staying on what is installed.", file=sys.stderr)
+                continue
             finally:
                 # Free each downloaded archive as soon as it is installed.
                 # Holding all of them until the TemporaryDirectory unwound

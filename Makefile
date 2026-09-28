@@ -103,14 +103,20 @@ ensure-images:  ## Use local image tags; pull only those that are missing
 # -latest alias in development, the digest pin in production), not from the
 # pack lock's pin, so install and the staging step right after it use ONE
 # shell image and stage-authoring-packs.sh's .staged-with stamp stays current.
-ensure-demo-packs: ensure-images  ## Install the MNS_DEMO_PACKS selection if set; otherwise check the store has packs
+# --sync: the lock decides each pack's version. It adds the lock's version of
+# the vehicle models and of every pack already installed in any version, so a
+# lock bump is pulled on the next start; packs never chosen are never fetched.
+# What --sync adds is best effort (offline or no credentials: a warning).
+ensure-demo-packs: ensure-images  ## Bring installed packs (and MNS_DEMO_PACKS, if set) to the lock's versions
 	@if [ "$(MNS_SKIP_PACK_INSTALL)" = "1" ]; then \
 	  echo "MNS_SKIP_PACK_INSTALL=1: not installing demo packs."; \
 	elif [ -n "$(MNS_DEMO_PACKS)" ]; then \
 	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
-	  ./tools/install-demo-packs.sh --missing $(MNS_DEMO_PACKS); \
+	  ./tools/install-demo-packs.sh --missing --sync $(MNS_DEMO_PACKS); \
 	else \
-	  export $(CHANNEL_ENV_EXPORTS); \
+	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	  ./tools/install-demo-packs.sh --missing --sync \
+	    || echo "WARNING: could not bring the packs to the lock's versions (above); continuing with what is installed."; \
 	  if ! ./tools/install-demo-packs.sh --check --all 2>/dev/null | grep -q 'installed:'; then \
 	    echo "WARNING: no content packs are installed for channel $(CHANNEL). Run ./download-packs.sh,"; \
 	    echo "         or install them from the dashboard's Content step."; \
