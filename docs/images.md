@@ -9,12 +9,12 @@ The catalog renders seven files. All are committed, all carry a
 
 | Generated file | Who reads it |
 | --- | --- |
-| `product-images.env` | review channel plus dashboard/tool pins |
-| `images/standalone-v2-images.generated.env` | v2 product shell, dashboard overrides |
-| `images/standalone-v2-development.generated.env` | dashboard development defaults using mutable tags |
+| `product-images.env` | channel-independent tool pins (`./tools.sh`) |
+| `images/v1.0.0.generated.env` | the v1 channel: product shell, ScenarioLab, generator, runtime host, bridge, dashboard |
+| `images/development.generated.env` | `make dashboard`'s development defaults (tag-only refs) |
 | `images/image-set.generated.yaml` | production stack generator overlay with exact pins |
 | `images/image-set.development.generated.yaml` | dashboard development overlay with tag-only refs |
-| `images/platform-images.generated.env` | metrics / monitoring / logs / dashboard compose |
+| `images/platform-images.generated.env` | the dashboard compose file's inline images |
 
 Regenerate with `tools/images.sh sync`. `tools/images.sh verify` regenerates
 into a temp dir and diffs against the committed copies, exiting nonzero on any
@@ -48,10 +48,10 @@ Anything gated on something outside the catalog — a merge, a hardware test,
 a decision — goes in the file, not in your head. Per row:
 
 ```yaml
-  mns_authoring:
+  v1_authoring:
     channel: pinned
     follow_up: >-
-      move back to channel review once TEVV-Authoring PR #8 ships a -review.N tag
+      repin once TEVV-Authoring publishes the fix for <issue>
 ```
 
 Or, for a reminder belonging to no single image, the catalog-level list:
@@ -59,7 +59,7 @@ Or, for a reminder belonging to no single image, the catalog-level list:
 ```yaml
 follow_ups:
   - >-
-    the review channel's rows can be dropped once nothing seeds from them
+    add a v1.1 channel once its packs are published for the new host id
 ```
 
 Both print under NEEDS YOU on every `status` run, and both are reviewed in any
@@ -178,4 +178,4 @@ Explicitly refresh every approved production pin:
 To also advance all mutable catalog rows before pulling, use
 `./tools/pull-all-images.sh --refresh-moving`. This updates the authored
 catalog and generated pin files, so review and commit those changes. Immutable
-standalone-v2 release rows only advance through an explicit coordinated release.
+v1 release rows only advance through an explicit coordinated release.

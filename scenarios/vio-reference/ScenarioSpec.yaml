@@ -15,8 +15,8 @@ stack_name: vio-reference
 #
 # The environment names a level pack by id, version and digest. Those three
 # fields are what the runtime host loads at startup, and they match the entry
-# in packs/standalone-v2-ue582.lock.json, so this scenario runs against the
-# same XFS level `./product.sh setup` installed and no other.
+# in packs/v1.0.0.lock.json, so this scenario runs against the same XFS level
+# `./download-packs.sh --xfs` installs and no other.
 
 environment:
   id: xfs-level

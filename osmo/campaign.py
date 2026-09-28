@@ -116,7 +116,7 @@ IMAGE_SET_FILE = Path(os.environ.get("MNS_IMAGE_SET_FILE",
                                      ROOT / "images" / "image-set.generated.yaml"))
 CATALOG_FILE = ROOT / "images" / "catalog.yaml"
 # product.sh's channel names -> the catalog's release_channels keys.
-CHANNEL_NAMES = {"v1": "v1", "v2": "standalone_v2", "ue582": "standalone_v2_ue582"}
+CHANNEL_NAMES = {"v1": "v1"}
 
 # Workflow value -> where the image set keeps that role.
 WORKFLOW_IMAGES = {
@@ -321,7 +321,7 @@ def image_set_name() -> str:
     entry = channels.get(CHANNEL_NAMES.get(channel, channel))
     if not entry:
         sys.exit(f"[campaign] MNS_CHANNEL={channel!r} names no release channel in {CATALOG_FILE}")
-    return str(entry.get("image_set") or "published")
+    return str(entry.get("image_set") or channel)
 
 
 def pinned_images() -> tuple[str, dict[str, str]]:

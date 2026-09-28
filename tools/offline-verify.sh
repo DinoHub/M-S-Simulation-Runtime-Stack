@@ -19,7 +19,7 @@ fail=0
 
 echo "== 1. catalog coverage"
 mapfile -t declared < <( { "$ROOT/tools/images.sh" refs
-                           "$ROOT/tools/images.sh" refs --channel standalone_v2_ue582 --development; } | awk 'NF' | sort -u )
+                           "$ROOT/tools/images.sh" refs --channel v1 --development; } | awk 'NF' | sort -u )
 mapfile -t declared_tags < <(printf '%s\n' "${declared[@]}" | sed 's/@.*//' | sort -u)
 for tag in "${declared_tags[@]}"; do
   if cut -f3 "$MANIFEST" | grep -qxF "$tag"; then
@@ -70,10 +70,9 @@ import re, sys
 from pathlib import Path
 root, manifest = Path(sys.argv[1]), Path(sys.argv[2])
 tags = {l.split("\t")[2] for l in manifest.read_text().splitlines() if l.strip()}
-sources = ["images/standalone-v2-ue582.generated.env",
-           "images/standalone-v2-development.generated.env",
-           "product-images.env", "images/platform-images.generated.env",
-           "images/legacy-images.generated.env"]
+sources = ["images/v1.0.0.generated.env",
+           "images/development.generated.env",
+           "product-images.env", "images/platform-images.generated.env"]
 seen, bad = {}, 0
 for name in sources:
     path = root / name
@@ -96,7 +95,7 @@ PY
 echo
 echo "== 4. content packs"
 if [[ -d "$BUNDLE/pack-cache" ]]; then
-  if python3 - "$BUNDLE/pack-cache" "$ROOT/packs/standalone-v2-ue582.lock.json" <<'PY'
+  if python3 - "$BUNDLE/pack-cache" "$ROOT/packs/v1.0.0.lock.json" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
 cache, lock = Path(sys.argv[1]), json.load(open(sys.argv[2], encoding="utf-8"))

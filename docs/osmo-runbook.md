@@ -329,10 +329,8 @@ one environment variable, not a code change.
 
 **And this scenario has no fisheye camera.** `vio-osmo-condo` declares two
 `image_type: 0` (Scene) pinhole cameras at 640×480, FOV 80, inherited from
-`vio-reference`. The SHM path carries fisheye captures specifically.
-`scenarios/contract-probe-condo/` is the nearest thing that does declare one
-(FOV 190, 1344×1344, no estimator) — though its `environment:` block names the
-ue582 pack ids and would need the same one-block edit `vio-osmo-condo` has.
+`vio-reference`. The SHM path carries fisheye captures specifically, and no
+committed scenario declares a fisheye camera yet.
 
 So the honest position: **the fisheye SHM path is untested here**, and it was
 untested before this work began. What blocks it is now two things rather than

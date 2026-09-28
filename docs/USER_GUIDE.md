@@ -227,6 +227,10 @@ make dashboard
 
 Scenarios in `scenarios/` and runs in `runs/` are kept.
 
+Packs installed for earlier pre-release lines are no longer used. If
+`.mns/ue582/`, `.mns/pack-store/` or `.mns/authoring-data/` exist, delete them
+to free the disk; your v1 packs are in `.mns/v1/`.
+
 Runs recorded before this release are in `~/tevv-runs`, the old default.
 They stay there. To keep recording into that folder, add
 `TEVV_RUNS_DIR=/home/<you>/tevv-runs` to `.env`; otherwise move them into
@@ -707,7 +711,6 @@ Nothing here is needed for a normal run.
 | `DB=true` | Adds the telemetry history database. |
 | `IMAGE_MODE=production` | Uses only the exact, digest-pinned release images. |
 | `MNS_DEMO_PACKS=--all` | Installs any missing packs before starting, like `./download-packs.sh --all`. |
-| `CHANNEL=ue582` / `CHANNEL=v2` | Runs an older pre-release line (UE 5.8.2 review set / UE 5.5.4). Each has its own packs and data. |
 
 **Evaluation and sim-to-real.** The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
 generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`

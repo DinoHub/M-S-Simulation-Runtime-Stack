@@ -4,76 +4,7 @@ schema: mns.images.v1
 # prints these under NEEDS YOU every time it runs, which is the point: a
 # gated migration that lives only in someone's memory is a migration that
 # quietly never happens. Delete an entry when it is done.
-follow_ups:
-  - >-
-    tevv-airsim-authored-latest was never published, but the path that needs
-    it IS live: MnS-Integration-Platform stacks/orchestrator/catalogs/
-    environments.yaml defines the "authored" environment with
-    image_role: unreal_authored, so generating a scenario against it emits a
-    stack nobody can launch. Either build+push it or gate the environment off
-    until one exists. Build contract, from runtime_image_bindings.yaml and
-    the level pack's runtime_binding.local.yaml -- the image must ship
-    executable_path /app/Unreal/UnrealScenario.sh, bake the map
-    /Game/Levels/L_BaseMap (mode: baked_image), and answer to
-    environment_name "authored" / image_role unreal_authored, target
-    unreal_authored_ue55_linux_iostore. Two inputs are NOT in this checkout
-    or anywhere on the build host: (1) the UE project holding
-    /Game/Levels/L_BaseMap -- the level pack
-    services/tevv-authoring/.../unreal_authored_l_basemap.mnslevelpack is
-    ~1 KB of metadata, no content; (2) the runtime Dockerfile that wraps a
-    packaged build as /app/Unreal/UnrealScenario.sh. The UE packaging
-    pipeline itself does exist (sim-main-pkg/docker/build/unreal-builder,
-    which outputs docker/unreal_executable/packaged/<Project>/LinuxNoEditor)
-    and is what produced the sibling xfs/condo sims, so this is a missing
-    source-content problem, not a missing-tooling one.
-  - >-
-    dashboard_backend still bakes the v1 review pins (bakes: [mns_authoring,
-    mns_stack_generator]) while every compose deployment overrides them with
-    the standalone_v2 channel, and the pinned registry backend predates the
-    MNS_PACK_STORE_ROOT / MNS_IMAGE_SET_FILE passthrough that v2 generation
-    needs (TEVV-Web-Dashboard feat/v2-pack-store-passthrough; locally built
-    as local/tevv-web-dashboard-{backend,frontend}:v2-dev and selected via
-    ./.env). Closing it: publish that backend from TEVV-Web-Dashboard main
-    (tools/build-dashboard-images.sh --push, which must read the pins from
-    images/standalone-v2-images.generated.env rather than product-images.env),
-    `tools/images.sh bump --only dashboard_backend` (and dashboard_frontend),
-    `sync`, then move bakes: to [mns_authoring_v2, mns_stack_generator_v2] --
-    which also needs tools/images.py cmd_baked_pins to resolve keys through
-    consumers.release_channels, since today it only knows product_env.
-  - >-
-    mns_authoring_v2 (mns-authoring-20260826.3) and mns_authoring_ue582
-    (mns-authoring-20260908) ship no /opt/mns/default-packs, so ScenarioLab
-    starts without the mns_vehicle_models asset pack it needs to add a drone
-    ("required mns_vehicle_models pack is missing"). The v1 row
-    mns_authoring (mns-authoring-v0.2.0-zones-preview.4) is the only published
-    source of that pack, and tools/stage-authoring-packs.sh seeds the
-    PackLibrary from it -- which is why the v1 row must stay in the catalog
-    even though nothing else on the v2 path uses it. Also the pinned v2
-    product shell (mns-product-shell-20260826.2) stages level packs without
-    their mns_level_pack.json manifest, which the same script backfills.
-    Both go away once TEVV-Authoring publishes an authoring image with the
-    default packs and MnS-Integration-Platform publishes a shell with the
-    post-#89 stage_resolved_level_pack; then drop the seeding/backfill and,
-    if nothing else needs it, the v1 authoring row.
-  - >-
-    standalone_v2_ue582's generator and product shell (mns-stack-generator-20260909,
-    mns-product-shell-20260909) were built on a developer machine from
-    MnS-Integration-Platform 30657d1 (main + PR #93) with the TEVV-Authoring #15
-    (7fe22c7) SDK and pushed by hand, because no published generator or shell
-    accepted the 5.8.2 packs' whole-level contract. Once MnS-Integration-Platform
-    merges #93 and publishes its own: bump both rows to that release, `sync`,
-    `make pack-lock` so required_images follow. Also ros2_bridge on that channel
-    is the 5.5.4-era 20260826 build until TEVV-Airsim-ROS2-Bridge #45 publishes a
-    5.8.2 one; add a ros2_bridge_ue582 row and point the channel at it then.
-  - >-
-    ardupilot_slim (ardupilot-slim-20260826.1, the same digest -latest
-    resolves to) has no SITL binary: its entrypoint execs
-    /ardupilot_workspace/ardupilot/build/sitl/bin/arducopter, which does not
-    exist in the image, so every generated stack's ardupilot-drone-N exits
-    127 right after start (seen 2026-09-08 on the condo-demo v2 stack; the
-    runtime host, bridge and ROS topics were fine). Rebuild/republish the
-    slim image with the SITL build, then bump the row.
-
+follow_ups: []
 # One canonical image catalog. Every container image this repository refers to
 # is a row here, exactly once — see docs/adr/0002-one-image-catalog.md for the
 # decision record. Nothing under images/*.generated.* or product-images.env is
@@ -123,199 +54,17 @@ follow_ups:
 # `bakes` on an image row means: that image's Dockerfile bakes in another
 # row's ref as a build-time default (MNS_*_IMAGE_DEFAULT). `tools/images.sh
 # baked` walks these edges and asserts the released image's baked value still
-# matches the pin here — see the dashboard-backend row below.
+# matches the pin here.
 #
 # `consumers:` binds an image (by key) to how it is actually referenced, so no
 # image is listed twice under two different names:
-#   product_env  -> product-images.env, grouped the way that file's prose
-#                   sections already are (review / dashboard / tools)
+#   product_env  -> product-images.env (the channel-independent tools)
 #   image_sets   -> images/image-set.generated.yaml, mirroring the platform
-#                   stackgen schema. The M-S product emits only the remote
-#                   published set; local development stays in integration repos.
+#                   stackgen schema: what generated stacks run.
 #   compose_env  -> images/platform-images.generated.env, the dashboard
 #                   compose file's inline images
 
 images:
-  # ---------------------------------------------------------------------
-  # Product images (product-images.env "review channel" — 4 rows)
-  # ---------------------------------------------------------------------
-  mns_product_shell:
-    repo: dhdevspace/auto_mns
-    tag: mns-product-shell-v0.2.0-review.3
-    digest: sha256:d2f712db5ff8906362dffa0137ae83dd97f00c0c749ee0a00a280e4091cb6ae0
-    channel: review
-    purpose: Interactive product shell (product.sh) used to author and launch scenarios.
-
-  mns_authoring:
-    repo: dhdevspace/auto_mns
-    tag: mns-authoring-v0.2.0-zones-preview.4
-    digest: sha256:fa58d138825e2587d3d2f567757fb78555df3abb2ed3e30f3bb919ea7c3ef52c
-    channel: pinned
-    # Off the -review.N line on purpose: this is the zones/sensor-noise/preview
-    # build (TEVV-Authoring PR #8), published as -zones-preview.N. bump refuses
-    # pinned rows, so this tag/digest pair moves only by hand. Move back to
-    # channel: review once that work ships as a -review.N tag.
-    purpose: Authoring tool used to create/edit ScenarioSpecs ahead of generation.
-    follow_up: >-
-      move back to channel review once TEVV-Authoring PR #8 ships the
-      zones/sensor-noise work as a -review.N tag; bump cannot advance a
-      pinned row, so this stays frozen until someone does it
-
-  # ---------------------------------------------------------------------
-  # standalone-v2 coordinated release (4 rows)
-  #
-  # The product flow uses immutable date/version tags plus manifest digests.
-  # Each build is also published under its mutable -latest alias for developer
-  # discovery, but production always consumes the exact ref rendered here.
-  # ---------------------------------------------------------------------
-  mns_product_shell_v2:
-    repo: dhdevspace/auto_mns
-    tag: mns-product-shell-20260826.2
-    latest_tag: mns-product-shell-latest
-    digest: sha256:d3208b2e70f758ae448a1dafb310e9daa45b9a77293921a2bf74edf41c3d9d85
-    channel: pinned
-    purpose: Product shell for the standalone-v2 content-pack flow.
-
-  mns_authoring_v2:
-    repo: dhdevspace/auto_mns
-    tag: mns-authoring-20260826.3
-    latest_tag: mns-authoring-latest
-    digest: sha256:7814011638e3031e67b36c8d6d37ddaf7fc806b181b82b0530b863b93413a23c
-    channel: pinned
-    purpose: ScenarioLab authoring frozen on the v2 SM6 IoStore host capability.
-
-  mns_stack_generator_v2:
-    repo: dhdevspace/auto_mns
-    tag: mns-stack-generator-20260826
-    latest_tag: mns-stack-generator-latest
-    digest: sha256:634052453fe72b14ca53681b732bc4e47f1cf44d80348be54bfe5ff4fe0496e9
-    channel: pinned
-    purpose: Generator that resolves content packs from the shared PackStore.
-
-  # ---------------------------------------------------------------------
-  # standalone-v2 on UE 5.8.2 (candidate channel standalone_v2_ue582)
-  #
-  # Same product, next engine line. Host capability
-  # ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2; packs cooked
-  # for it are on TEVV-Airsim GitHub Releases (packs/standalone-v2-ue582.lock.json).
-  # All five roles are published digest pins. The generator and shell were
-  # built from MnS-Integration-Platform main + PR #93 with the TEVV-Authoring
-  # #15 SDK and pushed by hand on 2026-09-09, because the published 20260826
-  # ones reject the new pack contract ("level pack must declare a supported
-  # strict, whole-level, or actor-selection contract"); see the follow_up.
-  # ---------------------------------------------------------------------
-  tevv_runtime_host_ue582:
-    repo: dhdevspace/auto_mns
-    tag: tevv-runtime-host-20260910.1
-    digest: sha256:3a5de227f3ab8a2ac81b0a2cda3262283fedc731b46438395a51e8a376e2cfb8
-    channel: pinned
-    source:
-      repo: DinoHub/TEVV-Airsim
-      commit: 6dfe8801
-    purpose: >-
-      Generic standalone-v2 runtime host built on UE 5.8.2 (label
-      tevv.content_packs.host_compatibility_id = ue-5.8.2-cl56702186-...-v2).
-      20260909.3 restores UltraDynamicSky to the slimmed 20260909.2 host: on .2
-      the safti level had no light source, so every scene capture rendered
-      exactly zero (depth still rendered) and VIO saw black frames. Slimming
-      from 20260909.2 kept (2.79 GB; content pak 681 MB, was 7.2 GB).
-
-  mns_authoring_ue582:
-    repo: dhdevspace/auto_mns
-    tag: mns-authoring-20260909.1
-    digest: sha256:cd7e54e70079564210b33ebe6db85f364bb40b378a3163df5e6034ed8e8a893c
-    channel: pinned
-    purpose: >-
-      ScenarioLab on UE 5.8.2 (TEVV-Authoring #15 line at 2b3d67fd): switches
-      level packs in-process (mns.Authoring.SelectLevelPack, restart-request
-      fallback) and embeds the same 25-plugin contract as the runtime host, so
-      it mounts every pack in the ue582 lock. 20260908 lacked both and rejected
-      packs needing CableComponent/Niagara. Like the 5.5.4 image it ships no
-      default asset packs; the PackLibrary is seeded from the v1 row (see the
-      mns_authoring_v2 follow_up).
-
-  mns_stack_generator_ue582:
-    repo: dhdevspace/auto_mns
-    tag: mns-stack-generator-20260909
-    digest: sha256:59b7974232a8c1038218fac18c3bc5c64aac96ecbcf648608a052018636561ce
-    channel: pinned
-    purpose: >-
-      Generator for the 5.8.2 packs: MnS-Integration-Platform 30657d1 (main +
-      PR #93, the staging fix) with the TEVV-Authoring 7fe22c7 (#15)
-      content-pack SDK and the 5.8.2 runtime host contract baked. Built and
-      pushed from a developer machine on 2026-09-09 (packs/README.md); repin
-      when the integration repo publishes its own after #93 merges.
-
-  mns_product_shell_ue582:
-    repo: dhdevspace/auto_mns
-    tag: mns-product-shell-20260917
-    digest: sha256:c4a0b62da00c9f3e727c3260fb07a7d534a9ad54a04352ea3ea339292b8068c3
-    channel: pinned
-    purpose: >-
-      Product shell built alongside mns_stack_generator_ue582 (same sources)
-      with ScenarioLab's 25-plugin contract baked in
-      (packs/authoring-host-compatibility.ue582.json); installs, verifies and
-      stages the 5.8.2 packs, skipping any ScenarioLab cannot mount.
-
-      20260917 adds the campaign CLI: tools/tevv-campaign and the campaign
-      command group behind it (init, validate, plan, run, watch, status,
-      cancel). Before it, `./product.sh cli campaign ...` reached a shell that
-      had no such command and this repository had no campaign to run.
-      Campaign names resolve against the mounted workspace, so
-      scenarios/vio-reference is found from inside the container.
-
-  tevv_runtime_host:
-    repo: dhdevspace/auto_mns
-    tag: tevv-runtime-host-20260826
-    latest_tag: tevv-runtime-host-latest
-    digest: sha256:04723c3fb35b1516946283bd942179a2def986ab843a88b667c7290a9f82af3c
-    channel: pinned
-    purpose: >-
-      Generic standalone-v2 runtime host. Replaces all per-environment
-      simulator images; levels and assets arrive as content packs mounted at
-      runtime.
-
-  mns_stack_generator:
-    repo: dhdevspace/auto_mns
-    tag: mns-stack-generator-v0.2.0-review.22
-    digest: sha256:337daa0247bc3d19cac169630688920da987a080649eba2579f4b2655134217c
-    channel: review
-    purpose: Renders a ScenarioSpec into a runnable compose stack (the generator).
-
-  mns_blocks:
-    repo: dhdevspace/auto_mns
-    tag: blocks-v0.2.0-review.3
-    digest: sha256:0b3aec1aa502b9aaef35d1082c0d6c2c33ba18ff9006e832df70b2d05468869a
-    channel: review
-    purpose: >-
-      Blocks-map simulator build; also the published image_sets "blocks"
-      simulator role (one image, two consumers — see consumers.image_sets
-      below).
-
-  # ---------------------------------------------------------------------
-  # Product images (product-images.env "dashboard" section — mutable -latest)
-  # ---------------------------------------------------------------------
-  dashboard_backend:
-    repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-latest"
-    digest: sha256:939c93c309d4363ae1552238a175971cb1566fc75f699fbfcda906b6dcfe41e9
-    channel: moving
-    source:
-      repo: DinoHub/TEVV-Web-Dashboard
-      commit: ee99b9d
-    bakes: [mns_authoring, mns_stack_generator]
-    purpose: TEVV Web Dashboard backend API; bakes authoring/generator refs as defaults.
-
-  dashboard_frontend:
-    repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-latest"
-    digest: sha256:9a779f5d5564333bfec145309bc7afde0e059a64b5c8b00183da7c0489c93259
-    channel: moving
-    source:
-      repo: DinoHub/TEVV-Web-Dashboard
-      commit: ee99b9d
-    purpose: TEVV Web Dashboard Next.js frontend, served at :3001.
-
   # ---------------------------------------------------------------------
   # Product images (product-images.env "tools" section)
   # ---------------------------------------------------------------------
@@ -334,51 +83,6 @@ images:
       airsim_tools has no known build source. Give it an owned build script,
       publish a source-identifying immutable tag after the stable tag policy
       is defined, then delete this note.
-
-  # ---------------------------------------------------------------------
-  # Runtime images — image_sets "published" (dhdevspace, R-2 resolves digests)
-  # ---------------------------------------------------------------------
-  safti_city:
-    repo: dhdevspace/auto_mns
-    tag: safti-runtime-metrics
-    digest: sha256:5b330b3fc5e84e8cd34f7337f5c1733f33f2ce12ed7d44142ffbbc145b40a814
-    channel: moving
-    purpose: AirSim SAFTI City map, the published simulators.safti_city role.
-
-  unreal_authored:
-    repo: dhdevspace/auto_mns
-    tag: tevv-airsim-authored-latest
-    digest: null
-    channel: unpublished
-    purpose: >-
-      Authored/custom AirSim map, the published simulators.unreal_authored
-      role (referenced by this catalog's
-      consumers.image_sets.published.images.simulators.unreal_authored) —
-      not on the registry and not buildable from this checkout; needs a
-      source build or removal from its compose reference. See
-      docs/adr/0002-one-image-catalog.md "Unpublished images".
-
-  ardupilot:
-    repo: dhdevspace/auto_mns
-    tag: ardupilot-latest
-    digest: sha256:0b6681c522a9d209a796fd4c3296d0a104b3245ea32532464d70b3a7070c3d35
-    channel: moving
-    purpose: ArduPilot SITL, the published autopilots.ardupilot role.
-
-  px4:
-    repo: dhdevspace/auto_mns
-    tag: px4-airsim-px4
-    digest: sha256:cd5a87467c73a0f8f506bca38a6f5d8df0779cf3c21a99dd0f4384784d40588a
-    channel: moving
-    purpose: PX4 SITL, the published autopilots.px4 role.
-
-  ros2_bridge:
-    repo: dhdevspace/auto_mns
-    tag: tevv-airsim-ros2-bridge-humble-20260915.1
-    latest_tag: tevv-airsim-ros2-bridge-humble-latest
-    digest: sha256:2f5c20e7d3283386162f4dc0d88254c97d3c81e95e96b97d583e4faed869464d
-    channel: pinned
-    purpose: AirSim<->ROS2 bridge, the published ros2_bridge role.
 
   qgroundcontrol:
     repo: dhdevspace/auto_mns
@@ -412,7 +116,6 @@ images:
       another ref and the tag changes, so this row misses loudly rather than
       running the wrong estimator quietly.
 
-
   # ---------------------------------------------------------------------
   # Platform images — docker-compose-dashboard.yml inline rows (2 rows;
   # dashboard-backend/-frontend above are product rows, not these)
@@ -432,96 +135,6 @@ images:
     channel: upstream
     resolver: imagetools
     purpose: Opt-in (--profile db) telemetry database for the dashboard.
-
-  ardupilot_slim:
-    repo: dhdevspace/auto_mns
-    tag: ardupilot-slim-20260826.1
-    latest_tag: ardupilot-slim-latest
-    digest: sha256:0ba679fed0309e3004def725acb003b286d4cd99587618533f5d120760039bd9
-    channel: pinned
-    purpose: >-
-      ArduPilot SITL with separate QGC/C2 routing, optional router fanout,
-      and root/user pymavlink support;
-      used by the published and review image sets.
-
-  # Isolated whole-product origin candidate; no compatible pack release is claimed.
-  origin_runtime_host:
-    repo: dhdevspace/auto_mns
-    tag: tevv-runtime-host-20260918.1
-    digest: sha256:72ef41b2040a2de6986068a303ce51f377fb21edf670b32819dd84ae84a8e3bd
-    channel: pinned
-    source:
-      repo: DinoHub/TEVV-Airsim
-      commit: a6f514c58
-    purpose: >-
-      Origin integration runtime_host. 20260918.1 is v0.4.0-origin.1 (TEVV-Airsim
-      9771b7c) with only the game executable replaced by a build of a6f514c58, the
-      ArduCopter state-getter fix (TEVV-Airsim #178): cooked content, base release
-      and host-compatibility contract are unchanged, so every pack in
-      packs/origin-integration.lock.json stays valid. Verified live 2026-09-12 on
-      electric_dreams 1.0.4 (origin applied, ArduPilot home on the origin, GUIDED
-      takeoff/hold/land, no "Not Implemented" lines, no RPC timeouts). Still not a
-      build of TEVV-Airsim main: neither this row nor tevv_runtime_host_ue582 carries
-      #152 (UltraDynamicSky) or anything after 9771b7c except #178.
-  origin_authoring:
-    repo: dhdevspace/auto_mns
-    tag: mns-authoring-v0.4.0-origin.5
-    digest: sha256:3fe4f5b80e510b8c2f88f9a8e4ead6dbcb7c048889d2681e27c504665cb559a0
-    channel: pinned
-    purpose: Origin integration authoring; mounted-pack and autopilot acceptance pending.
-  origin_stack_generator:
-    repo: dhdevspace/auto_mns
-    tag: mns-stack-generator-v0.4.0-origin.1
-    digest: sha256:016373d2281fa2f2cd6a835ea3416546f1bf046d33191aa47fd86ed99c499e80
-    channel: pinned
-    purpose: Origin integration stack_generator; mounted-pack and autopilot acceptance
-      pending.
-  origin_product_shell:
-    repo: dhdevspace/auto_mns
-    tag: mns-product-shell-v0.4.0-origin.1
-    digest: sha256:3fc42441b6442a9ae6f5427b43ceae5c5450360337490d0ee871417e21e89e33
-    channel: pinned
-    purpose: Origin integration product_shell; mounted-pack and autopilot acceptance
-      pending.
-  origin_ros2_bridge:
-    repo: dhdevspace/auto_mns
-    tag: tevv-airsim-ros2-bridge-humble-v0.4.0-origin.1
-    digest: sha256:24be9ec9c70412f09de251aae201f6d1a70d5d7569205a3268739982f729b4f6
-    channel: pinned
-    purpose: Origin integration ros2_bridge; mounted-pack and autopilot acceptance pending.
-  origin_px4:
-    repo: dhdevspace/auto_mns
-    tag: px4-airsim-px4-v0.4.0-origin.3
-    digest: sha256:70d3fdf1f44f973f4ad36f11eb1560cada2b1aefccadcf5ed1b0dcd198be23bc
-    channel: pinned
-    purpose: Origin integration px4; mounted-pack and autopilot acceptance pending.
-  origin_ardupilot:
-    repo: dhdevspace/auto_mns
-    tag: ardupilot-slim-v0.4.0-origin.1
-    digest: sha256:aa77cd67258cb5f11c17d327cc78833eb959145e4c54778313117c2b0c645920
-    channel: pinned
-    purpose: Origin integration ardupilot; mounted-pack and autopilot acceptance pending.
-  origin_dashboard_backend:
-    repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-backend-v0.2.0-gee99b9d
-    digest: sha256:63529359880d6a117b3bdf7822f47abfc212c8cd5f979b780f25e9f43d2e2548
-    channel: pinned
-    source:
-      repo: DinoHub/TEVV-Web-Dashboard
-    purpose: >-
-      Origin integration dashboard_backend. gee99b9d = TEVV-Web-Dashboard main
-      after #115: Generate phase no longer authors sensors (ScenarioLab does),
-      ROS 2 step offers published topics only, stale armed topics dropped at
-      launch, sim2real role map follows renames. Bakes the v1 review pins
-      (build script reads product-images.env); compose overrides them.
-  origin_dashboard_frontend:
-    repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-frontend-v0.2.0-gee99b9d
-    digest: sha256:9a779f5d5564333bfec145309bc7afde0e059a64b5c8b00183da7c0489c93259
-    channel: pinned
-    source:
-      repo: DinoHub/TEVV-Web-Dashboard
-    purpose: Origin integration dashboard_frontend, built with the backend above (gee99b9d).
 
   # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
   v1_runtime_host:
@@ -611,52 +224,14 @@ images:
 
 consumers:
   product_env:
-    review:
-      MNS_PRODUCT_SHELL_IMAGE: mns_product_shell
-      MNS_AUTHORING_IMAGE: mns_authoring
-      MNS_STACK_GENERATOR_IMAGE: mns_stack_generator
-      MNS_BLOCKS_IMAGE: mns_blocks
-    dashboard:
-      DASHBOARD_BACKEND_IMAGE: dashboard_backend
-      DASHBOARD_FRONTEND_IMAGE: dashboard_frontend
     tools:
       AIRSIM_TOOLS_IMAGE: airsim_tools
 
-  # A release channel binds the SAME variable names as product_env.review to a
-  # different set of images, and emits to its own file. It is a separate
-  # section rather than another product_env group because the invariant on
-  # product_env — one variable, one image key — is worth keeping: inside a
-  # single channel a var bound twice really is a mistake. Between channels it
-  # is the whole point.
-  #
-  # A consumer selects a channel by sourcing one file. Nothing merges them.
+  # A release channel binds the product's image variables to one coordinated
+  # set of images and emits them to its own file. A consumer selects a channel
+  # by sourcing that file. v1 (MnS 1.0, UE 5.8.2) is the stable line and the
+  # only one; a later release adds a channel here.
   release_channels:
-    standalone_v2:
-      emits: images/standalone-v2-images.generated.env
-      image_set: published
-      vars:
-        MNS_PRODUCT_SHELL_IMAGE: mns_product_shell_v2
-        MNS_AUTHORING_IMAGE: mns_authoring_v2
-        MNS_STACK_GENERATOR_IMAGE: mns_stack_generator_v2
-        MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host
-        MNS_ROS2_BRIDGE_IMAGE: ros2_bridge
-    # UE 5.8.2 -- the DEFAULT channel since 2026-09-09 (`make dashboard`,
-    # `./product.sh`). `CHANNEL=v2` selects the 5.5.4 set above instead. Installs
-    # packs/standalone-v2-ue582.lock.json into its own store (.mns/ue582/) and
-    # generates against image set ue582.
-    # The ros2 bridge is the 5.5.4-era build until
-    # TEVV-Airsim-ROS2-Bridge #45 publishes one built against the 5.8.2 AirLib.
-    standalone_v2_ue582:
-      emits: images/standalone-v2-ue582.generated.env
-      image_set: ue582
-      vars:
-        MNS_PRODUCT_SHELL_IMAGE: mns_product_shell_ue582
-        MNS_AUTHORING_IMAGE: mns_authoring_ue582
-        MNS_STACK_GENERATOR_IMAGE: mns_stack_generator_ue582
-        MNS_RUNTIME_HOST_IMAGE: tevv_runtime_host_ue582
-        MNS_ROS2_BRIDGE_IMAGE: ros2_bridge
-
-    # MnS 1.0 -- the DEFAULT channel since 2026-09-18 (`make dashboard`, `./product.sh`).
     v1:
       emits: images/v1.0.0.generated.env
       image_set: v1
@@ -669,25 +244,12 @@ consumers:
         DASHBOARD_BACKEND_IMAGE: v1_dashboard_backend
         DASHBOARD_FRONTEND_IMAGE: v1_dashboard_frontend
 
-    origin_integration:
-      emits: images/origin-integration.generated.env
-      image_set: origin-integration
-      vars:
-        MNS_PRODUCT_SHELL_IMAGE: origin_product_shell
-        MNS_AUTHORING_IMAGE: origin_authoring
-        MNS_STACK_GENERATOR_IMAGE: origin_stack_generator
-        MNS_RUNTIME_HOST_IMAGE: origin_runtime_host
-        MNS_ROS2_BRIDGE_IMAGE: origin_ros2_bridge
-        DASHBOARD_BACKEND_IMAGE: origin_dashboard_backend
-        DASHBOARD_FRONTEND_IMAGE: origin_dashboard_frontend
-
   # A pack release lock (packs/*.lock.json) restates a few image pins because
   # tools/install_demo_packs.py has to pull the product shell before anything
-  # in this repo has resolved an image set. That is a second copy of a pin, and
-  # a second copy is how product-images.env drifted to review.20 against this
-  # repo's review.22. So the edge is declared here (lock key -> catalog key)
-  # and `tools/images.sh verify` asserts the JSON still agrees, offline. A bump
-  # that advances one of these rows now fails CI until the lock is regenerated.
+  # in this repo has resolved an image set. That is a second copy of a pin, so
+  # the edge is declared here (lock key -> catalog key) and
+  # `tools/images.sh verify` asserts the JSON still agrees, offline. A bump
+  # that advances one of these rows fails CI until the lock is regenerated.
   pack_locks:
     packs/v1.0.0.lock.json:
       product_shell: v1_product_shell
@@ -695,63 +257,21 @@ consumers:
       stack_generator: v1_stack_generator
       runtime_host: v1_runtime_host
       ros2_bridge: v1_ros2_bridge
-    packs/standalone-v2-review.1.lock.json:
-      product_shell: mns_product_shell_v2
-      authoring: mns_authoring_v2
-      stack_generator: mns_stack_generator_v2
-      runtime_host: tevv_runtime_host
-      ros2_bridge: ros2_bridge
-    packs/standalone-v2-ue582.lock.json:
-      product_shell: mns_product_shell_ue582
-      authoring: mns_authoring_ue582
-      stack_generator: mns_stack_generator_ue582
-      runtime_host: tevv_runtime_host_ue582
-      ros2_bridge: ros2_bridge
 
   image_sets:
-    published:
-      pull_policy: missing
-      images:
-        simulators:
-          tevv_runtime_host: tevv_runtime_host
-        autopilots:
-          ardupilot: ardupilot_slim
-          px4: px4
-        ros2_bridge: ros2_bridge
-        qgroundcontrol: qgroundcontrol
-        sim_real_eval: sim_real_eval
-        vio_estimator: vio_estimator_openvins
-    # Same stack, 5.8.2 runtime host. Selected by MNS_IMAGE_SET=ue582 (the
-    # standalone_v2_ue582 channel's env file sets it).
-    ue582:
-      inherits: published
-      pull_policy: missing
-      images:
-        simulators:
-          tevv_runtime_host: tevv_runtime_host_ue582
-
-
+    # What generated stacks run (MNS_IMAGE_SET=v1, set by the v1 channel file).
     v1:
-      inherits: published
       pull_policy: missing
       images:
         simulators:
           tevv_runtime_host: v1_runtime_host
         autopilots:
-          px4: v1_px4
           ardupilot: v1_ardupilot
+          px4: v1_px4
         ros2_bridge: v1_ros2_bridge
-
-    origin-integration:
-      inherits: published
-      pull_policy: missing
-      images:
-        simulators:
-          tevv_runtime_host: origin_runtime_host
-        autopilots:
-          px4: origin_px4
-          ardupilot: origin_ardupilot
-        ros2_bridge: origin_ros2_bridge
+        qgroundcontrol: qgroundcontrol
+        sim_real_eval: sim_real_eval
+        vio_estimator: vio_estimator_openvins
 
   compose_env:
     dashboard:

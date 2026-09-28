@@ -93,9 +93,9 @@ it is simply untested on this stack.
 Four of the six services mount `/tmp/.X11-unix` and pass `DISPLAY`. A pod has
 no X server.
 
-The runtime host is already fine: `AIRSIM_HEADLESS=true` maps to
-`-RenderOffScreen -NoSound -Unattended -NoSplash` (`launch.sh:78`,
-`Makefile:156`), cameras still render. **This contradicts the bridge's
+The runtime host is already fine: it renders headless with
+`-RenderOffScreen -NoSound -Unattended -NoSplash`, which the OSMO `sim.sh`
+passes (see [the runbook](osmo-runbook.md)), and cameras still render. **This contradicts the bridge's
 `docs/OSMO.md`, which lists a headless sim entrypoint as outstanding
 runtime-stack work — it exists.** What is outstanding is smaller: the generated
 compose still emits `DISPLAY=${DISPLAY:-:0}` unconditionally

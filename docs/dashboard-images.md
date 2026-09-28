@@ -57,14 +57,14 @@ it is what lets you iterate on a locally built image without a dashboard start
 silently replacing it. `./product.sh setup` is the operation that refreshes.
 
 ```bash
-tools/ensure-images.sh --dry-run --development --channel standalone_v2_ue582   # LOCAL / MISSING per ref
+tools/ensure-images.sh --dry-run --development   # LOCAL / MISSING per ref
 ```
 
 ### 2. `IMAGE_MODE` picks which generated files are loaded
 
 | `IMAGE_MODE` | Env files loaded, in order | `MNS_IMAGE_SET_FILE` handed to the backend |
 | --- | --- | --- |
-| `development` (default) | the channel's development env, then `images/standalone-v2-development.generated.env` | `images/image-set.development.generated.yaml` — tag-only refs, so a local build with the same tag wins |
+| `development` (default) | the channel's env (`images/v1.0.0.generated.env`), then `images/development.generated.env` | `images/image-set.development.generated.yaml` — tag-only refs, so a local build with the same tag wins |
 | `production` | the channel's env, then `product-images.env`, then `images/platform-images.generated.env` | `images/image-set.generated.yaml` — exact `repo:tag@digest` pins |
 
 `tools/load-images-env.sh` exports each `KEY=VAL` from those files **only when
@@ -109,7 +109,7 @@ through compose, into the backend, and on into the generator:
 | `MNS_AUTHORING_IMAGE` | empty (baked default) | the backend, to launch ScenarioLab |
 | `MNS_ROS2_BRIDGE_IMAGE` → `AIRSIM_BRIDGE_IMAGE` | **required** — the error names the env file to source | the backend, for the `ros2-tools` container |
 | `MNS_PRODUCT_SHELL_IMAGE` | empty (the pack lock's pin) | pack install and staging |
-| `MNS_IMAGE_SET` | `ue582` (`CHANNEL=v2` selects `published`) | the generator: which `image_sets` entry a stack resolves roles from |
+| `MNS_IMAGE_SET` | `v1` | the generator: which `image_sets` entry a stack resolves roles from |
 | `MNS_IMAGE_SET_FILE` | the production overlay; `make dashboard` overrides per `IMAGE_MODE` | the generator: which rendered file holds that entry |
 | `MNS_IMAGE_PULL_POLICY` | `missing` | see the next section |
 
@@ -180,7 +180,7 @@ behaviour; `=never` leaves it alone.
 ```bash
 docker inspect -f '{{.Config.Image}}' airsim-dashboard-api        # which backend
 docker inspect -f '{{.Config.Image}}' ros2-tools                  # which bridge
-tools/ensure-images.sh --dry-run --development --channel standalone_v2_ue582
+tools/ensure-images.sh --dry-run --development
 tools/images.sh status                                            # overrides under FYI, drift under NEEDS YOU
 tools/images.sh baked                                             # baked defaults vs the catalog
 ./product.sh doctor                                               # every channel ref present?

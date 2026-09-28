@@ -63,7 +63,7 @@ echo "    ${#loaded[@]} tar(s) loaded"
 # them (tools/load-images-env.sh: shell > ./.env > generated file), so write
 # the same refs with the digest stripped. Integrity was established on the
 # online host, which pulled each of these by digest.
-echo "==> writing ./.env image overrides (digest-stripped, ue582 channel)"
+echo "==> writing ./.env image overrides (digest-stripped, v1 channel)"
 
 python3 - "$ROOT" "$MANIFEST" <<'PY'
 import re, sys, time
@@ -71,18 +71,16 @@ from pathlib import Path
 
 root, manifest = Path(sys.argv[1]), Path(sys.argv[2])
 # Only name images this bundle actually carries. Writing a key for an image
-# that was never exported (the monitoring/metrics/logs/legacy stacks ship only
-# with --all-catalog) would turn a clear "no such image" into a confusing
+# that was never exported (rows outside the product set ship only with
+# --all-catalog) would turn a clear "no such image" into a confusing
 # pull attempt on a host with no network.
 bundled = {l.split("\t")[2] for l in manifest.read_text().splitlines() if l.strip()}
-# First file to define a key wins: the ue582 channel is the default, so its
-# refs must outrank the v1 product-images.env values for the same key names.
+# First file to define a key wins: the v1 channel's pins come first.
 sources = [
-    "images/standalone-v2-ue582.generated.env",
-    "images/standalone-v2-development.generated.env",
+    "images/v1.0.0.generated.env",
+    "images/development.generated.env",
     "product-images.env",
     "images/platform-images.generated.env",
-    "images/legacy-images.generated.env",
 ]
 seen, lines = {}, []
 for name in sources:
@@ -135,7 +133,7 @@ out = kept + [
     "# docker load does not restore RepoDigests, so the digest-pinned refs in",
     "# images/*.generated.env cannot resolve on this host. These are the same",
     "# refs with the digest stripped; the online host pulled each by digest.",
-    "# Regenerate if you switch CHANNEL away from the default ue582.",
+    "# Regenerate (re-run tools/offline-import.sh) after updating the checkout.",
     "MNS_IMAGE_PULL_POLICY=missing",
     "DASHBOARD_PULL_POLICY=missing",
 ] + [f"{k}={v}" for k, v in sorted(seen.items())] + (
@@ -148,40 +146,6 @@ print(f"    {len(seen)} image vars written to .env"
       + (f"; {len(skipped)} left commented out (not in this bundle)" if skipped else ""))
 PY
 
-# ------------------------------------------------- ScenarioLab seed packs ----
-# tools/stage-authoring-packs.sh seeds the PackLibrary with mns_vehicle_models
-# and scenario_runtime_basic from the v1 authoring image, and resolves that
-# image by the digest-pinned ref it greps out of product-images.env. A digest
-# never resolves after `docker load`, and ./.env cannot override a value the
-# script reads from a file, so on an offline host it goes to the registry and
-# `make dashboard` dies. Do the seeding here with the tag instead: the script
-# returns early when mns_vehicle_models is already present, so it then never
-# needs the image at all.
-echo "==> seeding ScenarioLab default asset packs"
-SEED_TAG="$(grep -E '^MNS_AUTHORING_IMAGE=' "$ROOT/product-images.env" | tail -1 | cut -d= -f2- | sed 's/@sha256:.*//')"
-DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$ROOT/.mns/ue582/authoring-data}"
-PACK_LIBRARY="$DATA_ROOT/PackLibrary"
-MARKER="$PACK_LIBRARY/asset_packs/mns_vehicle_models.mnsassetpack/mns_asset_pack.json"
-
-if [[ -f "$MARKER" ]]; then
-  echo "    already seeded"
-elif [[ -z "$SEED_TAG" ]]; then
-  echo "    WARNING: product-images.env has no MNS_AUTHORING_IMAGE; ScenarioLab will have no vehicle models." >&2
-elif ! docker image inspect "$SEED_TAG" >/dev/null 2>&1; then
-  echo "    WARNING: $SEED_TAG is not in this bundle." >&2
-  echo "             Re-export it, or make dashboard will try to pull it and fail offline." >&2
-else
-  mkdir -p "$PACK_LIBRARY/asset_packs" "$PACK_LIBRARY/level_packs"
-  docker run --rm --user "$(id -u):$(id -g)" --entrypoint sh \
-    -v "$PACK_LIBRARY/asset_packs:/out:rw" \
-    "$SEED_TAG" -c 'cp -a -n /opt/mns/default-packs/asset_packs/. /out/'
-  if [[ -f "$MARKER" ]]; then
-    echo "    seeded from $SEED_TAG: $(ls -1 "$PACK_LIBRARY/asset_packs" | tr '\n' ' ')"
-  else
-    echo "    WARNING: seeding ran but mns_vehicle_models is still absent." >&2
-  fi
-fi
-
 # ----------------------------------------------------------------- packs ----
 echo "==> installing content pack cache"
 CACHE="$ROOT/.mns/downloads/pack-cache"
@@ -190,14 +154,11 @@ cp -n "$BUNDLE"/pack-cache/*.mns*pack "$CACHE"/ 2>/dev/null || true
 echo "    $(ls -1 "$CACHE" | wc -l) archive(s) in $CACHE"
 
 # ---------------------------------------------------------------- python ----
-# Only PyYAML is actually required here: tools/images.sh and
-# tools/install_demo_packs.py need it, and Ubuntu ships it as python3-yaml.
-# jinja2 and python-dotenv are used by tools/generate_scenario.py alone, which
-# belongs to the legacy compose/<scenario> path, not `make dashboard` — so a
-# missing pip is a warning, not a failure.
+# Only PyYAML is required: tools/images.sh and tools/install_demo_packs.py
+# need it, and Ubuntu ships it as python3-yaml.
 if [[ -d "$BUNDLE/wheels" && "${MNS_SKIP_WHEELS:-0}" != 1 ]]; then
   echo "==> installing python deps"
-  if python3 -c "import yaml, jinja2, dotenv" 2>/dev/null; then
+  if python3 -c "import yaml" 2>/dev/null; then
     echo "    already satisfied — nothing to install"
   else
     PIP=""
@@ -216,14 +177,12 @@ if [[ -d "$BUNDLE/wheels" && "${MNS_SKIP_WHEELS:-0}" != 1 ]]; then
     fi
     python3 -c "import yaml" 2>/dev/null \
       || { echo "ERROR: PyYAML is missing and could not be installed. Install python3-yaml." >&2; exit 1; }
-    python3 -c "import jinja2, dotenv" 2>/dev/null \
-      || echo "    note: jinja2/python-dotenv absent — only tools/generate_scenario.py (legacy ./launch.sh) needs them; make dashboard does not."
   fi
 fi
 
 echo
 echo "Done. Verify without touching the network:"
-echo "  tools/ensure-images.sh --development --channel standalone_v2_ue582 --dry-run   # expect 0 would pull"
+echo "  tools/ensure-images.sh --development --dry-run                                  # expect 0 would pull"
 echo "  tools/install-demo-packs.sh --check --all                                      # expect all installed"
 echo "  tools/images.sh verify                                                         # catalog vs generated files"
 echo
