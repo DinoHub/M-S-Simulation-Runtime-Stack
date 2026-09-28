@@ -657,7 +657,8 @@ Every `product.sh` command, including setup and the image cache, is in
 
 `make campaign` flies a *campaign*: a scored matrix of runs over one scenario,
 for example 4 wind strengths × 3 repeats, each recorded, validity-gated and
-scored. [Campaigns](campaigns.md) covers the commands, and
+scored. (On the v1.0.0 images that wind is visual only: the scene's weather
+moves, but no force acts on the drone.) [Campaigns](campaigns.md) covers the commands, and
 [`scenarios/vio-reference/README.md`](../scenarios/vio-reference/README.md) shows how to copy the reference
 campaign and swap in your own estimator.
 

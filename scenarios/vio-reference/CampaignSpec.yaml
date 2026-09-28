@@ -32,6 +32,12 @@ evaluation:
 # metre per second flight. The case measures error against the vehicle's actual
 # attitude and gyroscope peaks, which the recording carries, not against the
 # setting.
+#
+# On the v1.0.0 images the wind is VISUAL ONLY. The runtime host hands
+# conditions.weather.wind to the level's weather actor (foliage, particles),
+# and nothing applies a force to the vehicle: the v1.0.0 stack generator does
+# not set AirSim's physics wind. Until a generator that does is pinned, the four
+# variants differ in what the cameras see, not in how the drone is pushed.
 variants:
   - id: calm
     name: No wind

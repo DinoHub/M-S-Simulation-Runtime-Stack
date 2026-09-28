@@ -469,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     store_root = env_path("MNS_PACK_STORE_ROOT", DEFAULT_STORE_ROOT)
 
-    packs_dir = env_path("MNS_PACKS_DIR", ROOT / ".mns" / "packs")
+    packs_dir = env_path("MNS_PACKS_DIR", ROOT / ".mns" / "v1" / "packs")
     if args.remove or args.remove_orphans:
         authoring_data = authoring_data_root_for(store_root)
         removed, warnings = ([], [])

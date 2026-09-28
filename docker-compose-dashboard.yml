@@ -162,9 +162,8 @@ services:
       - MNS_PACKS_DIR=${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}
       # The runtime host's frozen capability contract, forwarded to the
       # generator the same way. The generator validates the pack variant it
-      # selects against this document, and the published generator image
-      # ships without one (its default path is empty), so a v2 generate
-      # failed with "host compatibility document does not exist". The file is
+      # selects against this document; without it, generate fails with "host
+      # compatibility document does not exist". The file is
       # the one baked into the pinned tevv_runtime_host image -- see
       # packs/README.md for how it is refreshed.
       - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.v1.json}

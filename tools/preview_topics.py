@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Print the ROS 2 topics a stack's bridges will publish — BEFORE it is started.
 
-    ./tools/preview_topics.py generated/xfs-fisheye  # a generated stack
-    ./tools/preview_topics.py ardupilot-xfs --json   # machine-readable
+    ./tools/preview_topics.py generated/xfs-fisheye         # a generated stack
+    ./tools/preview_topics.py generated/xfs-fisheye --json  # machine-readable
 
 Why this exists
 ---------------
@@ -236,16 +236,16 @@ def compose_config(compose_file: Path, project_dir: Path):
     """
     env = dict(os.environ)
     # CONFIG_ROOT only when the stack does not set its own: a process variable
-    # OUTWEIGHS the project .env, so defaulting it unconditionally would point a
-    # generated stack (CONFIG_ROOT=./config, relative to its own directory) at
-    # the repo's config tree and silently preview the wrong settings.json.
+    # OUTWEIGHS the project .env, so defaulting it unconditionally would hide
+    # the stack's own value. The fallback is the stack's ./config, which is
+    # where the generator writes settings.json.
     dotenv = project_dir / ".env"
     stack_sets_config_root = (
         dotenv.is_file()
         and any(line.startswith("CONFIG_ROOT=") for line in dotenv.read_text().splitlines())
     )
     if not stack_sets_config_root:
-        env.setdefault("CONFIG_ROOT", str(REPO / "config"))
+        env.setdefault("CONFIG_ROOT", str(project_dir / "config"))
     env.setdefault("MSRS_ROOT", str(REPO))
     env.setdefault("HOST_UID", str(os.getuid()))
     env.setdefault("HOST_GID", str(os.getgid()))
@@ -474,7 +474,7 @@ def report(results, settings_path, brief=False):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("target", help="scenario name (compose/<name>) or a stack directory")
+    ap.add_argument("target", help="a stack directory, or its docker-compose.yml")
     ap.add_argument("--json", action="store_true", help="emit the raw result")
     ap.add_argument("--brief", action="store_true",
                     help="first vehicle in full, the rest summarised (pre-launch display)")
@@ -484,23 +484,14 @@ def main():
     args = ap.parse_args()
 
     target = Path(args.target)
-    # `REPO / "compose" / target` COLLAPSES to target when target is absolute —
-    # pathlib drops the left side. An absolute stack path therefore matched the
-    # scenario branch and ran with project_dir=REPO, loading the repo's .env
-    # instead of the stack's: wrong ROS2_IMAGE, wrong CONFIG_ROOT, no
-    # settings.json, and a listing that looked plausible and was wrong. Only a
-    # bare name can name a scenario.
-    if not target.is_absolute() and (REPO / "compose" / args.target / "docker-compose.yml").is_file():
-        compose_file = REPO / "compose" / args.target / "docker-compose.yml"
-        project_dir = REPO                       # scenario stacks bind ./config
-    elif (target / "docker-compose.yml").is_file():
+    if (target / "docker-compose.yml").is_file():
         compose_file = target / "docker-compose.yml"
         project_dir = target                     # generated stacks carry their own .env
     elif target.is_file():
         compose_file, project_dir = target, target.parent
     else:
         die(f"no compose file for '{args.target}' "
-            f"(tried compose/{args.target}/docker-compose.yml and {target}/docker-compose.yml)")
+            f"(tried {target}/docker-compose.yml)")
 
     model, stubbed = compose_config(compose_file, project_dir)
     settings_path = find_settings_json(model)
