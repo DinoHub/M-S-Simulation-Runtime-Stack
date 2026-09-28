@@ -49,7 +49,20 @@ blob (falling back to a copy across filesystems, or with
 `MNS_PACKS_LINK_MODE=copy`). The store is the mount; consumers only reference it.
 No level pack is baked into any image. The v1 authoring image bakes exactly one
 pack, `mns_vehicle_models` (drone placement is core authoring); the same pack is
-also in the lock so generated stacks resolve it from the store.
+also in the lock so generated stacks resolve it from the store. The baked copy is
+1.0.3 (an untextured quadrotor); the lock pins 1.0.4 (the textured AirSim
+`Quadrotor1`).
+
+**The lock decides each pack's version.** `make dashboard` (and
+`./download-packs.sh`) run `tools/install-demo-packs.sh --missing --sync`, which
+fetches the lock's version of the vehicle models and of every pack already
+installed in any version, so a lock bump arrives on the next start; packs never
+chosen are never fetched, and a pack `--sync` cannot fetch (offline, no
+credentials) is a warning, not a failure. `tools/stage-authoring-packs.sh` then
+stages only the lock's version of each pack it pins, and sets ScenarioLab's
+PackLibrary copy to it, creating the vehicle models there before the authoring
+image's entrypoint can copy its baked 1.0.3 in. Older versions stay in the store
+for generated stacks that reference them.
 
 ## Knowing when a pack is out of date
 
@@ -71,7 +84,8 @@ credentials, so the browser cannot check for itself and shows this file's
 `generated_at` rather than implying it is current.
 
 A newer version still reaches everyone the same way — `make pack-lock`, review
-the diff, commit. `--status` only removes the guesswork about when to run it.
+the diff, commit; each checkout's next `make dashboard` then fetches it
+(`--sync`). `--status` only removes the guesswork about when to run it.
 
 ## Removing a pack
 
@@ -98,7 +112,7 @@ bytes are shared, not whether anything still needs the pack. For the same reason
 
 | File | What it is |
 |---|---|
-| `v1.0.0.lock.json` | Every pack published on `DinoHub/TEVV-Airsim` for the v1 host id. Six level packs (Warehouse, Office Environment, Condo, XFS, Safti, Fisherman's Cabin), four object packs, and `mns_vehicle_models` 1.0.3 (capability release `pack-asset-mns_vehicle_models-1.0.3-iostore-v2`). ScenarioLab opens Warehouse and Office Environment; the other four levels are runtime only (AirSim / CableComponent plugins); the release's multi-pack E2E flew all six. |
+| `v1.0.0.lock.json` | Every pack published on `DinoHub/TEVV-Airsim` for the v1 host id. Six level packs (Warehouse, Office Environment, Condo, XFS, Safti, Fisherman's Cabin), four object packs, and `mns_vehicle_models` 1.0.4 (release `pack-asset-mns_vehicle_models-1.0.4-iostore-v2`: the textured quadrotor that replaces the baseline 1.0.3's white one). ScenarioLab opens Warehouse and Office Environment; the other four levels are runtime only (AirSim / CableComponent plugins); the release's multi-pack E2E flew all six. |
 | `runtime-host-compatibility.v1.json` | The frozen host capability contract baked into the runtime host image at `/app/TEVVRuntimeHost/TEVVRuntimeHost/Content/TEVVHost/host-compatibility.json`. Its `id` is the lock's `capability_id`; the generator validates every resolved pack against it. |
 | `authoring-host-compatibility.v1.json` | ScenarioLab's own contract. Same id, but its plugin set is ScenarioLab's: staging validates packs against it (`MNS_AUTHORING_HOST_CONTRACT`), and the Content phase compares each pack's required plugins to it. A pack the runtime host provides plugins for but ScenarioLab does not is **runtime only**: generated stacks fly it, the editor cannot open it, staging skips it. |
 | `channels.json` | The channel list for the dashboard; `tools/test_channels.py` asserts it matches the Makefile. |
@@ -131,9 +145,10 @@ the selected contract's `id`.
 whether it is installed, and whether ScenarioLab can open it). With no options
 it installs the starter set (Warehouse and the vehicle models). It installs
 into the channel's pack store through the product-shell image and stages what
-ScenarioLab can open. `make dashboard` does not download packs unless
-`MNS_DEMO_PACKS` is set; it stages what the store holds and warns when that is
-nothing. The dashboard, the product shell and the generator all read that one
+ScenarioLab can open. `make dashboard` downloads only
+the lock's version of packs you already have (and the vehicle models), or
+`MNS_DEMO_PACKS` when set; it stages what the store holds and warns when that
+is nothing. The dashboard, the product shell and the generator all read that one
 store, and the generated stack's TEVVRuntimeHost loads the same immutable
 artifact ScenarioLab authored against.
 
@@ -152,6 +167,7 @@ The installer underneath, for scripting:
 tools/install-demo-packs.sh --all             # the lock's eleven packs
 tools/install-demo-packs.sh --objects         # every object pack in the lock
 tools/install-demo-packs.sh --missing --all   # only what the store lacks
+tools/install-demo-packs.sh --missing --sync  # the lock's version of what is installed (what make dashboard runs)
 tools/install-demo-packs.sh --check --all     # offline: list installed/missing, exit 1 if any is missing
 ```
 

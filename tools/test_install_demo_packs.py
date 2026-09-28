@@ -124,6 +124,53 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("missing:   office-props@1.0.1", out)
         self.assertNotIn("condo-level", out)
 
+    def _store_with_old_condo(self):
+        self.store.mkdir()
+        (self.store / "index.json").write_text(json.dumps({"packs": [
+            {"kind": "level", "id": "condo-level", "version": "0.9.0", "digest": "sha256:" + "c" * 64}]}))
+
+    def test_sync_selects_the_locks_version_of_what_is_installed(self):
+        # The lock decides the version; the store only says which packs are wanted.
+        self._store_with_old_condo()
+        code, out = self._run("--check", "--sync")
+        self.assertEqual(code, 1)
+        self.assertIn("missing:   condo-level@1.0.0 (condo)  [lock update from 0.9.0]", out)
+        self.assertNotIn("office-props", out)           # never installed, never fetched
+
+    def test_sync_without_credentials_warns_and_stays_on_what_is_installed(self):
+        self._store_with_old_condo()
+        err = io.StringIO()
+        with patch.dict(os.environ, {"MNS_DEMO_PACK_DOWNLOAD_DIR": self.tmp.name}), \
+                patch.object(installer, "github_token", return_value=None), \
+                patch.object(installer, "ensure_image"), \
+                patch.object(installer, "stage", return_value=0) as staged, \
+                contextlib.redirect_stderr(err):
+            code, _ = self._run("--missing", "--sync")
+        self.assertEqual(code, 0)
+        self.assertIn("not fetching condo-level@1.0.0", err.getvalue())
+        staged.assert_called_once()
+        # An explicit selection still fails by name.
+        with patch.object(installer, "github_token", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "no GitHub credentials"):
+                self._run("--missing", "--sync", "--condo")
+
+    def test_sync_download_failure_is_a_warning(self):
+        self._store_with_old_condo()
+        err = io.StringIO()
+        with patch.dict(os.environ, {"MNS_DEMO_PACK_DOWNLOAD_DIR": self.tmp.name}), \
+                patch.object(installer, "github_token", return_value="token"), \
+                patch.object(installer, "ensure_image"), \
+                patch.object(installer, "check_disk_space"), \
+                patch.object(installer, "download_asset", side_effect=OSError("connection reset")), \
+                patch.object(installer, "install_archive") as installed, \
+                patch.object(installer, "stage", return_value=0) as staged, \
+                contextlib.redirect_stderr(err):
+            code, _ = self._run("--missing", "--sync")
+        self.assertEqual(code, 0)
+        self.assertIn("could not fetch condo-level@1.0.0", err.getvalue())
+        installed.assert_not_called()
+        staged.assert_called_once()
+
     def test_dry_run_lists_release_urls_without_side_effects(self):
         code, out = self._run("--dry-run", "--all")
         self.assertEqual(code, 0)
@@ -390,6 +437,88 @@ class PackStatus(unittest.TestCase):
                                            _pack_store(root, DIGEST, OTHER), "host", "o/r", root,
                                            offline=True)
             self.assertEqual(status["installed_not_locked"], [OTHER])
+
+class PackLibraryFollowsTheLock(unittest.TestCase):
+    """The authoring image seeds PackLibrary with its baked vehicle pack and
+    never overwrites it; stage-authoring-packs.sh swaps in the lock's pin."""
+
+    def _run(self, workspace: Path, install_pinned: bool, pack_id: str = "office-props",
+             seeded: bool = True) -> Path:
+        script = workspace / "tools/stage-authoring-packs.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text((Path(installer.ROOT) / "tools/stage-authoring-packs.sh").read_text())
+        script.chmod(0o755)
+        store, data = workspace / ".mns/v1/pack-store", workspace / ".mns/v1/authoring-data"
+        store.mkdir(parents=True)
+        (store / "index.json").write_text("{}\n")
+        if install_pinned:
+            blob = store / "blobs/sha256" / D2.removeprefix("sha256:")
+            blob.mkdir(parents=True)
+            (blob / "mns_asset_pack.json").write_text('{"version": "new"}')
+        library = data / "PackLibrary/asset_packs"
+        if seeded:
+            (library / f"{pack_id}.mnsassetpack").mkdir(parents=True)
+            (library / f"{pack_id}.mnsassetpack/mns_asset_pack.json").write_text('{"version": "baked"}')
+            (library / f"{pack_id}.mnsassetpack.digest").write_text(D1)
+        document = _lock()
+        document["packs"][1]["id"] = pack_id
+        lock = workspace / "lock.json"
+        lock.write_text(json.dumps(document))
+        bin_dir = workspace / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "docker").write_text("#!/usr/bin/env bash\nexit 0\n")
+        (bin_dir / "docker").chmod(0o755)
+        environment = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                       "MNS_PACK_STORE_ROOT": str(store), "MNS_AUTHORING_DATA_ROOT": str(data),
+                       "MNS_DEMO_PACK_LOCK": str(lock), "MNS_PRODUCT_SHELL_IMAGE": "local/shell:1"}
+        import subprocess
+        subprocess.run([str(script)], env=environment, check=True, capture_output=True, text=True)
+        return library
+
+    def test_a_stale_library_pack_is_replaced_by_the_pinned_blob(self):
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._run(Path(directory), install_pinned=True)
+            self.assertEqual((library / "office-props.mnsassetpack.digest").read_text(), D2)
+            self.assertIn("new", (library / "office-props.mnsassetpack/mns_asset_pack.json").read_text())
+
+    def test_it_is_left_alone_until_the_pinned_blob_is_installed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._run(Path(directory), install_pinned=False)
+            self.assertEqual((library / "office-props.mnsassetpack.digest").read_text(), D1)
+
+    def test_a_fresh_library_gets_the_required_packs_pin_before_the_image_seeds_it(self):
+        # First run: no PackLibrary yet, so the image's `cp -n` would otherwise
+        # copy its baked (older) vehicle pack in.
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._run(Path(directory), install_pinned=True,
+                                pack_id="mns_vehicle_models", seeded=False)
+            self.assertEqual((library / "mns_vehicle_models.mnsassetpack.digest").read_text(), D2)
+
+    def test_an_optional_pack_is_not_added_to_the_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._run(Path(directory), install_pinned=True, seeded=False)
+            self.assertFalse((library / "office-props.mnsassetpack").exists())
+
+    def test_a_superseded_version_is_not_staged_beside_the_pin(self):
+        # ScenarioLab refuses every level when one id is staged twice.
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            data = workspace / ".mns/v1/authoring-data"
+            pack_set = data / "ResolvedPacks/env/resolved-pack-set.json"
+            pack_set.parent.mkdir(parents=True)
+            both = [{"id": "office-props", "version": "1.0.0", "artifact_digest": D1},
+                    {"id": "office-props", "version": "1.0.1", "artifact_digest": D2}]
+            pack_set.write_text(json.dumps({"asset_packs": both}))
+            (data / "ResolvedPacks/index.json").write_text(json.dumps({
+                "asset_packs": both,
+                "level_packs": [{"id": "condo-level", "artifact_digest": D1,
+                                 "resolved_pack_set": "ResolvedPacks/env/resolved-pack-set.json"}]}))
+            self._run(workspace, install_pinned=True)
+            index = json.loads((data / "ResolvedPacks/index.json").read_text())
+            self.assertEqual([e["artifact_digest"] for e in index["asset_packs"]], [D2])
+            self.assertEqual([e["artifact_digest"] for e in json.loads(pack_set.read_text())["asset_packs"]], [D2])
+            self.assertEqual(len(index["level_packs"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

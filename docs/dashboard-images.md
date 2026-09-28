@@ -37,7 +37,7 @@ keeps a local tag.
 ```
 make dashboard
   -> ensure-images           tools/ensure-images.sh: local-first pull of the channel's refs
-  -> ensure-demo-packs       install missing packs through the product-shell image
+  -> ensure-demo-packs       bring installed packs to the lock's versions (install-demo-packs.sh --missing --sync)
   -> stage-authoring-packs   refresh ScenarioLab's view of the pack store
   -> load-images-env         export the generated env files, without clobbering overrides
   -> docker compose up       docker-compose-dashboard.yml, with MNS_IMAGE_SET_FILE set
