@@ -49,7 +49,10 @@ blob (falling back to a copy across filesystems, or with
 `MNS_PACKS_LINK_MODE=copy`). The store is the mount; consumers only reference it.
 No level pack is baked into any image. The v1 authoring image bakes exactly one
 pack, `mns_vehicle_models` (drone placement is core authoring); the same pack is
-also in the lock so generated stacks resolve it from the store.
+also in the lock so generated stacks resolve it from the store. TEVV-Authoring
+owns its version (`tooling/asset_packs/default_vehicle_pack.json`, now 1.0.4);
+the lock's entry and the `v1_authoring` pin in `images/catalog.yaml` move with
+it, never on their own.
 
 ## Knowing when a pack is out of date
 
@@ -98,7 +101,7 @@ bytes are shared, not whether anything still needs the pack. For the same reason
 
 | File | What it is |
 |---|---|
-| `v1.0.0.lock.json` | Every pack published on `DinoHub/TEVV-Airsim` for the v1 host id. Six level packs (Warehouse, Office Environment, Condo, XFS, Safti, Fisherman's Cabin), four object packs, and `mns_vehicle_models` 1.0.3 (capability release `pack-asset-mns_vehicle_models-1.0.3-iostore-v2`). ScenarioLab opens Warehouse and Office Environment; the other four levels are runtime only (AirSim / CableComponent plugins); the release's multi-pack E2E flew all six. |
+| `v1.0.0.lock.json` | Every pack published on `DinoHub/TEVV-Airsim` for the v1 host id. Six level packs (Warehouse, Office Environment, Condo, XFS, Safti, Fisherman's Cabin), four object packs, and `mns_vehicle_models` 1.0.4 (release `pack-asset-mns_vehicle_models-1.0.4-iostore-v2`), the version the authoring image bakes. ScenarioLab opens Warehouse and Office Environment; the other four levels are runtime only (AirSim / CableComponent plugins); the release's multi-pack E2E flew all six. |
 | `runtime-host-compatibility.v1.json` | The frozen host capability contract baked into the runtime host image at `/app/TEVVRuntimeHost/TEVVRuntimeHost/Content/TEVVHost/host-compatibility.json`. Its `id` is the lock's `capability_id`; the generator validates every resolved pack against it. |
 | `authoring-host-compatibility.v1.json` | ScenarioLab's own contract. Same id, but its plugin set is ScenarioLab's: staging validates packs against it (`MNS_AUTHORING_HOST_CONTRACT`), and the Content phase compares each pack's required plugins to it. A pack the runtime host provides plugins for but ScenarioLab does not is **runtime only**: generated stacks fly it, the editor cannot open it, staging skips it. |
 | `channels.json` | The channel list for the dashboard; `tools/test_channels.py` asserts it matches the Makefile. |

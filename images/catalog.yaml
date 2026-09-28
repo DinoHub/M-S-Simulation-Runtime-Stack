@@ -148,10 +148,10 @@ images:
   v1_authoring:
     repo: dhdevspace/auto_mns
     tag: mns-authoring-v1.0.0
-    digest: sha256:abaa02a6aa72588224b35ad9306110e9056754a3739e837575049311b0a35afc
+    digest: sha256:6aa3ad371f8c6c89a846344f10d9001acd3b5574d7f7c23b7ebd6e8ce361122d
     channel: pinned
     purpose: >-
-      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0); non-Substrate baseline with the matching baked vehicle pack and corrected preview package-root registration. Level packs are staged from the PackStore.
+      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0); non-Substrate baseline with corrected preview package-root registration. Bakes mns_vehicle_models 1.0.4, the version TEVV-Authoring pins (tooling/asset_packs/default_vehicle_pack.json). Level packs are staged from the PackStore.
 
   v1_stack_generator:
     repo: dhdevspace/auto_mns
@@ -167,7 +167,7 @@ images:
     digest: sha256:21ed9bed74f7837213b8d149463bcc00534ada66139b2d90ba3f4875a92543a1
     channel: pinned
     purpose: >-
-      MnS 1.0 product shell (same sources) with ScenarioLab's v1 contract baked; owns the pack mount directory import. Runtime and authoring staging both use advisory base-cook validation; matching non-Substrate authoring and generator digests are pinned.
+      MnS 1.0 product shell (same sources) with ScenarioLab's v1 contract baked; owns the pack mount directory import. Runtime and authoring staging both use advisory base-cook validation. Its baked MNS_AUTHORING_IMAGE default is the authoring build it was made with (sha256:abaa02a6…, vehicle pack 1.0.3); the product always passes v1_authoring instead, so the default applies only to a shell run by hand.
 
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns
