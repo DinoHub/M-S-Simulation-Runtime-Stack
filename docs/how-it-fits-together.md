@@ -175,7 +175,7 @@ reproduces on its own.
 scenarios/vio-reference/
   ScenarioSpec.yaml        the world and the rig
   CampaignSpec.yaml        variants x repeats, the route, retention, scoring
-  routes/reference-flight.yaml
+  routes/yard-box.yaml
   openvins/                the estimator's calibration
 ```
 

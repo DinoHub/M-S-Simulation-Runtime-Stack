@@ -120,7 +120,7 @@ recording:
 # finish_hold_seconds keeps it up through the landing call.
 mission:
   source: external
-  trajectory: ./routes/reference-flight.yaml
+  trajectory: ./routes/yard-box.yaml
   # The flight blocks until the vehicle is down, so this cap is the tail after
   # it rather than the flight's own budget.
   done: timeout

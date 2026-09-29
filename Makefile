@@ -98,10 +98,12 @@ ifeq ($(IMAGE_MODE),development)
 DASHBOARD_IMAGE_SET_FILE := images/image-set.development.generated.yaml
 ENSURE_IMAGES_FLAG := --development --channel $(CHANNEL_NAME)
 LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_DEV_ENV); load_images_env ./images/development.generated.env
+NOTE_IMAGE_OVERRIDES := note_image_overrides ./$(CHANNEL_DEV_ENV) ./images/development.generated.env
 else ifeq ($(IMAGE_MODE),production)
 DASHBOARD_IMAGE_SET_FILE := images/image-set.generated.yaml
 ENSURE_IMAGES_FLAG := --production --channel $(CHANNEL_NAME)
 LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_ENV); load_images_env ./images/platform-images.generated.env
+NOTE_IMAGE_OVERRIDES := note_image_overrides ./$(CHANNEL_ENV) ./images/platform-images.generated.env
 else
 $(error IMAGE_MODE must be development or production)
 endif
@@ -183,8 +185,11 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	@# Fail early on Docker, X11, or host-port problems.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
 	. ./tools/load-images-env.sh; \
+	$(NOTE_IMAGE_OVERRIDES); \
 	$(LOAD_DASHBOARD_IMAGES); \
-	check_images "$$MNS_STACKS_IMAGE" "$$MNS_PACKS_IMAGE" "$$MNS_AUTHORING_IMAGE" || true; \
+	check_images "$${MNS_STACKS_IMAGE:-$$(dotenv_value MNS_STACKS_IMAGE)}" \
+	             "$${MNS_PACKS_IMAGE:-$$(dotenv_value MNS_PACKS_IMAGE)}" \
+	             "$${MNS_AUTHORING_IMAGE:-$$(dotenv_value MNS_AUTHORING_IMAGE)}" || true; \
 	check_x11 || true; \
 	check_ports 3001:airsim-dashboard-frontend:frontend \
 	            8001:airsim-dashboard-api:backend \
@@ -330,6 +335,9 @@ stacks:  ## Any mns-stacks command: make stacks ARGS="<command> ..."
 CAMPAIGN ?= vio-reference
 campaign: ensure-images  ## Fly a campaign (CAMPAIGN=<name>, or ARGS="<subcommand> ...")
 	@mkdir -p generated scenarios
+	@# Advisory: warns when the campaign's vehicle spawns where its level has no
+	@# floor (packs/level-spawn-hints.json), before hours of runs fail to arm.
+	@python3 tools/check_spawn.py campaign $(or $(ARGS),run $(CAMPAIGN)) || true
 	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh campaign $(or $(ARGS),run $(CAMPAIGN))
 
 campaign-status:  ## One row per flight of a campaign (CAMPAIGN=<name>)

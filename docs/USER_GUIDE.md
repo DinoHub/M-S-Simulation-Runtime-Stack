@@ -763,6 +763,7 @@ targets both use it, and each prints a note that it is an override.
 | Launch never reaches *Visualization ready* | The level is still loading; wait up to 3 minutes and check the `unreal-airsim` row. Make sure nothing else holds port 8765, such as another stack or Foxglove bridge. |
 | `unreal-airsim is unhealthy`, restarting in a loop | The display. Start `make dashboard` from a desktop terminal. |
 | PX4 won't arm: `ekf2 missing data` | Wait 1–2 minutes after spawn. |
+| PX4 won't arm: `vertical velocity unstable` / `height estimate error`, and `/ground_truth/odom` z keeps falling | The vehicle spawned under the level: XFS and Condo have no floor at the world origin. Use the measured start in `packs/level-spawn-hints.json` (`make fly` warns about this). |
 | Lichtblick shows *You're using an unsupported browser* | Open the dashboard in Chrome or Chromium. |
 | Lichtblick shows no topics | ROS domain mismatch. Relaunch from the dashboard, and check the hint on Monitor. |
 | Your node sees only `/rosout` and `/parameter_events` | Wrong `ROS_DOMAIN_ID`, or the bridge hasn't finished starting. Read the domain from `generated/<name>/docker-compose.yml`. |
@@ -788,8 +789,11 @@ targets both use it, and each prints a note that it is an override.
 - **Runtime-only levels.** ScenarioLab cannot open Condo, XFS, Safti or
   Fisherman's Cabin: its editor lacks plugins those levels need. They still
   mount and fly, but you author them by hand, starting from a Warehouse
-  export. Set the spec's origin to the level's PlayerStart; with the default
-  (0,0,0) origin the drone can spawn high above the level and fall.
+  export. Give the vehicle a start over the level's floor: XFS and Condo have
+  none under the world origin, so a (0, 0, 0) start falls through the level and
+  PX4 refuses to arm. The measured starts are in `packs/level-spawn-hints.json`
+  (XFS: `x: 423, y: -906, z: -21.0`; Condo: `x: 0, y: -20, z: -2.0`), and
+  `make fly` / `make campaign` warn when a vehicle starts at such an origin.
 - **Office Environment** has a low ceiling. PX4 takeoffs there can be slow, and
   flights fly low.
 - **Bags are sqlite3 (`.db3`).** Convert with `ros2 bag convert` if you need

@@ -245,7 +245,7 @@ check_images() {
   [ -z "$missing" ] && return 0
 
   {
-    echo "WARNING: images pinned in images/v1.0.0.generated.env are not on this machine:"
+    echo "WARNING: images pinned in images/v1.0.0.generated.env (or overridden in ./.env) are not on this machine:"
     printf '%s' "$missing"
     cat <<'EOF'
 

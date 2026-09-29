@@ -41,10 +41,19 @@ vehicles:
   name: Drone1
   runtime_name: Drone1
   ros_domain_id: 1
+  # The container yard on XFS, 2.3 m above the ground. Not the origin:
+  # XFS has no floor under its world origin (its terrain sits tens of metres
+  # above it), so a (0, 0, 0) spawn falls through the world at ~8 m/s and PX4
+  # refuses to arm ("vertical velocity unstable"). The level pack carries no
+  # PlayerStart pose the generator could use, so this was measured: held
+  # 160 m up for the terrain to stream in and dropped, the vehicle came to rest
+  # at NED z = -18.70 here. AirSim NED metres, +z DOWN: -21.0 is above it.
+  # A container stack stands 4 m east, so routes/yard-box.yaml flies the
+  # reference box mirrored to the open west. Same pose as vio-osmo-xfs.
   start:
-    x: 0
-    y: 0
-    z: 0
+    x: 423
+    y: -906
+    z: -21.0
     yaw: 0
   # Stereo pair, 0.12 m baseline. Camera Z is 0.25 m above the IMU: at zero the
   # camera sits inside the airframe and the rotor arms fill about a third of

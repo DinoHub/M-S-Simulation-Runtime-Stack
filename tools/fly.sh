@@ -51,6 +51,10 @@ stack="$ROOT/generated/$name"
 # Created by the host user first, as `make dashboard` does, so a root-owned
 # directory never blocks the generator (which runs as you).
 mkdir -p "$ROOT/generated"
+# Advisory: a vehicle at the world origin of a level with no floor there (XFS)
+# falls through it, and the autopilot never arms. Warns with the measured
+# start (packs/level-spawn-hints.json); never stops the run.
+if command -v python3 >/dev/null 2>&1; then python3 "$ROOT/tools/check_spawn.py" "$spec" || true; fi
 echo "== generate $name -> generated/$name"
 # The folder, not the file: a split spec keeps its asset packs beside it.
 kit=()
