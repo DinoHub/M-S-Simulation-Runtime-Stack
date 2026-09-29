@@ -52,8 +52,17 @@ echo "== generate $name -> generated/$name"
 kit=()
 [[ -n "${MNS_CAPABILITY_KIT:-}" ]] && kit=(--kit "$(cd "$MNS_CAPABILITY_KIT" && pwd)")
 "$ROOT/tools/mns-stacks.sh" generate "$(dirname "$spec")" --profile docker --out "$stack" "${kit[@]}"
+# Remembered for `make stop`: the stack, and its Compose project when the run
+# was given one (--project NAME in the extra flags), tab-separated.
+project=""
+prev=""
+for arg in "$@"; do
+  [[ "$prev" == --project ]] && project="$arg"
+  case "$arg" in --project=*) project="${arg#--project=}" ;; esac
+  prev="$arg"
+done
 mkdir -p "$ROOT/.mns"
-printf '%s\n' "$stack" >"$ROOT/.mns/last-stack"
+printf '%s\t%s\n' "$stack" "$project" >"$ROOT/.mns/last-stack"
 
 if [[ "$keep" == true ]]; then
   echo "== run generated/$name${record[*]:+ (recording)}, left up (--keep)"

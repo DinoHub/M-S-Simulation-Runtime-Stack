@@ -293,14 +293,16 @@ fly: ensure-demo-packs  ## Generate and fly SCENARIO until its mission is done (
 	@$(MNS_STACKS_ENV); ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
 
 stop:  ## Stop a flown stack (finalize_metrics, then compose down)
-	@stack="$(STACK)"; [ -n "$$stack" ] || stack=$$(cat .mns/last-stack 2>/dev/null); \
+	@last=$$(cut -f1 .mns/last-stack 2>/dev/null); last_project=$$(cut -s -f2 .mns/last-stack 2>/dev/null); \
+	stack="$(STACK)"; [ -n "$$stack" ] || stack="$$last"; \
 	test -n "$$stack" || { echo "usage: make stop STACK=generated/<name>  (no make fly to default to)" >&2; exit 2; }; \
 	case "$$stack" in /*) ;; *) stack="$(CURDIR)/$$stack" ;; esac; \
-	$(MNS_STACKS_ENV); ./tools/mns-stacks.sh stop --stack "$$stack"
+	project=""; [ "$$stack" = "$$last" ] && [ -n "$$last_project" ] && project="$$last_project"; \
+	$(MNS_STACKS_ENV); ./tools/mns-stacks.sh stop --stack "$$stack" $${project:+--project "$$project"}
 
 author: stage-authoring-packs  ## Open ScenarioLab (SCENARIO=<folder or ScenarioSpec> to open one)
 	@. ./tools/check_docker.sh; check_x11 || true
-	@$(MNS_STACKS_ENV); ./tools/author.sh $(SCENARIO)
+	@$(MNS_STACKS_ENV); ./tools/author.sh $(if $(SCENARIO),"$(SCENARIO)",)
 
 author-stop:  ## Close ScenarioLab
 	@./tools/author.sh --stop

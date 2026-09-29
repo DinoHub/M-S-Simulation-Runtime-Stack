@@ -15,8 +15,7 @@ scores the evidence and renders `campaign status`. All of that is reused here
 through the pinned mns-stacks image (tools/mns-stacks.sh, the wrapper `make
 campaign` uses) -- `mns-stacks campaign plan` writes every run's ScenarioSpec
 to disk and returns where (`--json`: result.runs[].spec), `mns-stacks generate`
-generates a stack from one
-(it never starts anything). Only the middle of the runner's `run_one` -- bring
+generates a stack from one (it never starts anything). Only the middle of the runner's `run_one` -- bring
 the stack up, fly it, tear it down -- is replaced, with: render the OSMO
 workflow for the run, submit it, poll it, and pull its evidence back into the
 directory layout the runner's own scorecard reads.

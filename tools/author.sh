@@ -17,7 +17,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-NAME="${DASHBOARD_CONTAINER_PREFIX:-}mns-scenariolab-editor"
+# shellcheck source=tools/load-images-env.sh
+. "$ROOT/tools/load-images-env.sh"
+# The dashboard's container name, with its prefix from the shell or ./.env
+# (compose reads it from .env), so the two never start two editors.
+PREFIX="${DASHBOARD_CONTAINER_PREFIX-$(dotenv_value DASHBOARD_CONTAINER_PREFIX "$ROOT/.env")}"
+NAME="${PREFIX}mns-scenariolab-editor"
 usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; }
 
 case "${1:-}" in
@@ -25,8 +30,6 @@ case "${1:-}" in
   --stop) docker rm -f "$NAME" >/dev/null 2>&1 || true; echo "ScenarioLab stopped."; exit 0 ;;
 esac
 
-# shellcheck source=tools/load-images-env.sh
-. "$ROOT/tools/load-images-env.sh"
 IMAGE="${MNS_AUTHORING_IMAGE:-}"
 if [[ -z "$IMAGE" ]]; then
   IMAGE="$(dotenv_value MNS_AUTHORING_IMAGE "$ROOT/.env")"
