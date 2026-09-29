@@ -24,8 +24,8 @@ flowchart TB
 
   subgraph HOST["3. Per campaign, on the host: osmo/campaign.py run"]
     direction LR
-    PLAN["product shell: campaign plan<br/>one merged ScenarioSpec per run"]
-    GEN["product shell: runtime --no-run<br/>stacks/run/config: settings.json,<br/>topics, conditions, estimator"]
+    PLAN["mns-stacks campaign plan<br/>one merged ScenarioSpec per run"]
+    GEN["mns-stacks generate<br/>stacks/run/config: settings.json,<br/>topics, conditions, estimator"]
     IMG["image check<br/>catalog digest = node image"]
     SUB["osmo workflow submit, one per run<br/>--set stack, autopilot, viz<br/>--set-string route, gates, images"]
     PLAN --> GEN --> IMG --> SUB

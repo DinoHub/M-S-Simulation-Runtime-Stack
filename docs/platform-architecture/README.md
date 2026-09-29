@@ -25,9 +25,9 @@ here.**
 ## Where this repo (the runtime stack) sits
 
 The baseline spec names `M-S-Simulation-Runtime-Stack` as the **existing asset
-to reuse, not rebuild** (§2.1). Its compose renderer is now the stack
-generator image (the older `tools/generate_scenario.py` templater was removed
-with the legacy stacks); that becomes `tevv-compile`'s compose renderer, the metrics-collector / `evaluate.py` /
+to reuse, not rebuild** (§2.1). Its compose renderer is now `mns-stacks
+generate` (the `mns-stacks` image; the older `tools/generate_scenario.py`
+templater was removed with the legacy stacks); that becomes `tevv-compile`'s compose renderer, the metrics-collector / `evaluate.py` /
 `/run_state` lifecycle become harness components, the compose overlays remain
 the manual path. The OSMO variant adds `--target osmo` to the same compiler.
 The bridge repo is one task in the run-plane group (sim-adapter profile

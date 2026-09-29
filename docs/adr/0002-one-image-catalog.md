@@ -1,6 +1,7 @@
 # 0002. One canonical image catalog; everything else generated
 
-- **Status:** Accepted
+- **Status:** Accepted; amended 2026-09-29 for the v1.0.0 restructure (see
+  [Amendment](#amendment-v100-restructure-2026-09-29))
 - **Date:** 2026-08-22
 
 ## Context
@@ -178,12 +179,12 @@ wiring. That makes the backend a *consumer* of two other catalog rows — declar
 via `bakes: [mns_authoring, mns_stack_generator]` on the `dashboard_backend` row.
 `tools/images.sh baked` walks that edge (instead of a hardcoded var-name pair)
 and now exits nonzero on drift, turning what used to be advisory output into a
-CI assert.
+CI assert. (v1.0.0: `bakes: [v1_stacks, v1_authoring]`, see the amendment.)
 
 **`check-image-pins.sh` becomes a thin, deprecated shim** onto `tools/images.sh`,
 mapping the old flags (`--bump`, `--drift`) through with a one-line deprecation
 notice on stderr and the same exit codes — three weeks and ~25 commits of muscle
-memory and PR descriptions reference it by name.
+memory and PR descriptions reference it by name. (Removed in v1.0.0.)
 
 ### Legacy scenario stacks
 
@@ -301,3 +302,37 @@ consumption uses the full reference. Existing unlaunchable pins (ADR 0001's
   CI-verification layer on top.
 - `images/catalog.yaml` — the catalog itself, header comment restates this
   contract for anyone editing it without having read this file first.
+
+## Amendment: v1.0.0 restructure (2026-09-29)
+
+The decision stands; the rows and a few mechanisms changed with the v1.0.0
+restructure (one owner per concern, see MnS-Integration-Platform
+`docs/v1.0.0-architecture.md`):
+
+- **Rows.** `v1_product_shell` and `v1_stack_generator` are gone, with
+  `MNS_PRODUCT_SHELL_IMAGE` and `MNS_STACK_GENERATOR_IMAGE`. Their jobs moved to
+  `v1_packs` (`MNS_PACKS_IMAGE`, the content-pack SDK's CLI image) and
+  `v1_stacks` (`MNS_STACKS_IMAGE`, generation, stack lifecycle, recording and
+  campaigns). `v1_runtime_host_kit` (`MNS_RUNTIME_HOST_KIT_IMAGE`) is new: the
+  runtime host's companion kit image. The pack lock's `required_images` restate
+  `packs`, `stacks`, `authoring`, `runtime_host` and `ros2_bridge`.
+- **`pending:`.** A `channel: pinned` row may carry `pending: "<why>"` with
+  `digest: null` while its rc image is not yet pushed or pinned. It renders
+  tag-only, `verify` warns and passes, `status` lists it, and `bump --only KEY`
+  fills the digest and removes the note. This keeps "a pin being filled in"
+  visible in git without inventing a digest.
+- **`pull: false`.** The kit image is pinned for checks and never pulled by
+  setup: product users never need it.
+- **One host pin.** `consumers.release_channels.v1.host_pin` names the host,
+  kit and authoring rows. `verify` (local images) and `status` (also the
+  registry) compare their labels — `tevv.host.kit_image`,
+  `tevv.authoring.host_image`, `tevv.host.shared_set_id` /
+  `tevv.authoring.shared_set_id` — and warn, never fail, on a mismatch.
+- **Baked defaults** follow the backend: `bakes: [v1_stacks, v1_authoring]`,
+  and `baked-pins` resolves release-channel variables, not only
+  `product_env` ones.
+- **Removed:** the `airsim_tools` row (with `./tools.sh`), so `product-images.env`
+  now carries no pins (it is still rendered because the pinned dashboard
+  backend recognises the checkout by it); the `check-image-pins.sh` shim; the
+  offline bundle tooling, which did not work with v1 and is a separate feature
+  after v1.0.0.

@@ -301,8 +301,8 @@ osmo config show POOL | WORKFLOW | POD_TEMPLATE
 
 `osmo/campaign.py run vio-osmo-condo-ardupilot --only calm-r1 --viz`:
 
-1. **Spec to stack, on the host.** The product shell's `campaign plan` merges
-   the variant into a per-run ScenarioSpec, and `runtime --no-run` generates a
+1. **Spec to stack, on the host.** `mns-stacks campaign plan` merges the
+   variant into a per-run ScenarioSpec, and `mns-stacks generate` writes a
    stack from it under `generated/campaigns/<id>/stacks/calm-r1/`. That
    directory is visible inside pods as `/workspace/...`.
 2. **Submit.** The executor submits the workflow with one `--set` (stack,

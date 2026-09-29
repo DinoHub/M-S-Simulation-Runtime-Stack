@@ -4,10 +4,10 @@ Twelve flights over the XFS level — four wind strengths, three repeats each �
 recorded, checked and scored. It is here to be copied.
 
 ```bash
-./product.sh cli campaign run vio-reference
+make campaign CAMPAIGN=vio-reference
 ```
 
-Or, with the platform on PATH, `tevv-campaign run vio-reference`.
+(`mns-stacks campaign run vio-reference`, from the pinned image.)
 
 ## What it is for
 
@@ -16,11 +16,11 @@ is a rig that already flies, so a new estimator can be tested by changing one
 block rather than by assembling a scenario from nothing.
 
 ```bash
-tevv-campaign init my-test --from vio-reference
+make campaign ARGS="init my-test --from vio-reference"
 ```
 
 That copies the whole directory and rewrites the identity. The copy runs
-unedited, so `tevv-campaign validate my-test` is useful before you change
+unedited, so `make campaign ARGS="validate my-test"` is useful before you change
 anything.
 
 ## Testing your own estimator
@@ -49,7 +49,7 @@ image_sets:
       vio_estimator: my-registry/my-estimator:v1
 ```
 
-Then `tevv-campaign run my-test --image-set-file scenarios/my-test/my-images.yaml`.
+Then `make campaign ARGS="run my-test --image-set-file scenarios/my-test/my-images.yaml"`.
 
 Two things are checked before anything flies, and both are worth knowing about:
 
@@ -69,12 +69,12 @@ openvins/            the frozen estimator calibration
 
 Nothing pins an image. Every role — runtime host, bridge, autopilot, estimator —
 comes from the channel's image set in `images/catalog.yaml`, so this campaign
-runs against exactly what `./product.sh setup` installed.
+runs against exactly what `./setup.sh` installed.
 
 ## Reading the results
 
 ```bash
-tevv-campaign status vio-reference
+make campaign-status CAMPAIGN=vio-reference
 ```
 
 One row per flight. The `valid` column is the recording's own verdict and sits

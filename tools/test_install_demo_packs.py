@@ -28,7 +28,7 @@ def _lock(**overrides):
         "schema": "mns.pack_release_lock.v1",
         "release": {"repository": "DinoHub/M-S-Simulation-Runtime-Stack", "tag": "lock-release"},
         "capability_id": HOST,
-        "required_images": {"product_shell": "local/shell:1"},
+        "required_images": {"packs": "local/packs:1"},
         "packs": [
             {"selection": "condo", "kind": "level", "id": "condo-level", "display_name": "Condo",
              "version": "1.0.0", "asset_name": "condo_level-1_0_0.mnslevelpack", "size_bytes": 10,
@@ -114,7 +114,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("already installed", out)
         staged.assert_called_once()
-        self.assertEqual(staged.call_args.args[0], "local/shell:1")
+        self.assertEqual(staged.call_args.args[0], "local/packs:1")
         # ... unless it is a dry run, which touches nothing
         with patch.object(installer, "stage", return_value=0) as staged:
             code, out = self._run("--missing", "--condo", "--dry-run")
@@ -123,6 +123,53 @@ class InstallerTests(unittest.TestCase):
         code, out = self._run("--check", "--objects")
         self.assertIn("missing:   office-props@1.0.1", out)
         self.assertNotIn("condo-level", out)
+
+    def _store_with_old_condo(self):
+        self.store.mkdir()
+        (self.store / "index.json").write_text(json.dumps({"packs": [
+            {"kind": "level", "id": "condo-level", "version": "0.9.0", "digest": "sha256:" + "c" * 64}]}))
+
+    def test_sync_selects_the_locks_version_of_what_is_installed(self):
+        # The lock decides the version; the store only says which packs are wanted.
+        self._store_with_old_condo()
+        code, out = self._run("--check", "--sync")
+        self.assertEqual(code, 1)
+        self.assertIn("missing:   condo-level@1.0.0 (condo)  [lock update from 0.9.0]", out)
+        self.assertNotIn("office-props", out)           # never installed, never fetched
+
+    def test_sync_without_credentials_warns_and_stays_on_what_is_installed(self):
+        self._store_with_old_condo()
+        err = io.StringIO()
+        with patch.dict(os.environ, {"MNS_DEMO_PACK_DOWNLOAD_DIR": self.tmp.name}), \
+                patch.object(installer, "github_token", return_value=None), \
+                patch.object(installer, "ensure_image"), \
+                patch.object(installer, "stage", return_value=0) as staged, \
+                contextlib.redirect_stderr(err):
+            code, _ = self._run("--missing", "--sync")
+        self.assertEqual(code, 0)
+        self.assertIn("not fetching condo-level@1.0.0", err.getvalue())
+        staged.assert_called_once()
+        # An explicit selection still fails by name.
+        with patch.object(installer, "github_token", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "no GitHub credentials"):
+                self._run("--missing", "--sync", "--condo")
+
+    def test_sync_download_failure_is_a_warning(self):
+        self._store_with_old_condo()
+        err = io.StringIO()
+        with patch.dict(os.environ, {"MNS_DEMO_PACK_DOWNLOAD_DIR": self.tmp.name}), \
+                patch.object(installer, "github_token", return_value="token"), \
+                patch.object(installer, "ensure_image"), \
+                patch.object(installer, "check_disk_space"), \
+                patch.object(installer, "download_asset", side_effect=OSError("connection reset")), \
+                patch.object(installer, "install_archive") as installed, \
+                patch.object(installer, "stage", return_value=0) as staged, \
+                contextlib.redirect_stderr(err):
+            code, _ = self._run("--missing", "--sync")
+        self.assertEqual(code, 0)
+        self.assertIn("could not fetch condo-level@1.0.0", err.getvalue())
+        installed.assert_not_called()
+        staged.assert_called_once()
 
     def test_dry_run_lists_release_urls_without_side_effects(self):
         code, out = self._run("--dry-run", "--all")
@@ -205,7 +252,7 @@ class StagingStaysInItsOwnChannel(unittest.TestCase):
 
         with patch.dict(installer.os.environ, environ, clear=True), \
                 patch.object(installer.subprocess, "run", fake_run):
-            installer.stage("shell:image", store)
+            installer.stage("packs:image", store)
         return captured
 
     def test_a_custom_store_stages_beside_itself(self):
@@ -270,7 +317,7 @@ def _removal_lock(*digests: str) -> dict:
     return {"packs": [{"selection": d[7:11], "id": d[7:11], "kind": "level", "version": "1.0.0",
                        "artifact_digest": d, "release": {"repository": "o/r", "tag": "t"}}
                       for d in digests],
-            "required_images": {"product_shell": "shell:image"}}
+            "required_images": {"packs": "packs:image"}}
 
 
 def _staged_data(root: Path, *digests: str) -> Path:
@@ -390,6 +437,185 @@ class PackStatus(unittest.TestCase):
                                            _pack_store(root, DIGEST, OTHER), "host", "o/r", root,
                                            offline=True)
             self.assertEqual(status["installed_not_locked"], [OTHER])
+
+class PackLibraryFollowsTheLock(unittest.TestCase):
+    """The authoring image seeds PackLibrary with its baked vehicle pack and
+    never overwrites it; stage-authoring-packs.sh swaps in the lock's pin."""
+
+    def _run(self, workspace: Path, install_pinned: bool, pack_id: str = "office-props",
+             seeded: bool = True) -> Path:
+        script = workspace / "tools/stage-authoring-packs.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text((Path(installer.ROOT) / "tools/stage-authoring-packs.sh").read_text())
+        script.chmod(0o755)
+        store, data = workspace / ".mns/v1/pack-store", workspace / ".mns/v1/authoring-data"
+        store.mkdir(parents=True)
+        (store / "index.json").write_text("{}\n")
+        if install_pinned:
+            blob = store / "blobs/sha256" / D2.removeprefix("sha256:")
+            blob.mkdir(parents=True)
+            (blob / "mns_asset_pack.json").write_text('{"version": "new"}')
+        library = data / "PackLibrary/asset_packs"
+        if seeded:
+            (library / f"{pack_id}.mnsassetpack").mkdir(parents=True)
+            (library / f"{pack_id}.mnsassetpack/mns_asset_pack.json").write_text('{"version": "baked"}')
+            (library / f"{pack_id}.mnsassetpack.digest").write_text(D1)
+        document = _lock()
+        document["packs"][1]["id"] = pack_id
+        lock = workspace / "lock.json"
+        lock.write_text(json.dumps(document))
+        loader = workspace / "tools/load-images-env.sh"
+        loader.write_text((Path(installer.ROOT) / "tools/load-images-env.sh").read_text())
+        contract = workspace / "authoring-contract.json"
+        contract.write_text(json.dumps({"id": HOST}))
+        bin_dir = workspace / "bin"
+        bin_dir.mkdir()
+        # A fake docker: records its argv, answers like mns-packs --json.
+        self.docker_log = workspace / "docker.argv"
+        (bin_dir / "docker").write_text(
+            "#!/usr/bin/env bash\n"
+            f"printf '%s\\n' \"$@\" > {self.docker_log}\n"
+            "echo '{\"schema\": \"mns.packs_cli.v1\", \"command\": \"stage-authoring\", "
+            "\"ok\": true, \"exit_code\": 0, \"warnings\": [], \"error\": null, "
+            "\"result\": {\"staged\": [], \"skipped\": [], \"blocked\": []}}'\n")
+        (bin_dir / "docker").chmod(0o755)
+        environment = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                       "MNS_PACK_STORE_ROOT": str(store), "MNS_AUTHORING_DATA_ROOT": str(data),
+                       "MNS_DEMO_PACK_LOCK": str(lock), "MNS_PACKS_IMAGE": "local/packs:1",
+                       "MNS_AUTHORING_HOST_CONTRACT": str(contract)}
+        import subprocess
+        subprocess.run([str(script)], env=environment, check=True, capture_output=True, text=True)
+        return library
+
+    def test_a_stale_library_pack_is_replaced_by_the_pinned_blob(self):
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._run(Path(directory), install_pinned=True)
+            self.assertEqual((library / "office-props.mnsassetpack.digest").read_text(), D2)
+            self.assertIn("new", (library / "office-props.mnsassetpack/mns_asset_pack.json").read_text())
+
+    def test_it_is_left_alone_until_the_pinned_blob_is_installed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._run(Path(directory), install_pinned=False)
+            self.assertEqual((library / "office-props.mnsassetpack.digest").read_text(), D1)
+
+    def test_a_fresh_library_gets_the_required_packs_pin_before_the_image_seeds_it(self):
+        # First run: no PackLibrary yet, so the image's `cp -n` would otherwise
+        # copy its baked (older) vehicle pack in.
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._run(Path(directory), install_pinned=True,
+                                pack_id="mns_vehicle_models", seeded=False)
+            self.assertEqual((library / "mns_vehicle_models.mnsassetpack.digest").read_text(), D2)
+
+    def test_an_optional_pack_is_not_added_to_the_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._run(Path(directory), install_pinned=True, seeded=False)
+            self.assertFalse((library / "office-props.mnsassetpack").exists())
+
+    def test_staging_is_mns_packs_stage_authoring_with_the_lock(self):
+        # The lock decides the staged version (#103): the SDK's
+        # stage-authoring --lock does it, so a store holding two versions of
+        # one id never stages both. Every path is mounted at its host path,
+        # the store and data root as one mount so staging can hard-link.
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            self._run(workspace, install_pinned=True)
+            argv = self.docker_log.read_text().splitlines()
+            store, data = workspace / ".mns/v1/pack-store", workspace / ".mns/v1/authoring-data"
+            command = argv[argv.index("local/packs:1") + 1:]
+            self.assertEqual(command[:1], ["stage-authoring"])
+            self.assertEqual(command[command.index("--lock") + 1], str(workspace / "lock.json"))
+            self.assertEqual(command[command.index("--store") + 1], str(store))
+            self.assertEqual(command[command.index("--authoring-data") + 1], str(data))
+            self.assertIn("--json", command)
+            self.assertIn(f"{workspace}/.mns/v1:{workspace}/.mns/v1", argv)
+            self.assertIn("--network=none", argv)
+
+
+    def test_a_broad_common_parent_gets_two_mounts(self):
+        # Store and data root that meet only at / (or $HOME, /home) must not
+        # hand the container that whole tree.
+        import subprocess
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory(dir="/tmp") as b:
+            workspace = Path(a).resolve()
+            script = workspace / "tools/stage-authoring-packs.sh"
+            self._run(workspace, install_pinned=True)
+            store = workspace / ".mns/v1/pack-store"
+            data = Path(b).resolve() / "authoring-data"
+            env = {**os.environ, "PATH": f"{workspace / 'bin'}:{os.environ['PATH']}",
+                   "MNS_PACK_STORE_ROOT": str(store), "MNS_AUTHORING_DATA_ROOT": str(data),
+                   "MNS_DEMO_PACK_LOCK": str(workspace / "lock.json"),
+                   "MNS_PACKS_IMAGE": "local/packs:1",
+                   "MNS_AUTHORING_HOST_CONTRACT": str(workspace / "authoring-contract.json")}
+            done = subprocess.run([str(script)], env=env, capture_output=True, text=True, check=True)
+            argv = self.docker_log.read_text().splitlines()
+            self.assertIn(f"{store}:{store}", argv)
+            self.assertIn(f"{data}:{data}", argv)
+            self.assertIn("copies payloads", done.stderr)
+
+    def test_the_stamp_covers_image_lock_and_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            self._run(workspace, install_pinned=True)
+            stamp = (workspace / ".mns/v1/authoring-data/ResolvedPacks/.staged-with").read_text().split()
+            self.assertEqual(stamp[0], "local/packs:1")
+            self.assertEqual(len(stamp), 3)            # image, lock sha256, contract sha256
+            self.assertTrue(all(len(h) == 64 for h in stamp[1:]))
+
+
+class MnsPacksCalls(unittest.TestCase):
+    """install goes through `mns-packs install --json`, with host paths."""
+
+    def _completed(self, envelope, code=0):
+        return installer.subprocess.CompletedProcess([], code, json.dumps(envelope), "")
+
+    def test_install_reads_the_digest_from_the_envelope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            archive = root / "dl" / "condo.mnslevelpack"
+            archive.parent.mkdir()
+            archive.write_bytes(b"x")
+            ok = {"schema": "mns.packs_cli.v1", "command": "install", "ok": True, "exit_code": 0,
+                  "result": {"kind": "level", "id": "condo", "version": "1.0.0", "digest": D1},
+                  "warnings": [], "error": None}
+            with patch.object(installer.subprocess, "run", return_value=self._completed(ok)) as run:
+                digest = installer.install_archive("local/packs:1", archive, D1, root / "store")
+            self.assertEqual(digest, D1)
+            argv = run.call_args.args[0]
+            self.assertEqual(argv[argv.index("local/packs:1") + 1:],
+                             ["install", str(archive), "--store", str(root / "store"), "--json"])
+            self.assertIn(f"{root / 'store'}:{root / 'store'}:rw", argv)
+            self.assertIn(f"{archive.parent}:{archive.parent}:ro", argv)
+            # a digest other than the lock's is refused
+            with patch.object(installer.subprocess, "run", return_value=self._completed(ok)):
+                with self.assertRaisesRegex(RuntimeError, "lock expects"):
+                    installer.install_archive("local/packs:1", archive, D2, root / "store")
+
+    def test_a_refused_bundle_reports_the_cli_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            archive = root / "bad.mnsassetpack"
+            archive.write_bytes(b"x")
+            refused = {"schema": "mns.packs_cli.v1", "command": "install", "ok": False,
+                       "exit_code": 2, "result": None, "warnings": [],
+                       "error": {"type": "PackError", "message": "checksum mismatch in payload"}}
+            with patch.object(installer.subprocess, "run", return_value=self._completed(refused, 2)):
+                with self.assertRaisesRegex(RuntimeError, "checksum mismatch in payload"):
+                    installer.install_archive("local/packs:1", archive, None, root / "store")
+
+    def test_the_image_comes_from_env_then_dotenv_then_the_lock(self):
+        lock = {"required_images": {"packs": "pinned/packs:1"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(installer, "ROOT", Path(tmp)), \
+                    patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("MNS_PACKS_IMAGE", None)
+                self.assertEqual(installer.packs_image(lock), "pinned/packs:1")
+                (Path(tmp) / ".env").write_text('MNS_PACKS_IMAGE="local/packs:dev"\n')
+                with contextlib.redirect_stderr(io.StringIO()) as err:
+                    self.assertEqual(installer.packs_image(lock), "local/packs:dev")
+                self.assertIn("overrides the catalog pin", err.getvalue())
+                os.environ["MNS_PACKS_IMAGE"] = "shell/packs:env"
+                self.assertEqual(installer.packs_image(lock), "shell/packs:env")
+
 
 if __name__ == "__main__":
     unittest.main()

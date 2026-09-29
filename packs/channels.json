@@ -1,6 +1,6 @@
 {
   "schema": "mns.pack_channels.v1",
-  "_comment": "The channels the Makefile and product.sh can select, declared once so a reader (the dashboard's Content phase) does not have to parse either. The Makefile's ifeq blocks and product.sh's case statement remain the authority for what a channel *does*; tools/test_channels.py asserts this file agrees with them.",
+  "_comment": "The channels the Makefile can select, declared once so a reader (the dashboard's Content phase) does not have to parse Make syntax. The Makefile's ifeq blocks remain the authority for what a channel *does*; tools/test_channels.py asserts this file agrees with them.",
   "default": "v1",
   "channels": [
     {

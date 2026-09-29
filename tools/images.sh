@@ -21,17 +21,17 @@
 #   tools/images.sh report          # pinned vs latest on Hub / upstream registries (online)
 #   tools/images.sh bump [--only KEY] [--channel review|moving]
 #   tools/images.sh drift           # regenerate committed ScenarioSpecs with the
-#                                    # LATEST generator into a tmp dir, diff vs generated/
+#                                    # pinned mns-stacks into a tmp dir, diff vs generated/
 #   tools/images.sh baked           # assert the released dashboard-backend image's
-#                                    # baked authoring/generator refs match the catalog
+#                                    # baked mns-stacks/authoring refs match the catalog
 #   tools/images.sh selftest        # regression guard on synthetic fixtures (offline,
 #                                    # no real catalog/network involved); `verify` always
 #                                    # runs this first, so it rarely needs invoking directly
 #
 # sync/verify/report/bump are implemented in tools/images.py (YAML-heavy,
-# needs pyyaml). drift/baked stay here — they were already bash+docker in
-# tools/check-image-pins.sh (now a thin deprecated shim onto this script) and
-# porting the docker-run/diff plumbing to Python bought nothing.
+# needs pyyaml). drift/baked stay here: they are docker plumbing (drift runs
+# mns-stacks through tools/mns-stacks.sh), and porting that to Python buys
+# nothing.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${PYTHON:-python3}"
@@ -40,9 +40,9 @@ MODE="${1:-}"
 
 case "$MODE" in
   sync|verify|report|bump|selftest|status|refs|local-refs)
-    # product.sh setup/doctor/pull-images reach these subcommands, so this is
-    # on the customer path: fail with the fix rather than "python3: command
-    # not found". images.py carries the matching pyyaml guard.
+    # setup.sh, make doctor and pull-all-images.sh reach these subcommands, so
+    # this is on the customer path: fail with the fix rather than "python3:
+    # command not found". images.py carries the matching pyyaml guard.
     if ! command -v "$PY" >/dev/null 2>&1; then
       echo "ERROR: tools/images.sh $MODE needs Python 3 ('$PY' not found; set \$PYTHON to override)." >&2
       echo "       Install python3, then: pip install -r tools/requirements.txt" >&2
@@ -60,31 +60,40 @@ case "$MODE" in
     ;;
 esac
 
-# --- drift: regenerate committed ScenarioSpecs with the LATEST generator ---
-# image into a tmp dir and diff against generated/. Ported from
-# check-image-pins.sh --drift, sourcing the generator pin from the (generated)
-# v1 channel env instead of grepping it directly.
+# --- drift: regenerate committed ScenarioSpecs with the pinned mns-stacks ---
+# into a scratch dir and diff against generated/. Runs `mns-stacks generate`
+# through tools/mns-stacks.sh, exactly as make fly and the dashboard do: the
+# channel's pack store and runtime host contract, host paths, no socket.
 if [[ "$MODE" == "drift" ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    . "$ROOT/images/v1.0.0.generated.env"
-    set +a
-    gen_ref="${MNS_STACK_GENERATOR_IMAGE:?MNS_STACK_GENERATOR_IMAGE not set — run tools/images.sh sync}"
-    docker pull -q "$gen_ref" >/dev/null
-    tmp=$(mktemp -d)
-    # generator output is root-owned; clean up with the same privileges
-    trap 'docker run --rm -v "$tmp:/t" alpine sh -c "rm -rf /t/*" >/dev/null 2>&1; rmdir "$tmp" 2>/dev/null' EXIT
+    # The product's precedence, without clobbering the shell: the shell
+    # environment, then ./.env (a local override, said out loud), then the
+    # channel's generated pin.
+    # shellcheck source=tools/load-images-env.sh
+    . "$ROOT/tools/load-images-env.sh"
+    stacks_ref="${MNS_STACKS_IMAGE:-}"
+    if [[ -z "$stacks_ref" ]]; then
+        stacks_ref="$(dotenv_value MNS_STACKS_IMAGE "$ROOT/.env")"
+        [[ -n "$stacks_ref" ]] && echo "NOTE: MNS_STACKS_IMAGE from ./.env overrides the catalog pin: $stacks_ref" >&2
+    fi
+    [[ -n "$stacks_ref" ]] || stacks_ref="$(dotenv_value MNS_STACKS_IMAGE "$ROOT/images/v1.0.0.generated.env")"
+    [[ -n "$stacks_ref" ]] || { echo "MNS_STACKS_IMAGE not set — run tools/images.sh sync" >&2; exit 1; }
+    export MNS_STACKS_IMAGE="$stacks_ref"
+    export MNS_IMAGE_SET_FILE="${MNS_IMAGE_SET_FILE:-$ROOT/images/image-set.generated.yaml}"
+    # Inside the checkout, so it is already mounted; generation runs as you,
+    # so plain rm cleans it up.
+    tmp="$ROOT/.mns/drift"
+    rm -rf "$tmp"; mkdir -p "$tmp"
+    trap 'rm -rf "$tmp"' EXIT
     any=0
     for spec in "$ROOT"/scenarios/*/ScenarioSpec.yaml; do
         s=$(basename "$(dirname "$spec")")
         [[ -d "$ROOT/generated/$s" ]] || continue   # only diff stacks that exist
-        # The v1 image set ships ONE generic simulator
-        # (tevv_runtime_host) and resolves the world from a level pack named by
-        # environment.version + environment.artifact_digest. A v1 spec instead
-        # names a per-world simulator key (environment.id: blocks|xfs|condo|...)
-        # that no longer exists in the overlay, so the generator cannot resolve
-        # it. Say that, rather than letting it surface as a bare
-        # "GENERATION FAILED" that reads like a broken generator pin.
+        # The v1 image set ships ONE generic simulator (tevv_runtime_host) and
+        # resolves the world from a level pack named by environment.version +
+        # environment.artifact_digest. A spec without the digest names a
+        # per-world simulator that no longer exists, so it cannot generate.
+        # Say that, rather than a bare "GENERATION FAILED" that reads like a
+        # broken mns-stacks pin.
         if ! "$PY" -c '
 import sys, yaml
 spec = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
@@ -95,37 +104,29 @@ sys.exit(0 if env.get("artifact_digest") else 1)
             echo "   select a level pack. Re-author it in ScenarioLab.)"
             continue
         fi
-        # MNS_IMAGE_SET_FILE is the HOST path here (not /workspace/... as in
-        # product.sh): this runs the generator directly from the host with an
-        # identical-path mount (-v "$ROOT:$ROOT" above), so the same string
-        # that's valid on the host is also what the generator container sees.
-        # Contrast product.sh's run_shell, which mounts the workspace at a
-        # fixed container path and needs launcher.py's HOST_WORKSPACE_ROOT
-        # translation instead — see the comment there.
-        docker run --rm -v "$ROOT:$ROOT" -v "$tmp:$tmp" -w "$ROOT" -e MNS_IMAGE_SET=v1 \
-            -e "MNS_IMAGE_SET_FILE=$ROOT/images/image-set.generated.yaml" \
-            "$gen_ref" generate "scenarios/$s/ScenarioSpec.yaml" --profile docker \
-            --out "$tmp/$s" >/dev/null 2>&1 || { echo "$s: GENERATION FAILED with $gen_ref"; any=1; continue; }
-        # the generator bakes the --out path into manifests — normalize it so
+        "$ROOT/tools/mns-stacks.sh" generate "$ROOT/scenarios/$s" --profile docker --no-topics \
+            --out "$tmp/$s" >/dev/null 2>&1 || { echo "$s: GENERATION FAILED with $stacks_ref"; any=1; continue; }
+        # mns-stacks writes the --out path into manifests: normalize it so
         # only real content differences survive the diff
-        docker run --rm -v "$tmp:$tmp" alpine sh -c \
-            "grep -rl '$tmp/$s' '$tmp/$s' 2>/dev/null | while read -r f; do sed -i 's|$tmp/$s|$ROOT/generated/$s|g' \"\$f\"; done"
+        grep -rl "$tmp/$s" "$tmp/$s" 2>/dev/null | while read -r f; do
+            sed -i "s|$tmp/$s|$ROOT/generated/$s|g" "$f"
+        done
         # outputs/ is runtime state; .env carries local overrides (pull policy)
         if d=$(diff -r -q -x outputs -x .env "$ROOT/generated/$s" "$tmp/$s" 2>/dev/null); [[ -n "$d" ]]; then
-            echo "== $s drifts against $gen_ref:"
+            echo "== $s drifts against $stacks_ref:"
             echo "$d" | sed 's/^/   /'
             any=1
         else
             echo "== $s: no drift"
         fi
     done
-    [[ $any == 1 ]] && { echo "drift found — review, then: tools/images.sh bump --only mns_stack_generator && tools/images.sh sync && regenerate"; exit 1; }
+    [[ $any == 1 ]] && { echo "drift found — review, then regenerate the stack (make fly SCENARIO=<name>, or the dashboard's Generate)"; exit 1; }
     exit 0
 fi
 
-# --- baked: assert the released dashboard-backend's baked authoring/ ---
-# generator refs match the pins in images/catalog.yaml. Driven by the
-# catalog's `bakes:` edge on dashboard_backend (tools/images.py baked-pins),
+# --- baked: assert the released dashboard-backend's baked mns-stacks/ ---
+# authoring refs match the pins in images/catalog.yaml. Driven by the
+# catalog's `bakes:` edge on v1_dashboard_backend (tools/images.py baked-pins),
 # not a hardcoded var-name pair — this is the CI-assert form of the old
 # script's advisory baked_pins_check().
 if [[ "$MODE" == "baked" ]]; then
@@ -163,12 +164,12 @@ if [[ "$MODE" == "baked" ]]; then
 
     if [[ $bad == 1 ]]; then
         echo
-        echo "BAKED_*: the released dashboard backend carries authoring/generator" >&2
+        echo "BAKED_*: the released dashboard backend carries mns-stacks/authoring" >&2
         echo "references that are empty or no longer match images/catalog.yaml. Compose" >&2
         echo "deployments override them at runtime and are unaffected; an image-only" >&2
         echo "deploy is not. tools/images.sh bump cannot fix this — it needs a backend" >&2
-        echo "rebuild, then tools/images.sh bump --only dashboard_backend to pick up" >&2
-        echo "the new backend digest." >&2
+        echo "rebuild, then pin the new backend (v1_dashboard_backend) in" >&2
+        echo "images/catalog.yaml and run tools/images.sh sync." >&2
         exit 1
     fi
     exit 0

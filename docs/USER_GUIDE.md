@@ -219,7 +219,7 @@ To move a checkout you set up earlier onto a new release:
 make dashboard-down
 git pull
 grep -n '_IMAGE=' .env        # delete any image lines this shows; they override the release
-./product.sh pull-images      # refresh images whose tags were republished
+make pull-images              # refresh images whose tags were republished
 ./setup.sh                    # pulls any new images
 ./download-packs.sh           # installs any new packs
 make dashboard
@@ -298,9 +298,10 @@ The whole loop takes about 15 minutes the first time.
 
 This step shows what is installed.
 
-- **Engine line** lists four roles: ScenarioLab, Runtime host, Stack
-  generator and Product shell. ScenarioLab and the runtime host should say
-  **matches**; the generator and shell say **present**.
+- **Engine line** lists the roles: ScenarioLab, Runtime host, `mns-stacks`
+  (generates and runs stacks) and `mns-packs` (installs and stages packs).
+  ScenarioLab and the runtime host should say **matches**; `mns-stacks` and
+  `mns-packs` say **present**.
 - **Level packs** and **Object packs** should say **ready**.
 
 `./download-packs.sh` has already done this work, so normally you just click
@@ -475,8 +476,9 @@ You can also fly from your own autonomy stack; see
 ### Step 4: Stop, which finalizes the bag
 
 Go back to **Launch** and click **Stop**. The dashboard stops the recorder
-cleanly, writing the bag's `metadata.yaml`, and then shuts the stack down.
-**Analysis** then unlocks.
+cleanly, writing the bag's `metadata.yaml`, and then shuts the stack down
+(`mns-stacks stop`, which finalizes the run's metrics first). **Analysis** then
+unlocks.
 
 Always stop through the dashboard. A bag killed mid-write has no
 `metadata.yaml`, so it cannot be replayed or analysed.
@@ -620,38 +622,27 @@ above.
 
 ### Running stacks without the dashboard
 
-The same generate, run and stop steps are available as commands, for scripts,
-CI, or a machine where you only need the simulation. Paths are inside the
-repository, which is mounted at `/workspace`:
+The same steps run from a terminal, for scripts, CI, or a machine where you
+only need the simulation. They use the same images the dashboard uses, the
+same way, so a stack or a bag made one way is usable the other:
 
 ```bash
-./product.sh cli runtime --scenario /workspace/scenarios/<name> \
-                         --out /workspace/generated/<name> --no-run   # validate + generate
-./product.sh cli run-stack --stack /workspace/generated/<name> --detach
-./product.sh cli status    --stack /workspace/generated/<name>
-./product.sh cli logs      --stack /workspace/generated/<name>
-./product.sh cli stop      --stack /workspace/generated/<name>
+make author SCENARIO=<name>              # ScenarioLab, as the dashboard opens it
+make fly SCENARIO=<name>                 # generate, fly until the mission is done, stop
+make fly SCENARIO=<name> RECORD=1        # ... and record: runs/<run id>/bag
+make stop                                # stop the last `make fly` if it was interrupted
+make stacks ARGS="status --stack generated/<name>"
+make stacks ARGS="logs --stack generated/<name> --tail 200"
 ```
 
-Nothing records a bag automatically this way. Record from your own container
-as shown in [Connecting your autonomy stack](#connecting-your-autonomy-stack),
-for example:
+`make fly` checks the packs the way `make dashboard` does, then runs
+`mns-stacks generate` and `mns-stacks run --until-done`, which waits for the
+mission to finish and stops the stack (metrics finalized). With `RECORD=1` the
+bag is recorded by the bridge container, exactly as the dashboard's Record
+button records it, and replays in **Replay → Bags**.
 
-```bash
-docker run --rm --network <stack>_agent_internal-1 --ipc host -v /dev/shm:/dev/shm \
-  -u $(id -u):$(id -g) -e HOME=/tmp -e ROS_DOMAIN_ID=<domain> \
-  -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
-  -v "$PWD/runs":/out --entrypoint bash \
-  dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0 -lc \
-  'source /opt/ros/humble/setup.bash && mkdir -p /out/my_run && ros2 bag record \
-   -o /out/my_run/bag -s sqlite3 /ground_truth/odom /imu/data /front_rgb/image_raw /clock'
-```
-
-Press Ctrl-C to stop recording. The bag is finalized when `ros2 bag record`
-exits cleanly.
-
-Every `product.sh` command, including setup and the image cache, is in
-[The product shell from a terminal](cli.md).
+Every headless target, and how it mounts this checkout for `mns-stacks`, is in
+[Headless](stacks.md).
 
 ### Repeatable test campaigns
 
@@ -714,8 +705,8 @@ Nothing here is needed for a normal run.
 | `MNS_DEMO_PACKS=--all` | Installs any missing packs before starting, like `./download-packs.sh --all`. |
 
 **Evaluation and sim-to-real.** The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
-generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
-(no source checkouts).
+generates + launches stacks through the pinned `mns-stacks` image
+(`MNS_STACKS_IMAGE`; no source checkouts).
 **Monitor → Controls** edits the evaluation files in the shared runs directory
 (`TEVV_RUNS_DIR`, default `runs/` in this checkout; hot-reloaded). **Calibration**
 shows the sim-to-real verdicts the `sim-real-eval` worker writes there
@@ -724,6 +715,9 @@ automatically after each recorded run (enable with
 
 **Keep image variables (`*_IMAGE`) out of `.env`.** An image set there
 overrides the release, so you would run a different image from everyone else.
+That is the point when you test a local build (for example
+`MNS_STACKS_IMAGE=mns-stacks:local-test`): the dashboard and the headless
+targets both use it, and each prints a note that it is an override.
 
 ---
 
@@ -805,6 +799,10 @@ overrides the release, so you would run a different image from everyone else.
 ./setup.sh                      # once: check, log in, pull images
 ./download-packs.sh --list      # what packs exist; ./download-packs.sh to get them
 make dashboard                  # start → http://localhost:3001
+make author                     # ScenarioLab without the dashboard
+make fly SCENARIO=<name> RECORD=1     # fly one scenario headless, bag in runs/
+make campaign                   # the reference campaign, scored
+make doctor                     # every pinned image present?
 make topics STACK=generated/<name>    # what a stack publishes
 ls runs/                 # runs; bag in <run>/bag/
 make dashboard-down             # stop the dashboard

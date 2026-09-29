@@ -41,6 +41,19 @@ follow_ups: []
 #   unpublished - referenced by this repo but absent from the registry;
 #              digest null, no lookup attempted, bump refuses
 #
+# `pending: "<why>"` on a pinned row: the row names its tag (an rc build the
+# release owner has not pushed or pinned yet) but not its digest yet, so
+# `digest: null`. Rendered tag-only. `tools/images.sh verify` prints a
+# WARNING for it and passes (lenient: a pin being filled in is not breakage);
+# `tools/images.sh status` lists it under NEEDS YOU. Fill it in with
+# `tools/images.sh bump --only KEY`, which resolves the pinned tag's digest
+# and deletes the `pending:` line (the only way bump touches a pinned row).
+#
+# `pull: false`: the row is pinned for checks (tools/images.sh verify's host
+# label checks) but never pulled by setup, ensure-images or pull-all-images.
+# The runtime host kit image is one: packaging and authoring builds read it,
+# product users never need its ~700 MB.
+#
 # `resolver` says how report/bump find the live digest:
 #   hub        - Docker Hub v2 API (default; needed for -review.N enumeration)
 #   imagetools - `docker buildx imagetools inspect <ref>` + the `Digest:` line
@@ -52,13 +65,16 @@ follow_ups: []
 #                sid220/, timescale/).
 #
 # `bakes` on an image row means: that image's Dockerfile bakes in another
-# row's ref as a build-time default (MNS_*_IMAGE_DEFAULT). `tools/images.sh
-# baked` walks these edges and asserts the released image's baked value still
-# matches the pin here.
+# row's ref as a build-time default (<VAR>_DEFAULT, where VAR is the row's
+# release-channel or product_env variable). `tools/images.sh baked` walks
+# these edges and asserts the released image's baked value still matches the
+# pin here.
 #
 # `consumers:` binds an image (by key) to how it is actually referenced, so no
 # image is listed twice under two different names:
-#   product_env  -> product-images.env (the channel-independent tools)
+#   product_env  -> product-images.env (channel-independent tool pins; none in
+#                   v1.0.0, see the file's header for why it still exists)
+#   release_channels -> images/<release>.generated.env, the product's images
 #   image_sets   -> images/image-set.generated.yaml, mirroring the platform
 #                   stackgen schema: what generated stacks run.
 #   compose_env  -> images/platform-images.generated.env, the dashboard
@@ -66,37 +82,35 @@ follow_ups: []
 
 images:
   # ---------------------------------------------------------------------
-  # Product images (product-images.env "tools" section)
+  # MnS-Integration-Platform images that generated stacks run
   # ---------------------------------------------------------------------
-  airsim_tools:
-    repo: dhdevspace/auto_mns
-    tag: "airsim-tools-v0.2.0-retag.2026-08-26"
-    latest_tag: airsim-tools-latest
-    # This immutable dated tag wraps the exact linux/amd64 manifest formerly
-    # pinned through airsim-tools-latest. Its index digest differs because the
-    # re-tag is a manifest list containing that original manifest.
-    digest: sha256:3ca0e1cd711addd5c258d323609fa668d91baac4e2547d34e529cb88c759dfd8
-    channel: pinned
-    published_by: "(re-tag only — no known build source)"
-    purpose: ros2-tools image used by docker-compose-tools.yml.
-    follow_up: >-
-      airsim_tools has no known build source. Give it an owned build script,
-      publish a source-identifying immutable tag after the stable tag policy
-      is defined, then delete this note.
-
   qgroundcontrol:
     repo: dhdevspace/auto_mns
     tag: airsim-qgc-x11-latest
     digest: sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
     channel: moving
-    purpose: QGroundControl (X11), the published qgroundcontrol role.
+    purpose: >-
+      QGroundControl (X11), the published qgroundcontrol role
+      (MnS-Integration-Platform integrations/qgroundcontrol).
+    follow_up: >-
+      v1.0.0 pins this as the immutable tag airsim-qgc-x11-v1.0.0, a retag of
+      this digest (same bits). The retag is published in phase 6; then set
+      tag: airsim-qgc-x11-v1.0.0, channel: pinned, keep the digest, and delete
+      this note.
 
   sim_real_eval:
     repo: dhdevspace/auto_mns
     tag: sim-real-eval-worker-latest
     digest: sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb
     channel: moving
-    purpose: Sim-to-real evaluation worker, the published sim_real_eval role.
+    purpose: >-
+      Sim-to-real evaluation worker, the published sim_real_eval role
+      (MnS-Integration-Platform platform/sim_real_eval).
+    follow_up: >-
+      v1.0.0 pins this as the immutable tag sim-real-eval-worker-v1.0.0, the
+      accepted sim-real-eval-worker-v1.0.0-rc build. It is published in phase
+      6; then set tag: sim-real-eval-worker-v1.0.0, channel: pinned, its
+      digest, and delete this note.
 
   vio_estimator_openvins:
     repo: dhdevspace/auto_mns
@@ -117,8 +131,8 @@ images:
       running the wrong estimator quietly.
 
   # ---------------------------------------------------------------------
-  # Platform images — docker-compose-dashboard.yml inline rows (2 rows;
-  # dashboard-backend/-frontend above are product rows, not these)
+  # Upstream images — docker-compose-dashboard.yml inline rows (the
+  # dashboard backend/frontend are release-channel rows, below)
   # ---------------------------------------------------------------------
   dashboard_lichtblick:
     repo: ghcr.io/lichtblick-suite/lichtblick
@@ -153,21 +167,56 @@ images:
     purpose: >-
       MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0); non-Substrate baseline with corrected preview package-root registration. Bakes mns_vehicle_models 1.0.4, the version TEVV-Authoring pins (tooling/asset_packs/default_vehicle_pack.json). Rebuilt from TEVV-Authoring 7aaf11e: legacy local packs and content with broken references removed; ScenarioContracts class redirects added. Level packs are staged from the PackStore.
 
-  v1_stack_generator:
+  v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: mns-stack-generator-v1.0.0
-    digest: sha256:e2710b8ad05ac431545c1f6454be28aa15e77b8e47346816ed04dca831f85c40
+    tag: mns-stacks-v1.0.0-rc
+    digest: null
     channel: pinned
+    pending: >-
+      rc image, built and pushed by the release owner in phase 4; pin its
+      digest with tools/images.sh bump --only v1_stacks (phase 6 moves it to
+      mns-stacks-v1.0.0).
     purpose: >-
-      MnS 1.0 stack generator (MnS-Integration-Platform release/v1.0.0) with the v1 runtime contract baked; stages pack payloads by hard link. Rebuilt with advisory base-cook validation; capability and integrity checks remain enforced.
+      mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
+      mns-stacks): stack generation, run/stop/status/logs, the one bag
+      recorder (record, run --record --until-done), campaigns and the
+      compatibility check. The dashboard, make fly/stop/campaign/stacks,
+      tools/images.sh drift and osmo/campaign.py all run it as a sibling
+      container with host paths. Replaces mns-product-shell and
+      mns-stack-generator, which are retired and no longer pinned.
 
-  v1_product_shell:
+  v1_packs:
     repo: dhdevspace/auto_mns
-    tag: mns-product-shell-v1.0.0
-    digest: sha256:21ed9bed74f7837213b8d149463bcc00534ada66139b2d90ba3f4875a92543a1
+    tag: mns-packs-v1.0.0-rc
+    digest: null
     channel: pinned
+    pending: >-
+      rc image, built and pushed by the release owner in phase 4 from
+      TEVV-Content-Pack-SDK v1.0.0-rc; pin its digest with tools/images.sh
+      bump --only v1_packs (phase 6 moves it to mns-packs-v1.0.0).
     purpose: >-
-      MnS 1.0 product shell (same sources) with ScenarioLab's v1 contract baked; owns the pack mount directory import. Runtime and authoring staging both use advisory base-cook validation. Its baked MNS_AUTHORING_IMAGE default is the authoring build it was made with (sha256:abaa02a6…, vehicle pack 1.0.3); the product always passes v1_authoring instead, so the default applies only to a shell run by hand.
+      mns-packs (TEVV-Content-Pack-SDK docker/Dockerfile, ENTRYPOINT
+      mns-packs): verify, install, list, status and stage-authoring --lock for
+      the product's pack tools (tools/install_demo_packs.py,
+      tools/stage-authoring-packs.sh, tools/build_pack_lock.py), so the
+      product needs no host copy of the SDK.
+
+  v1_runtime_host_kit:
+    repo: dhdevspace/auto_mns
+    tag: tevv-runtime-host-kit-v1.0.0-rc
+    digest: null
+    channel: pinned
+    pull: false
+    pending: >-
+      Built by the same TEVV-Airsim build as the v1.0.0-rc runtime host in
+      phase 4; pin its digest with tools/images.sh bump --only
+      v1_runtime_host_kit together with the host row.
+    purpose: >-
+      The runtime host's companion kit image (FROM scratch: /kit/** and
+      /kit/host-baseline.json), written by the host build's mns-packs kit
+      build. The host image's tevv.host.kit_image label names its digest, and
+      tools/images.sh verify warns when that label and this pin differ.
+      Packaging and authoring builds read it; the product never pulls it.
 
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns
@@ -200,6 +249,13 @@ images:
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
+    # The v1.0.0 backend bakes MNS_STACKS_IMAGE_DEFAULT and
+    # MNS_AUTHORING_IMAGE_DEFAULT (tools/images.sh baked checks both). This
+    # pinned gee99b9d build predates mns-stacks and bakes the retired
+    # generator instead, so `baked` reports MNS_STACKS_IMAGE_DEFAULT as
+    # BAKED_EMPTY until the v1.0.0-rc backend is pinned. Compose deployments
+    # pass both variables explicitly and are unaffected.
+    bakes: [v1_stacks, v1_authoring]
     purpose: >-
       MnS 1.0 dashboard backend (TEVV-Web-Dashboard main) with the v1
       authoring/generator pins baked. gee99b9d adds #115: the Generate phase no
@@ -223,9 +279,10 @@ images:
       the frontend bakes no pins, so only the backend digest moved.
 
 consumers:
-  product_env:
-    tools:
-      AIRSIM_TOOLS_IMAGE: airsim_tools
+  # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env
+  # is still rendered, header only, because the pinned dashboard backend checks
+  # for it to recognise this checkout (see images/product-images.env.tmpl).
+  product_env: {}
 
   # A release channel binds the product's image variables to one coordinated
   # set of images and emits them to its own file. A consumer selects a channel
@@ -236,25 +293,37 @@ consumers:
       emits: images/v1.0.0.generated.env
       image_set: v1
       vars:
-        MNS_PRODUCT_SHELL_IMAGE: v1_product_shell
+        MNS_PACKS_IMAGE: v1_packs
+        MNS_STACKS_IMAGE: v1_stacks
         MNS_AUTHORING_IMAGE: v1_authoring
-        MNS_STACK_GENERATOR_IMAGE: v1_stack_generator
         MNS_RUNTIME_HOST_IMAGE: v1_runtime_host
+        MNS_RUNTIME_HOST_KIT_IMAGE: v1_runtime_host_kit
         MNS_ROS2_BRIDGE_IMAGE: v1_ros2_bridge
         DASHBOARD_BACKEND_IMAGE: v1_dashboard_backend
         DASHBOARD_FRONTEND_IMAGE: v1_dashboard_frontend
+      # One host pin: the kit and the authoring image are derived from the
+      # host. tools/images.sh verify reads these images' labels (local
+      # images only; status also asks the registry) and WARNS, never fails,
+      # when they disagree:
+      #   host  tevv.host.kit_image       == the kit row's digest
+      #   authoring tevv.authoring.host_image == the host row's digest
+      #   authoring tevv.authoring.shared_set_id == host tevv.host.shared_set_id
+      host_pin:
+        host: v1_runtime_host
+        kit: v1_runtime_host_kit
+        authoring: v1_authoring
 
   # A pack release lock (packs/*.lock.json) restates a few image pins because
-  # tools/install_demo_packs.py has to pull the product shell before anything
-  # in this repo has resolved an image set. That is a second copy of a pin, so
+  # tools/install_demo_packs.py has to run mns-packs before anything in this
+  # repo has resolved an image set. That is a second copy of a pin, so
   # the edge is declared here (lock key -> catalog key) and
   # `tools/images.sh verify` asserts the JSON still agrees, offline. A bump
   # that advances one of these rows fails CI until the lock is regenerated.
   pack_locks:
     packs/v1.0.0.lock.json:
-      product_shell: v1_product_shell
+      packs: v1_packs
+      stacks: v1_stacks
       authoring: v1_authoring
-      stack_generator: v1_stack_generator
       runtime_host: v1_runtime_host
       ros2_bridge: v1_ros2_bridge
 

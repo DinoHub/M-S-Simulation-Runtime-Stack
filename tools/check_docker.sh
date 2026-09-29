@@ -217,17 +217,17 @@ EOF
 
 # Pinned-image presence preflight.
 #
-# product-images.env moves in git; the images do not move with it. A pin bump
-# leaves the newly pinned tag absent locally, and nothing notices until the
-# thing that needs it runs — for the stack generator that is
+# images/v1.0.0.generated.env moves in git; the images do not move with it. A
+# pin bump leaves the newly pinned tag absent locally, and nothing notices
+# until the thing that needs it runs — for mns-stacks that is
 # /api/scenario/generate, which reports a bare 422 "generation failed" with no
 # hint that the cause is a pin from a commit you pulled an hour ago.
-# `./product.sh doctor` catches this, but nothing forces you to run it.
+# `make doctor` catches this, but nothing forces you to run it.
 #
 # Advisory: these images are needed at generate/authoring time, not at `up`
 # time, so a miss must not block a dashboard that is otherwise fine.
 #
-# Usage:  check_images "$MNS_STACK_GENERATOR_IMAGE" "$MNS_AUTHORING_IMAGE"
+# Usage:  check_images "$MNS_STACKS_IMAGE" "$MNS_PACKS_IMAGE" "$MNS_AUTHORING_IMAGE"
 # 0 = all present (or none named), 1 = at least one missing.
 #
 # Note: no arrays anywhere in this file — `make` runs recipes under /bin/sh
@@ -245,15 +245,15 @@ check_images() {
   [ -z "$missing" ] && return 0
 
   {
-    echo "WARNING: images pinned in product-images.env are not on this machine:"
+    echo "WARNING: images pinned in images/v1.0.0.generated.env are not on this machine:"
     printf '%s' "$missing"
     cat <<'EOF'
 
   Pulled a commit that bumped the pins? The images do not come with it. Until
   they are here, scenario generation fails with a bare 422 "generation failed".
 
-      ./product.sh setup        # pulls the pinned set (retries on registry blips)
-      ./product.sh doctor       # lists exactly what is still missing
+      ./setup.sh                # pulls the pinned set (retries on registry blips)
+      make doctor               # lists exactly what is still missing
 
 EOF
   } >&2
@@ -311,8 +311,8 @@ resolve_xauthority() {
 # Advisory: headless flows (--headless, -RenderOffScreen) need none of this.
 # 0 = X11 pass-through looks sound, 1 = it does not.
 check_x11() {
-  local fallback="/run/user/$(id -u)/gdm/Xauthority"
-  local problem=""
+  local fallback problem=""
+  fallback="/run/user/$(id -u)/gdm/Xauthority"
 
   if [ -z "${DISPLAY:-}" ]; then
     problem="DISPLAY is not set"

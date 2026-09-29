@@ -7,15 +7,23 @@ checksum, the artifact digest the store indexes on, and the host capability
 every pack was cooked for. The v1 channel's lock is packs/v1.0.0.lock.json;
 a channel comes with its own pack store, authoring data root and host contract.
 
-Roots come from the environment so the Makefile, product.sh and the dashboard
-backend all point the installer at the same directories:
+Roots come from the environment so the Makefile and the dashboard backend
+point the installer at the same directories:
 
     MNS_DEMO_PACK_LOCK                     lock file (default: the v1 (MnS 1.0) lock)
     MNS_PACK_STORE_ROOT                    content-addressed store (default .mns/v1/pack-store)
     MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT contract whose id must equal the lock's
-    MNS_PRODUCT_SHELL_IMAGE                shell used for `packs install` / staging
+    MNS_PACKS_IMAGE                        mns-packs image for `install` / staging
+                                           (default: ./.env, then the lock's
+                                           required_images.packs)
     MNS_DEMO_PACK_DOWNLOAD_DIR             scratch space for downloads
     MNS_DEMO_PACK_CACHE_DIR                archives already fetched (reused, never deleted)
+
+Every pack goes through the SDK's own CLI, `mns-packs` (TEVV-Content-Pack-SDK),
+run from its image as a sibling container: each path it reads or writes is
+mounted at its identical host path, so the same command works from a host
+shell and from inside the dashboard backend (which mounts this checkout at
+its host path).
 """
 from __future__ import annotations
 
@@ -86,15 +94,102 @@ def ensure_image(image: str) -> None:
         run(["docker", "pull", image])
 
 
-def container_path(host_path: Path) -> str:
-    """Where a path under this checkout appears inside the product shell,
-    which mounts the checkout at /workspace. Anything outside cannot be
-    reached by the shell at all, which is why the store must live in here."""
+def dotenv_value(name: str) -> str:
+    """A variable's value in ./.env, or "". tools/load-images-env.sh leaves a
+    variable that ./.env sets unexported (compose reads .env itself), so a
+    local image override reaches this script only through here."""
     try:
-        return f"/workspace/{host_path.resolve().relative_to(ROOT).as_posix()}"
-    except ValueError as exc:
-        raise RuntimeError(f"{host_path} is outside the checkout {ROOT}; the product "
-                           f"shell only sees paths under it") from exc
+        lines = (ROOT / ".env").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    value = ""
+    for line in lines:
+        key, sep, raw = line.strip().removeprefix("export ").partition("=")
+        if sep and key.strip() == name:
+            value = raw.strip().strip("'\"")
+    return value
+
+
+def packs_image(lock: dict) -> str:
+    """The mns-packs image: the environment (what `make` exports for the
+    selected channel and IMAGE_MODE), then ./.env, then the lock's pin, so a
+    standalone run of this script is still exact."""
+    image = os.environ.get("MNS_PACKS_IMAGE", "").strip()
+    if image:
+        return image
+    image = dotenv_value("MNS_PACKS_IMAGE")
+    if image:
+        print(f"NOTE: MNS_PACKS_IMAGE from ./.env overrides the catalog pin: {image}",
+              file=sys.stderr)
+        return image
+    pinned = (lock.get("required_images") or {}).get("packs")
+    if not pinned:
+        raise RuntimeError(
+            "no mns-packs image: set MNS_PACKS_IMAGE (make exports it from "
+            "images/v1.0.0.generated.env), or regenerate the lock so its "
+            "required_images.packs is set")
+    return pinned
+
+
+def mns_packs(image: str, args: list[str], mounts: list[tuple[Path, str]]) -> dict:
+    """Run one `mns-packs <args> --json` in its image and return `result`.
+
+    The container runs as the host user with no network: the commands used
+    here only read and write mounted paths. `mounts` are (host path, mode)
+    pairs, each mounted at its identical path. A nonzero exit raises with the
+    CLI's own error message, not a bare exit status.
+    """
+    volumes: list[str] = []
+    for path, mode in mounts:
+        volumes += ["-v", f"{path}:{path}:{mode}"]
+    command = ["docker", "run", "--rm", "--network=none", "--user", host_user(),
+               "-e", "HOME=/tmp", *volumes, image, *args, "--json"]
+    completed = subprocess.run(command, text=True, capture_output=True)
+    try:
+        envelope = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        envelope = None
+    if not isinstance(envelope, dict) or envelope.get("schema") != "mns.packs_cli.v1":
+        detail = (completed.stderr or completed.stdout or "").strip()[-600:]
+        if completed.returncode != 0:
+            print(detail, file=sys.stderr)
+            raise subprocess.CalledProcessError(completed.returncode, command,
+                                                completed.stdout, completed.stderr)
+        raise RuntimeError(f"mns-packs {args[0]} printed no mns.packs_cli.v1 envelope: {detail}")
+    for warning in envelope.get("warnings") or []:
+        print(f"WARNING: mns-packs {args[0]}: {warning}", file=sys.stderr)
+    if not envelope.get("ok"):
+        error = envelope.get("error") or {}
+        raise RuntimeError(f"mns-packs {args[0]} failed (exit {envelope.get('exit_code')}): "
+                           f"{error.get('message') or 'no message'}")
+    return envelope.get("result") or {}
+
+
+# Packs every flow needs whatever else is chosen: ScenarioLab cannot place a
+# drone without the vehicle models. --sync always brings these to the lock's
+# pin, and stage-authoring-packs.sh seeds ScenarioLab's PackLibrary with them.
+REQUIRED_PACK_IDS = ("mns_vehicle_models",)
+
+
+def store_packs(store_root: Path) -> list[dict]:
+    """The store index's pack entries; empty when there is no store."""
+    index = store_root / "index.json"
+    if not index.is_file():
+        return []
+    try:
+        packs = json.loads(index.read_text(encoding="utf-8")).get("packs") or []
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return []
+    return [pack for pack in packs if isinstance(pack, dict)]
+
+
+def sync_scope(lock: dict, store_root: Path) -> list[dict]:
+    """--sync: the lock's pin of each required pack and of each pack that has
+    any version installed. The lock decides the version; what is installed
+    only decides which packs the operator wants. Packs never chosen are never
+    downloaded."""
+    wanted = {str(pack.get("id")) for pack in store_packs(store_root)} | set(REQUIRED_PACK_IDS)
+    return [pack for pack in lock["packs"] if pack["id"] in wanted]
 
 
 def installed_digests(store_root: Path) -> set[str]:
@@ -156,25 +251,19 @@ def own_by_host(*paths: Path) -> None:
 
 
 def install_archive(image: str, archive: Path, expected_digest: str | None, store_root: Path) -> str:
-    """Install one verified archive into the store through the pinned product
-    shell (`packs install`), which verifies the bundle and returns its
+    """Install one verified archive into the store with the pinned mns-packs
+    (`mns-packs install --store`), which verifies the bundle and returns its
     content-addressed digest. With `expected_digest` (a lock entry) the two must
-    agree; without one (a release or a dropped-in archive) the shell's digest is
+    agree; without one (a release or a dropped-in archive) mns-packs' digest is
     the record. Returns the installed artifact digest."""
-    uid_gid = host_user()
-    result = run(
-        ["docker", "run", "--rm", "--network=none", "--user", uid_gid, "-e", "HOME=/tmp",
-         "-e", "MNS_WORKSPACE_ROOT=/workspace",
-         "-e", f"MNS_PACK_STORE_ROOT={container_path(store_root)}",
-         "-v", f"{ROOT}:/workspace:rw",
-         "-v", f"{archive.parent}:/mnt/mns/release:ro",
-         image, "packs", "install", f"/mnt/mns/release/{archive.name}"],
-        capture=True,
-    )
-    try:
-        digest = json.loads(result.stdout)["digest"]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise RuntimeError(f"packs install did not report a digest for {archive.name}: {result.stdout[-400:]}") from exc
+    store_root = store_root.resolve()
+    archive = archive.resolve()
+    store_root.mkdir(parents=True, exist_ok=True)
+    result = mns_packs(image, ["install", str(archive), "--store", str(store_root)],
+                       [(store_root, "rw"), (archive.parent, "ro")])
+    digest = result.get("digest")
+    if not isinstance(digest, str) or not digest.startswith("sha256:"):
+        raise RuntimeError(f"mns-packs install did not report a digest for {archive.name}: {result}")
     if expected_digest and digest != expected_digest:
         raise RuntimeError(
             f"{archive.name} installed as {digest}, but the lock expects {expected_digest}"
@@ -338,8 +427,8 @@ def pack_entry_from_release(release: dict, token: str, host_id: str, scratch: Pa
     The release carries `artifact.json` (kind, id, version, variants with the
     host ids they were cooked for), `<bundle>.sha256`, and the bundle itself
     or its `.part-NNN` pieces. The content-addressed artifact_digest is not
-    published; the product shell computes it while installing, so the entry
-    leaves it empty and the installer records what the shell returns.
+    published; mns-packs computes it while installing, so the entry leaves
+    it empty and the installer records what mns-packs returns.
     """
     assets = {asset["name"]: asset for asset in release_assets(release, token)}
     sha_names = [name for name in assets if name.endswith(".sha256")
@@ -437,6 +526,12 @@ def build_parser(lock: dict | None) -> argparse.ArgumentParser:
              "exits 0 without touching the registry when nothing is missing",
     )
     result.add_argument(
+        "--sync", action="store_true",
+        help="Also select the lock's version of the vehicle models and of every pack "
+             "already installed in any version (what `make dashboard` runs). "
+             "Best effort: a pack it cannot fetch is reported and skipped",
+    )
+    result.add_argument(
         "--check", action="store_true",
         help="Report which selected packs are installed and exit 1 if any is missing; "
              "offline, no docker",
@@ -451,6 +546,9 @@ def main(argv: list[str] | None = None) -> int:
     if not lock_path.is_file():
         raise RuntimeError(f"pack lock does not exist: {lock_path}")
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    # stage-authoring-packs.sh brings ScenarioLab's view to this lock's pins,
+    # so it must see the lock chosen here (--lock), not only the env's.
+    os.environ["MNS_DEMO_PACK_LOCK"] = str(lock_path)
     argument_parser = build_parser(lock)
     args = argument_parser.parse_args(argv)
 
@@ -489,8 +587,7 @@ def main(argv: list[str] | None = None) -> int:
             # Rebuild the staged index from what is left rather than editing it:
             # an asset pack is materialised inside every staged environment, so
             # a surgical delete would have to touch each one.
-            image = os.environ.get("MNS_PRODUCT_SHELL_IMAGE", "").strip() \
-                or lock["required_images"]["product_shell"]
+            image = packs_image(lock)
             ensure_image(image)
             return stage(image, store_root)
         return 0
@@ -520,9 +617,15 @@ def main(argv: list[str] | None = None) -> int:
         requested |= selections
     if args.objects:
         requested |= {pack["selection"] for pack in lock["packs"] if pack["kind"] == "asset"}
-    extra_mode = bool(args.release_tag) or args.import_dir is not None
+    # Selected only because --sync brought them in: fetched if possible, never
+    # the reason a run fails (offline, no credentials, a flaky release host).
+    best_effort: set[str] = set()
+    if args.sync:
+        best_effort = {pack["selection"] for pack in sync_scope(lock, store_root)} - requested
+        requested |= best_effort
+    extra_mode = bool(args.release_tag) or args.import_dir is not None or args.sync
     if not requested and not extra_mode:
-        argument_parser.error("select --all, --objects, at least one pack, --release-tag TAG, "
+        argument_parser.error("select --all, --objects, at least one pack, --sync, --release-tag TAG, "
                               "--import [DIR] or --list-remote: "
                               + " ".join(f"--{s}" for s in sorted(selections)))
     selected = [pack for pack in lock["packs"] if pack["selection"] in requested]
@@ -544,9 +647,14 @@ def main(argv: list[str] | None = None) -> int:
               f"({lock['capability_id']})")
         for pack in present:
             print(f"  installed: {pack['id']}@{pack['version']} ({pack['selection']})")
+        installed_versions = {}
+        for entry in store_packs(store_root):
+            installed_versions.setdefault(str(entry.get("id")), []).append(str(entry.get("version")))
         for pack in missing:
             fetchable = bool(pack.get("release") or lock.get("release"))
             note = "" if fetchable else "  [no release - cannot be downloaded]"
+            if installed_versions.get(pack["id"]):
+                note += f"  [lock update from {', '.join(sorted(installed_versions[pack['id']]))}]"
             print(f"  missing:   {pack['id']}@{pack['version']} ({pack['selection']}){note}")
         unpublished = [pack for pack in missing
                        if not (pack.get("release") or lock.get("release"))]
@@ -570,11 +678,10 @@ def main(argv: list[str] | None = None) -> int:
             # case where "already installed" and "ready for ScenarioLab"
             # differ. stage-authoring-packs.sh is a no-op when the index is
             # current, so a re-run costs one mtime comparison.
-            return stage(os.environ.get("MNS_PRODUCT_SHELL_IMAGE", "").strip()
-                         or lock["required_images"]["product_shell"], store_root)
+            return stage(packs_image(lock), store_root)
         selected = missing
 
-    image = os.environ.get("MNS_PRODUCT_SHELL_IMAGE", "").strip() or lock["required_images"]["product_shell"]
+    image = packs_image(lock)
     if import_dir is not None:
         archives = local_pack_archives(import_dir)
         print(f"Pack mount directory: {import_dir} ({len(archives)} archive(s))")
@@ -586,7 +693,7 @@ def main(argv: list[str] | None = None) -> int:
             if not selected and not args.release_tag:
                 return 0
         elif archives:
-            print(f"Product shell: {image}")
+            print(f"mns-packs: {image}")
             ensure_image(image)
             store_root.mkdir(parents=True, exist_ok=True)
             own_by_host(store_root, store_root.parent)
@@ -636,6 +743,13 @@ def main(argv: list[str] | None = None) -> int:
     # when something actually has to be downloaded -- a fully cached run, and
     # every --check/--dry-run run, stays credential-free.
     token = github_token() if to_download else None
+    if to_download and not token and best_effort:
+        skipped = [pack for pack in to_download if pack["selection"] in best_effort]
+        for pack in skipped:
+            print(f"WARNING: not fetching {pack['id']}@{pack['version']} (the lock's version): "
+                  "no GitHub credentials. Staying on what is installed.", file=sys.stderr)
+        selected = [pack for pack in selected if pack not in skipped]
+        to_download = [pack for pack in to_download if pack not in skipped]
     if to_download and not token:
         repos = sorted({pack_release(lock, pack)["repository"] for pack in to_download})
         raise RuntimeError(
@@ -645,36 +759,42 @@ def main(argv: list[str] | None = None) -> int:
             "read access, or run `gh auth login`."
         )
 
-    # The product shell that runs `packs install` and `packs stage-authoring`.
-    # The lock pins the release's image so a standalone CLI run is exact; the
-    # Makefile exports the image of the selected channel/IMAGE_MODE instead,
-    # so the dashboard's install and staging steps use one shell and the
+    # The mns-packs image that runs `install` and `stage-authoring`. The lock
+    # pins the release's image so a standalone CLI run is exact; the Makefile
+    # exports the image of the selected channel/IMAGE_MODE instead, so the
+    # dashboard's install and staging steps use one image and the
     # ResolvedPacks/.staged-with stamp agrees with what
     # tools/stage-authoring-packs.sh will check on the next start.
-    print(f"Product shell: {image}")
+    print(f"mns-packs: {image}")
     ensure_image(image)
     with tempfile.TemporaryDirectory(prefix="mns-demo-packs-", dir=download_parent) as temporary:
         download_root = Path(temporary)
         for pack in selected:
             cached = cache_dir / pack["asset_name"]
             archive = download_root / pack["asset_name"]
-            if cached.is_file() and cached.stat().st_size == pack["size_bytes"] \
-                    and sha256_file(cached) == pack["sha256"]:
-                print(f"Using cached {pack['display_name']} ({cached})")
-                archive = cached
-            else:
-                print(f"Downloading {pack['display_name']} ({pack['size_bytes'] / 1e6:.0f} MB)...")
-                download_asset(pack_release(lock, pack), pack, token, archive)
-                if archive.stat().st_size != pack["size_bytes"]:
-                    raise RuntimeError(f"size mismatch for {archive.name}")
-                actual_sha256 = sha256_file(archive)
-                if actual_sha256 != pack["sha256"]:
-                    raise RuntimeError(
-                        f"SHA-256 mismatch for {archive.name}: "
-                        f"{actual_sha256} != {pack['sha256']}"
-                    )
             try:
+                if cached.is_file() and cached.stat().st_size == pack["size_bytes"] \
+                        and sha256_file(cached) == pack["sha256"]:
+                    print(f"Using cached {pack['display_name']} ({cached})")
+                    archive = cached
+                else:
+                    print(f"Downloading {pack['display_name']} ({pack['size_bytes'] / 1e6:.0f} MB)...")
+                    download_asset(pack_release(lock, pack), pack, token, archive)
+                    if archive.stat().st_size != pack["size_bytes"]:
+                        raise RuntimeError(f"size mismatch for {archive.name}")
+                    actual_sha256 = sha256_file(archive)
+                    if actual_sha256 != pack["sha256"]:
+                        raise RuntimeError(
+                            f"SHA-256 mismatch for {archive.name}: "
+                            f"{actual_sha256} != {pack['sha256']}"
+                        )
                 digest = install_archive(image, archive, pack["artifact_digest"] or None, store_root)
+            except Exception as exc:  # noqa: BLE001 - fatal unless --sync added the pack
+                if pack["selection"] not in best_effort:
+                    raise
+                print(f"WARNING: could not fetch {pack['id']}@{pack['version']} (the lock's "
+                      f"version): {exc}. Staying on what is installed.", file=sys.stderr)
+                continue
             finally:
                 # Free each downloaded archive as soon as it is installed.
                 # Holding all of them until the TemporaryDirectory unwound
@@ -695,9 +815,8 @@ def pack_references(digest: str, authoring_data: Path, workspace: Path | None = 
     """Everything that still points at a pack digest.
 
     Liveness is read out of the index files, never inferred from inode link
-    counts: v1.0.0's product shell hard-links payloads out of the store, so a
-    link count says how the bytes are shared, not whether anything still needs
-    the pack.
+    counts: staging hard-links payloads out of the store, so a link count says
+    how the bytes are shared, not whether anything still needs the pack.
 
     Four holders, in descending order of how much a removal would hurt:
     a generated stack (launchable now), ScenarioLab's staged tree (the editor
@@ -748,12 +867,11 @@ def remove_packs(selections: list[str], lock: dict, store_root: Path, authoring_
                  unstage: bool = False, workspace: Path | None = None) -> tuple[list[dict], list[str]]:
     """Delete packs from the store, refusing while something still needs them.
 
-    The store format is the platform's: `apps/scenario_launcher/launcher.py`
-    owns `packs install` and `mns_contentpacks.registry.PackStore` owns the
-    layout. Removal lives here because the alternative is a platform change plus
-    a product-shell rebuild and republish, which only the release owner can do.
-    PackStore.remove() exists there but is unreachable and index-only, so it
-    would leave the blob behind as an orphan.
+    The store format is the SDK's (`mns_contentpacks.registry.PackStore`, the
+    `mns.pack_store.v1` index). Removal lives here because `mns-packs` has no
+    remove command, and removal has to know this product's holders of a pack
+    (generated stacks, ScenarioLab's staged tree, authored specs), which the
+    SDK does not.
     """
     index_path = store_root / "index.json"
     try:
@@ -837,8 +955,8 @@ def pack_status(lock: dict, lock_path: Path, store_root: Path, host_id: str,
     anything newer exists than what they are running. This joins all three.
 
     The remote half needs GitHub credentials, which only a host shell has (the
-    dashboard backend and the product shell ship no `gh`), so `offline` drops
-    it and reports the two local views alone rather than implying currency.
+    dashboard backend ships no `gh`), so `offline` drops it and reports the
+    two local views alone rather than implying currency.
     """
     installed = installed_digests(store_root)
     latest: dict[tuple[str, str], dict[str, str]] = {}
@@ -984,12 +1102,13 @@ def authoring_data_root_for(store_root: Path) -> Path:
 
 
 def stage(image: str, store_root: Path) -> int:
-    """Refresh ScenarioLab's resolved index for the store with the same shell
-    that installed into it (tools/stage-authoring-packs.sh)."""
+    """Refresh ScenarioLab's resolved index for the store with the same
+    mns-packs image that installed into it (tools/stage-authoring-packs.sh)."""
     environment = os.environ.copy()
-    environment["MNS_PRODUCT_SHELL_IMAGE"] = image
+    environment["MNS_PACKS_IMAGE"] = image
     environment["MNS_PACK_STORE_ROOT"] = str(store_root)
     environment["MNS_AUTHORING_DATA_ROOT"] = str(authoring_data_root_for(store_root))
+    sys.stdout.flush()  # keep this script's lines ahead of the staging output
     subprocess.run(
         [str(ROOT / "tools" / "stage-authoring-packs.sh")],
         check=True,
@@ -1015,9 +1134,9 @@ def _hint_for(exc: BaseException) -> str:
                     "github.com and api.github.com. MNS_SKIP_PACK_INSTALL=1 make dashboard "
                     "starts the dashboard without packs.")
         if tool == "docker":
-            return ("the product shell image could not be pulled or run: `docker login` "
+            return ("the mns-packs image could not be pulled or run: `docker login` "
                     "with an account that can read dhdevspace/auto_mns, or run "
-                    "./product.sh setup, then re-run. MNS_SKIP_PACK_INSTALL=1 make dashboard "
+                    "./setup.sh, then re-run. MNS_SKIP_PACK_INSTALL=1 make dashboard "
                     "starts the dashboard without packs.")
     return ""
 
