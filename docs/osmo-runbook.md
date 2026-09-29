@@ -61,6 +61,15 @@ binary the published image lacks, the install, and four workarounds for
 upstream bugs. It refuses to start the GPU variant unless docker's default
 runtime is already `nvidia`.
 
+The GPU node mounts the checkout you run it from at `/workspace` (and its
+`.mns/osmo-runs` at `/runs`): the cluster config is a template,
+`osmo/kind-osmo-cluster-config.gpu.yaml.tmpl`, rendered into
+`.mns/osmo/kind-osmo-cluster-config.gpu.yaml` with that path.
+`MNS_OSMO_WORKSPACE=<checkout>` mounts another one;
+`osmo/setup-local-osmo.sh kind-config` only renders it. `osmo/campaign.py`
+reads the mount back from the running cluster, so it writes where the cluster
+looks, and says what to do when that checkout is missing or not yours.
+
 Then log in and prove the control plane on its own before involving a stack:
 
 ```bash
@@ -596,7 +605,7 @@ takes an assigned one. The node IP changes only when the cluster is rebuilt.
 `ws://localhost:8765` without a held tunnel needs the port mapped out of the
 kind node, which kind only does at cluster creation: an `extraPortMappings`
 entry `containerPort: 30765, hostPort: 8765` on a node in
-`osmo/kind-osmo-cluster-config.gpu.yaml`, then a rebuild. Not done yet: 8765
+`osmo/kind-osmo-cluster-config.gpu.yaml.tmpl`, then a rebuild. Not done yet: 8765
 is also what a compose stack's `foxglove_bridge_d1` publishes, and the two
 would collide whenever both run.
 
@@ -798,7 +807,7 @@ until that variable names a worker that has it.
     campaign.py                                the executor: run, watch, status, evaluate, reindex
     sim-bridge-vio.workflow.yaml               structure and default-values (no images: see "Images")
     files/                                     one script per task -- behaviour is edited here, not in the YAML
-    kind-osmo-cluster-config*.yaml, setup-local-osmo.sh
+    kind-osmo-cluster-config.yaml, kind-osmo-cluster-config.gpu.yaml.tmpl, setup-local-osmo.sh
   generated/campaigns/<id>/                    WRITTEN FOR YOU
     campaign_manifest.json                     what `status` and the dashboard read
     <run_key>/ScenarioSpec.yaml                base + variant, merged by `campaign plan`
@@ -878,8 +887,9 @@ Where things land, and why the layout is fixed:
   reports/<run_key>.json      the campaign-level evaluator (vio-stress)
 ```
 
-`<checkout>` is the one the cluster mounts at `/workspace` (read from the
-kind config), even when the executor runs from a worktree beneath it: that
+`<checkout>` is the one the cluster mounts at `/workspace` (read back from the
+running cluster's node, else the config `setup-local-osmo.sh` rendered, or
+`MNS_OSMO_WORKSPACE`), even when the executor runs from a worktree beneath it: that
 checkout owns the pack store `mns-stacks generate` needs, and a `stack=` value
 is a path under its `generated/`. mns-stacks sees that checkout at its own host
 path (`tools/mns-stacks.sh` mounts it identically), so every path it prints is a

@@ -18,6 +18,7 @@ and the headless `make` targets (`fly`, `stop`, `author`, `campaign`, `stacks`,
 | `pull-packs.sh` | Installs packs by release tag, lists remote releases, or imports archives from the pack mount directory. |
 | `stage-authoring-packs.sh` | Stages installed packs for ScenarioLab: `mns-packs stage-authoring --lock`, plus ScenarioLab's PackLibrary copy of the lock's asset packs. |
 | `build_pack_lock.py` | Rebuilds a channel's pack lock from published releases, verified with `mns-packs verify` (`make pack-lock`). |
+| `check_spawn.py` | Warns before `make fly` / `make campaign` when a vehicle starts at the world origin of a level with no floor there (XFS, Condo), with the measured start from `packs/level-spawn-hints.json`. Never blocks. |
 | `preview_topics.py` | The ROS 2 topics a generated stack will publish (`make topics STACK=generated/<name>`). |
 | `check_docker.sh`, `compose_retry.sh` | Docker / X11 / port preflights and a retrying `docker compose` wrapper. |
-| `test_install_demo_packs.py`, `test_channels.py` | Offline tests: `python3 -m unittest discover -s tools`. |
+| `test_install_demo_packs.py`, `test_channels.py`, `test_check_spawn.py` | Offline tests: `python3 -m unittest discover -s tools`. |

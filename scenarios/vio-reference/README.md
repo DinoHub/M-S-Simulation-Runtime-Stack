@@ -3,6 +3,14 @@
 Twelve flights over the XFS level — four wind strengths, three repeats each —
 recorded, checked and scored. It is here to be copied.
 
+Each flight starts in XFS's container yard (`start: {x: 423, y: -906, z: -21.0}`)
+and flies the reference box mirrored west (`routes/yard-box.yaml`), because a
+container stack stands 4 m east of the start. Not at (0, 0, 0): XFS has no
+floor under its world origin, so a vehicle there falls through the level and
+PX4 never arms. Keep that start if you copy this campaign onto XFS;
+`packs/level-spawn-hints.json` has the measured starts, and `make campaign`
+warns about an origin start on a level without a floor there.
+
 ```bash
 make campaign CAMPAIGN=vio-reference
 ```
@@ -63,7 +71,7 @@ Two things are checked before anything flies, and both are worth knowing about:
 ```
 ScenarioSpec.yaml    the world, the vehicle, its sensors, the estimator
 CampaignSpec.yaml    the variants, the route, what is recorded and scored
-routes/              the flight, as time-indexed waypoints
+routes/yard-box.yaml the flight, as time-indexed waypoints
 openvins/            the frozen estimator calibration
 ```
 

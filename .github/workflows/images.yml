@@ -25,6 +25,9 @@ on:
       - "tools/doctor.sh"
       - "tools/pull-packs.sh"
       - "tools/test_channels.py"
+      - "tools/check_spawn.py"
+      - "tools/test_check_spawn.py"
+      - "scenarios/**"
       - "osmo/**"
       - "packs/**"
       - "docker-compose-dashboard.yml"
@@ -90,11 +93,12 @@ jobs:
             tools/fly.sh \
             tools/author.sh \
             tools/doctor.sh \
+            osmo/setup-local-osmo.sh \
             setup.sh \
             download-packs.sh
 
       - name: python syntax
-        run: python -m compileall -q tools/images.py tools/install_demo_packs.py tools/build_pack_lock.py tools/preview_topics.py osmo/campaign.py osmo/registry.py
+        run: python -m compileall -q tools/images.py tools/install_demo_packs.py tools/build_pack_lock.py tools/preview_topics.py tools/check_spawn.py osmo/campaign.py osmo/registry.py
 
       - name: tooling unit tests
         # Offline: the installer's lock/store/contract/download logic and its
@@ -103,6 +107,7 @@ jobs:
         run: |
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_install_demo_packs.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_channels.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_check_spawn.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s osmo -p 'test_campaign.py'
 
       - name: dry-run smoke (no registry, no Docker daemon)

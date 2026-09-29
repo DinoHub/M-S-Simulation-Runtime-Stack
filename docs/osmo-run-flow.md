@@ -32,7 +32,7 @@ runs/<key>/ on the host  ->  vio-stress reports  ->  campaign_manifest.json
 ## The command
 
 ```bash
-MNS_IMAGE_SET_FILE=/home/mnsuser/M-S-Simulation-Runtime-Stack/images/image-set.generated.yaml \
+MNS_IMAGE_SET_FILE="$PWD/images/image-set.generated.yaml" \
 MNS_SIM_REAL_EVAL_IMAGE=dhdevspace/auto_mns:sim-real-eval-worker-bcb899f \
 python3 osmo/campaign.py run vio-osmo-condo --only calm-r1 --no-viz
 ```

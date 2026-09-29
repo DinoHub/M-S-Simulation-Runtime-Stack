@@ -36,7 +36,7 @@ class WorseRc(unittest.TestCase):
 
 
 class InAWorkspace(unittest.TestCase):
-    """WORKSPACE_HOST comes from the kind cluster config, a path on the
+    """WORKSPACE_HOST comes from the running cluster (or its rendered config), a path on the
     machine the cluster runs on; the tests use a temporary one."""
 
     def setUp(self):
@@ -83,7 +83,10 @@ class StacksCalls(InAWorkspace):
         self.assertEqual(kwargs["cwd"], campaign.WORKSPACE_HOST)
 
     def test_the_image_defaults_to_the_channel_pin(self):
-        with mock.patch.dict(campaign.os.environ, {}, clear=False):
+        # No ./.env: a local override in the checkout running the tests must
+        # not change what "the pin" is.
+        with mock.patch.object(campaign, "DOTENV_FILE", self.workspace / ".env"), \
+                mock.patch.dict(campaign.os.environ, {}, clear=False):
             campaign.os.environ.pop("MNS_STACKS_IMAGE", None)
             image = campaign.stacks_image()
         pinned = [line.split("=", 1)[1] for line in
@@ -179,6 +182,87 @@ class StacksCalls(InAWorkspace):
                 contextlib.redirect_stderr(io.StringIO()) as err:
             self.assertEqual(campaign.cmd_status(args), 1)
         self.assertIn("a gate failed", err.getvalue())
+
+
+class WorkspaceHost(unittest.TestCase):
+    """Where the cluster's /workspace is: never a path typed into the repo."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name).resolve()
+        env = mock.patch.dict(campaign.os.environ, {}, clear=False)
+        env.start()
+        self.addCleanup(env.stop)
+        campaign.os.environ.pop("MNS_OSMO_WORKSPACE", None)
+
+    def no_cluster(self):
+        return mock.patch.object(campaign, "_cluster_workspace_mount", return_value=None)
+
+    def test_the_committed_template_names_no_host_path(self):
+        text = (campaign.ROOT / "osmo" / "kind-osmo-cluster-config.gpu.yaml.tmpl").read_text()
+        self.assertIn("hostPath: @MNS_OSMO_WORKSPACE@\n", text)
+        self.assertNotIn("/home/", text)
+
+    def test_the_environment_wins(self):
+        campaign.os.environ["MNS_OSMO_WORKSPACE"] = str(self.dir)
+        self.assertEqual(campaign.workspace_host(), (self.dir, "MNS_OSMO_WORKSPACE"))
+
+    def test_the_running_cluster_is_read_back(self):
+        mounts = json.dumps([{"Source": "/dev/null", "Destination": "/var/run/nvidia-container-devices/all"},
+                             {"Source": str(self.dir), "Destination": "/workspace"}])
+        answers = iter([_done("osmo-control-plane\nosmo-worker2\n"), _done("[]"), _done(mounts)])
+        with mock.patch.object(campaign.subprocess, "run", side_effect=lambda *a, **k: next(answers)):
+            host, source = campaign.workspace_host()
+        self.assertEqual(host, self.dir)
+        self.assertIn("running kind cluster", source)
+
+    def test_no_docker_is_no_cluster(self):
+        with mock.patch.object(campaign.subprocess, "run", side_effect=FileNotFoundError("docker")):
+            self.assertIsNone(campaign._cluster_workspace_mount())
+
+    def test_then_the_rendered_config_then_this_checkout(self):
+        rendered = self.dir / "kind.yaml"
+        rendered.write_text("nodes:\n- role: worker\n  extraMounts:\n"
+                            "  - {hostPath: /srv/checkout, containerPath: /workspace}\n")
+        with self.no_cluster(), mock.patch.object(campaign, "RENDERED_KIND_CONFIG", rendered), \
+                mock.patch.object(campaign, "ROOT", self.dir):
+            self.assertEqual(campaign.workspace_host()[0], Path("/srv/checkout"))
+        with self.no_cluster(), mock.patch.object(campaign, "RENDERED_KIND_CONFIG", self.dir / "none"):
+            self.assertEqual(campaign.workspace_host()[0], campaign.ROOT)
+
+    def test_an_unusable_workspace_is_a_message_not_a_traceback(self):
+        with mock.patch.object(campaign, "WORKSPACE_HOST", Path("/home/mnsuser/M-S-Simulation-Runtime-Stack")), \
+                mock.patch.object(campaign, "WORKSPACE_SOURCE", "test"), \
+                contextlib.redirect_stderr(io.StringIO()) as err, \
+                self.assertRaises(SystemExit) as exit_:
+            campaign.main(["run", "vio-osmo-condo"])
+        self.assertEqual(exit_.exception.code, 2)
+        message = err.getvalue()
+        self.assertIn("does not exist on this machine", message)
+        self.assertIn("MNS_OSMO_WORKSPACE", message)
+
+    def test_a_permission_error_is_a_message_not_a_traceback(self):
+        (self.dir / "tools").mkdir()
+        (self.dir / "tools" / "mns-stacks.sh").write_text("")
+        denied = PermissionError(13, "Permission denied", str(self.dir / "generated"))
+        with mock.patch.object(campaign, "WORKSPACE_HOST", self.dir), \
+                mock.patch.object(campaign, "cmd_run", side_effect=denied), \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(campaign.main(["run", "x"]), 2)
+        self.assertIn("Permission denied", err.getvalue())
+
+    def test_a_failed_kubectl_is_exit_42_with_a_hint(self):
+        (self.dir / "tools").mkdir()
+        (self.dir / "tools" / "mns-stacks.sh").write_text("")
+        failed = subprocess.CalledProcessError(1, ["kubectl", "get", "node"], "",
+                                               'Error from server (NotFound): nodes "osmo-worker" not found')
+        with mock.patch.object(campaign, "WORKSPACE_HOST", self.dir), \
+                mock.patch.object(campaign, "cmd_run", side_effect=failed), \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(campaign.main(["run", "x"]), 42)
+        self.assertIn("NotFound", err.getvalue())
+        self.assertIn("setup-local-osmo.sh", err.getvalue())
 
 
 if __name__ == "__main__":

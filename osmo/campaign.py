@@ -74,27 +74,91 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / "osmo" / "sim-bridge-vio.workflow.yaml"
 
 
-def workspace_host() -> Path:
-    """The host directory the cluster mounts at /workspace.
+KIND_CLUSTER = "osmo"
+# Rendered from kind-osmo-cluster-config.gpu.yaml.tmpl by
+# `osmo/setup-local-osmo.sh gpu` (or `kind-config`), with the checkout path in.
+RENDERED_KIND_CONFIG = ROOT / ".mns" / "osmo" / "kind-osmo-cluster-config.gpu.yaml"
+
+
+def _cluster_workspace_mount() -> Path | None:
+    """The host directory a running kind cluster's node has at /workspace.
+
+    kind turns a node's extraMounts into docker bind mounts on the node
+    container, so the running cluster is the ground truth: the checkout it was
+    created from, whichever checkout this script runs from."""
+    try:
+        names = subprocess.run(
+            ["docker", "ps", "--filter", f"label=io.x-k8s.kind.cluster={KIND_CLUSTER}",
+             "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=10, check=False).stdout.split()
+        for name in names:
+            out = subprocess.run(["docker", "inspect", "-f", "{{json .Mounts}}", name],
+                                 capture_output=True, text=True, timeout=10, check=False).stdout
+            for mount in json.loads(out or "[]"):
+                if mount.get("Destination") == "/workspace" and mount.get("Source"):
+                    return Path(mount["Source"])
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    return None
+
+
+def _config_workspace_mount(cfg: Path) -> Path | None:
+    try:
+        doc = yaml.safe_load(cfg.read_text())
+    except (OSError, yaml.YAMLError):
+        return None
+    for node in (doc or {}).get("nodes") or []:
+        for mount in node.get("extraMounts") or []:
+            if mount.get("containerPath") == "/workspace":
+                return Path(mount["hostPath"])
+    return None
+
+
+def workspace_host() -> tuple[Path, str]:
+    """The host directory the cluster mounts at /workspace, and where that
+    came from.
 
     The workflow resolves a stack as /workspace/generated/<stack>/config, and
-    /workspace is whatever the kind config says it is -- the main checkout,
+    /workspace is whatever the cluster was created with -- the main checkout,
     not necessarily the checkout this script runs from. A worktree under it
     is still reachable, as a relative path through `..`, which is what the
-    `stack` value becomes when this script runs from one."""
-    for name in ("kind-osmo-cluster-config.gpu.yaml", "kind-osmo-cluster-config.yaml"):
-        cfg = ROOT / "osmo" / name
-        if not cfg.exists():
-            continue
-        doc = yaml.safe_load(cfg.read_text())
-        for node in doc.get("nodes") or []:
-            for mount in node.get("extraMounts") or []:
-                if mount.get("containerPath") == "/workspace":
-                    return Path(mount["hostPath"])
-    return ROOT
+    `stack` value becomes when this script runs from one.
+
+    In order: MNS_OSMO_WORKSPACE, the running cluster's own mount, the config
+    setup-local-osmo.sh rendered in this checkout, then this checkout."""
+    if os.environ.get("MNS_OSMO_WORKSPACE"):
+        return Path(os.environ["MNS_OSMO_WORKSPACE"]), "MNS_OSMO_WORKSPACE"
+    mounted = _cluster_workspace_mount()
+    if mounted is not None:
+        return mounted, f"the running kind cluster '{KIND_CLUSTER}'"
+    rendered = _config_workspace_mount(RENDERED_KIND_CONFIG)
+    if rendered is not None:
+        return rendered, str(RENDERED_KIND_CONFIG.relative_to(ROOT))
+    return ROOT, "this checkout (no cluster found)"
 
 
-WORKSPACE_HOST = workspace_host()
+def require_workspace() -> None:
+    """Stop with the fix, not a traceback, when the checkout the cluster
+    mounts is not one this user can use: missing, not a product checkout, or
+    not writable (the campaign tree is written under it)."""
+    problem = None
+    if not WORKSPACE_HOST.is_dir():
+        problem = "does not exist on this machine"
+    elif not (WORKSPACE_HOST / "tools" / "mns-stacks.sh").is_file():
+        problem = "is not a product checkout (no tools/mns-stacks.sh)"
+    elif not os.access(WORKSPACE_HOST, os.W_OK | os.X_OK):
+        problem = "is not writable by you"
+    if problem:
+        print(
+            f"[campaign] the cluster's /workspace is {WORKSPACE_HOST} (from {WORKSPACE_SOURCE}), "
+            f"which {problem}.\n"
+            f"[campaign] Fix: create the cluster from the checkout you run this from "
+            f"(osmo/setup-local-osmo.sh gpu renders the mount from its checkout path), or set "
+            f"MNS_OSMO_WORKSPACE=<the checkout the cluster mounts>.", file=sys.stderr)
+        raise SystemExit(2)
+
+
+WORKSPACE_HOST, WORKSPACE_SOURCE = workspace_host()
 # mns-stacks, the cluster and the generated campaign tree all hang off the one
 # checkout the cluster mounts, even when this script runs from a worktree
 # beneath it: that checkout owns the pack store, and paths the workflow sees
@@ -1555,7 +1619,25 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_status)
     args = ap.parse_args(argv)
-    return args.fn(args)
+    if args.cmd in ("run", "reindex", "registry", "evaluate", "status"):
+        require_workspace()
+    try:
+        return args.fn(args)
+    except PermissionError as exc:
+        print(f"[campaign] {exc.strerror}: {exc.filename}\n"
+              f"[campaign] The campaign tree is written under {WORKSPACE_HOST} "
+              f"(the cluster's /workspace, from {WORKSPACE_SOURCE}). Fix the ownership "
+              f"(sudo chown -R $(id -un): <dir>), or set MNS_OSMO_WORKSPACE.", file=sys.stderr)
+        return 2
+    except subprocess.CalledProcessError as exc:
+        # kubectl, osmo or docker said no: their own message, not a traceback.
+        detail = (exc.stderr or exc.stdout or "").strip().splitlines()
+        print(f"[campaign] {shlex.join(exc.cmd)} failed (exit {exc.returncode})"
+              + (f": {detail[-1]}" if detail else ""), file=sys.stderr)
+        if exc.cmd and exc.cmd[0] in ("kubectl", "osmo"):
+            print("[campaign] Is the OSMO cluster up (osmo/setup-local-osmo.sh gpu) and "
+                  "`kubectl config use-context kind-osmo` selected?", file=sys.stderr)
+        return 42
 
 
 if __name__ == "__main__":

@@ -47,7 +47,8 @@ consequences come from that:
 - The host can reach every node's IP directly, which is why a NodePort URL
   like `ws://172.27.0.4:30765` works from this machine and not from any other.
 - Anything a node needs from the host must be declared when the cluster is
-  created (`osmo/kind-osmo-cluster-config.gpu.yaml`), and adding it later
+  created (`osmo/kind-osmo-cluster-config.gpu.yaml.tmpl`, rendered with the
+  checkout's path by `osmo/setup-local-osmo.sh gpu`), and adding it later
   means rebuilding the cluster. That covers `extraMounts` (the checkout at
   `/workspace`, the GPU) and `extraPortMappings` (host port 80 to
   OSMO's gateway).

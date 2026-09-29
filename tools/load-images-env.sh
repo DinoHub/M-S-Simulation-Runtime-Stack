@@ -101,3 +101,41 @@ dotenv_value() {
   value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
   printf '%s' "$value"
 }
+
+# A NOTE for every *_IMAGE key the given env files pin that the shell or
+# ./.env sets to something else. load_images_env leaves such a key alone (the
+# override wins, as it should), which kept `make dashboard` silent about it;
+# the headless targets have always said so. Call it BEFORE load_images_env,
+# which exports the pins and would hide what the shell set. The value counts as
+# the pin when it equals the key's value in ANY of the files (tag@digest or
+# the bare tag), so the pinned tag in .env is not reported.
+#   note_image_overrides ./images/v1.0.0.generated.env ./images/development.generated.env
+note_image_overrides() {
+  local file line key val pins seen="" from override
+  for file in "$@"; do
+    [ -f "$file" ] || continue
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in ''|'#'*) continue ;; esac
+      key="${line%%=*}"
+      key="${key#export }"
+      case "$key" in *_IMAGE) ;; *) continue ;; esac
+      case " $seen " in *" $key "*) continue ;; esac
+      seen="$seen $key"
+      eval "_note_is_set=\${${key}+x}"
+      if [ -n "$_note_is_set" ]; then
+        eval "override=\${$key}"
+        from="the environment"
+      elif _load_images_env_key_in_file "$key" "./.env"; then
+        override="$(dotenv_value "$key" ./.env)"
+        from="./.env"
+      else
+        continue
+      fi
+      [ -n "$override" ] || continue
+      pins=""
+      for val in "$@"; do pins="$pins $(dotenv_value "$key" "$val")"; done
+      case " $pins " in *" $override "*) continue ;; esac
+      echo "NOTE: $key from $from overrides the catalog pin: $override" >&2
+    done < "$file"
+  done
+}
