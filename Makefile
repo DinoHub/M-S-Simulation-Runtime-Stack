@@ -2,7 +2,7 @@
 # content/image tooling.
 #
 #   make dashboard / make dashboard-down   the browser entry point (:3001)
-#   make fly SCENARIO=<name> [RECORD=1]    fly one scenario headless, until done (KEEP=1: leave it up)
+#   make fly SCENARIO=<name> [RECORD=1]    fly one scenario headless for FLY_SECONDS (300; KEEP=1: leave it up)
 #   make author [SCENARIO=<name>]          open ScenarioLab
 #   make campaign [CAMPAIGN=<name>]        fly a scored run matrix
 #   make topics STACK=generated/<name>     what a generated stack will publish
@@ -165,14 +165,14 @@ stage-authoring-packs: ensure-demo-packs  ## Refresh ScenarioLab's view of insta
 	./tools/stage-authoring-packs.sh
 
 dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
-	# Create these as the HOST user first. The backend container runs as
-	# root, so if it mkdirs generated/ itself the directory lands root-owned
-	# and mns-stacks generate (which runs as you) cannot write into it.
+	@# Create these as the HOST user first. The backend container runs as
+	@# root, so if it mkdirs generated/ itself the directory lands root-owned
+	@# and mns-stacks generate (which runs as you) cannot write into it.
 	@mkdir -p generated scenarios
-	# Same for the runs directory: compose would create a missing bind source
-	# as root, and the recorder (the host uid) then cannot write a bag into it
-	# ("Failed to create database directory"). TEVV_RUNS_DIR may come from the
-	# shell or ./.env, as it does for compose; the default is ./runs here.
+	@# Same for the runs directory: compose would create a missing bind source
+	@# as root, and the recorder (the host uid) then cannot write a bag into it
+	@# ("Failed to create database directory"). TEVV_RUNS_DIR may come from the
+	@# shell or ./.env, as it does for compose; the default is ./runs here.
 	@runs="$(TEVV_RUNS_DIR)"; \
 	mkdir -p "$$runs" 2>/dev/null; \
 	if [ ! -w "$$runs" ]; then \
@@ -180,7 +180,7 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	  echo "       so recordings would fail. Fix it with:  sudo chown -R $$(id -un): $$runs"; \
 	  exit 1; \
 	fi
-	# Fail early on Docker, X11, or host-port problems.
+	@# Fail early on Docker, X11, or host-port problems.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
 	. ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
@@ -195,12 +195,12 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
 	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
-	# ros2-tools is created outside Compose by the backend. It serves the
-	# Foxglove websocket Lichtblick renders from, so removing it
-	# unconditionally dropped the viz connection every time `make dashboard`
-	# was re-run against a live stack.
-	# Recreate it only when the selected bridge image actually changed —
-	# RECREATE_ROS2_TOOLS=always restores the old behaviour, =never skips it.
+	@# ros2-tools is created outside Compose by the backend. It serves the
+	@# Foxglove websocket Lichtblick renders from, so removing it
+	@# unconditionally dropped the viz connection every time `make dashboard`
+	@# was re-run against a live stack.
+	@# Recreate it only when the selected bridge image actually changed —
+	@# RECREATE_ROS2_TOOLS=always restores the old behaviour, =never skips it.
 	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 	desired="$${MNS_ROS2_BRIDGE_IMAGE:-}"; \
 	current=$$(docker inspect -f '{{.Config.Image}}' $(DASHBOARD_CONTAINER_PREFIX)ros2-tools 2>/dev/null || true); \
@@ -221,9 +221,9 @@ dashboard-down:
 	$(LOAD_DASHBOARD_IMAGES); \
 	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db down
-	# Also tear down the pre-fixed-name project, or a dashboard started before
-	# DASHBOARD_COMPOSE_PROJECT_NAME existed is left running and its
-	# daemon-global container names block the next `up`.
+	@# Also tear down the pre-fixed-name project, or a dashboard started before
+	@# DASHBOARD_COMPOSE_PROJECT_NAME existed is left running and its
+	@# daemon-global container names block the next `up`.
 	@if [ "$(LEGACY_DASHBOARD_PROJECT)" != "$(DASHBOARD_COMPOSE_PROJECT_NAME)" ]; then \
 	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 	  COMPOSE_PROJECT_NAME=$(LEGACY_DASHBOARD_PROJECT) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
@@ -235,7 +235,7 @@ help:
 	@echo "  dashboard        start the TEVV Web Dashboard on :3001 [CHANNEL= IMAGE_MODE= DB=true MNS_DEMO_PACKS=]"
 	@echo "  dashboard-down   stop it"
 	@echo "Headless (the same images the dashboard runs):"
-	@echo "  fly              generate and fly one scenario until its mission is done [SCENARIO=name RECORD=1 KEEP=1 ARGS=...]"
+	@echo "  fly              generate and fly one scenario, a FLY_SECONDS (300) run unless ARGS names --done [SCENARIO=name RECORD=1 KEEP=1 ARGS=...]"
 	@echo "                   KEEP=1: bring it up and leave it up (make stop ends it)"
 	@echo "  stop             stop a flown stack, finalize_metrics first [STACK=generated/name, default: the last fly]"
 	@echo "  author           open ScenarioLab [SCENARIO=name]; author-stop closes it"
@@ -271,9 +271,9 @@ topics:
 # (tools/mns-stacks.sh); ScenarioLab runs exactly as the dashboard starts it
 # (tools/author.sh).
 #
-#   make fly SCENARIO=vio-reference RECORD=1        # generate, fly until done, stop
+#   make fly SCENARIO=my-scene RECORD=1             # generate, fly FLY_SECONDS (300), stop
 #   make fly SCENARIO=my-scene KEEP=1               # bring it up and leave it up; make stop ends it
-#   make fly SCENARIO=my-scene ARGS="--timeout 900" # ARGS: extra `mns-stacks run` flags
+#   make fly SCENARIO=my-scene ARGS="--done topic:/x" # ARGS: extra `mns-stacks run` flags
 #   make stop [STACK=generated/<name>]              # default: the last `make fly`
 #   make author [SCENARIO=my-scene]                 # ScenarioLab; exports to scenarios/
 #   make stacks ARGS="status --stack generated/my-scene --json"
@@ -296,7 +296,7 @@ ifeq ($(strip $(SCENARIO)),)
 $(error usage: make fly SCENARIO=<name under scenarios/> [RECORD=1] [KEEP=1] [ARGS=...])
 endif
 endif
-fly: ensure-demo-packs  ## Generate and fly SCENARIO until its mission is done (RECORD=1 records a bag)
+fly: ensure-demo-packs  ## Generate and fly SCENARIO for FLY_SECONDS unless ARGS names --done (RECORD=1 records a bag)
 	@$(MNS_STACKS_ENV); ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
 
 stop:  ## Stop a flown stack (finalize_metrics, then compose down)

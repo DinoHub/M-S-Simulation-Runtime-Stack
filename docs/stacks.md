@@ -28,11 +28,21 @@ image the channel pins is on this machine; it changes nothing and pulls nothing.
 ## Fly one scenario
 
 ```bash
-make fly SCENARIO=vio-reference                  # generate, fly until the mission is done, stop
-make fly SCENARIO=vio-reference RECORD=1         # ... and record a bag
-make fly SCENARIO=my-scene KEEP=1               # bring it up and leave it up
-make fly SCENARIO=my-scene ARGS="--timeout 900"  # extra `mns-stacks run` flags
+make fly SCENARIO=my-scene                       # generate, fly a fixed 300 s run, stop
+make fly SCENARIO=my-scene RECORD=1              # ... and record a bag
+make fly SCENARIO=my-scene FLY_SECONDS=90        # a 90 s run
+make fly SCENARIO=my-scene KEEP=1                # bring it up and leave it up
+make fly SCENARIO=my-scene ARGS="--done topic:/mission/done --timeout 900"  # your own completion signal
 ```
+
+**When a run is done.** `mns-stacks run --until-done` needs a completion
+signal, and the runtime host emits no "mission complete" marker of its own. A
+scenario exported from ScenarioLab names no mission either. So unless `ARGS`
+carries a `--done` (`landed` with `--mav`, `topic:<name>`, `event:<type>` or
+`timeout`), `make fly` passes `--done timeout --timeout $FLY_SECONDS`
+(default 300) and says so: a fixed-length run you fly meanwhile from the
+dashboard's Teleop, QGroundControl or your own stack. A scored flight with a
+declared route is a campaign (`make campaign`), which supplies its own mission.
 
 `KEEP=1` runs `mns-stacks run` without `--until-done`: the stack comes up
 (with `RECORD=1`, recording) and stays up for you to fly from the dashboard,
@@ -45,9 +55,10 @@ folder, or a `ScenarioSpec.yaml`. `make fly`:
    (`ensure-demo-packs`);
 2. runs `mns-stacks generate <scenario folder> --out generated/<name>` (no Docker
    socket, `--network=none`, as you);
-3. runs `mns-stacks run --stack generated/<name> [--record] --until-done`, which
-   verifies the stack's resolved packs, brings the stack up, waits for the run
-   director's mission-done signal, and stops it (with `finalize_metrics`).
+3. runs `mns-stacks run --stack generated/<name> [--record] --until-done
+   [--done timeout --timeout $FLY_SECONDS]`, which verifies the stack's resolved
+   packs, brings the stack up, waits for the done signal, and stops it (with
+   `finalize_metrics`).
 
 With `RECORD=1` the bag goes to `<runs dir>/<run id>/bag` (`runs/` in this
 checkout unless `TEVV_RUNS_DIR` says otherwise), recorded by the bridge

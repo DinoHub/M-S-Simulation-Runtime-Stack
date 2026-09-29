@@ -512,10 +512,10 @@ is then dropped: `stackgen`'s `_normalize_conditions` reads the top-level
 Authored at `environment.weather`, the same value reaches
 `scenario_conditions.json` and the sim starts with
 `SCENARIO_CONDITIONS_ENABLED=true`, so the path is live and only the spelling
-was wrong. **`scenarios/vio-reference` is authored the inert way today**, which
-means its published wind sweep varied nothing -- worth fixing there and worth
-a schema change upstream, since a field that validates and does nothing is the
-worst of both.
+was wrong. `scenarios/vio-reference` was authored the inert way until v1.0.0, so its
+earlier wind sweeps varied nothing; it now uses `environment.weather` with
+`wind_mps`, and `mns-stacks campaign validate` fails the nested spelling
+(`conditions.path.*`).
 
 The general lesson for a campaign under any executor: a variant is not proven
 by appearing in the spec. Diff two generated stacks before believing a sweep.

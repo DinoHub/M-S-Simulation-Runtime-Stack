@@ -34,7 +34,7 @@ The same flows run without the browser, through the same images:
 
 ```bash
 make author                                  # ScenarioLab; exports land in scenarios/<name>/
-make fly SCENARIO=<name> RECORD=1            # generate, fly until the mission is done, keep the bag
+make fly SCENARIO=<name> RECORD=1            # generate, fly a fixed-length run (FLY_SECONDS, 300), keep the bag
 make campaign CAMPAIGN=vio-reference         # a scored run matrix
 ```
 

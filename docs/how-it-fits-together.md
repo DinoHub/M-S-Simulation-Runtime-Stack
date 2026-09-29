@@ -153,7 +153,7 @@ sequenceDiagram
 ```bash
 make doctor                                   # Docker, Compose, every pinned image present?
 make author                                   # ScenarioLab, as the dashboard opens it
-make fly SCENARIO=<name> RECORD=1             # generate, fly until done, stop; bag in runs/
+make fly SCENARIO=<name> RECORD=1             # generate, fly FLY_SECONDS (300), stop; bag in runs/
 make stop                                     # if a fly was interrupted
 make stacks ARGS="status --stack generated/<name> --json"
 ```

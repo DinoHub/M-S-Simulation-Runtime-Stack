@@ -10,8 +10,9 @@ make campaign                 # 12 flights: 4 wind strengths x 3 repeats, scored
 make campaign-status          # one row per flight
 ```
 
-On the v1.0.0 images the reference campaign's wind is visual only: the level's
-weather moves, the drone is not pushed. See the note in
+Each wind variant sets both the visual wind (`wind`, what the cameras see) and
+the physics wind (`wind_mps`, which AirSim applies to the vehicle as drag), so
+the drone is pushed as well as the scene moving. See the note in
 `scenarios/vio-reference/CampaignSpec.yaml`.
 
 `make campaign` runs `mns-stacks campaign` from the pinned `mns-stacks` image (the same
