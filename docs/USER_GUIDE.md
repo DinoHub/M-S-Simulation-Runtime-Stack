@@ -628,8 +628,9 @@ same way, so a stack or a bag made one way is usable the other:
 
 ```bash
 make author SCENARIO=<name>              # ScenarioLab, as the dashboard opens it
-make fly SCENARIO=<name>                 # generate, fly until the mission is done, stop
+make fly SCENARIO=<name>                 # generate, fly a fixed 300 s run, stop
 make fly SCENARIO=<name> RECORD=1        # ... and record: runs/<run id>/bag
+make fly SCENARIO=<name> FLY_SECONDS=90  # a shorter run
 make stop                                # stop the last `make fly` if it was interrupted
 make stacks ARGS="status --stack generated/<name>"
 make stacks ARGS="logs --stack generated/<name> --tail 200"
@@ -637,7 +638,12 @@ make stacks ARGS="logs --stack generated/<name> --tail 200"
 
 `make fly` checks the packs the way `make dashboard` does, then runs
 `mns-stacks generate` and `mns-stacks run --until-done`, which waits for the
-mission to finish and stops the stack (metrics finalized). With `RECORD=1` the
+run to finish and stops the stack (metrics finalized). A scenario exported from
+ScenarioLab names no mission and the simulator emits no "mission complete"
+signal, so the run lasts `FLY_SECONDS` (default 300) unless you name a real
+completion signal, for example `ARGS="--done topic:/my_autonomy/done"`; see
+[Headless](stacks.md). Fly it meanwhile from the dashboard's Teleop, or leave
+it up with `KEEP=1`. With `RECORD=1` the
 bag is recorded by the bridge container, exactly as the dashboard's Record
 button records it, and replays in **Replay → Bags**.
 
@@ -648,8 +654,8 @@ Every headless target, and how it mounts this checkout for `mns-stacks`, is in
 
 `make campaign` flies a *campaign*: a scored matrix of runs over one scenario,
 for example 4 wind strengths × 3 repeats, each recorded, validity-gated and
-scored. (On the v1.0.0 images that wind is visual only: the scene's weather
-moves, but no force acts on the drone.) [Campaigns](campaigns.md) covers the commands, and
+scored. (Each wind variant is both seen by the cameras and felt by the
+vehicle: `wind` and `wind_mps` together.) [Campaigns](campaigns.md) covers the commands, and
 [`scenarios/vio-reference/README.md`](../scenarios/vio-reference/README.md) shows how to copy the reference
 campaign and swap in your own estimator.
 

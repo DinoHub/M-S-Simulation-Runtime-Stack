@@ -8,6 +8,10 @@
 # --keep brings the stack up and leaves it up (no --until-done): fly it from
 # the dashboard, QGroundControl or your own stack, then `make stop`.
 #
+# Without a --done in the extra flags the run is a fixed-length one
+# (--done timeout, FLY_SECONDS, default 300 s): the runtime host has no
+# mission-complete marker, and a ScenarioLab export names no mission.
+#
 # SCENARIO is a folder under scenarios/, a folder, or a ScenarioSpec.yaml.
 # The stack goes to generated/<name>/ (the dashboard's layout), a bag to
 # <runs dir>/<run id>/bag, and the stack is remembered for `make stop`.
@@ -73,6 +77,28 @@ if [[ "$keep" == true ]]; then
   echo "stack left up: make stop   (or: make stop STACK=generated/$name)"
   exit 0
 fi
-echo "== run generated/$name${record[*]:+ (recording)} until the mission is done"
+# `run --until-done` needs a completion signal, and the runtime host emits no
+# mission-complete marker of its own. A ScenarioLab export carries no mission,
+# so unless the caller names one (ARGS="--done landed --mav ..." or
+# "--done topic:/x"), fly a fixed-length run: --done timeout, FLY_SECONDS long.
+done_args=()
+has_done=false has_timeout=false
+for arg in "$@"; do
+  case "$arg" in
+    --done|--done=*) has_done=true ;;
+    --timeout|--timeout=*) has_timeout=true ;;
+  esac
+done
+if [[ "$has_done" == false ]]; then
+  done_args=(--done timeout)
+  if [[ "$has_timeout" == false ]]; then
+    done_args+=(--timeout "${FLY_SECONDS:-300}")
+    echo "NOTE: no --done in ARGS: flying a fixed ${FLY_SECONDS:-300} s run (--done timeout)." >&2
+    echo "      FLY_SECONDS=<s> changes the length; ARGS=\"--done ...\" names a real completion signal." >&2
+  else
+    echo "NOTE: no --done in ARGS: the run ends when --timeout elapses (--done timeout)." >&2
+  fi
+fi
+echo "== run generated/$name${record[*]:+ (recording)} until done"
 echo "   (if it is interrupted: make stop STACK=generated/$name)"
-"$ROOT/tools/mns-stacks.sh" run --stack "$stack" "${record[@]}" --until-done "$@"
+"$ROOT/tools/mns-stacks.sh" run --stack "$stack" "${record[@]}" --until-done "${done_args[@]}" "$@"
