@@ -232,14 +232,18 @@ blocked on any fail.
 | --- | --- |
 | OSMO session | `osmo pool list` answers |
 | Cluster | the `kubectl` context reaches both workers |
-| Images | `campaign.py images`: every pinned image is on the GPU node, and the evaluation images are on the service node |
-| Evaluation platform | pool `default` has platform `cpu` (`osmo/cpu-platform.sh`) |
+| Images | `campaign.py images`: every pinned image is on the GPU node, and the evaluation images are on the service node (the service-node half is from #97, merged) |
+| Evaluation platform | pool `default` has platform `cpu` with a node behind it: `osmo resource list --pool default --platform cpu` lists one (`osmo/cpu-platform.sh`; #97, merged, which also makes `campaign.py images` and `run` check it) |
 | Registry | reachable, and at the expected schema version |
 | GPU | free, or how many gangs are queued ahead |
 
 **Confirm dialog:**
 - number of runs; the `--only` subset;
-- Foxglove on or off. A viewer never holds a run open, so a watched run ends
+- Foxglove on or off. The default is the spec's
+  `runtime.features.foxglove_bridge` (on in the four committed `vio-osmo-*`
+  scenarios, off when absent), the value `campaign.py` itself uses; the
+  toggle maps to `--viz` / `--no-viz`. A viewer holds a run open only with
+  `--viz-hold SEC`, which the dialog does not offer, so a watched run ends
   when its recording does.
 - priority: LOW by default, NORMAL for a tier-L1 campaign.
 - estimated duration from registry history: the median flight group per level
@@ -328,7 +332,7 @@ with the running job.
 
 | Phase | Delivers | Accepted when |
 | --- | --- | --- |
-| 1 | Read-only Campaigns page, registry v2 role, compose profile | `vio-osmo-condo`, `vio-osmo-xfs` and `vio-osmo-xfs-ardupilot` list with the same counts and pass rates as Grafana's progress dashboard; each run's gates match its `verdict.json`; with no cluster the page says "registry not reachable" and the rest of the dashboard works |
+| 1 | Read-only Campaigns page, registry v2 role, compose profile | `vio-osmo-condo`, `vio-osmo-condo-ardupilot`, `vio-osmo-xfs` and `vio-osmo-xfs-ardupilot` list with the same counts and pass rates as Grafana's progress dashboard; each run's gates match its `verdict.json`; with no cluster the page says "registry not reachable" and the rest of the dashboard works |
 | 2 | Editor and validator, `tools/tevv-campaign`, draft handling | a physics-wind variant shows `conditions.physics_wind ok`; weather under `environment.conditions` shows the fail; a spec saved from the form, reloaded and saved again is byte-identical |
 | 3 | OSMO launch: executor, preflight, cancel, `campaign_launches` | launching `vio-osmo-xfs --only calm-r1` from the UI flies it, the row walks pending → passed live, and the verdict and ATE show; a mid-run cancel leaves no workflow running on OSMO and the row `aborted`; `campaign_launches` holds the spec that flew |
 
