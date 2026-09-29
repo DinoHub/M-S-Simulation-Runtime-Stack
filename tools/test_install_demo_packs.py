@@ -531,6 +531,37 @@ class PackLibraryFollowsTheLock(unittest.TestCase):
             self.assertIn("--network=none", argv)
 
 
+    def test_a_broad_common_parent_gets_two_mounts(self):
+        # Store and data root that meet only at / (or $HOME, /home) must not
+        # hand the container that whole tree.
+        import subprocess
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory(dir="/tmp") as b:
+            workspace = Path(a).resolve()
+            script = workspace / "tools/stage-authoring-packs.sh"
+            self._run(workspace, install_pinned=True)
+            store = workspace / ".mns/v1/pack-store"
+            data = Path(b).resolve() / "authoring-data"
+            env = {**os.environ, "PATH": f"{workspace / 'bin'}:{os.environ['PATH']}",
+                   "MNS_PACK_STORE_ROOT": str(store), "MNS_AUTHORING_DATA_ROOT": str(data),
+                   "MNS_DEMO_PACK_LOCK": str(workspace / "lock.json"),
+                   "MNS_PACKS_IMAGE": "local/packs:1",
+                   "MNS_AUTHORING_HOST_CONTRACT": str(workspace / "authoring-contract.json")}
+            done = subprocess.run([str(script)], env=env, capture_output=True, text=True, check=True)
+            argv = self.docker_log.read_text().splitlines()
+            self.assertIn(f"{store}:{store}", argv)
+            self.assertIn(f"{data}:{data}", argv)
+            self.assertIn("copies payloads", done.stderr)
+
+    def test_the_stamp_covers_image_lock_and_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            self._run(workspace, install_pinned=True)
+            stamp = (workspace / ".mns/v1/authoring-data/ResolvedPacks/.staged-with").read_text().split()
+            self.assertEqual(stamp[0], "local/packs:1")
+            self.assertEqual(len(stamp), 3)            # image, lock sha256, contract sha256
+            self.assertTrue(all(len(h) == 64 for h in stamp[1:]))
+
+
 class MnsPacksCalls(unittest.TestCase):
     """install goes through `mns-packs install --json`, with host paths."""
 

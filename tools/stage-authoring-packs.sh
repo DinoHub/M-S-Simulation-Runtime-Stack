@@ -194,7 +194,9 @@ case "$PULL_POLICY" in
     exit 2
     ;;
 esac
-STAMP="$IMAGE $(sha256sum "$LOCK" 2>/dev/null | cut -d' ' -f1)"
+# The image, the lock and ScenarioLab's contract all decide what is staged,
+# so a change to any of them restages.
+STAMP="$IMAGE $(sha256sum "$LOCK" 2>/dev/null | cut -d' ' -f1) $(sha256sum "$AUTHORING_CONTRACT" 2>/dev/null | cut -d' ' -f1)"
 
 if [[ -f "$STAGED_INDEX" && ! "$STORE_INDEX" -nt "$STAGED_INDEX" \
       && -f "$STAGED_STAMP" && "$(cat "$STAGED_STAMP")" == "$STAMP" ]]; then
@@ -209,8 +211,15 @@ fi
 # data root go in as ONE mount (their common parent, .mns/<channel>/ by
 # default): staging hard-links payloads out of the store, and link(2) refuses
 # to cross two bind mounts even on one filesystem (it would copy instead).
+# Never a broad parent, though: $HOME, /home, / or anything shallower than
+# three components would hand the container far more than the two roots, so
+# those get two mounts and staging copies instead of linking.
 common="$(python3 -c 'import os,sys; print(os.path.commonpath(sys.argv[1:]))' "$STORE_ROOT" "$DATA_ROOT")"
-if [[ "$common" == / ]]; then
+depth="$(python3 -c 'import sys; print(len([p for p in sys.argv[1].split("/") if p]))' "$common")"
+home="$(cd "$HOME" 2>/dev/null && pwd || echo "$HOME")"
+if [[ "$common" == / || "$common" == /home || "$common" == "$home" || "$depth" -lt 3 ]]; then
+  echo "NOTE: the pack store and ScenarioLab's data root share only $common; mounting them" >&2
+  echo "      separately, so staging copies payloads instead of hard-linking them." >&2
   mounts=(-v "$STORE_ROOT:$STORE_ROOT" -v "$DATA_ROOT:$DATA_ROOT")
 else
   mounts=(-v "$common:$common")
