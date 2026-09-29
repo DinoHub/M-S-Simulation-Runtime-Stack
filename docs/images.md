@@ -42,6 +42,45 @@ being filled in, or labels that disagree, is recoverable):
   store only (it says NOTE when one is not there); `status` also asks the
   registry.
 
+## Releasing: what `verify --release` requires
+
+On `release/v1.0.0-next` a pin may be *pending* (an rc tag, no digest yet).
+What merges into `release/v1.0.0` or `main` may not: `tools/images.sh verify
+--release` fails on any `pending:` row, any `-rc` tag in a release channel,
+and any tag-only ref in `images/v1.0.0.generated.env` or
+`packs/v1.0.0.lock.json`. CI turns it on for every pull request into those two
+branches (`GITHUB_BASE_REF`), and runs it as its own step so a red run names
+the rule.
+
+Phase 4 (rc images pushed): pin each rc's digest; the tag stays the rc tag.
+
+```bash
+tools/images.sh bump --only v1_stacks            # resolves mns-stacks-v1.0.0-rc, drops pending:
+tools/images.sh bump --only v1_packs
+tools/images.sh bump --only v1_runtime_host_kit
+tools/images.sh sync && make pack-lock           # the lock restates packs/stacks
+tools/images.sh verify
+```
+
+Phase 6 (the accepted rcs retagged `-v1.0.0` in the registry): move each row
+to its release tag and that tag's digest. `bump` refuses an ordinary pinned
+row, so this is the one explicit retag it does, one row at a time:
+
+```bash
+tools/images.sh bump --only v1_stacks --tag mns-stacks-v1.0.0
+tools/images.sh bump --only v1_packs  --tag mns-packs-v1.0.0
+tools/images.sh bump --only v1_runtime_host_kit --tag tevv-runtime-host-kit-v1.0.0
+# rows still on a moving -latest tag: set channel: pinned by hand first, then
+tools/images.sh bump --only sim_real_eval  --tag sim-real-eval-worker-v1.0.0
+tools/images.sh bump --only qgroundcontrol --tag airsim-qgc-x11-v1.0.0
+tools/images.sh sync && make pack-lock
+tools/images.sh verify --release                 # must pass before the release PR
+```
+
+`--tag` resolves the new tag's index digest (a tag that does not resolve is
+skipped, nothing is written), rewrites `tag:` and `digest:`, and drops a
+`pending:` note. Delete the rows' `follow_up:` notes in the same commit.
+
 ## Start here
 
 ```
@@ -96,6 +135,8 @@ PR that touches the file. Delete the entry when it is done.
 | Upgrade a third-party image (prom, grafana, nvcr…) | edit the `tag:` in the catalog, then `bump --only KEY` to resolve its digest. Never bulk-bumped: someone else's version bump is a deliberate upgrade |
 | Pin a branch or preview build | edit `tag:` + `digest:` by hand, set `channel: pinned`, `sync` |
 | Pin an rc image that is not pushed yet | `channel: pinned`, its `tag:`, `digest: null`, `pending: "<who pins it, when>"`, `sync`; later `bump --only KEY` |
+| Move a pinned row to its release tag | `bump --only KEY --tag NEWTAG` (see [Releasing](#releasing-what-verify---release-requires)) |
+| Check a catalog can ship | `tools/images.sh verify --release` |
 | Add an image the repo did not reference before | add an `images:` row **and** a `consumers:` binding, then `sync` |
 | Check what is stale | `tools/images.sh report` (online) |
 | Check nobody hand-edited a generated file | `tools/images.sh verify` (no network) |

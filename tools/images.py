@@ -7,7 +7,10 @@ docs/adr/0002-one-image-catalog.md (why this exists). Subcommands:
   sync     regenerate every generated artifact from images/catalog.yaml (offline)
   verify   run selftest, then regenerate into a tmp dir and diff against the
            committed artifacts, exit 1 on any difference or selftest failure
-           (offline — the CI gate)
+           (offline — the CI gate). `verify --release` (automatic in CI when
+           GITHUB_BASE_REF is release/v1.0.0 or main) also FAILS on any
+           `pending:` row, any -rc tag in a release channel, and any tag-only
+           ref in a channel env file or a pack lock: what ships is exact.
   selftest regression guard on synthetic fixtures, no real catalog or network
            touched: asserts an unquoted numeric-looking tag (e.g. `3.4`) fails
            catalog validation, and that `bump`'s line-targeted rewrite always
@@ -984,7 +987,64 @@ def host_pin_findings(catalog: dict[str, Any], *, remote: bool,
     return out
 
 
-def cmd_verify(_args: argparse.Namespace) -> int:
+RELEASE_BASE_REFS = ("release/v1.0.0", "main")
+_RC_TAG_RE = re.compile(r"-rc(?:[.\-]?\d+)?(?:$|-)")
+
+
+def release_problems(catalog: dict[str, Any]) -> list[str]:
+    """Why this catalog cannot ship as a release, or [] when it can.
+
+    Lenient everywhere else, strict here: a release pins every image by an
+    immutable tag AND its digest. Pending rows, release-candidate tags and
+    tag-only refs are fine on release/v1.0.0-next while the rc images are
+    being filled in, and must all be gone before the merge into
+    release/v1.0.0 or main.
+    """
+    images = catalog["images"]
+    problems: list[str] = []
+    for key, _note in pending_rows(catalog):
+        problems.append(f"images.{key} is still pending (no digest): pin it with "
+                        f"tools/images.sh bump --only {key} [--tag <release tag>]")
+    channel_keys_seen: set[str] = set()
+    for name, spec in sorted((catalog["consumers"].get("release_channels") or {}).items()):
+        for var, key in spec["vars"].items():
+            if key in channel_keys_seen:
+                continue
+            channel_keys_seen.add(key)
+            if _RC_TAG_RE.search(str(images[key]["tag"])):
+                problems.append(f"images.{key} ({var}) is on the release-candidate tag "
+                                f"{images[key]['tag']!r}: retag the accepted rc and pin it "
+                                f"(tools/images.sh bump --only {key} --tag <release tag>)")
+        emitted = ROOT / spec["emits"]
+        if emitted.is_file():
+            for line in emitted.read_text(encoding="utf-8").splitlines():
+                var, sep, ref = line.partition("=")
+                if not sep or line.startswith("#") or not var.endswith("_IMAGE"):
+                    continue
+                if "@sha256:" not in ref:
+                    problems.append(f"{spec['emits']}: {var}={ref} is not digest-pinned")
+    for lock_path in sorted(catalog["consumers"].get("pack_locks") or {}):
+        path = ROOT / lock_path
+        try:
+            required = json.loads(path.read_text(encoding="utf-8")).get("required_images") or {}
+        except (OSError, json.JSONDecodeError) as exc:
+            problems.append(f"{lock_path}: unreadable ({exc})")
+            continue
+        for role, ref in sorted(required.items()):
+            if "@sha256:" not in str(ref):
+                problems.append(f"{lock_path}: required_images.{role}={ref} is not digest-pinned")
+    return problems
+
+
+def release_mode(args: argparse.Namespace) -> bool:
+    """--release, or a pull request into a release branch (GitHub Actions
+    sets GITHUB_BASE_REF on pull_request events)."""
+    if getattr(args, "release", False):
+        return True
+    return os.environ.get("GITHUB_BASE_REF", "").strip() in RELEASE_BASE_REFS
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
     run_selftest()  # regression guard: must pass before trusting the real catalog
     catalog = load_catalog()
     assert_invariants(catalog)
@@ -1014,6 +1074,16 @@ def cmd_verify(_args: argparse.Namespace) -> int:
     names = sorted(str(p.relative_to(ROOT)) for p in artifacts)
     names += sorted(catalog["consumers"].get("pack_locks") or {})
     checked = ", ".join(names)
+    if release_mode(args):
+        problems = release_problems(catalog)
+        if problems:
+            for problem in problems:
+                print(f"RELEASE: {problem}", file=sys.stderr)
+            print(f"verify --release: {len(problems)} problem(s); a release pins every image "
+                  f"by an immutable tag and its digest (docs/images.md, 'Releasing')",
+                  file=sys.stderr)
+            return 1
+        print("verify --release: every release image is pinned by tag and digest")
     print(f"verify: ok ({checked} all match images/catalog.yaml)")
     return 0
 
@@ -1267,6 +1337,13 @@ def _selftest_pending_and_host_pin() -> None:
     assert [level for level, _ in found] == ["WARNING"] * 3, f"selftest FAILED: {found}"
     skipped = host_pin_findings(catalog, remote=False, labels_of=labels(None, None))
     assert [level for level, _ in skipped] == ["NOTE"], f"selftest FAILED: {skipped}"
+
+    # the release guard's -rc detector
+    for tag, rc in (("mns-stacks-v1.0.0-rc", True), ("mns-stacks-v1.0.0-rc.2", True),
+                    ("x-v1.0.0-rc-g1234567", True), ("mns-stacks-v1.0.0", False),
+                    ("tevv-web-dashboard-backend-v1.0.0-gee99b9d", False),
+                    ("sim-real-eval-worker-latest", False)):
+        assert bool(_RC_TAG_RE.search(tag)) is rc, f"selftest FAILED: -rc detection on {tag!r}"
 
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
@@ -1715,6 +1792,8 @@ def _bump_line_targeted(text: str, key: str, new_tag: str, new_digest: str | Non
 
 
 def cmd_bump(args: argparse.Namespace) -> int:
+    if getattr(args, "tag", None) and not args.only:
+        sys.exit("bump --tag NEWTAG retags one row: pass --only KEY")
     catalog = load_catalog()
     images = catalog["images"]
     keys = [args.only] if args.only else sorted(images)
@@ -1727,6 +1806,20 @@ def cmd_bump(args: argparse.Namespace) -> int:
             sys.exit(f"unknown image key: {key}")
         row = images[key]
         if args.channel and row["channel"] != args.channel:
+            continue
+        if getattr(args, "tag", None):
+            if row["channel"] != "pinned":
+                sys.exit(f"--tag retags channel: pinned rows only; {key} is {row['channel']}")
+            live, err = (_imagetools_digest(f"{row['repo']}:{args.tag}")
+                         if row.get("resolver", "hub") == "imagetools"
+                         else _hub_digest_for(row["repo"], args.tag, token))
+            if err or not live:
+                print(f"skipped: {key} — {row['repo']}:{args.tag} does not resolve "
+                      f"({err or 'no digest'})", file=sys.stderr)
+                continue
+            text = _bump_line_targeted(text, key, args.tag, live)
+            print(f"retagged: {key} {row['tag']} -> {args.tag}@{live[:19]}…")
+            changed += 1
             continue
         if row["channel"] == "pinned" and not row.get("pending"):
             print(f"refused: {key} is channel pinned (off the release line; edit tag+digest "
@@ -2044,7 +2137,11 @@ def main(argv: list[str]) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("sync").set_defaults(fn=cmd_sync)
-    sub.add_parser("verify").set_defaults(fn=cmd_verify)
+    p_verify = sub.add_parser("verify")
+    p_verify.add_argument("--release", action="store_true",
+                          help="also fail on pending rows, -rc tags and tag-only refs "
+                               "(automatic when GITHUB_BASE_REF is release/v1.0.0 or main)")
+    p_verify.set_defaults(fn=cmd_verify)
     sub.add_parser("selftest").set_defaults(fn=cmd_selftest)
 
     p_status = sub.add_parser("status")
@@ -2060,6 +2157,9 @@ def main(argv: list[str]) -> int:
     p_bump = sub.add_parser("bump")
     p_bump.add_argument("--only")
     p_bump.add_argument("--channel", choices=sorted(VALID_CHANNELS))
+    p_bump.add_argument("--tag", metavar="NEWTAG",
+                        help="with --only KEY on a channel: pinned row: move it to NEWTAG and "
+                             "that tag's digest (the phase-6 rc -> release retag)")
     p_bump.set_defaults(fn=cmd_bump)
 
     p_refs = sub.add_parser("refs")

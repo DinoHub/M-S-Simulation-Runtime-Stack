@@ -58,6 +58,14 @@ jobs:
       - name: images.sh verify
         run: tools/images.sh verify
 
+      - name: release guard (PRs into release/v1.0.0 or main)
+        # What ships is exact: no pending row, no -rc tag in a release channel,
+        # no tag-only ref in images/v1.0.0.generated.env or the pack lock. The
+        # step above already turns this on through GITHUB_BASE_REF; this one
+        # names it, so a red run says which rule failed.
+        if: github.base_ref == 'release/v1.0.0' || github.base_ref == 'main'
+        run: tools/images.sh verify --release
+
       - name: images.sh status --offline
         # Advisory on a PR: an outstanding follow-up is not that PR's fault,
         # so it is reported, never a failure. `|| true` keeps status's
