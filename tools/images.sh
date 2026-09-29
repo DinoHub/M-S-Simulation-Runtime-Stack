@@ -104,7 +104,7 @@ sys.exit(0 if env.get("artifact_digest") else 1)
             echo "   select a level pack. Re-author it in ScenarioLab.)"
             continue
         fi
-        "$ROOT/tools/mns-stacks.sh" generate "$ROOT/scenarios/$s" --profile docker \
+        "$ROOT/tools/mns-stacks.sh" generate "$ROOT/scenarios/$s" --profile docker --no-topics \
             --out "$tmp/$s" >/dev/null 2>&1 || { echo "$s: GENERATION FAILED with $stacks_ref"; any=1; continue; }
         # mns-stacks writes the --out path into manifests: normalize it so
         # only real content differences survive the diff

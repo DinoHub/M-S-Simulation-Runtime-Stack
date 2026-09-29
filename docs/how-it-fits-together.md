@@ -62,7 +62,7 @@ this repository:
 | `/var/run/docker.sock` | it drives docker: runs mns-stacks, mns-packs and ScenarioLab, creates `ros2-tools` |
 | `${DOCKER_CONFIG:-$HOME/.docker}` at `/root/.docker`, read-only | a pull uses **this container's** credentials, not your shell's ([details](dashboard-images.md#6-credentials-the-socket-alone-is-not-enough)) |
 | `${MSRS_ROOT:-$PWD}` at the **identical** host path | every path the backend hands mns-stacks is a host path, valid for Compose on the host, unchanged |
-| `${TEVV_RUNS_DIR:-./runs}` (in this checkout) at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports; the backend passes its host path to mns-stacks |
+| `${TEVV_RUNS_DIR:-./runs}` (in this checkout) at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports. Its host path also arrives as `TEVV_RUNS_DIR` (the same expression as the mount source), which the backend hands to mns-stacks |
 
 The headless targets follow the same rule: `tools/mns-stacks.sh` mounts this
 checkout and the runs directory at their host paths, and the Docker socket

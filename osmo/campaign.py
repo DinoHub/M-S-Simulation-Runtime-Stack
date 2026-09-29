@@ -356,8 +356,9 @@ def with_chase_camera(spec_file: Path, out_dir: Path) -> Path:
 
 def generate_stack(spec_file: Path, stack_dir: Path) -> None:
     """`mns-stacks generate`, which writes the stack and starts nothing."""
+    # --no-topics: no socket here, so the topic preview could only say "unavailable".
     proc = stacks_cli("generate", workspace_path(spec_file.parent), "--profile", "docker",
-                      "--out", workspace_path(stack_dir))
+                      "--no-topics", "--out", workspace_path(stack_dir))
     if proc.returncode != 0 or not (stack_dir / "docker-compose.yml").exists():
         sys.stderr.write(proc.stdout + proc.stderr)
         raise RuntimeError(f"stack generation failed for {spec_file}")

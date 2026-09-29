@@ -91,6 +91,12 @@ services:
       # whatever the database is doing.
       - INIT_DB_SCHEMA=false
       - SIM2REAL_RUNS_DIR=/data/runs
+      # The HOST path of that same runs directory -- the identical expression
+      # as the /data/runs mount source below, so the two cannot diverge. The
+      # backend hands it to its mns-stacks siblings (--runs-dir, mounted at
+      # that path) and never infers it from its own mounts. Use an absolute
+      # path in ./.env; `make dashboard` resolves ~ and relative paths itself.
+      - TEVV_RUNS_DIR=${TEVV_RUNS_DIR:-${MSRS_ROOT:-${PWD}}/runs}
       # ONE entry, read by two consumers: the Monitor tab's Grafana panel and
       # the Launch phase's Observe embed (served to the frontend at runtime via
       # /api/services/ui-config, so enabling it is an env change here, never a

@@ -60,6 +60,14 @@ LEGACY_DASHBOARD_PROJECT = $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lowe
 # always- always recreate (the pre-existing behaviour)
 # never - never touch it
 RECREATE_ROS2_TOOLS ?= auto
+# The HOST runs directory, resolved once: the shell's TEVV_RUNS_DIR, else
+# ./.env's, else ./runs; ~ and relative paths made absolute. Exported, so the
+# dashboard compose file (its /data/runs mount and the backend's
+# TEVV_RUNS_DIR) and tools/mns-stacks.sh all get the same absolute host path.
+TEVV_RUNS_DIR := $(shell r="$$TEVV_RUNS_DIR"; [ -n "$$r" ] || r=$$(sed -n 's/^[[:space:]]*TEVV_RUNS_DIR=//p' .env 2>/dev/null | tail -1 | tr -d "\"'"); \
+	[ -n "$$r" ] || r="$(CURDIR)/runs"; r=$$(printf '%s' "$$r" | sed "s|^~|$$HOME|"); \
+	case "$$r" in (/*) ;; (*) r="$(CURDIR)/$$r" ;; esac; printf '%s' "$$r")
+export TEVV_RUNS_DIR
 ifeq ($(CHANNEL),v1)
 CHANNEL_NAME := v1
 CHANNEL_ENV := images/v1.0.0.generated.env
@@ -165,8 +173,7 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	# as root, and the recorder (the host uid) then cannot write a bag into it
 	# ("Failed to create database directory"). TEVV_RUNS_DIR may come from the
 	# shell or ./.env, as it does for compose; the default is ./runs here.
-	@runs="$${TEVV_RUNS_DIR:-$$(sed -n 's/^TEVV_RUNS_DIR=//p' .env 2>/dev/null | tail -1)}"; \
-	runs="$${runs:-$$(pwd)/runs}"; case "$$runs" in "~"*) runs="$$HOME$${runs#\~}" ;; esac; \
+	@runs="$(TEVV_RUNS_DIR)"; \
 	mkdir -p "$$runs" 2>/dev/null; \
 	if [ ! -w "$$runs" ]; then \
 	  echo "ERROR: the runs directory $$runs is not writable by you (owner: $$(stat -c %U "$$runs" 2>/dev/null)),"; \

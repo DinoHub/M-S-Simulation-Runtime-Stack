@@ -51,7 +51,10 @@ echo "== generate $name -> generated/$name"
 # The folder, not the file: a split spec keeps its asset packs beside it.
 kit=()
 [[ -n "${MNS_CAPABILITY_KIT:-}" ]] && kit=(--kit "$(cd "$MNS_CAPABILITY_KIT" && pwd)")
-"$ROOT/tools/mns-stacks.sh" generate "$(dirname "$spec")" --profile docker --out "$stack" "${kit[@]}"
+# --no-topics: generate runs without the Docker socket, so its topic preview
+# (which needs the bridge image) could only report "unavailable".
+"$ROOT/tools/mns-stacks.sh" generate "$(dirname "$spec")" --profile docker --no-topics \
+  --out "$stack" "${kit[@]}"
 # Remembered for `make stop`: the stack, and its Compose project when the run
 # was given one (--project NAME in the extra flags), tab-separated.
 project=""

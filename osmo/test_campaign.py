@@ -146,7 +146,7 @@ class StacksCalls(InAWorkspace):
                 campaign.generate_stack(spec, stack)
             self.assertEqual(cli.call_args.args, (
                 "generate", str(spec.parent.resolve()), "--profile", "docker",
-                "--out", str(stack.resolve())))
+                "--no-topics", "--out", str(stack.resolve())))
 
     def test_a_generation_without_a_compose_file_fails(self):
         with tempfile.TemporaryDirectory(dir=self.workspace) as tmp, \
