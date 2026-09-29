@@ -148,10 +148,10 @@ images:
   v1_authoring:
     repo: dhdevspace/auto_mns
     tag: mns-authoring-v1.0.0
-    digest: sha256:6aa3ad371f8c6c89a846344f10d9001acd3b5574d7f7c23b7ebd6e8ce361122d
+    digest: sha256:c91716e18cf01a537c6f4901a9a368fbf63b7885795af07a56db20cc39ece421
     channel: pinned
     purpose: >-
-      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0); non-Substrate baseline with corrected preview package-root registration. Bakes mns_vehicle_models 1.0.4, the version TEVV-Authoring pins (tooling/asset_packs/default_vehicle_pack.json). Level packs are staged from the PackStore.
+      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0); non-Substrate baseline with corrected preview package-root registration. Bakes mns_vehicle_models 1.0.4, the version TEVV-Authoring pins (tooling/asset_packs/default_vehicle_pack.json). Rebuilt from TEVV-Authoring 7aaf11e: legacy local packs and content with broken references removed; ScenarioContracts class redirects added. Level packs are staged from the PackStore.
 
   v1_stack_generator:
     repo: dhdevspace/auto_mns
