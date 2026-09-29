@@ -40,5 +40,28 @@ class ContainerPath(unittest.TestCase):
         self.assertIn("outside", err.getvalue())
 
 
+class CpuPlatformProblem(unittest.TestCase):
+    """The evaluate and aggregate groups need platform cpu with a node behind it."""
+
+    def run_with(self, returncode: int, stdout: str, stderr: str = ""):
+        import subprocess
+        from unittest import mock
+        done = subprocess.CompletedProcess([], returncode, stdout, stderr)
+        with mock.patch.object(campaign.subprocess, "run", return_value=done):
+            return campaign.cpu_platform_problem()
+
+    def test_a_listed_node_is_no_problem(self):
+        self.assertIsNone(self.run_with(0, '{"resources": [{"hostname": "osmo-worker"}]}'))
+
+    def test_no_node_names_the_setup_script(self):
+        problem = self.run_with(0, '{"resources": []}')
+        self.assertIn("osmo/cpu-platform.sh", problem)
+
+    def test_a_failing_cli_names_the_setup_script(self):
+        problem = self.run_with(1, "", "not logged in")
+        self.assertIn("not logged in", problem)
+        self.assertIn("osmo/cpu-platform.sh", problem)
+
+
 if __name__ == "__main__":
     unittest.main()

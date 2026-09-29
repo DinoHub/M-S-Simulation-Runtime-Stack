@@ -201,11 +201,20 @@ for _ in $(seq 60); do
 done
 kubectl -n osmo get pods --no-headers 2>/dev/null | grep -vE ' 1/1 .*Running| Completed' || true
 
+# The evaluation platform: pool default's `cpu` platform on the service node,
+# which the workflow's evaluate and aggregate groups name. It is OSMO config,
+# so it needs a login; the dev method needs no credentials. `campaign.py
+# images` and `campaign.py run` refuse to go on without it.
+if osmo login http://localhost --method=dev --username=testuser; then
+  "$HERE/cpu-platform.sh" || echo "osmo/cpu-platform.sh failed; re-run it once the control plane answers" >&2
+else
+  echo "osmo login failed: log in, then run osmo/cpu-platform.sh" >&2
+fi
+
 cat <<'DONE'
 
-Control plane up. Next:
+Control plane up, logged in as testuser (dev). Next:
 
-  osmo login http://localhost --method=dev --username=testuser
   osmo pool list
   osmo workflow submit ~/OSMO-6.3.1/cookbook/tutorials/hello_world.yaml
   osmo workflow query hello-osmo-1
