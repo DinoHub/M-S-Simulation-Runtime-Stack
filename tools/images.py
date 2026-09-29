@@ -40,9 +40,23 @@ logic rather than meant for interactive use:
   resolve-var VAR       print the resolved ref product-images.env would carry
                         for VAR (reads generated product-images.env)
   baked-pins KEY        for an image row with a `bakes:` list (e.g.
-                        dashboard_backend), print `<VAR>_DEFAULT<TAB><ref>`
+                        v1_dashboard_backend), print `<VAR>_DEFAULT<TAB><ref>`
                         for each baked row, so baked-pin checking follows the
-                        catalog instead of hardcoded var names
+                        catalog instead of hardcoded var names. VAR is the
+                        baked row's release-channel (or product_env) variable.
+
+Two more catalog-driven checks, lenient by design (a WARNING, never a
+failure), run by `verify` and `status`:
+
+  pending rows          a pinned row with `pending:` names its tag but not
+                        its digest yet (an rc image not yet pinned)
+  host pin labels       the host image's tevv.host.kit_image label must name
+                        the pinned kit digest; the authoring image's
+                        tevv.authoring.host_image must name the pinned host
+                        digest and its tevv.authoring.shared_set_id must equal
+                        the host's tevv.host.shared_set_id. `verify` reads
+                        local images only (no registry); `status` also asks
+                        the registry.
 """
 from __future__ import annotations
 
@@ -195,10 +209,23 @@ def _validate_catalog(data: Any) -> None:
                 f"-review.N line, so bump can never advance it. Either pin a -review.N "
                 f"tag, or declare the off-line pin honestly with channel: pinned."
             )
-        if row["channel"] == "pinned" and not row["digest"]:
+        pending = row.get("pending")
+        if pending is not None:
+            if not isinstance(pending, str) or not pending.strip():
+                raise CatalogError(
+                    f"images.{key}.pending must be a non-empty string saying who pins "
+                    f"the digest, and when")
+            if row["channel"] != "pinned" or row["digest"] is not None:
+                raise CatalogError(
+                    f"images.{key} is pending, so it must be channel pinned with "
+                    f"digest: null (drop `pending:` once the digest is pinned)")
+        if "pull" in row and not isinstance(row["pull"], bool):
+            raise CatalogError(f"images.{key}.pull must be true or false")
+        if row["channel"] == "pinned" and not row["digest"] and pending is None:
             raise CatalogError(
                 f"images.{key} is channel pinned but has no digest — a pinned row exists "
-                f"precisely to name one exact image; without a digest it names nothing."
+                f"precisely to name one exact image; without a digest it names nothing. "
+                f"If the digest is not known yet, say so with `pending: \"<why>\"`."
             )
         # published_by is an ownership claim. Until the product's stable
         # release/tag policy is settled, owned rows use a deliberately frozen
@@ -240,6 +267,18 @@ def _validate_catalog(data: Any) -> None:
             if not spec.get("emits"):
                 raise CatalogError(
                     f"consumers.release_channels.{name}: needs an emits path")
+            host_pin = spec.get("host_pin")
+            if host_pin is not None:
+                if not isinstance(host_pin, dict) or set(host_pin) - {"host", "kit", "authoring"} \
+                        or "host" not in host_pin:
+                    raise CatalogError(
+                        f"consumers.release_channels.{name}.host_pin: a mapping with host "
+                        f"and optionally kit and authoring")
+                for role, image_key in host_pin.items():
+                    if image_key not in images:
+                        raise CatalogError(
+                            f"consumers.release_channels.{name}.host_pin.{role} references "
+                            f"unknown image key {image_key!r}")
     # Optional: only a catalog that ships pack release locks declares these.
     locks = consumers.get("pack_locks")
     if locks is not None:
@@ -322,15 +361,16 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, develop
 
     `channel: local` rows are built on this machine and have no registry
     counterpart, so they are never pullable: they are left out here and
-    `tools/ensure-images.sh` / `product.sh doctor` check they exist locally
+    `tools/ensure-images.sh` / `tools/doctor.sh` check they exist locally
     (`local-refs`). `channel: unpublished` rows are refused: something the
-    product needs that nobody has, anywhere.
+    product needs that nobody has, anywhere. `pull: false` rows (the host
+    kit image) are pinned for checks only and never pulled.
     """
     images = catalog["images"]
     if all_catalog:
         keys = {
             key for key, row in images.items()
-            if row["channel"] not in ("local", "unpublished")
+            if row["channel"] not in ("local", "unpublished") and row.get("pull", True)
         }
     else:
         keys = channel_keys(catalog, channel)
@@ -340,7 +380,8 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, develop
         if unavailable:
             raise CatalogError(
                 "active product references unavailable image(s): " + ", ".join(unavailable))
-        keys = {key for key in keys if images[key]["channel"] != "local"}
+        keys = {key for key in keys
+                if images[key]["channel"] != "local" and images[key].get("pull", True)}
     ref_for = development_ref if development else image_ref
     return sorted({ref_for(images, key) for key in keys})
 
@@ -500,14 +541,22 @@ def render_channel_env(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> 
     lines = [
         GENERATED_MARKER,
         "",
-        f"# Coordinated {name.replace('_', '-')} release pins: the product shell,",
-        "# ScenarioLab, generator, runtime host, bridge and dashboard.",
+        f"# Coordinated {name.replace('_', '-')} release pins: mns-packs, mns-stacks,",
+        "# ScenarioLab, the runtime host and its kit, the bridge and the dashboard.",
         "#",
         "# Every ref uses an immutable date/version tag and manifest digest.",
         "# The corresponding -latest aliases are for discovery and publishing;",
         "# production runs the exact refs below. Edit images/catalog.yaml and",
         "# re-run tools/images.sh sync to advance the approved release.",
     ]
+    pending_rows = [key for key in group.values() if images[key].get("pending")]
+    if pending_rows:
+        lines += [
+            "#",
+            "# Tag-only refs below are catalog rows marked `pending:` (an rc image",
+            "# whose digest is not pinned yet): " + ", ".join(pending_rows) + ".",
+            "# tools/images.sh verify warns about each until it is filled in.",
+        ]
     local_rows = [key for key in group.values() if images[key]["channel"] == "local"]
     if local_rows:
         lines += [
@@ -770,8 +819,8 @@ def cmd_sync(_args: argparse.Namespace) -> int:
 def pack_lock_drift(catalog: dict[str, Any]) -> list[str]:
     """Assert packs/*.lock.json restates the catalog's pins verbatim.
 
-    The lock exists because tools/install_demo_packs.py must pull the product
-    shell before this repo has resolved anything, so it cannot read the
+    The lock exists because tools/install_demo_packs.py must run mns-packs
+    before this repo has resolved anything, so it cannot read the
     catalog. That makes it a second copy of a pin — the same shape that let
     product-images.env drift to review.20 against this repo's review.22 — so
     the copy is asserted here instead of trusted. Offline: pure file compare.
@@ -807,6 +856,134 @@ def pack_lock_drift(catalog: dict[str, Any]) -> list[str]:
     return problems
 
 
+def pending_rows(catalog: dict[str, Any]) -> list[tuple[str, str]]:
+    """(key, note) for every row whose digest is still pending."""
+    return [(key, " ".join(str(row["pending"]).split()))
+            for key, row in sorted(catalog["images"].items()) if row.get("pending")]
+
+
+_DIGEST_IN_RE = re.compile(r"sha256:[0-9a-f]{64}")
+
+LABEL_HOST_KIT_IMAGE = "tevv.host.kit_image"
+LABEL_HOST_SHARED_SET = "tevv.host.shared_set_id"
+LABEL_AUTHORING_HOST_IMAGE = "tevv.authoring.host_image"
+LABEL_AUTHORING_SHARED_SET = "tevv.authoring.shared_set_id"
+
+
+def _digest_in(value: str | None) -> str | None:
+    """The sha256:<hex> a label or ref names, or None. A label may carry a bare
+    digest or a full repo[:tag]@sha256 ref; the digest is what is compared."""
+    found = _DIGEST_IN_RE.findall(value or "")
+    return found[-1] if found else None
+
+
+def image_labels(ref: str, *, remote: bool) -> tuple[dict[str, str] | None, str]:
+    """(labels, "") for an image, or (None, why not). Local image store first;
+    the registry only with remote=True. Never pulls."""
+    try:
+        proc = subprocess.run(["docker", "image", "inspect", "--format",
+                               "{{json .Config.Labels}}", ref],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"docker unavailable ({exc.__class__.__name__})"
+    if proc.returncode == 0:
+        try:
+            return json.loads(proc.stdout or "null") or {}, ""
+        except json.JSONDecodeError:
+            return None, "unreadable labels"
+    if not remote:
+        return None, "not in the local image store"
+    try:
+        proc = subprocess.run(["docker", "buildx", "imagetools", "inspect", ref,
+                               "--format", "{{json .Image}}"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"docker buildx unavailable ({exc.__class__.__name__})"
+    if proc.returncode != 0:
+        reason = (proc.stderr or proc.stdout or "").strip().splitlines()
+        return None, reason[0] if reason else "imagetools inspect failed"
+    try:
+        image = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None, "unreadable imagetools output"
+    # A multi-platform index maps platform -> image; any one carries the labels.
+    if isinstance(image, dict) and "config" not in image and image:
+        image = next(iter(image.values()))
+    return ((image or {}).get("config") or {}).get("Labels") or {}, ""
+
+
+def host_pin_findings(catalog: dict[str, Any], *, remote: bool,
+                      labels_of: Any = None) -> list[tuple[str, str]]:
+    """[(WARNING|NOTE, message)] for each release channel's host_pin.
+
+    The host image is the source of truth: its kit image and the authoring
+    image's host and shared plugin set are derived from it. A disagreement is
+    recoverable (repin, or rebuild the authoring image), so it warns. A check
+    that cannot run (image not local, label absent on an image built before
+    the labels existed) says so as a NOTE rather than passing silently.
+    """
+    images = catalog["images"]
+    labels_of = labels_of or (lambda ref: image_labels(ref, remote=remote))
+    out: list[tuple[str, str]] = []
+    for name, spec in sorted((catalog["consumers"].get("release_channels") or {}).items()):
+        pin = spec.get("host_pin") or {}
+        if not pin:
+            continue
+        host_key, kit_key, auth_key = pin["host"], pin.get("kit"), pin.get("authoring")
+        host_row = images[host_key]
+        host_ref = image_ref(images, host_key)
+        if not host_row.get("digest"):
+            out.append(("NOTE", f"{name}: host pin checks skipped: {host_key} has no digest yet"))
+            continue
+        host_labels, why = labels_of(host_ref)
+        if host_labels is None:
+            out.append(("NOTE", f"{name}: host pin checks skipped: {host_ref} {why}"))
+            continue
+
+        if kit_key:
+            want = images[kit_key].get("digest")
+            got = _digest_in(host_labels.get(LABEL_HOST_KIT_IMAGE))
+            if not host_labels.get(LABEL_HOST_KIT_IMAGE):
+                out.append(("WARNING", f"{name}: {host_key} has no {LABEL_HOST_KIT_IMAGE} label, "
+                            f"so its kit cannot be confirmed; pin a host built with the kit image"))
+            elif not want:
+                out.append(("WARNING", f"{name}: {kit_key} is pending, but {host_key} names its kit "
+                            f"{got}: pin that digest (tools/images.sh bump --only {kit_key})"))
+            elif got != want:
+                out.append(("WARNING", f"{name}: {host_key}'s {LABEL_HOST_KIT_IMAGE} is {got}, but "
+                            f"{kit_key} pins {want}: pin the kit the host was built with"))
+
+        if auth_key:
+            auth_ref = image_ref(images, auth_key)
+            auth_labels, why = labels_of(auth_ref)
+            if auth_labels is None:
+                out.append(("NOTE", f"{name}: authoring checks skipped: {auth_ref} {why}"))
+                continue
+            recorded = auth_labels.get(LABEL_AUTHORING_HOST_IMAGE)
+            if not recorded:
+                out.append(("WARNING", f"{name}: {auth_key} has no {LABEL_AUTHORING_HOST_IMAGE} "
+                            f"label, so the host it was built against is unknown; rebuild it "
+                            f"from runtime-host.lock.json in release mode"))
+            elif _digest_in(recorded) != host_row["digest"]:
+                out.append(("WARNING", f"{name}: {auth_key} was built against host "
+                            f"{_digest_in(recorded) or recorded}, but {host_key} pins "
+                            f"{host_row['digest']}: rebuild the authoring image against the "
+                            f"pinned host (or pin the host it names)"))
+            host_set = host_labels.get(LABEL_HOST_SHARED_SET)
+            auth_set = auth_labels.get(LABEL_AUTHORING_SHARED_SET)
+            if not host_set or not auth_set:
+                missing = [label for label, value in ((LABEL_HOST_SHARED_SET, host_set),
+                                                      (LABEL_AUTHORING_SHARED_SET, auth_set))
+                           if not value]
+                out.append(("WARNING", f"{name}: shared plugin set not comparable: "
+                            f"{', '.join(missing)} missing"))
+            elif host_set != auth_set:
+                out.append(("WARNING", f"{name}: {auth_key} shared_set_id {auth_set} differs from "
+                            f"{host_key}'s {host_set}: the editor compiled other shared plugins "
+                            f"than the runtime (`mns-packs host check` lists them)"))
+    return out
+
+
 def cmd_verify(_args: argparse.Namespace) -> int:
     run_selftest()  # regression guard: must pass before trusting the real catalog
     catalog = load_catalog()
@@ -817,6 +994,12 @@ def cmd_verify(_args: argparse.Namespace) -> int:
             print(f"DRIFT: {problem}", file=sys.stderr)
         print("regenerate the pack release lock, or fix consumers.pack_locks", file=sys.stderr)
         return 1
+    # Lenient: a pin being filled in, or labels that disagree, is reported
+    # and never fails the gate (see the module docstring).
+    for key, note in pending_rows(catalog):
+        print(f"WARNING: images.{key} is pending, pinned by tag only: {note}", file=sys.stderr)
+    for level, message in host_pin_findings(catalog, remote=False):
+        print(f"{level}: {message}", file=sys.stderr)
     artifacts = render_all(catalog)
     drifted = []
     for path, content in artifacts.items():
@@ -862,6 +1045,7 @@ consumers:
 
 def run_selftest() -> None:
     _selftest_source_block()
+    _selftest_pending_and_host_pin()
 
     # 1. An unquoted two-component numeric tag must be rejected: YAML parses
     #    `tag: 3.4` as the float 3.4, not the string "3.4".
@@ -944,22 +1128,22 @@ def run_selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-        tracked_path = root / "docker-compose-tools.yml"
+        tracked_path = root / "docker-compose-example.yml"
         tracked_path.write_text("image: example/repo:thing-latest\n", encoding="utf-8")
         subprocess.run(["git", "add", tracked_path.name], cwd=root, check=True)
         (root / "scratch.md").write_text(
             "image: example/repo:thing-latest\n", encoding="utf-8")
         hits = scan_for_mutable_refs(root, prefixes)
         assert [(path, line) for path, line, _ in hits] == [
-            ("docker-compose-tools.yml", 1)
+            ("docker-compose-example.yml", 1)
         ], f"selftest FAILED: expected only the tracked mutable ref, got {hits}"
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        (root / "docker-compose-tools.yml").write_text(
+        (root / "docker-compose-example.yml").write_text(
             "image: example/repo:thing-latest\n", encoding="utf-8")
         hits = scan_for_mutable_refs(root, prefixes)
         assert [(path, line) for path, line, _ in hits] == [
-            ("docker-compose-tools.yml", 1)
+            ("docker-compose-example.yml", 1)
         ], f"selftest FAILED: filesystem fallback missed mutable ref: {hits}"
 
     # 6. An unparseable owned tag must fail loudly instead of silently making
@@ -1028,16 +1212,74 @@ def _selftest_source_block() -> None:
     assert _source_ahead_row("fixture", catalog()["images"]["fixture"]) is None
 
 
+def _selftest_pending_and_host_pin() -> None:
+    """`pending:` rows and the host pin label checks (both lenient)."""
+    zero, one, two = ("sha256:" + c * 64 for c in "012")
+
+    def doc(**rows):
+        base = {"repo": "r/i", "channel": "pinned", "purpose": "fixture"}
+        return {"schema": "mns.images.v1",
+                "images": {k: {**base, **v} for k, v in rows.items()},
+                "consumers": {"product_env": {}, "compose_env": {}, "image_sets": {}}}
+
+    # a pending pinned row validates with digest null; without pending it does not
+    _validate_catalog(doc(a={"tag": "a-v1.0.0-rc", "digest": None, "pending": "phase 4"}))
+    for bad, why in (
+        ({"tag": "a-v1.0.0-rc", "digest": None}, "pinned row with no digest and no pending"),
+        ({"tag": "a-v1.0.0-rc", "digest": zero, "pending": "x"}, "pending row with a digest"),
+        ({"tag": "a-v1.0.0-rc", "digest": None, "pending": ""}, "empty pending note"),
+        ({"tag": "a", "digest": zero, "pull": "no"}, "non-boolean pull"),
+    ):
+        try:
+            _validate_catalog(doc(a=bad))
+        except CatalogError:
+            continue
+        raise AssertionError(f"selftest FAILED: _validate_catalog accepted {why}")
+
+    # bump fills a pending row and drops its (folded) note
+    text = ("schema: mns.images.v1\n\nimages:\n  a:\n    repo: r/i\n    tag: a-rc\n"
+            "    digest: null\n    channel: pinned\n    pending: >-\n      phase 4,\n"
+            "      by the release owner\n    purpose: fixture\n\nconsumers:\n  product_env: {}\n")
+    bumped = _bump_line_targeted(text, "a", "a-rc", one)
+    row = yaml.safe_load(bumped)["images"]["a"]
+    assert row["digest"] == one and "pending" not in row and row["purpose"] == "fixture", (
+        f"selftest FAILED: bump did not fill the pending row cleanly: {row}")
+
+    # host pin: agreement is silent; each disagreement warns; nothing raises
+    catalog = doc(host={"tag": "h", "digest": zero}, kit={"tag": "k", "digest": one},
+                  auth={"tag": "au", "digest": two})
+    catalog["consumers"]["release_channels"] = {"v1": {
+        "emits": "x.env", "vars": {"H": "host"},
+        "host_pin": {"host": "host", "kit": "kit", "authoring": "auth"}}}
+    _validate_catalog(catalog)
+
+    def labels(host, auth):
+        table = {image_ref(catalog["images"], "host"): host,
+                 image_ref(catalog["images"], "auth"): auth}
+        return lambda ref: (table.get(ref), "" if table.get(ref) is not None else "absent")
+
+    good_host = {LABEL_HOST_KIT_IMAGE: f"r/i@{one}", LABEL_HOST_SHARED_SET: "tree1"}
+    good_auth = {LABEL_AUTHORING_HOST_IMAGE: f"r/i:h@{zero}", LABEL_AUTHORING_SHARED_SET: "tree1"}
+    assert host_pin_findings(catalog, remote=False, labels_of=labels(good_host, good_auth)) == []
+    found = host_pin_findings(catalog, remote=False, labels_of=labels(
+        {**good_host, LABEL_HOST_KIT_IMAGE: two},
+        {LABEL_AUTHORING_HOST_IMAGE: one, LABEL_AUTHORING_SHARED_SET: "tree2"}))
+    assert [level for level, _ in found] == ["WARNING"] * 3, f"selftest FAILED: {found}"
+    skipped = host_pin_findings(catalog, remote=False, labels_of=labels(None, None))
+    assert [level for level, _ in skipped] == ["NOTE"], f"selftest FAILED: {skipped}"
+
+
 def cmd_selftest(_args: argparse.Namespace) -> int:
     run_selftest()
-    print("selftest: ok (tag quoting + immutable owned-image guards + source: block)")
+    print("selftest: ok (tag quoting + immutable owned-image guards + source: block"
+          " + pending rows + host pin labels)")
     return 0
 
 
 # --------------------------------------------------------------------------
-# report / bump — Hub + imagetools resolution, ported from
-# tools/check-image-pins.sh (report the old script's report(), keep the same
-# STALE / TAG_MOVED / NO_DIGEST / NO_TAGS_FOUND / OK vocabulary).
+# report / bump — Hub + imagetools resolution (the STALE / TAG_MOVED /
+# NO_DIGEST / NO_TAGS_FOUND / OK vocabulary of the image-pin checks this
+# replaced).
 # --------------------------------------------------------------------------
 
 def _hub_token() -> str:
@@ -1303,6 +1545,20 @@ def _report_row(key: str, row: dict[str, Any], token: str | None) -> dict[str, A
         return _row_result(key, row, status="UNPUBLISHED",
                             detail="not on registry (see purpose:)")
 
+    if row.get("pending"):
+        # Tag named, digest not pinned yet. Resolving is the useful part: once
+        # the rc is pushed this reports NO_DIGEST and `bump --only` fills it.
+        # A tag that is not pushed yet is the expected state, not a failure.
+        if resolver == "imagetools":
+            live, err = _imagetools_digest(f"{repo}:{tag}")
+        else:
+            assert token is not None
+            live, err = _hub_digest_for(repo, tag, token)
+        if err or not live:
+            return _row_result(key, row, status="PENDING",
+                               detail=f"tag not resolvable yet ({err or 'no digest'})")
+        return _row_result(key, row, status="NO_DIGEST", detail=live[:19], live_digest=live)
+
     if resolver == "imagetools":
         live, err = _imagetools_digest(f"{repo}:{tag}")
         if err:
@@ -1397,6 +1653,10 @@ def cmd_report(args: argparse.Namespace) -> int:
     if any(r["status"] in ("TAG_MOVED", "DIGEST_CHANGED") for r in rows):
         print("TAG_MOVED/DIGEST_CHANGED: the tag now resolves to a different image "
               "than what is pinned. images.sh bump re-pins it.", file=sys.stderr)
+    if any(r["status"] == "PENDING" for r in rows):
+        print("PENDING: the row names an rc tag whose digest is not pinned yet, and the "
+              "tag does not resolve yet. Not an error; bump --only KEY pins it once "
+              "the image is pushed.", file=sys.stderr)
     if any(r["status"] == "UNPUBLISHED" for r in rows):
         print("UNPUBLISHED: known-absent from the registry (see the row's purpose: in "
               "images/catalog.yaml). Not an error; needs a push or a compose-reference "
@@ -1444,6 +1704,10 @@ def _bump_line_targeted(text: str, key: str, new_tag: str, new_digest: str | Non
     if not re.search(r"(?m)^    digest: .*\n", body):
         raise CatalogError(f"bump: no 'digest:' line found in {key!r}'s block")
     body = re.sub(r"(?m)^    digest: .*\n", f"    digest: {digest_literal}\n", body, count=1)
+    if new_digest:
+        # A pending row is filled in: drop its `pending:` note, folded
+        # continuation lines included, so the row reads as an ordinary pin.
+        body = re.sub(r"(?m)^    pending: .*\n(?:      .*\n)*", "", body, count=1)
 
     new_block = header + body
     new_images_block = images_block[: match.start()] + new_block + images_block[match.end():]
@@ -1464,7 +1728,7 @@ def cmd_bump(args: argparse.Namespace) -> int:
         row = images[key]
         if args.channel and row["channel"] != args.channel:
             continue
-        if row["channel"] == "pinned":
+        if row["channel"] == "pinned" and not row.get("pending"):
             print(f"refused: {key} is channel pinned (off the release line; edit tag+digest "
                   f"in images/catalog.yaml by hand, or move it back to channel review once "
                   f"the image ships on the -review.N line)", file=sys.stderr)
@@ -1487,6 +1751,10 @@ def cmd_bump(args: argparse.Namespace) -> int:
         # (_report_row:663) — a drifted upstream row reports DIGEST_CHANGED,
         # never TAG_MOVED, so omitting it here made --only a documented no-op
         # for exactly the rows it exists to re-pin.
+        if report_row["status"] == "PENDING":
+            print(f"skipped: {key} is pending and {row['repo']}:{row['tag']} does not resolve "
+                  f"yet ({report_row['detail']})", file=sys.stderr)
+            continue
         if report_row["status"] not in ("STALE", "TAG_MOVED", "NO_DIGEST", "DIGEST_CHANGED"):
             continue
         new_digest = report_row["live_digest"]
@@ -1526,6 +1794,8 @@ _ACTIONABLE = {
     "NO_DIGEST": "pinned by tag alone — tools/images.sh bump",
     "UNRESOLVABLE": "could not resolve at all — check the registry/network",
 }
+# PENDING is not in _ACTIONABLE: every pending row is already listed, with its
+# note, in the `pending` group of `status`, whatever the registry says.
 
 
 def _term_width() -> int:
@@ -1571,6 +1841,9 @@ def cmd_status(args: argparse.Namespace) -> int:
     followups: list[tuple[str, str]] = []   # someone must do something, later
     unpublished: list[tuple[str, str]] = []
     overrides: list[tuple[str, str]] = []
+    pending = pending_rows(catalog)
+    host_pin: list[tuple[str, str]] = []   # label disagreements (warn)
+    host_pin_notes: list[tuple[str, str]] = []  # checks that could not run
 
     # 1. offline: is the catalog valid, and are the artifacts in step with it?
     try:
@@ -1634,13 +1907,19 @@ def cmd_status(args: argparse.Namespace) -> int:
             else:
                 stale_source.append(finding)
 
+    # 3c. one host pin: the kit and authoring labels against the host's.
+    for level, message in host_pin_findings(catalog, remote=not args.offline):
+        subject, _, note = message.partition(": ")
+        (host_pin if level == "WARNING" else host_pin_notes).append((subject, note))
+
     # 4. ./.env overrides — never actionable (they are the intended escape
     # hatch), always worth stating, because a pin that does not take effect
     # looks exactly like a pin that does.
     for var, env_value, _ref in dotenv_overrides(catalog):
         overrides.append((var, env_value))
 
-    total = len(broken) + len(pins) + len(stale_source) + len(followups)
+    total = len(broken) + len(pins) + len(stale_source) + len(followups) \
+        + len(pending) + len(host_pin)
     print(f"NEEDS YOU ({total})")
     if not total:
         checked = "catalog and artifacts agree" if args.offline else \
@@ -1656,12 +1935,19 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"\n  source ahead of the image ({len(stale_source)}) — merged code that no "
               f"image carries; rebuild and repin, `bump` does nothing here")
         _print_notes(stale_source, 4)
+    if pending:
+        print(f"\n  pending digests ({len(pending)}) — pinned by tag only; "
+              f"tools/images.sh bump --only KEY once the image is pushed")
+        _print_notes(pending, 4)
+    if host_pin:
+        print(f"\n  host pin ({len(host_pin)}) — kit/authoring labels disagree with the host")
+        _print_notes(host_pin, 4)
     if followups:
         print(f"\n  follow-ups ({len(followups)}) — from images/catalog.yaml; "
               f"delete the entry when done")
         _print_notes(followups, 4)
 
-    fyi_total = len(unpublished) + len(overrides) + len(unknown_source)
+    fyi_total = len(unpublished) + len(overrides) + len(unknown_source) + len(host_pin_notes)
     print(f"\nFYI ({fyi_total}) — known and deliberate, no action")
     if overrides:
         print(f"\n  overridden by ./.env ({len(overrides)}) — for these the catalog "
@@ -1674,13 +1960,16 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"\n  source not checked ({len(unknown_source)}) — needs `gh` logged in with "
               f"read access to the source repository")
         _print_notes(unknown_source, 4)
+    if host_pin_notes:
+        print(f"\n  host pin not checked ({len(host_pin_notes)})")
+        _print_notes(host_pin_notes, 4)
     if suppressed:
         print(f"\n  ({suppressed} unpublished row(s) already named in a follow-up above)")
     if args.offline:
         print("\n  registry not checked (--offline)")
 
     print("\nNot covered here: tools/images.sh baked (needs docker), "
-          "tools/images.sh drift (needs the generator image).")
+          "tools/images.sh drift (needs the mns-stacks image).")
     return 1 if total else 0
 
 
@@ -1727,17 +2016,21 @@ def cmd_baked_pins(args: argparse.Namespace) -> int:
     bakes = row.get("bakes") or []
     if not bakes:
         return 0
-    # map catalog key -> var name via consumers.product_env (the only place
-    # baked images are also referenced by an env var)
+    # catalog key -> the variable the product passes it as: a release channel
+    # var (MNS_STACKS_IMAGE, MNS_AUTHORING_IMAGE, ...) or a product_env var.
+    # The image bakes <VAR>_DEFAULT for it.
     key_to_var = {}
     for group in catalog["consumers"]["product_env"].values():
         for var, key in group.items():
             key_to_var[key] = var
+    for spec in (catalog["consumers"].get("release_channels") or {}).values():
+        for var, key in spec["vars"].items():
+            key_to_var.setdefault(key, var)
     for baked_key in bakes:
         var = key_to_var.get(baked_key)
         if not var:
             sys.exit(f"images.{args.key}.bakes references {baked_key!r}, which has "
-                      "no consumers.product_env var")
+                      "no release-channel or consumers.product_env var")
         print(f"{var}_DEFAULT\t{image_ref(images, baked_key)}")
     return 0
 
