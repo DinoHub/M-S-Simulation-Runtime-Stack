@@ -3,7 +3,10 @@
 # done, and stop it (finalize_metrics included). `make fly` runs this after
 # bringing the packs to the lock's versions, the check `make dashboard` does.
 #
-#   tools/fly.sh SCENARIO [--record] [-- <extra mns-stacks run flags>]
+#   tools/fly.sh SCENARIO [--record] [--keep] [-- <extra mns-stacks run flags>]
+#
+# --keep brings the stack up and leaves it up (no --until-done): fly it from
+# the dashboard, QGroundControl or your own stack, then `make stop`.
 #
 # SCENARIO is a folder under scenarios/, a folder, or a ScenarioSpec.yaml.
 # The stack goes to generated/<name>/ (the dashboard's layout), a bag to
@@ -11,12 +14,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
 
-scenario="" record=()
+scenario="" record=() keep=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --record) record=(--record) ;;
+    --keep) keep=true ;;
     --) shift; break ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -49,6 +53,12 @@ echo "== generate $name -> generated/$name"
 mkdir -p "$ROOT/.mns"
 printf '%s\n' "$stack" >"$ROOT/.mns/last-stack"
 
+if [[ "$keep" == true ]]; then
+  echo "== run generated/$name${record[*]:+ (recording)}, left up (--keep)"
+  "$ROOT/tools/mns-stacks.sh" run --stack "$stack" "${record[@]}" "$@"
+  echo "stack left up: make stop   (or: make stop STACK=generated/$name)"
+  exit 0
+fi
 echo "== run generated/$name${record[*]:+ (recording)} until the mission is done"
 echo "   (if it is interrupted: make stop STACK=generated/$name)"
 "$ROOT/tools/mns-stacks.sh" run --stack "$stack" "${record[@]}" --until-done "$@"

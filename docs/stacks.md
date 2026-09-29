@@ -9,7 +9,7 @@ and the [User Guide](USER_GUIDE.md).
 | --- | --- | --- |
 | Check packs | preflight | `make pack-status` |
 | Author | editor window | `make author [SCENARIO=<name>]` |
-| Fly one scenario | Fly | `make fly SCENARIO=<name> [RECORD=1]` |
+| Fly one scenario | Fly | `make fly SCENARIO=<name> [RECORD=1] [KEEP=1]` |
 | Stop a stack | stack down | `make stop [STACK=generated/<name>]` |
 | Record | Record button (`mns-stacks record`) | `RECORD=1` |
 | Campaign | campaign page | `make campaign CAMPAIGN=<name>` |
@@ -30,8 +30,13 @@ image the channel pins is on this machine; it changes nothing and pulls nothing.
 ```bash
 make fly SCENARIO=vio-reference                  # generate, fly until the mission is done, stop
 make fly SCENARIO=vio-reference RECORD=1         # ... and record a bag
+make fly SCENARIO=my-scene KEEP=1               # bring it up and leave it up
 make fly SCENARIO=my-scene ARGS="--timeout 900"  # extra `mns-stacks run` flags
 ```
+
+`KEEP=1` runs `mns-stacks run` without `--until-done`: the stack comes up
+(with `RECORD=1`, recording) and stays up for you to fly from the dashboard,
+QGroundControl or your own autonomy stack. `make stop` ends it.
 
 `SCENARIO` is a folder under `scenarios/` (what ScenarioLab exports), another
 folder, or a `ScenarioSpec.yaml`. `make fly`:

@@ -2,7 +2,7 @@
 # content/image tooling.
 #
 #   make dashboard / make dashboard-down   the browser entry point (:3001)
-#   make fly SCENARIO=<name> [RECORD=1]    fly one scenario headless, until done
+#   make fly SCENARIO=<name> [RECORD=1]    fly one scenario headless, until done (KEEP=1: leave it up)
 #   make author [SCENARIO=<name>]          open ScenarioLab
 #   make campaign [CAMPAIGN=<name>]        fly a scored run matrix
 #   make topics STACK=generated/<name>     what a generated stack will publish
@@ -228,7 +228,8 @@ help:
 	@echo "  dashboard        start the TEVV Web Dashboard on :3001 [CHANNEL= IMAGE_MODE= DB=true MNS_DEMO_PACKS=]"
 	@echo "  dashboard-down   stop it"
 	@echo "Headless (the same images the dashboard runs):"
-	@echo "  fly              generate and fly one scenario until its mission is done [SCENARIO=name RECORD=1 ARGS=...]"
+	@echo "  fly              generate and fly one scenario until its mission is done [SCENARIO=name RECORD=1 KEEP=1 ARGS=...]"
+	@echo "                   KEEP=1: bring it up and leave it up (make stop ends it)"
 	@echo "  stop             stop a flown stack, finalize_metrics first [STACK=generated/name, default: the last fly]"
 	@echo "  author           open ScenarioLab [SCENARIO=name]; author-stop closes it"
 	@echo "  campaign         fly a run matrix over one scenario, scored [CAMPAIGN=name]"
@@ -264,6 +265,7 @@ topics:
 # (tools/author.sh).
 #
 #   make fly SCENARIO=vio-reference RECORD=1        # generate, fly until done, stop
+#   make fly SCENARIO=my-scene KEEP=1               # bring it up and leave it up; make stop ends it
 #   make fly SCENARIO=my-scene ARGS="--timeout 900" # ARGS: extra `mns-stacks run` flags
 #   make stop [STACK=generated/<name>]              # default: the last `make fly`
 #   make author [SCENARIO=my-scene]                 # ScenarioLab; exports to scenarios/
@@ -274,6 +276,7 @@ topics:
 # resolved packs before anything starts.
 SCENARIO ?=
 RECORD ?=
+KEEP ?=
 STACK ?=
 ARGS ?=
 MNS_STACKS_ENV = . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
@@ -283,11 +286,11 @@ MNS_STACKS_ENV = . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 # pack and image prerequisites start pulling anything.
 ifneq ($(filter fly,$(MAKECMDGOALS)),)
 ifeq ($(strip $(SCENARIO)),)
-$(error usage: make fly SCENARIO=<name under scenarios/> [RECORD=1] [ARGS=...])
+$(error usage: make fly SCENARIO=<name under scenarios/> [RECORD=1] [KEEP=1] [ARGS=...])
 endif
 endif
 fly: ensure-demo-packs  ## Generate and fly SCENARIO until its mission is done (RECORD=1 records a bag)
-	@$(MNS_STACKS_ENV); ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) -- $(ARGS)
+	@$(MNS_STACKS_ENV); ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
 
 stop:  ## Stop a flown stack (finalize_metrics, then compose down)
 	@stack="$(STACK)"; [ -n "$$stack" ] || stack=$$(cat .mns/last-stack 2>/dev/null); \
