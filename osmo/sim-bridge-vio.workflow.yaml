@@ -207,8 +207,10 @@ workflow:
 
 {% if viz | string | lower == 'true' %}
     # Live view: `osmo/campaign.py watch <workflow>` prints its address. Also
-    # publishes /viz/viewers, which decides how long the recorder holds the
-    # run open. A viewer never decides a run, whatever it exits with.
+    # publishes /viz/viewers. The recorder reads it only when viz_hold_sec is
+    # above 0 (`--viz-hold SEC`; the default is 0), to stay up that long for a
+    # viewer after the recording; by default a viewer holds nothing. A viewer
+    # never decides a run, whatever it exits with.
     - name: foxglove
       image: "{{ bridge_image }}"
       resource: light
