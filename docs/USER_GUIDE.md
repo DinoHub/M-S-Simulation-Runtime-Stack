@@ -605,8 +605,9 @@ that network. Regenerating the stack overwrites the file, so keep a copy.
 **Over MAVLink.** In the default `docker` endpoint mode, no autopilot port is
 published on the host.
 - **PX4:** mavlink-router streams GCS traffic on UDP **14550** (to
-  QGroundControl, or to the host when QGC is off). MAVROS connects to
-  `px4-drone-1:14580`.
+  QGroundControl, or to the host when QGC is off). MAVROS connects to the
+  router's MAVROS endpoint, `px4-drone-1:14555`. Not 14580: that is AirSim's
+  control port, and a second peer there loses the heartbeats.
 - **ArduPilot:** MAVROS connects to `tcp://ardupilot-drone-0:5760`, and QGC
   uses UDP **14550**.
 

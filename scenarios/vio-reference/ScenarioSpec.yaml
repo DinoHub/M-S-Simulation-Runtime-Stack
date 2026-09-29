@@ -41,11 +41,25 @@ vehicles:
   name: Drone1
   runtime_name: Drone1
   ros_domain_id: 1
+  # The XFS v1 level's ground is above the NED origin, so (0, 0, 0) is
+  # underground: the vehicle free-falls through the world (measured 7.4 m/s,
+  # 4.4 km down, PX4 refusing to arm on "height estimate error"). The yard at
+  # (423, -906) has its ground at z = -18.7; -21.0 drops the vehicle onto it.
+  # The route is relative to the start, so it flies the same shape here.
   start:
-    x: 0
-    y: 0
-    z: 0
+    x: 423
+    y: -906
+    z: -21.0
     yaw: 0
+  # MAVROS on the PX4 router's own endpoint, 14555. The v1.0.0 generator
+  # defaults to 14580, AirSim's control port: that single-peer UDP server
+  # answers whoever sent last, so MAVROS got none of PX4's heartbeats and
+  # every flight failed at "MAVROS never reported a connected flight
+  # controller". Drop this once the generator default is fixed
+  # (DinoHub/MnS-Integration-Platform fix/px4-mavros-endpoint).
+  connection:
+    mavros_udp_port: 14555
+    mavros_local_port: 14556
   # Stereo pair, 0.12 m baseline. Camera Z is 0.25 m above the IMU: at zero the
   # camera sits inside the airframe and the rotor arms fill about a third of
   # every frame.
