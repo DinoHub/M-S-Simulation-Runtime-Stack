@@ -4,14 +4,19 @@
     "AIRSIM_IMAGE: runtime host with the fisheye flare, veil, sensor-model and real-sun work (TEVV-Airsim #210-#216, unreleased).",
     "ROS2_IMAGE: bridge v1.0.0 plus the image subscriber from TEVV-Airsim-ROS2-Bridge #75/#76 (tools/gap-tests/bridge-image).",
     "DISABLE_RPC_AUX_SENSORS=false: ArduPilot needs the bridge's RPC GPS/baro/mag path.",
-    "TimeOfDay: the #216 real-sun keys; the generator only writes the older StartDateTime set. TimeZone defaults to round(lon/15)."
+    "TimeOfDay: the #216 real-sun keys; the generator only writes the older StartDateTime set. TimeZone defaults to round(lon/15).",
+    "ENABLE_VIO=true: with mns.vio_estimator declared the generator sets the bridge's enable_vio false, but on this bridge it also creates the fisheye camera_info publishers under the contract names (/fisheye_<cam>/camera_info); without it only /fisheye_<cam>_Scene/* exist."
   ],
   "env": {
     "AIRSIM_IMAGE": "dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-bloomfix.16",
     "ROS2_IMAGE": "tevv-airsim-ros2-bridge:v1.0.0-shmfix.1",
-    "DISABLE_RPC_AUX_SENSORS": "false"
+    "DISABLE_RPC_AUX_SENSORS": "false",
+    "ENABLE_VIO": "true"
   },
   "settings": {
-    "TimeOfDay": {"Date": "2026-09-28", "SolarTime": 9.0}
+    "TimeOfDay": {
+      "Date": "2026-09-28",
+      "SolarTime": 9.0
+    }
   }
 }

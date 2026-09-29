@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Sim-to-real gap tests on the fisheye VIO rig: generate a stack from a committed
 # ScenarioSpec, fly a route under a lighting / weather condition, record the bag,
-# replay OpenVINS on it and score it against ground truth.
+# with OpenVINS running live in the stack, and score its estimate against ground truth.
 #
 #   tools/gap-tests/gap.sh stack   SCENARIO                 # generate generated/gap-tests/SCENARIO/stack
 #   tools/gap-tests/gap.sh up      SCENARIO                 # start it, wait for the cameras
 #   tools/gap-tests/gap.sh down    SCENARIO
 #   tools/gap-tests/gap.sh fly     SCENARIO OUT [--time H] [--weather W] [--flare on|off]
 #                                  [--veil on|off] [--route FILE.b64] [--chase]
-#   tools/gap-tests/gap.sh replay  OUT TAG [--config t2|t2zc] [--dump]
+#   tools/gap-tests/gap.sh score   OUT [TAG]                # score the live estimate the flight recorded
+#   tools/gap-tests/gap.sh replay  OUT TAG [--config t2|t2zc] [--dump]  # re-run OpenVINS on the bag
 #   tools/gap-tests/gap.sh video   OUT TAG OUT.mp4 [--title TEXT]
 #   tools/gap-tests/gap.sh cases   SCENARIO CASES_FILE OUT  # fly + replay every case in a file
 #   tools/gap-tests/gap.sh sweep   ARGS...                  # lighting_sweep.py (stack must be up)
@@ -18,6 +19,10 @@
 # the real-sun keys, bridge switches), routes/ and openvins/<config>/.
 #
 # One flight holds the GPU, the simulator ports and the X display; run one at a time.
+#
+# replay A/B knobs (to compare a replay with the live run): OV_LAUNCH=1 starts OpenVINS
+# exactly as the stack does (ros2 launch, INFO) with OV_LAUNCH_ARGS appended; otherwise
+# `ros2 run` with OV_SIM_TIME (default true) and OV_EXTRA_ARGS (-p name:=value ...).
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
@@ -28,7 +33,7 @@ METRICS_DIR=${METRICS_DIR:-$HOME/tevv_ws/metrics}
 PILOT=${PILOT:-$ROOT/osmo/files/fly_mission_mavros.py}
 PACK_STORE=${MNS_PACK_STORE_ROOT:-$ROOT/.mns/v1/pack-store}
 ROS="source /opt/ros/humble/setup.bash >/dev/null 2>&1; source /ws/install/setup.bash >/dev/null 2>&1"
-TOPICS="/clock /imu/data /ground_truth/odom /tf_static /fisheye_front/image_raw /fisheye_back/image_raw /fisheye_front/camera_info /fisheye_back/camera_info"
+TOPICS="/clock /imu/data /ground_truth/odom /tf_static /fisheye_front/image_raw /fisheye_back/image_raw /fisheye_front/camera_info /fisheye_back/camera_info /ov_msckf/odomimu"
 export LIGHT_MASK_DIR=${LIGHT_MASK_DIR:-$HERE/masks}
 
 die(){ echo "gap: $*" >&2; exit 1; }
@@ -74,6 +79,33 @@ lines += [f"{k}={v}" for k, v in env.items()]
 open(f"{out}/.env", "w").write("\n".join(lines) + "\n")
 print(f"overlay: {len(ov.get('settings', {}))} settings key(s), {len(env)} env key(s)")
 PY
+  python3 - "$out" "$HERE" <<'PY'
+# Live estimator: OpenVINS subscribes to its cameras reliable, the bridge publishes them
+# best-effort, so DDS delivers nothing. Add qos_relay.py as a service and point the live
+# config (config/vio, the stack's own copy) at the relayed topics. Replays keep the bag's
+# topic names because they read scenarios/<s>/openvins/, not this copy.
+import copy, re, sys, yaml
+out, here = sys.argv[1], sys.argv[2]
+dc = yaml.safe_load(open(f"{out}/docker-compose.yml"))
+svc = dc["services"]
+names = [n for n in svc if n.startswith("vio_estimator")]
+if not names:
+    sys.exit(0)
+est = names[0]
+chain = f"{out}/config/vio/kalibr_imucam_chain.yaml"
+text = open(chain).read()
+topics = re.findall(r"rostopic:\s*(\S+)", text)
+open(chain, "w").write(re.sub(r"(rostopic:\s*)(\S+)", lambda m: m.group(1) + m.group(2) + "_reliable", text))
+relay = copy.deepcopy(svc[est])
+relay["container_name"] = relay["container_name"].replace("vio-estimator", "image-relay")
+relay["hostname"] = est.replace("vio_estimator", "image_relay")
+relay["command"] = ["python3", "/relay/qos_relay.py", *topics]
+relay["volumes"] = [v for v in relay.get("volumes", []) if "/cfg/vio" not in str(v)] + [f"{here}:/relay:ro"]
+svc[est.replace("vio_estimator", "image_relay")] = relay
+svc[est].setdefault("depends_on", {})[est.replace("vio_estimator", "image_relay")] = {"condition": "service_started"}
+yaml.safe_dump(dc, open(f"{out}/docker-compose.yml", "w"), sort_keys=False)
+print(f"live estimator: relaying {', '.join(topics)} as reliable")
+PY
   echo "stack: $out"
 }
 
@@ -83,9 +115,31 @@ cmd_up(){ # SCENARIO
   dc "$s" down --remove-orphans >/dev/null 2>&1; clean_iox
   dc "$s" up -d >/dev/null 2>&1 || die "compose up failed (see: docker compose ... logs)"
   b=$(bridge "$s"); [ -n "$b" ] || die "no bridge container"
-  for _ in $(seq 1 120); do
-    docker exec "$b" bash -lc "$ROS; timeout 8 ros2 topic echo --once /fisheye_front/camera_info >/dev/null 2>&1" && { echo "$b"; return 0; }
-    sleep 5
+  # The sim's healthcheck is only "RPC port open". If the bridge asks for the vehicle's
+  # cameras before the level has spawned it, it falls back to the native AirSim names
+  # (/fisheye_front_Scene/...) and never creates the renamed camera_info publishers.
+  # Wait for the vehicle over RPC, then give the bridge 60 s and restart it once.
+  python3 - "$HERE" <<'PY' || die "sim RPC never listed a vehicle"
+import sys, time
+sys.path.insert(0, sys.argv[1])
+from rpc import Rpc
+t0 = time.time()
+while time.time() - t0 < 600:
+    try:
+        if Rpc(timeout=5)("listVehicles"):
+            sys.exit(0)
+    except Exception:
+        pass
+    time.sleep(3)
+sys.exit(1)
+PY
+  local try
+  for try in 1 2; do
+    for _ in $(seq 1 12); do
+      docker exec "$b" bash -lc "$ROS; timeout 8 ros2 topic echo --once /fisheye_front/camera_info >/dev/null 2>&1" && { echo "$b"; return 0; }
+      sleep 5
+    done
+    [ "$try" = 1 ] && { echo "gap: no /fisheye_front/camera_info after 60 s; restarting the bridge" >&2; docker restart "$b" >/dev/null; sleep 10; }
   done
   die "cameras never published (bridge $b)"
 }
@@ -122,6 +176,10 @@ cmd_fly(){ # SCENARIO OUT [opts]
       -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p "$out/chase.mp4" > "$out/ffmpeg.log" 2>&1 & fp=$!
   fi
   docker cp "$PILOT" "$b:/tmp/fly_mission_mavros.py" >/dev/null
+  # Restart the live estimator so it starts on the recorded parked segment, as a replay
+  # of the bag would, rather than on whatever the lighting setup showed it.
+  local ve; ve=$(dc "$s" ps --format '{{.Name}}' | grep -E 'vio-estimator' | head -1)
+  if [ -n "$ve" ]; then docker restart "$ve" >/dev/null; sleep 4; else echo "no live estimator in this stack; use replay"; fi
   docker exec "$b" bash -lc "$ROS; rm -rf /tmp/vio_bag; exec ros2 bag record -s mcap --storage-preset-profile zstd_fast -o /tmp/vio_bag $TOPICS" > "$out/record.log" 2>&1 & local bp=$!
   sleep 12   # parked segment for OpenVINS static initialisation
   echo "flying $(date +%T)"
@@ -130,6 +188,7 @@ cmd_fly(){ # SCENARIO OUT [opts]
   [ -n "$fp" ] && { kill -INT "$fp"; wait "$fp" 2>/dev/null; }
   docker exec "$b" bash -lc "pkill -INT -f 'ros2 [b]ag record'"; sleep 8; wait $bp 2>/dev/null
   rm -rf "$out/bag"; docker cp "$b:/tmp/vio_bag/." "$out/bag/" >/dev/null
+  [ -n "$ve" ] && docker logs "$ve" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$out/openvins_live.log"
   docker logs "$(dc "$s" ps --format '{{.Name}}' | grep unreal-airsim | head -1)" 2>&1 \
     | grep -E "ScenarioManager.*(ended|collision)|Collision" | tail -5 > "$out/sim_collisions.log"
   echo "bag $(du -sh "$out/bag" | cut -f1)$([ -f "$out/chase.mp4" ] && echo ", chase $(du -sh "$out/chase.mp4" | cut -f1)")"
@@ -137,8 +196,13 @@ cmd_fly(){ # SCENARIO OUT [opts]
   return $rc
 }
 
+cmd_score(){ # OUT [TAG]: the estimate OpenVINS published live during the flight
+  local f=${1:?flight dir}; [ -f "$f/openvins_live.log" ] || die "no live estimate in $f (flown without one? use replay)"
+  LIVE=1 cmd_replay "$f" "${2:-live}"
+}
+
 cmd_replay(){ # OUT TAG [--config NAME] [--dump]
-  local f t cfg="" dump="" scn ovcfg
+  local f t cfg="" dump="" scn ovcfg live=${LIVE:-}
   f=$(cd "${1:?flight dir}" && pwd); t=${2:?tag}; shift 2
   while [ $# -gt 0 ]; do case $1 in --config) cfg=$2; shift 2;; --dump) dump=1; shift;; *) die "replay: unknown option $1";; esac; done
   scn=$(sed -n 's/^scenario=\([^ ]*\).*/\1/p' "$f/condition.txt" 2>/dev/null)
@@ -146,7 +210,8 @@ cmd_replay(){ # OUT TAG [--config NAME] [--dump]
   # holds the city route but scored 7-8 m on the XFS yard (2 flights, 29 Sep 2026).
   if [ -z "$cfg" ]; then cfg=t2; [ -d "$ROOT/scenarios/${scn:-gap-fisheye-xfs}/openvins/t2" ] || cfg=t2zc; fi
   ovcfg=${OVCFG:-$ROOT/scenarios/${scn:-gap-fisheye-xfs}/openvins/$cfg}
-  [ -f "$ovcfg/estimator_config.yaml" ] || die "no OpenVINS config at $ovcfg"
+  [ -n "$live" ] && cfg=live
+  [ -n "$live" ] || [ -f "$ovcfg/estimator_config.yaml" ] || die "no OpenVINS config at $ovcfg"
   [ -d "$METRICS_DIR" ] && docker image inspect "$METRICS_IMAGE" >/dev/null 2>&1 \
     || die "scoring needs $METRICS_IMAGE and $METRICS_DIR (the tevv_ws metrics package)"
   local net=gap-replay-$t dom=19 player res
@@ -154,17 +219,31 @@ cmd_replay(){ # OUT TAG [--config NAME] [--dump]
   player=${player:-dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0}
   docker network inspect "$net" >/dev/null 2>&1 || docker network create "$net" >/dev/null
   for c in ov met play dump; do docker rm -f "$c-$t" >/dev/null 2>&1; done
-  res=$f/results/$t; rm -rf "$res"; mkdir -p "$res"
+  # The metrics container writes as root, so clear an earlier result through a container.
+  res=$f/results/$t; mkdir -p "$f/results"
+  docker run --rm -v "$f/results:/r" alpine rm -rf "/r/$t" >/dev/null 2>&1 || rm -rf "$res"; mkdir -p "$res"
   cat > "$f/qos.yaml" <<'Q'
 /imu/data: {reliability: reliable, durability: volatile, history: keep_last, depth: 100}
 /ground_truth/odom: {reliability: reliable, durability: volatile, history: keep_last, depth: 100}
 /fisheye_front/image_raw: {reliability: reliable, durability: volatile, history: keep_last, depth: 100}
 /fisheye_back/image_raw: {reliability: reliable, durability: volatile, history: keep_last, depth: 100}
+/ov_msckf/odomimu: {reliability: reliable, durability: volatile, history: keep_last, depth: 100}
 Q
   local E=(-e "ROS_DOMAIN_ID=$dom" -e ROS_LOCALHOST_ONLY=0 -e HOME=/tmp)
-  docker run -d --name "ov-$t" --network "$net" "${E[@]}" -v "$ovcfg:/opt/tevv/openvins-config:ro" "$OV_IMAGE" \
-    ros2 run ov_msckf run_subscribe_msckf --ros-args -r __ns:=/ov_msckf -p use_sim_time:=true \
-    -p config_path:=/opt/tevv/openvins-config/estimator_config.yaml >/dev/null
+  # Live: score the estimate recorded in the bag. Replay: run OpenVINS on the bag's images.
+  local play="/clock /ground_truth/odom /ov_msckf/odomimu"
+  if [ -z "$live" ]; then
+    play="/clock /imu/data /ground_truth/odom /fisheye_front/image_raw /fisheye_back/image_raw"
+    if [ -n "${OV_LAUNCH:-}" ]; then  # the live stack's exact command, for A/B against the live run
+      docker run -d --name "ov-$t" --network "$net" "${E[@]}" -v "$ovcfg:/opt/tevv/openvins-config:ro" "$OV_IMAGE" \
+        ros2 launch ov_msckf subscribe.launch.py config_path:=/opt/tevv/openvins-config/estimator_config.yaml \
+        max_cameras:=2 use_stereo:=false ${OV_LAUNCH_ARGS:-} >/dev/null
+    else
+      docker run -d --name "ov-$t" --network "$net" "${E[@]}" -v "$ovcfg:/opt/tevv/openvins-config:ro" "$OV_IMAGE" \
+        ros2 run ov_msckf run_subscribe_msckf --ros-args -r __ns:=/ov_msckf -p use_sim_time:=${OV_SIM_TIME:-true} ${OV_EXTRA_ARGS:-} \
+        -p config_path:=/opt/tevv/openvins-config/estimator_config.yaml >/dev/null
+    fi
+  fi
   docker run -d --name "met-$t" --network "$net" "${E[@]}" -e METRICS_TRUTH_TOPIC=/ground_truth/odom \
     -e METRICS_ESTIMATE_TOPIC=/ov_msckf/odomimu -v "$METRICS_DIR:/opt/tevv/metrics:ro" -v "$res:/results" \
     "$METRICS_IMAGE" --manual --duration 100000 --timeout 600 --finish-service /tevv/metrics/finish --output /results >/dev/null
@@ -175,12 +254,13 @@ Q
   fi
   sleep 8
   docker run --rm --name "play-$t" --network "$net" "${E[@]}" --user "$(id -u):$(id -g)" -v "$f:/v:ro" --entrypoint bash "$player" \
-    -c "source /opt/ros/humble/setup.bash; ros2 bag play /v/bag --qos-profile-overrides-path /v/qos.yaml --topics /clock /imu/data /ground_truth/odom /fisheye_front/image_raw /fisheye_back/image_raw >/dev/null 2>&1"
+    -c "source /opt/ros/humble/setup.bash; ros2 bag play /v/bag --qos-profile-overrides-path /v/qos.yaml --topics $play >/dev/null 2>&1"
   sleep 5
   docker run --rm --network "$net" "${E[@]}" --entrypoint bash "$player" \
     -c "source /opt/ros/humble/setup.bash; ros2 service call /tevv/metrics/finish std_srvs/srv/Trigger" >/dev/null 2>&1 || true
   until [ "$(docker inspect -f '{{.State.Status}}' "met-$t" 2>/dev/null)" != "running" ]; do sleep 3; done
-  docker logs "ov-$t" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$res/openvins.log"
+  if [ -n "$live" ]; then cp "$f/openvins_live.log" "$res/openvins.log"
+  else docker logs "ov-$t" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$res/openvins.log"; fi
   docker logs "met-$t" > "$res/metrics.log" 2>&1
   docker rm -f "ov-$t" "met-$t" "dump-$t" >/dev/null 2>&1 || true
   docker network rm "$net" >/dev/null 2>&1 || true
@@ -217,6 +297,6 @@ cmd_cases(){ # SCENARIO CASES_FILE OUT
 }
 
 case "${1:-}" in
-  stack|up|down|fly|replay|video|cases|sweep) c=$1; shift; "cmd_$c" "$@" ;;
+  stack|up|down|fly|score|replay|video|cases|sweep) c=$1; shift; "cmd_$c" "$@" ;;
   *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

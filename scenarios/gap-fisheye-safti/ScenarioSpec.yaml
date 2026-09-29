@@ -110,3 +110,16 @@ coordinate_frame:
       pitch: 0.0
       roll: 0.0
       yaw: 0.0
+extensions:
+  # OpenVINS live in the stack, on the front and back fisheyes. use_stereo must be
+  # false: the rig is two independent mono cameras, and the launch file's own
+  # default (true) overrides the config. gap.sh fly restarts the estimator just
+  # before recording, so it starts from the same parked frame a replay would.
+  mns.vio_estimator:
+    enabled: true
+    kind: openvins
+    config_dir: ./openvins/t2zc
+    odom_topic: /ov_msckf/odomimu
+    launch_args:
+      use_stereo: "false"
+      max_cameras: "2"
