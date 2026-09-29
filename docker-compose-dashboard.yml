@@ -182,12 +182,17 @@ services:
       - MNS_PACKS_IMAGE=${MNS_PACKS_IMAGE:-}
       # Stack generation, lifecycle, recording and campaigns (mns-stacks).
       - MNS_STACKS_IMAGE=${MNS_STACKS_IMAGE:-}
-      # Reported (presence + host label) by the Content phase; the generated
-      # stacks take the runtime host from MNS_IMAGE_SET_FILE, not from this.
+      # Reported (presence + host label) by the Content phase, and the host
+      # the authoring preflight grades against; the generated stacks take the
+      # runtime host from MNS_IMAGE_SET_FILE, not from this.
       - MNS_RUNTIME_HOST_IMAGE=${MNS_RUNTIME_HOST_IMAGE:-}
-      # The host's companion kit image (host-baseline.json), for the graded
-      # host check in the authoring preflight (mns-packs host check).
-      - MNS_RUNTIME_HOST_KIT_IMAGE=${MNS_RUNTIME_HOST_KIT_IMAGE:-}
+      # Optional overrides, empty by default (HOST paths; the backend mounts
+      # them into its mns-stacks / mns-packs siblings at the same path):
+      # a local kit folder used instead of the pinned host's kit (generate
+      # --kit, preflight checks), and a ScenarioLab project checkout for the
+      # preflight's `mns-packs host check`.
+      - MNS_CAPABILITY_KIT=${MNS_CAPABILITY_KIT:-}
+      - MNS_AUTHORING_PROJECT=${MNS_AUTHORING_PROJECT:-}
       - MNS_IMAGE_PULL_POLICY=${MNS_IMAGE_PULL_POLICY:-missing}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
       # The backend owns the ros2-tools sidecar; select the same bridge

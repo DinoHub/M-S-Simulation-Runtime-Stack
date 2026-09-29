@@ -112,7 +112,7 @@ mns-stacks:
 | `MNS_STACKS_IMAGE` | empty (baked default, see below) | the backend, to generate, run, record and fly campaigns |
 | `MNS_PACKS_IMAGE` | empty (the pack lock's pin) | pack install, staging and status (`tools/install-demo-packs.sh`, `mns-packs`) |
 | `MNS_AUTHORING_IMAGE` | empty (baked default) | the backend, to launch ScenarioLab |
-| `MNS_RUNTIME_HOST_KIT_IMAGE` | empty | the authoring preflight's graded host check (`mns-packs host check`) |
+| `MNS_CAPABILITY_KIT`, `MNS_AUTHORING_PROJECT` | empty | optional overrides: a local kit folder instead of the pinned host's kit, and a ScenarioLab project for the preflight's graded host check |
 | `MNS_ROS2_BRIDGE_IMAGE` → `AIRSIM_BRIDGE_IMAGE` | **required** — the error names the env file to source | the backend, for the `ros2-tools` container |
 | `MNS_IMAGE_SET` | `v1` | mns-stacks: which `image_sets` entry a stack resolves roles from |
 | `MNS_IMAGE_SET_FILE` | the production overlay; `make dashboard` overrides per `IMAGE_MODE` | mns-stacks: which rendered file holds that entry |

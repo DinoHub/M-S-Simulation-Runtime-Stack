@@ -25,6 +25,8 @@
 #   MNS_IMAGE_SET, MNS_IMAGE_SET_FILE        the image set generated stacks run
 #   MNS_PACK_STORE_ROOT                      the channel's pack store
 #   MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT  the runtime host contract
+#   MNS_CAPABILITY_KIT                       a local kit folder instead of the pinned
+#                                            host's contract (the override; warns)
 #   TEVV_RUNS_DIR                            runs directory (default ./runs, or .env)
 #   MNS_IMAGE_PULL_POLICY                    missing (default) | always | never
 #   MNS_STACKS_DOCKER_ARGS                   extra `docker run` flags (word-split)
@@ -57,6 +59,11 @@ RUNS_DIR="$(cd "$runs" && pwd)"
 PACK_STORE="${MNS_PACK_STORE_ROOT:-$ROOT/.mns/v1/pack-store}"
 IMAGE_SET_FILE="${MNS_IMAGE_SET_FILE:-$ROOT/images/image-set.generated.yaml}"
 CONTRACT="${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-$ROOT/packs/runtime-host-compatibility.v1.json}"
+KIT="${MNS_CAPABILITY_KIT:-}"
+if [[ -n "$KIT" ]]; then
+  [[ -d "$KIT" ]] || { echo "ERROR: MNS_CAPABILITY_KIT=$KIT is not a folder" >&2; exit 2; }
+  KIT="$(cd "$KIT" && pwd)"
+fi
 HOST_UID="${MNS_HOST_UID:-$(id -u)}"
 HOST_GID="${MNS_HOST_GID:-$(id -g)}"
 
@@ -78,9 +85,16 @@ args+=(
   -e "MNS_IMAGE_SET=${MNS_IMAGE_SET:-v1}"
   -e "MNS_IMAGE_SET_FILE=$IMAGE_SET_FILE"
   -e "MNS_PACK_STORE_ROOT=$PACK_STORE"
-  -e "MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$CONTRACT"
   -e "MNS_HOST_UID=$HOST_UID" -e "MNS_HOST_GID=$HOST_GID"
 )
+if [[ -n "$KIT" ]]; then
+  # The escape hatch for a kit that is not in an image yet: its contract
+  # replaces the pinned host's, so the contract variable is not set at all.
+  echo "WARNING: MNS_CAPABILITY_KIT=$KIT overrides the pinned runtime host contract" >&2
+  args+=(-e "MNS_CAPABILITY_KIT=$KIT")
+else
+  args+=(-e "MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$CONTRACT")
+fi
 case "$PWD/" in "$ROOT"/*) ;; *) args+=(-v "$PWD:$PWD") ;; esac
 
 # Inputs outside the checkout, at their identical paths. --mount (not -v)
@@ -93,7 +107,12 @@ mount_outside() {
 mount_outside "$RUNS_DIR" ""
 [[ -e "$PACK_STORE" ]] && mount_outside "$PACK_STORE" ""
 [[ -e "$IMAGE_SET_FILE" ]] && mount_outside "$IMAGE_SET_FILE" readonly
-[[ -e "$CONTRACT" ]] && mount_outside "$CONTRACT" readonly
+if [[ -n "$KIT" ]]; then
+  # Read-only at its identical path, even inside the checkout (-v twice is fine).
+  args+=(--mount "type=bind,source=$KIT,target=$KIT,readonly")
+elif [[ -e "$CONTRACT" ]]; then
+  mount_outside "$CONTRACT" readonly
+fi
 
 if [[ "$needs_socket" == true ]]; then
   # Still the host user: the socket's group is added so it may drive the

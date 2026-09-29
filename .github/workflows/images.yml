@@ -163,7 +163,8 @@ jobs:
           # The backend gets the v1.0.0 image variables, and no retired ones.
           grep -q 'MNS_STACKS_IMAGE: ' config.out
           grep -q 'MNS_PACKS_IMAGE: ' config.out
-          grep -q 'MNS_RUNTIME_HOST_KIT_IMAGE: ' config.out
+          grep -q 'MNS_CAPABILITY_KIT: ' config.out
+          grep -q 'MNS_AUTHORING_PROJECT: ' config.out
           if grep -Eq 'PRODUCT_SHELL|STACK_GENERATOR' config.out; then exit 1; fi
           rm -f config.out
           rm -f .env

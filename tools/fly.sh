@@ -49,7 +49,9 @@ stack="$ROOT/generated/$name"
 mkdir -p "$ROOT/generated"
 echo "== generate $name -> generated/$name"
 # The folder, not the file: a split spec keeps its asset packs beside it.
-"$ROOT/tools/mns-stacks.sh" generate "$(dirname "$spec")" --profile docker --out "$stack"
+kit=()
+[[ -n "${MNS_CAPABILITY_KIT:-}" ]] && kit=(--kit "$(cd "$MNS_CAPABILITY_KIT" && pwd)")
+"$ROOT/tools/mns-stacks.sh" generate "$(dirname "$spec")" --profile docker --out "$stack" "${kit[@]}"
 mkdir -p "$ROOT/.mns"
 printf '%s\n' "$stack" >"$ROOT/.mns/last-stack"
 

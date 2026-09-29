@@ -120,6 +120,12 @@ a sibling container, the way the dashboard does:
   (`--group-add`) and your Docker login read-only at `/tmp/.docker`
   (`DOCKER_CONFIG`). Everything else runs with `--network=none`.
 
+**A kit that is not in an image yet** (`MNS_CAPABILITY_KIT=<kit folder>`):
+`make fly` passes `--kit` to `mns-stacks generate`, the wrapper forwards the
+variable and mounts the folder read-only at its path, and the pinned host
+contract is not passed at all. It prints a WARNING that the kit overrides the
+pinned host.
+
 `make` exports the selected channel's images and roots (`CHANNEL=`,
 `IMAGE_MODE=`), as it does for the dashboard. To run a local build instead of a
 pin, put `MNS_STACKS_IMAGE=mns-stacks:local-test` (or `MNS_PACKS_IMAGE`,
