@@ -14,7 +14,8 @@ into a materialised ScenarioSpec, generates a stack per run, and afterwards
 scores the evidence and renders `campaign status`. All of that is reused here
 through the pinned mns-stacks image (tools/mns-stacks.sh, the wrapper `make
 campaign` uses) -- `mns-stacks campaign plan` writes every run's ScenarioSpec
-to disk and prints where, `mns-stacks generate` generates a stack from one
+to disk and returns where (`--json`: result.runs[].spec), `mns-stacks generate`
+generates a stack from one
 (it never starts anything). Only the middle of the runner's `run_one` -- bring
 the stack up, fly it, tear it down -- is replaced, with: render the OSMO
 workflow for the run, submit it, poll it, and pull its evidence back into the
@@ -287,29 +288,43 @@ def derive_platform(spec: dict[str, Any]) -> dict[str, str]:
 # Materialise and generate -- both by the platform
 # --------------------------------------------------------------------------
 
-PLAN_LINE = re.compile(r"^\[campaign\] (?P<key>\S+): (?P<spec>/\S+ScenarioSpec\.yaml)\s*$")
+def stacks_json(proc: subprocess.CompletedProcess) -> dict[str, Any] | None:
+    """The mns.stacks_cli.v1 envelope a `--json` call printed, or None."""
+    try:
+        envelope = json.loads(proc.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if isinstance(envelope, dict) and envelope.get("schema") == "mns.stacks_cli.v1":
+        return envelope
+    return None
 
 
 def materialise(campaign_file: Path, out_root: Path, only: list[str]) -> list[tuple[str, Path]]:
-    """Run `campaign plan`, which validates the spec, expands the matrix and
-    writes <out_root>/<campaign id>/<run_key>/ScenarioSpec.yaml for every run
-    -- the runner nests the id itself, so out_root is the campaigns directory.
-    Returns [(run_key, host path of that spec)] in the runner's own order."""
+    """Run `campaign plan --json`, which validates the spec, expands the matrix
+    and writes <out_root>/<campaign id>/<run_key>/ScenarioSpec.yaml for every
+    run -- the runner nests the id itself, so out_root is the campaigns
+    directory. Returns [(run_key, host path of that spec)] in the runner's own
+    order, from the envelope's result.runs[] ({run_key, variant, seed, repeat,
+    spec, stack, bag_dir, command})."""
     args = ["campaign", "plan", workspace_path(campaign_file), "--out", workspace_path(out_root)]
     if only:
         # One flag, every key: `--only` is nargs="+" and a repeated option
         # keeps only its last occurrence, so `--only a --only b` plans b
         # alone. The same argparse shape bites `osmo workflow submit --set`.
         args += ["--only", *only]
-    proc = stacks_cli(*args)
+    proc = stacks_cli(*args, "--json")
+    envelope = stacks_json(proc)
     runs: list[tuple[str, Path]] = []
-    for line in proc.stdout.splitlines():
-        m = PLAN_LINE.match(line.strip())
-        if m:
-            runs.append((m.group("key"), Path(m.group("spec"))))
-    if proc.returncode != 0 or not runs:
+    if envelope and envelope.get("ok"):
+        for run in (envelope.get("result") or {}).get("runs") or []:
+            if run.get("run_key") and run.get("spec"):
+                runs.append((str(run["run_key"]), Path(run["spec"])))
+    if not runs:
         sys.stderr.write(proc.stdout + proc.stderr)
-        sys.exit(f"[campaign] plan failed (rc={proc.returncode}); nothing materialised")
+        why = ((envelope or {}).get("error") or {}).get("message") or f"rc={proc.returncode}"
+        sys.exit(f"[campaign] plan failed ({why}); nothing materialised")
+    for warning in (envelope or {}).get("warnings") or []:
+        print(f"[campaign] warning: {warning}", file=sys.stderr)
     return runs
 
 

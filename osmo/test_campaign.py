@@ -106,16 +106,31 @@ class StacksCalls(InAWorkspace):
             self.assertEqual(campaign.stacks_image(), "shell/mns-stacks:x")
         self.assertIn("mns-stacks", pinned)
 
-    def test_plan_output_is_read_as_host_paths(self):
-        spec = campaign.WORKSPACE_HOST / "generated" / "campaigns" / "c" / "calm-r1" / "ScenarioSpec.yaml"
-        out = f"[campaign] calm-r1: {spec}\n[campaign]   run_experiment.py ...\n"
-        campaign_file = campaign.WORKSPACE_HOST / "scenarios" / "vio-reference" / "CampaignSpec.yaml"
-        with mock.patch.object(campaign, "stacks_cli", return_value=_done(out)) as cli:
+    def test_plan_reads_the_json_run_list(self):
+        spec = self.workspace / "generated" / "campaigns" / "c" / "calm-r1" / "ScenarioSpec.yaml"
+        envelope = {"schema": "mns.stacks_cli.v1", "command": "campaign plan", "ok": True,
+                    "exit_code": 0, "warnings": [], "error": None,
+                    "result": {"campaign_id": "c", "dry_run": True, "runs": [
+                        {"run_key": "calm-r1", "variant": "calm", "seed": None, "repeat": 1,
+                         "spec": str(spec), "stack": "x", "bag_dir": "y", "command": []}]}}
+        campaign_file = self.workspace / "scenarios" / "vio-reference" / "CampaignSpec.yaml"
+        with mock.patch.object(campaign, "stacks_cli",
+                               return_value=_done(json.dumps(envelope))) as cli:
             runs = campaign.materialise(campaign_file, campaign.CAMPAIGNS_HOST, ["calm-r1", "wind-r1"])
         self.assertEqual(runs, [("calm-r1", spec)])
         self.assertEqual(cli.call_args.args, (
             "campaign", "plan", str(campaign_file.resolve()),
-            "--out", str(campaign.CAMPAIGNS_HOST.resolve()), "--only", "calm-r1", "wind-r1"))
+            "--out", str(campaign.CAMPAIGNS_HOST.resolve()), "--only", "calm-r1", "wind-r1",
+            "--json"))
+
+    def test_a_failed_plan_exits_with_the_cli_message(self):
+        envelope = {"schema": "mns.stacks_cli.v1", "command": "campaign plan", "ok": False,
+                    "exit_code": 2, "result": None, "warnings": [],
+                    "error": {"type": "StacksError", "message": "no CampaignSpec"}}
+        with mock.patch.object(campaign, "stacks_cli", return_value=_done(json.dumps(envelope), 2)), \
+                contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaisesRegex(SystemExit, "no CampaignSpec"):
+            campaign.materialise(self.workspace / "x.yaml", campaign.CAMPAIGNS_HOST, [])
 
     def test_generate_writes_the_stack_and_starts_nothing(self):
         with tempfile.TemporaryDirectory(dir=self.workspace) as tmp:
