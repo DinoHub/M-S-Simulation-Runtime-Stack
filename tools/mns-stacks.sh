@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Run mns-stacks ($MNS_STACKS_IMAGE) as a sibling container, the way the
+# dashboard does: one wrapper for make fly/stop/campaign/stacks and
+# tools/images.sh drift, so every headless caller mounts the same paths.
+#
+#   tools/mns-stacks.sh generate scenarios/<name> --profile docker --out "$PWD/generated/<name>"
+#   tools/mns-stacks.sh run --stack "$PWD/generated/<name>" --record --until-done
+#   tools/mns-stacks.sh campaign run vio-reference
+#   tools/mns-stacks.sh --help
+#
+# Host paths only (the mns-stacks contract): the checkout, the runs directory
+# and any input outside the checkout are mounted at their identical host
+# paths, and mns-stacks is told them (MNS_WORKSPACE_ROOT, SIM2REAL_RUNS_DIR),
+# so every bind mount it hands Compose resolves on the host. The Docker socket
+# is mounted only for the commands that drive containers (run, stop, status,
+# logs, record, check, and campaign run/status/watch/cancel); the rest run
+# with --network=none as the host user, so generated files are yours.
+#
+# Inputs come from the environment; `make` exports the selected channel's
+# (make fly / make stacks), and each has the same default as `make dashboard`:
+#   MNS_STACKS_IMAGE                         required (images/v1.0.0.generated.env;
+#                                            ./.env overrides it, with a note)
+#   MNS_IMAGE_SET, MNS_IMAGE_SET_FILE        the image set generated stacks run
+#   MNS_PACK_STORE_ROOT                      the channel's pack store
+#   MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT  the runtime host contract
+#   TEVV_RUNS_DIR                            runs directory (default ./runs, or .env)
+#   MNS_IMAGE_PULL_POLICY                    missing (default) | always | never
+#   MNS_STACKS_DOCKER_ARGS                   extra `docker run` flags (word-split)
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/load-images-env.sh
+. "$ROOT/tools/load-images-env.sh"
+IMAGE="${MNS_STACKS_IMAGE:-}"
+if [[ -z "$IMAGE" ]]; then
+  IMAGE="$(dotenv_value MNS_STACKS_IMAGE "$ROOT/.env")"
+  [[ -n "$IMAGE" ]] && echo "NOTE: MNS_STACKS_IMAGE from ./.env overrides the catalog pin: $IMAGE" >&2
+fi
+if [[ -z "$IMAGE" ]]; then
+  echo "ERROR: MNS_STACKS_IMAGE is not set. Run this through make (make stacks ARGS=...)," >&2
+  echo "       or: set -a; . images/v1.0.0.generated.env; set +a" >&2
+  exit 2
+fi
+[[ $# -gt 0 ]] || set -- --help
+
+# TEVV_RUNS_DIR from the shell, then ./.env, then ./runs: the same order
+# `make dashboard` and compose use, so a headless bag lands where the
+# dashboard's replay looks.
+runs="${TEVV_RUNS_DIR:-$(dotenv_value TEVV_RUNS_DIR "$ROOT/.env")}"
+runs="${runs:-$ROOT/runs}"
+case "$runs" in "~"*) runs="$HOME${runs#\~}" ;; esac
+mkdir -p "$runs"
+RUNS_DIR="$(cd "$runs" && pwd)"
+
+PACK_STORE="${MNS_PACK_STORE_ROOT:-$ROOT/.mns/v1/pack-store}"
+IMAGE_SET_FILE="${MNS_IMAGE_SET_FILE:-$ROOT/images/image-set.generated.yaml}"
+CONTRACT="${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-$ROOT/packs/runtime-host-compatibility.v1.json}"
+HOST_UID="${MNS_HOST_UID:-$(id -u)}"
+HOST_GID="${MNS_HOST_GID:-$(id -g)}"
+
+# Which commands need the Docker socket (the contract's table).
+needs_socket=false
+case "$1" in
+  run|stop|status|logs|record|check) needs_socket=true ;;
+  campaign)
+    case "${2:-}" in run|status|watch|cancel) needs_socket=true ;; esac ;;
+esac
+
+args=(--rm --pull "${MNS_IMAGE_PULL_POLICY:-missing}")
+[[ -t 0 && -t 1 ]] && args+=(-it)
+args+=(
+  -v "$ROOT:$ROOT" -w "$PWD"
+  -e "MNS_WORKSPACE_ROOT=$ROOT"
+  -e "SIM2REAL_RUNS_DIR=$RUNS_DIR"
+  -e "MNS_IMAGE_SET=${MNS_IMAGE_SET:-v1}"
+  -e "MNS_IMAGE_SET_FILE=$IMAGE_SET_FILE"
+  -e "MNS_PACK_STORE_ROOT=$PACK_STORE"
+  -e "MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$CONTRACT"
+  -e "MNS_HOST_UID=$HOST_UID" -e "MNS_HOST_GID=$HOST_GID"
+)
+case "$PWD/" in "$ROOT"/*) ;; *) args+=(-v "$PWD:$PWD") ;; esac
+
+# Inputs outside the checkout, at their identical paths. --mount (not -v)
+# fails on a missing source instead of creating an empty directory there.
+mount_outside() {
+  local path="$1" mode="$2"
+  case "$path/" in "$ROOT"/*) return 0 ;; esac
+  args+=(--mount "type=bind,source=$path,target=$path${mode:+,$mode}")
+}
+mount_outside "$RUNS_DIR" ""
+[[ -e "$PACK_STORE" ]] && mount_outside "$PACK_STORE" ""
+[[ -e "$IMAGE_SET_FILE" ]] && mount_outside "$IMAGE_SET_FILE" readonly
+[[ -e "$CONTRACT" ]] && mount_outside "$CONTRACT" readonly
+
+if [[ "$needs_socket" == true ]]; then
+  # Root in the container, like the dashboard backend: it drives the daemon
+  # through the socket and hands files back to MNS_HOST_UID/GID itself.
+  # Registry credentials for the images the stack pulls. DISPLAY and
+  # XAUTHORITY are only interpolated into the generated compose files (host
+  # paths for the host daemon); this container opens neither.
+  docker_config="${DOCKER_CONFIG:-$HOME/.docker}"
+  args+=(-v /var/run/docker.sock:/var/run/docker.sock --network=host
+         -e "DISPLAY=${DISPLAY:-:0}" -e "XAUTHORITY=${XAUTHORITY:-}")
+  [[ -d "$docker_config" ]] && args+=(-v "$docker_config:/root/.docker:ro")
+else
+  args+=(--network=none --user "$HOST_UID:$HOST_GID" -e HOME=/tmp)
+fi
+
+# shellcheck disable=SC2206 # deliberate word splitting of extra docker flags
+extra=(${MNS_STACKS_DOCKER_ARGS:-})
+exec docker run "${args[@]}" "${extra[@]}" "$IMAGE" "$@"

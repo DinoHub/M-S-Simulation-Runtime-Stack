@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Refresh ScenarioLab's resolved view of the packs installed in the local
-# content-addressed store by running the product shell's `packs
-# stage-authoring`.
+# content-addressed store: `mns-packs stage-authoring --lock <the channel's
+# lock>` (TEVV-Content-Pack-SDK), which stages exactly the version the lock
+# names for each pack, so a store holding two versions of one pack never
+# stages both (ScenarioLab refuses a pack set with a duplicated id).
 #
 # This sits on `make dashboard`'s dependency chain under `set -euo pipefail`,
 # so every early exit below is a deliberate exit 0: a fresh clone with no packs
@@ -9,17 +11,20 @@
 # it outright.
 #
 # Roots come from the environment, the same variables the Makefile hands the
-# dashboard backend and product.sh, so one channel's packs are staged into that
-# channel's authoring data root:
+# dashboard backend, so one channel's packs are staged into that channel's
+# authoring data root:
 #   MNS_PACK_STORE_ROOT       (default .mns/v1/pack-store)
 #   MNS_AUTHORING_DATA_ROOT   (default .mns/v1/authoring-data)
-#   MNS_PRODUCT_SHELL_IMAGE   the shell whose SDK stages (required once packs exist)
-#   MNS_IMAGE_PULL_POLICY     always|missing|never for that shell (default missing)
-#   MNS_AUTHORING_HOST_CONTRACT  ScenarioLab's host contract (host path under the
-#                             checkout); staging validates packs against it instead
-#                             of the shell's baked copy. Unset = baked copy.
-# Both roots must be inside this checkout: the shell mounts the checkout at
-# /workspace and cannot see anything else.
+#   MNS_PACKS_IMAGE           the mns-packs image (required once packs exist;
+#                             ./.env overrides it, with a note)
+#   MNS_IMAGE_PULL_POLICY     always|missing|never for that image (default missing)
+#   MNS_AUTHORING_HOST_CONTRACT  ScenarioLab's host contract (default
+#                             packs/authoring-host-compatibility.v1.json)
+#   MNS_DEMO_PACK_LOCK        the lock whose versions are staged (default
+#                             packs/v1.0.0.lock.json)
+# Every path is mounted into mns-packs at its identical host path, so the
+# roots may live anywhere, and the same command works from inside the
+# dashboard backend (which mounts this checkout at its host path).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -44,9 +49,9 @@ own_by_host() {
   chown "$HOST_UID:$HOST_GID" "$@" 2>/dev/null || true
 }
 own_by_host "$STORE_ROOT" "$DATA_ROOT"
-# Records WHICH product-shell image produced the staged index. Without it,
-# switching IMAGE_MODE between development and production left the previous
-# image's staged index in place and looking current.
+# Records WHICH mns-packs image and lock produced the staged index. Without
+# it, switching IMAGE_MODE between development and production (or moving the
+# lock) left the previous staged index in place and looking current.
 STAGED_STAMP="$STAGED_DIR/.staged-with"
 
 if [[ "${MNS_SKIP_PACK_STAGING:-0}" == "1" ]]; then
@@ -54,15 +59,10 @@ if [[ "${MNS_SKIP_PACK_STAGING:-0}" == "1" ]]; then
   exit 0
 fi
 
-container_path() {
-  # The path a checkout-relative directory has inside the product shell.
-  case "$1" in
-    "$ROOT"/*) printf '/workspace/%s' "${1#"$ROOT"/}" ;;
-    *) echo "ERROR: $1 is outside the checkout $ROOT; the product shell cannot see it" >&2; exit 2 ;;
-  esac
-}
-CONTAINER_STORE="$(container_path "$STORE_ROOT")"
-CONTAINER_DATA="$(container_path "$DATA_ROOT")"
+LOCK="${MNS_DEMO_PACK_LOCK:-$ROOT/packs/v1.0.0.lock.json}"
+LOCK="$(cd "$(dirname "$LOCK")" && pwd)/$(basename "$LOCK")"
+AUTHORING_CONTRACT="${MNS_AUTHORING_HOST_CONTRACT:-$ROOT/packs/authoring-host-compatibility.v1.json}"
+AUTHORING_CONTRACT="$(cd "$(dirname "$AUTHORING_CONTRACT")" && pwd)/$(basename "$AUTHORING_CONTRACT")"
 
 PACK_LIBRARY="$DATA_ROOT/PackLibrary"
 
@@ -124,18 +124,18 @@ if [[ ! -f "$STORE_INDEX" ]]; then
   exit 0
 fi
 
-# The lock decides which version of a pack ScenarioLab sees; this step and
-# drop_superseded_staged_packs below make it so. ScenarioLab places vehicles
-# from its PackLibrary copy, not from ResolvedPacks, and the authoring image's
-# entrypoint fills that copy from the pack it bakes (mns_vehicle_models 1.0.3,
-# the untextured quadrotor) with `cp -n`, which never replaces an existing one.
+# The lock decides which version of a pack ScenarioLab sees: this step for its
+# PackLibrary, `mns-packs stage-authoring --lock` below for ResolvedPacks.
+# ScenarioLab places vehicles from its PackLibrary copy, not from
+# ResolvedPacks, and the authoring image's entrypoint fills that copy from the
+# vehicle pack it bakes with `cp -n`, which never replaces an existing one.
 # So set each PackLibrary asset pack to the lock's pin from the store: replace
 # one at another digest, and create the required packs (REQUIRED_PACK_IDS in
 # install_demo_packs.py) when missing, before the entrypoint copies the baked
 # one in. A pin whose blob is not installed yet leaves the library as it is.
 sync_library_packs_to_lock() {
-  local lock="${MNS_DEMO_PACK_LOCK:-}"
-  [[ -n "$lock" && -f "$lock" ]] || return 0
+  local lock="$LOCK"
+  [[ -f "$lock" ]] || return 0
   python3 - "$lock" "$PACK_LIBRARY/asset_packs" "$STORE_ROOT/blobs/sha256" "$ROOT/tools" <<'PY'
 import json, shutil, sys
 from pathlib import Path
@@ -174,7 +174,18 @@ PY
 }
 sync_library_packs_to_lock
 
-IMAGE="${MNS_PRODUCT_SHELL_IMAGE:?MNS_PRODUCT_SHELL_IMAGE is required}"
+# shellcheck source=tools/load-images-env.sh
+. "$ROOT/tools/load-images-env.sh"
+IMAGE="${MNS_PACKS_IMAGE:-}"
+if [[ -z "$IMAGE" ]]; then
+  IMAGE="$(dotenv_value MNS_PACKS_IMAGE "$ROOT/.env")"
+  [[ -n "$IMAGE" ]] && echo "NOTE: MNS_PACKS_IMAGE from ./.env overrides the catalog pin: $IMAGE" >&2
+fi
+if [[ -z "$IMAGE" ]]; then
+  echo "ERROR: MNS_PACKS_IMAGE is not set. Run this through make (make stage-authoring-packs)," >&2
+  echo "       or: set -a; . images/v1.0.0.generated.env; set +a" >&2
+  exit 2
+fi
 PULL_POLICY="${MNS_IMAGE_PULL_POLICY:-missing}"
 case "$PULL_POLICY" in
   always|missing|never) ;;
@@ -183,86 +194,63 @@ case "$PULL_POLICY" in
     exit 2
     ;;
 esac
-
-# `packs stage-authoring` stages every pack in the store, so after a lock
-# moves a pack to a new version the store still holds the old one and both are
-# staged under one id. ScenarioLab then refuses to mount any level: "asset pack
-# definition identity is invalid or duplicated: mns_vehicle_models". Keep only
-# the lock's pin for each id it pins (when that pin was staged), in the index
-# and in every staged environment's resolved-pack-set.json. The store keeps the
-# old blob: generated stacks that reference it by digest still resolve.
-drop_superseded_staged_packs() {
-  local lock="${MNS_DEMO_PACK_LOCK:-}"
-  [[ -n "$lock" && -f "$lock" && -f "$STAGED_INDEX" ]] || return 0
-  python3 - "$lock" "$STAGED_INDEX" "$DATA_ROOT" <<'PY'
-import json, sys
-from pathlib import Path
-
-lock, index_path, data_root = json.load(open(sys.argv[1])), Path(sys.argv[2]), Path(sys.argv[3])
-pins = {p["id"]: p["artifact_digest"] for p in lock.get("packs", []) if p.get("artifact_digest")}
-
-def keep(entries, where):
-    staged = {(e.get("id"), e.get("artifact_digest")) for e in entries}
-    kept = []
-    for entry in entries:
-        pack_id, digest = entry.get("id"), entry.get("artifact_digest")
-        if pack_id in pins and digest != pins[pack_id] and (pack_id, pins[pack_id]) in staged:
-            print(f"Not staging {pack_id}@{entry.get('version', '?')} ({digest}) in {where}: "
-                  f"the lock pins {pins[pack_id]}")
-            continue
-        kept.append(entry)
-    return kept
-
-index = json.loads(index_path.read_text(encoding="utf-8"))
-changed = False
-for key in ("asset_packs", "level_packs"):
-    entries = index.get(key) or []
-    kept = keep(entries, index_path.name)
-    changed |= len(kept) != len(entries)
-    index[key] = kept
-if changed:
-    index_path.write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
-
-for level in index.get("level_packs") or []:
-    relative = level.get("resolved_pack_set")
-    pack_set_path = data_root / str(relative or "")
-    if not relative or not pack_set_path.is_file():
-        continue
-    pack_set = json.loads(pack_set_path.read_text(encoding="utf-8"))
-    entries = pack_set.get("asset_packs") or []
-    kept = keep(entries, f"{level.get('id')}/{pack_set_path.name}")
-    if len(kept) != len(entries):
-        pack_set["asset_packs"] = kept
-        pack_set_path.write_text(json.dumps(pack_set, indent=2) + "\n", encoding="utf-8")
-PY
-}
+STAMP="$IMAGE $(sha256sum "$LOCK" 2>/dev/null | cut -d' ' -f1)"
 
 if [[ -f "$STAGED_INDEX" && ! "$STORE_INDEX" -nt "$STAGED_INDEX" \
-      && -f "$STAGED_STAMP" && "$(cat "$STAGED_STAMP")" == "$IMAGE" ]]; then
-  drop_superseded_staged_packs
+      && -f "$STAGED_STAMP" && "$(cat "$STAGED_STAMP")" == "$STAMP" ]]; then
   echo "ScenarioLab pack index is current: $STAGED_INDEX"
   report_unexportable_library_packs
   exit 0
 fi
 
-# MNS_HOST_UID/GID: the dashboard backend runs this as root inside its
-# container; the staged files must stay owned by the operator on the host.
-contract_args=()
-if [[ -n "${MNS_AUTHORING_HOST_CONTRACT:-}" ]]; then
-  contract_args=(-e "MNS_AUTHORING_HOST_CONTRACT=$(container_path "$MNS_AUTHORING_HOST_CONTRACT")")
+# As the host user, so the staged tree stays the operator's. Everything is
+# mounted at its identical path; the index records paths relative to the data
+# root, so it reads the same inside ScenarioLab's container. The store and the
+# data root go in as ONE mount (their common parent, .mns/<channel>/ by
+# default): staging hard-links payloads out of the store, and link(2) refuses
+# to cross two bind mounts even on one filesystem (it would copy instead).
+common="$(python3 -c 'import os,sys; print(os.path.commonpath(sys.argv[1:]))' "$STORE_ROOT" "$DATA_ROOT")"
+if [[ "$common" == / ]]; then
+  mounts=(-v "$STORE_ROOT:$STORE_ROOT" -v "$DATA_ROOT:$DATA_ROOT")
+else
+  mounts=(-v "$common:$common")
 fi
-docker run --pull "$PULL_POLICY" --rm \
-  --user "$HOST_UID:$HOST_GID" \
-  -e HOME=/tmp \
-  -e MNS_WORKSPACE_ROOT=/workspace \
-  -e "MNS_PACK_STORE_ROOT=$CONTAINER_STORE" \
-  -e "MNS_AUTHORING_DATA_ROOT=$CONTAINER_DATA" \
-  "${contract_args[@]}" \
-  -v "$ROOT:/workspace:rw" \
-  "$IMAGE" packs stage-authoring
+mounts+=(-v "$LOCK:$LOCK:ro" -v "$AUTHORING_CONTRACT:$AUTHORING_CONTRACT:ro")
+status=0
+out="$(docker run --pull "$PULL_POLICY" --rm --network=none \
+      --user "$HOST_UID:$HOST_GID" -e HOME=/tmp "${mounts[@]}" \
+      "$IMAGE" stage-authoring --store "$STORE_ROOT" --authoring-data "$DATA_ROOT" \
+      --host "$AUTHORING_CONTRACT" --lock "$LOCK" --json)" || status=$?
+python3 - "$out" "$status" <<'PY' || true
+import json, sys
+text, status = sys.argv[1], int(sys.argv[2])
+try:
+    envelope = json.loads(text)
+except ValueError:
+    sys.exit(0)  # no envelope: docker's own error is already on stderr
+result = envelope.get("result") or {}
+if status:
+    error = envelope.get("error") or {}
+    print(f"mns-packs stage-authoring: {error.get('message') or 'failed'}", file=sys.stderr)
+    for pack in result.get("blocked") or []:
+        print(f"  blocked: {pack.get('kind')}/{pack.get('id')}@{pack.get('version')}: "
+              f"{pack.get('reason')}", file=sys.stderr)
+    sys.exit(0)
+staged = result.get("staged") or []
+print(f"Staged {len(staged)} pack(s) for ScenarioLab: "
+      + ", ".join(f"{pack['id']}@{pack['version']}" for pack in staged))
+for pack in result.get("skipped") or []:
+    print(f"  not staged: {pack.get('kind')}/{pack.get('id')}@{pack.get('version')}: "
+          f"{pack.get('reason')}")
+PY
+if [[ "$status" != 0 ]]; then
+  echo "ERROR: staging failed (above). A blocked pack is one whose installed bytes do not match" >&2
+  echo "       the lock: reinstall it (tools/install-demo-packs.sh --<selection>). To start" >&2
+  echo "       without staging: MNS_SKIP_PACK_STAGING=1 make dashboard" >&2
+  exit 1
+fi
 
-drop_superseded_staged_packs
 mkdir -p "$STAGED_DIR"
-printf '%s\n' "$IMAGE" >"$STAGED_STAMP"
+printf '%s\n' "$STAMP" >"$STAGED_STAMP"
 own_by_host "$STAGED_DIR" "$STAGED_STAMP"
 report_unexportable_library_packs

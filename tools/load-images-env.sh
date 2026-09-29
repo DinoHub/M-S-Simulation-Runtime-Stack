@@ -87,3 +87,17 @@ load_images_env() {
     export "$key=$val"
   done < "$env_file"
 }
+
+# The value a dotenv file sets for KEY (last assignment wins), without quotes;
+# empty when it sets none. load_images_env leaves a key that ./.env sets
+# unexported, because compose reads .env itself; a script that runs `docker
+# run` directly reads a local image override (`MNS_PACKS_IMAGE=...` in .env)
+# through this instead.
+#   dotenv_value MNS_PACKS_IMAGE [./.env]
+dotenv_value() {
+  local key="$1" file="${2:-./.env}" value
+  [ -f "$file" ] || return 0
+  value=$(sed -n "s/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}$key=//p" "$file" | tail -1)
+  value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
+  printf '%s' "$value"
+}
