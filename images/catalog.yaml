@@ -101,7 +101,7 @@ images:
   sim_real_eval:
     repo: dhdevspace/auto_mns
     tag: "sim-real-eval-worker-v1.0.0-rc"
-    digest: sha256:309b50872864300a4762694ee53c022f83e24ffd4764ac187375ed16dd1456ae
+    digest: sha256:b06e9c3c8d3289ec998a9ae499c8685fe63aab4badae1f0cb030ad6bbf31295a
     channel: pinned
     purpose: >-
       Sim-to-real evaluation worker, the published sim_real_eval role
@@ -170,7 +170,7 @@ images:
   v1_stacks:
     repo: dhdevspace/auto_mns
     tag: "mns-stacks-v1.0.0-rc"
-    digest: sha256:fcfc8b45e34277455eaeb824215558589f38f648c5b33926e98336452d1178aa
+    digest: sha256:aa743589c530589a0a1c67a8fe173fda09bc98bf864acc16e5c557308d41f15b
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -208,11 +208,11 @@ images:
 
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns
-    tag: tevv-airsim-ros2-bridge-humble-v1.0.0
-    digest: sha256:b91e4b92d6a8ec538da33ab40758ab3d1c0af99cb9bdf853452561e44046530c
+    tag: "tevv-airsim-ros2-bridge-humble-v1.0.0-rc"
+    digest: sha256:b142653e054f66625cd81f22e4dc1aa642783e9774223e4048af9902480d142b
     channel: pinned
     purpose: >-
-      MnS 1.0 AirSim<->ROS 2 bridge (TEVV-Airsim-ROS2-Bridge main); 87 colcon tests green at build.
+      MnS 1.0 AirSim<->ROS 2 bridge (TEVV-Airsim-ROS2-Bridge release/v1.0.0-next 93083bf37ccf): the v1.0.0 build (459952e) plus the image-capture dedupe fix (one host capture = one image), so recordings pass fresh_frames; built like v1.0.0 (docker/Dockerfile, ROS_DISTRO=humble, same base); 158 colcon tests green.
 
   v1_px4:
     repo: dhdevspace/auto_mns
@@ -232,17 +232,18 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-g7debc04"
-    digest: sha256:e65606c8d2b8e16d0e4c0da062b5dc1eb2c380c4ab146a8c01dbc214d73c67d9
+    tag: "tevv-web-dashboard-backend-v1.0.0-g7debc04.2"
+    digest: sha256:6e4c9fe219c608072c19a52b192f7f8bc1f46dc33db45df3b0682120250d1c31
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
+      commit: 7debc04787bbeddc53d169e31ee3ab158e322789
     # Bakes MNS_AUTHORING_IMAGE_DEFAULT, MNS_STACKS_IMAGE_DEFAULT and
     # MNS_PACKS_IMAGE_DEFAULT; tools/images.sh baked checks the first two.
     bakes: [v1_stacks, v1_authoring]
     purpose: >-
       MnS 1.0 dashboard backend (TEVV-Web-Dashboard release/v1.0.0-next 7debc04):
-      REST takeoff reports success only once armed and climbed (pilot from integration 8621eb2); every stack lifecycle, recording, campaign and topic call goes through
+      REST takeoff reports success only once armed and climbed (pilot from integration 52e7cb2); every stack lifecycle, recording, campaign and topic call goes through
       mns-stacks and pack status through mns-packs, both as sibling containers
       (no docker compose in the image). Built with --candidate-lock
       packs/v1.0.0.lock.json, so the baked defaults are the v1.0.0-rc authoring,
@@ -255,6 +256,7 @@ images:
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
+      commit: 7debc04787bbeddc53d169e31ee3ab158e322789
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
       7debc04), built with the backend above; it bakes no pins.
