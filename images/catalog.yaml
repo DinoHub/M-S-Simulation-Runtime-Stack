@@ -232,39 +232,32 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-backend-v1.0.0-gee99b9d
-    digest: sha256:939c93c309d4363ae1552238a175971cb1566fc75f699fbfcda906b6dcfe41e9
+    tag: "tevv-web-dashboard-backend-v1.0.0-ga14c417"
+    digest: sha256:f20e38c976bf8dc6ef06741330735398784f356475a15aba533940bb4a735cfd
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-    # The v1.0.0 backend bakes MNS_STACKS_IMAGE_DEFAULT and
-    # MNS_AUTHORING_IMAGE_DEFAULT (tools/images.sh baked checks both). This
-    # pinned gee99b9d build predates mns-stacks and bakes the retired
-    # generator instead, so `baked` reports MNS_STACKS_IMAGE_DEFAULT as
-    # BAKED_EMPTY until the v1.0.0-rc backend is pinned. Compose deployments
-    # pass both variables explicitly and are unaffected.
+    # Bakes MNS_AUTHORING_IMAGE_DEFAULT, MNS_STACKS_IMAGE_DEFAULT and
+    # MNS_PACKS_IMAGE_DEFAULT; tools/images.sh baked checks the first two.
     bakes: [v1_stacks, v1_authoring]
     purpose: >-
-      MnS 1.0 dashboard backend (TEVV-Web-Dashboard main) with the v1
-      authoring/generator pins baked. gee99b9d adds #115: the Generate phase no
-      longer authors sensors (ScenarioLab does), the ROS 2 step lists published
-      topics only and offers no guessed names, stale armed record topics are
-      dropped and reported at launch, and apply-prerun carries
-      config/sim2real/topics.yaml across a prefix or rename change. Built with
-      --candidate-lock packs/v1.0.0.lock.json, so the baked defaults are the
-      v1.0.0 authoring and generator, not the v0.2.0 review pins.
+      MnS 1.0 dashboard backend (TEVV-Web-Dashboard release/v1.0.0-next a14c417):
+      every stack lifecycle, recording, campaign and topic call goes through
+      mns-stacks and pack status through mns-packs, both as sibling containers
+      (no docker compose in the image). Built with --candidate-lock
+      packs/v1.0.0.lock.json, so the baked defaults are the v1.0.0-rc authoring,
+      mns-stacks and mns-packs digests.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: tevv-web-dashboard-frontend-v1.0.0-gee99b9d
-    digest: sha256:9a779f5d5564333bfec145309bc7afde0e059a64b5c8b00183da7c0489c93259
+    tag: "tevv-web-dashboard-frontend-v1.0.0-ga14c417"
+    digest: sha256:749a2091277e05c950ff665a42f55e218577f78159a66be6b5423d299c8f0ac8
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
     purpose: >-
-      MnS 1.0 dashboard frontend (TEVV-Web-Dashboard main), built with the
-      backend above (gee99b9d). Byte-identical to the v0.2.0-gee99b9d build:
-      the frontend bakes no pins, so only the backend digest moved.
+      MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
+      a14c417), built with the backend above; it bakes no pins.
 
 consumers:
   # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env
