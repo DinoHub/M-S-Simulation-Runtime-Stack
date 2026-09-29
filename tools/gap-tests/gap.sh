@@ -20,6 +20,9 @@
 #
 # One flight holds the GPU, the simulator ports and the X display; run one at a time.
 #
+# GAP_EXTRA_TOPICS adds topics to the flight's recording (e.g. the relay's
+# /fisheye_<cam>/image_raw_reliable, what the live estimator actually received).
+#
 # replay A/B knobs (to compare a replay with the live run): OV_LAUNCH=1 starts OpenVINS
 # exactly as the stack does (ros2 launch, INFO) with OV_LAUNCH_ARGS appended; otherwise
 # `ros2 run` with OV_SIM_TIME (default true) and OV_EXTRA_ARGS (-p name:=value ...).
@@ -33,7 +36,7 @@ METRICS_DIR=${METRICS_DIR:-$HOME/tevv_ws/metrics}
 PILOT=${PILOT:-$ROOT/osmo/files/fly_mission_mavros.py}
 PACK_STORE=${MNS_PACK_STORE_ROOT:-$ROOT/.mns/v1/pack-store}
 ROS="source /opt/ros/humble/setup.bash >/dev/null 2>&1; source /ws/install/setup.bash >/dev/null 2>&1"
-TOPICS="/clock /imu/data /ground_truth/odom /tf_static /fisheye_front/image_raw /fisheye_back/image_raw /fisheye_front/camera_info /fisheye_back/camera_info /ov_msckf/odomimu"
+TOPICS="${GAP_EXTRA_TOPICS:+$GAP_EXTRA_TOPICS }/clock /imu/data /ground_truth/odom /tf_static /fisheye_front/image_raw /fisheye_back/image_raw /fisheye_front/camera_info /fisheye_back/camera_info /ov_msckf/odomimu"
 export LIGHT_MASK_DIR=${LIGHT_MASK_DIR:-$HERE/masks}
 
 die(){ echo "gap: $*" >&2; exit 1; }

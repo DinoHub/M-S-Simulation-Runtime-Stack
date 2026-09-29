@@ -69,6 +69,20 @@ OpenVINS failure mode that also shows up in replays: the live launch command rep
 the live-2 bag gave 1689, 0.92 and 1.23 m. Treat live and replay scores as different
 measurements and report which one a number is.
 
+What has been ruled out and what is left (29 Sep 2026):
+
+- **Transport.** The live-4 bag replayed three times through the live path (best-effort
+  images, `qos_relay.py`, the stack's `ros2 launch` command) scored 1.35, 1.35 and 1.27 m;
+  three direct replays scored 1.35, 1.35 and 1.28 m. Live, the relay delivered 2392 of 2398
+  frames (99.7 %). Record `GAP_EXTRA_TOPICS="/fisheye_front/image_raw_reliable ..."` to see
+  exactly what the live estimator received.
+- **Direction.** A fourth flight at DEBUG scored 2.99 m live against 5.14 m replayed, so
+  live is not always worse.
+- **Left:** live tracks fewer landmarks per update (7.8 against 11.7 on the same flight,
+  both at DEBUG), and the machine is shared: during that flight a CI build container used
+  5-17 of the 24 cores next to the simulator's ~4. Compare conditions over several flights
+  on a quiet machine before reading a live/replay difference as a sim-to-real effect.
+
 Two flights on 28 Sep scored 0.64 and 0.89 m. Flight-to-flight spread on this route is far
 wider than those two suggested (0.64–4.71 m over five flights), so compare conditions on
 several flights each, not one.
