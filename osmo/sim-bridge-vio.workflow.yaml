@@ -195,6 +195,7 @@ workflow:
         READY_WAIT_SEC: "900"
         VIZ_HOLD_SEC: "{% if viz | string | lower == 'true' %}{{ viz_hold_sec }}{% else %}0{% endif %}"
         VIZ_IDLE_SEC: "{{ viz_idle_sec }}"
+        CAMERA_INFO_TOPICS: "{{ camera_info_topics }}"
         DS_HOST: "{{host:discovery-server}}"
         RMW_IMPLEMENTATION: rmw_fastrtps_cpp
         ROS_DOMAIN_ID: "0"
@@ -333,6 +334,7 @@ default-values:
   fly_speed_ms: "1.0"
   record_sec: "300"                  # a cap: the recorder stops when the pilot is done
   est_topic: /ov_msckf/odomimu
+  camera_info_topics: ""             # comma-separated; campaign.py derives them from the stack
   gates_json: '{"ate_trans_m.rmse": {"max": 1.0}}'
   max_fall_ms: "0.5"
   viz: false                         # tested as a string: --set viz=false arrives as "false"

@@ -32,10 +32,9 @@ stack_name: vio-osmo-xfs-surround
 # calibration was characterised on.
 
 environment:
-  # The v1 channel's XFS as packs/v1.0.0.lock.json pins it since MnS v1.0.0
-  # (PR #87): `xfs-level` at sha256:08fb1485..., the same release the ue582
-  # channel and scenarios/vio-reference use. The earlier v1 pin (`xfs` at
-  # sha256:6750aa11...) no longer resolves for the iostore-v2 runtime host.
+  # The v1 channel's XFS, as packs/v1.0.0.lock.json pins it: `xfs-level`
+  # 1.0.1 at sha256:08fb1485..., the level vio-osmo-xfs-ardupilot and
+  # scenarios/vio-reference fly.
   id: xfs-level
   version: 1.0.1
   artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
