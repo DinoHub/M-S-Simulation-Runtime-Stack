@@ -65,12 +65,20 @@ esac
 # through tools/mns-stacks.sh, exactly as make fly and the dashboard do: the
 # channel's pack store and runtime host contract, host paths, no socket.
 if [[ "$MODE" == "drift" ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    . "$ROOT/images/v1.0.0.generated.env"
-    set +a
-    stacks_ref="${MNS_STACKS_IMAGE:?MNS_STACKS_IMAGE not set — run tools/images.sh sync}"
-    export MNS_STACKS_IMAGE="$stacks_ref" MNS_IMAGE_SET_FILE="$ROOT/images/image-set.generated.yaml"
+    # The product's precedence, without clobbering the shell: the shell
+    # environment, then ./.env (a local override, said out loud), then the
+    # channel's generated pin.
+    # shellcheck source=tools/load-images-env.sh
+    . "$ROOT/tools/load-images-env.sh"
+    stacks_ref="${MNS_STACKS_IMAGE:-}"
+    if [[ -z "$stacks_ref" ]]; then
+        stacks_ref="$(dotenv_value MNS_STACKS_IMAGE "$ROOT/.env")"
+        [[ -n "$stacks_ref" ]] && echo "NOTE: MNS_STACKS_IMAGE from ./.env overrides the catalog pin: $stacks_ref" >&2
+    fi
+    [[ -n "$stacks_ref" ]] || stacks_ref="$(dotenv_value MNS_STACKS_IMAGE "$ROOT/images/v1.0.0.generated.env")"
+    [[ -n "$stacks_ref" ]] || { echo "MNS_STACKS_IMAGE not set — run tools/images.sh sync" >&2; exit 1; }
+    export MNS_STACKS_IMAGE="$stacks_ref"
+    export MNS_IMAGE_SET_FILE="${MNS_IMAGE_SET_FILE:-$ROOT/images/image-set.generated.yaml}"
     # Inside the checkout, so it is already mounted; generation runs as you,
     # so plain rm cleans it up.
     tmp="$ROOT/.mns/drift"

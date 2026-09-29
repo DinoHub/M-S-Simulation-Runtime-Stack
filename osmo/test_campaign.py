@@ -92,6 +92,20 @@ class StacksCalls(InAWorkspace):
         self.assertEqual([image], pinned)
         self.assertIn("mns-stacks", image)
 
+    def test_the_image_precedence_is_shell_then_dotenv_then_the_pin(self):
+        dotenv = self.workspace / ".env"
+        with mock.patch.object(campaign, "DOTENV_FILE", dotenv), \
+                mock.patch.dict(campaign.os.environ, {}, clear=False):
+            campaign.os.environ.pop("MNS_STACKS_IMAGE", None)
+            pinned = campaign.stacks_image()
+            dotenv.write_text('MNS_STACKS_IMAGE="mns-stacks:local-test"\n')
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(campaign.stacks_image(), "mns-stacks:local-test")
+            self.assertIn("overrides the catalog pin", err.getvalue())
+            campaign.os.environ["MNS_STACKS_IMAGE"] = "shell/mns-stacks:x"
+            self.assertEqual(campaign.stacks_image(), "shell/mns-stacks:x")
+        self.assertIn("mns-stacks", pinned)
+
     def test_plan_output_is_read_as_host_paths(self):
         spec = campaign.WORKSPACE_HOST / "generated" / "campaigns" / "c" / "calm-r1" / "ScenarioSpec.yaml"
         out = f"[campaign] calm-r1: {spec}\n[campaign]   run_experiment.py ...\n"

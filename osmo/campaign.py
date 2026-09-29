@@ -179,13 +179,37 @@ def sh(argv: list[str], *, cwd: Path | None = None, check: bool = True,
                           capture_output=capture, env={**os.environ, **(env or {})})
 
 
+DOTENV_FILE = ROOT / ".env"
+
+
+def _env_file_value(path: Path, name: str) -> str:
+    """`name`'s value in a KEY=VAL file (last one wins, quotes stripped), or ""."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    value = ""
+    for line in lines:
+        key, sep, raw = line.strip().removeprefix("export ").partition("=")
+        if sep and key.strip() == name:
+            value = raw.strip().strip("'\"")
+    return value
+
+
 def stacks_image() -> str:
-    """MNS_STACKS_IMAGE from the environment, else the channel's pin."""
+    """The mns-stacks image, with the product's precedence: the shell
+    environment, then ./.env (a local override, said out loud), then the
+    channel's generated pin."""
     if os.environ.get("MNS_STACKS_IMAGE"):
         return os.environ["MNS_STACKS_IMAGE"]
-    for line in CHANNEL_ENV_FILE.read_text(encoding="utf-8").splitlines():
-        if line.startswith("MNS_STACKS_IMAGE="):
-            return line.split("=", 1)[1].strip()
+    override = _env_file_value(DOTENV_FILE, "MNS_STACKS_IMAGE")
+    if override:
+        print(f"[campaign] NOTE: MNS_STACKS_IMAGE from ./.env overrides the catalog pin: "
+              f"{override}", file=sys.stderr)
+        return override
+    pinned = _env_file_value(CHANNEL_ENV_FILE, "MNS_STACKS_IMAGE")
+    if pinned:
+        return pinned
     sys.exit(f"[campaign] MNS_STACKS_IMAGE is not set and {CHANNEL_ENV_FILE} pins none")
 
 
