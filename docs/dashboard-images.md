@@ -153,8 +153,10 @@ read-only. When it runs `docker run <mns-stacks>` or brings a stack up, the
 pull uses **this container's** Docker config, not the host shell's login.
 Without the mount, the pull of the private `dhdevspace/auto_mns` images is
 anonymous and `/api/scenario/generate` fails with `422 generation failed`; a
-stack whose images are not all local fails the same way. `tools/mns-stacks.sh`
-mounts the same config into mns-stacks for the commands that pull. Check it is there:
+stack whose images are not all local fails the same way. The mns-stacks
+siblings (from the backend and from `tools/mns-stacks.sh`) run as the host user,
+with the socket's group and this config read-only at `/tmp/.docker`
+(`DOCKER_CONFIG`), for the commands that drive containers. Check it is there:
 
 ```bash
 docker inspect airsim-dashboard-api --format '{{range .Mounts}}{{.Destination}}{{"\n"}}{{end}}' | grep docker/config

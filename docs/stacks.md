@@ -112,10 +112,13 @@ a sibling container, the way the dashboard does:
   contract outside the checkout are mounted **at their host paths**, and
   mns-stacks is told them (`MNS_WORKSPACE_ROOT`, `SIM2REAL_RUNS_DIR`), so every
   bind mount it hands Compose resolves on the host;
-- the Docker socket (and your Docker login, read-only) is mounted only for the
-  commands that drive containers: `run`, `stop`, `status`, `logs`, `record`,
-  `check`, and `campaign run|status|watch|cancel`. Everything else runs with
-  `--network=none` as you, so generated files are yours.
+- it always runs **as you** (`--user $(id -u):$(id -g)`, `HOME=/tmp`), never
+  as root, so every file it writes is yours;
+- the Docker socket is mounted only for the commands that drive containers:
+  `run`, `stop`, `status`, `restart`, `logs`, `record`, `check`, and
+  `campaign run|status|watch|cancel`. Those also get the socket's group
+  (`--group-add`) and your Docker login read-only at `/tmp/.docker`
+  (`DOCKER_CONFIG`). Everything else runs with `--network=none`.
 
 `make` exports the selected channel's images and roots (`CHANNEL=`,
 `IMAGE_MODE=`), as it does for the dashboard. To run a local build instead of a

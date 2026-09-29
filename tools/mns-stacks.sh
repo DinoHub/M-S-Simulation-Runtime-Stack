@@ -11,10 +11,12 @@
 # Host paths only (the mns-stacks contract): the checkout, the runs directory
 # and any input outside the checkout are mounted at their identical host
 # paths, and mns-stacks is told them (MNS_WORKSPACE_ROOT, SIM2REAL_RUNS_DIR),
-# so every bind mount it hands Compose resolves on the host. The Docker socket
-# is mounted only for the commands that drive containers (run, stop, status,
-# logs, record, check, and campaign run/status/watch/cancel); the rest run
-# with --network=none as the host user, so generated files are yours.
+# so every bind mount it hands Compose resolves on the host. It always runs as
+# the host user (never root), so every file it writes is yours. The Docker
+# socket, with its group and your Docker login, is mounted only for the
+# commands that drive containers (run, stop, status, restart, logs, record,
+# check, and campaign run/status/watch/cancel); the rest run with
+# --network=none. The same rule as the dashboard backend's mns_cli.docker_argv.
 #
 # Inputs come from the environment; `make` exports the selected channel's
 # (make fly / make stacks), and each has the same default as `make dashboard`:
@@ -61,12 +63,13 @@ HOST_GID="${MNS_HOST_GID:-$(id -g)}"
 # Which commands need the Docker socket (the contract's table).
 needs_socket=false
 case "$1" in
-  run|stop|status|logs|record|check) needs_socket=true ;;
+  run|stop|status|restart|logs|record|check) needs_socket=true ;;
   campaign)
     case "${2:-}" in run|status|watch|cancel) needs_socket=true ;; esac ;;
 esac
 
-args=(--rm --pull "${MNS_IMAGE_PULL_POLICY:-missing}")
+args=(--rm --pull "${MNS_IMAGE_PULL_POLICY:-missing}"
+      --user "$HOST_UID:$HOST_GID" -e HOME=/tmp)
 [[ -t 0 && -t 1 ]] && args+=(-it)
 args+=(
   -v "$ROOT:$ROOT" -w "$PWD"
@@ -93,17 +96,23 @@ mount_outside "$RUNS_DIR" ""
 [[ -e "$CONTRACT" ]] && mount_outside "$CONTRACT" readonly
 
 if [[ "$needs_socket" == true ]]; then
-  # Root in the container, like the dashboard backend: it drives the daemon
-  # through the socket and hands files back to MNS_HOST_UID/GID itself.
-  # Registry credentials for the images the stack pulls. DISPLAY and
-  # XAUTHORITY are only interpolated into the generated compose files (host
-  # paths for the host daemon); this container opens neither.
-  docker_config="${DOCKER_CONFIG:-$HOME/.docker}"
-  args+=(-v /var/run/docker.sock:/var/run/docker.sock --network=host
+  # Still the host user: the socket's group is added so it may drive the
+  # daemon, and your Docker login is mounted read-only so it can pull the
+  # private images the stack needs. DISPLAY and XAUTHORITY are only
+  # interpolated into the generated compose files (host paths for the host
+  # daemon); this container opens neither.
+  socket=/var/run/docker.sock
+  args+=(-v "$socket:$socket" --network=host
          -e "DISPLAY=${DISPLAY:-:0}" -e "XAUTHORITY=${XAUTHORITY:-}")
-  [[ -d "$docker_config" ]] && args+=(-v "$docker_config:/root/.docker:ro")
+  if sock_gid="$(stat -c %g "$socket" 2>/dev/null)"; then
+    args+=(--group-add "$sock_gid")
+  fi
+  docker_config="${DOCKER_CONFIG:-$HOME/.docker}"
+  if [[ -e "$docker_config" ]]; then
+    args+=(-e DOCKER_CONFIG=/tmp/.docker -v "$docker_config:/tmp/.docker:ro")
+  fi
 else
-  args+=(--network=none --user "$HOST_UID:$HOST_GID" -e HOME=/tmp)
+  args+=(--network=none)
 fi
 
 # shellcheck disable=SC2206 # deliberate word splitting of extra docker flags
