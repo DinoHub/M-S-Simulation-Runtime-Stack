@@ -132,6 +132,20 @@ jobs:
           make -n fly SCENARIO=vio-reference KEEP=1 | grep -q 'tools/fly.sh "vio-reference"  --keep --'
           if make -n fly SCENARIO=vio-reference | grep -q -- '--keep'; then echo "--keep without KEEP=1" >&2; exit 1; fi
           tools/author.sh --help > /dev/null
+          # tools/mns-stacks.sh gives the socket and the host network exactly to
+          # the commands that need them (a fake docker prints the argv).
+          fake="$(mktemp -d)"; printf '#!/bin/sh\nprintf "%%s\\n" "$@"\n' > "$fake/docker"; chmod +x "$fake/docker"
+          for cmd in "run --stack x" "stop --stack x" "campaign preflight vio-reference" "campaign run vio-reference"; do
+            argv="$(PATH="$fake:$PATH" MNS_STACKS_IMAGE=fake tools/mns-stacks.sh $cmd)"
+            echo "$argv" | grep -qx -- '--network=host' || { echo "$cmd: no --network=host" >&2; exit 1; }
+            echo "$argv" | grep -q -- '/var/run/docker.sock' || { echo "$cmd: no socket" >&2; exit 1; }
+          done
+          for cmd in "generate scenarios/vio-reference" "campaign plan vio-reference" "campaign validate vio-reference"; do
+            argv="$(PATH="$fake:$PATH" MNS_STACKS_IMAGE=fake tools/mns-stacks.sh $cmd)"
+            echo "$argv" | grep -qx -- '--network=none' || { echo "$cmd: not --network=none" >&2; exit 1; }
+            if echo "$argv" | grep -q -- '/var/run/docker.sock'; then echo "$cmd: has the socket" >&2; exit 1; fi
+          done
+          rm -rf "$fake" runs
           tools/doctor.sh --help > /dev/null
 
       - name: --dry-run must refuse --refresh-moving
