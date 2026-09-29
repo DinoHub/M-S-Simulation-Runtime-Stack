@@ -7,10 +7,10 @@
   "capability_id": "ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2",
   "host_contract": "packs/runtime-host-compatibility.v1.json",
   "required_images": {
-    "packs": "dhdevspace/auto_mns:mns-packs-v1.0.0-rc",
-    "stacks": "dhdevspace/auto_mns:mns-stacks-v1.0.0-rc",
-    "authoring": "dhdevspace/auto_mns:mns-authoring-v1.0.0@sha256:c91716e18cf01a537c6f4901a9a368fbf63b7885795af07a56db20cc39ece421",
-    "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-v1.0.0@sha256:303a5c84662a3fc420ce93e5f2e87198065798719884d48f679915cf22a29339",
+    "packs": "dhdevspace/auto_mns:mns-packs-v1.0.0-rc@sha256:0eac2fbf007b797489b5dcfe6edabdf1c9aa4d5347bbe46685ff3a44bb7954e9",
+    "stacks": "dhdevspace/auto_mns:mns-stacks-v1.0.0-rc@sha256:7f1574cf9e71c2f94fa573d0597a7614a8730828f9cbfeb3b65236d0f4f6f447",
+    "authoring": "dhdevspace/auto_mns:mns-authoring-v1.0.0-rc@sha256:05db21352165644be84041f5439df113a6b6b4b49e2c96f687db6be6b82c8d97",
+    "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-rc@sha256:c235f44777ff9b544960a166053c61178e1c1219d968b228fad238b4f661f302",
     "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0@sha256:b91e4b92d6a8ec538da33ab40758ab3d1c0af99cb9bdf853452561e44046530c"
   },
   "packs": [
