@@ -101,7 +101,7 @@ images:
   sim_real_eval:
     repo: dhdevspace/auto_mns
     tag: "sim-real-eval-worker-v1.0.0-rc"
-    digest: sha256:37f5dda6d343c859969e0f68a82cd3aa63b5dfcb97279ec6bb0660f58eef9ef5
+    digest: sha256:309b50872864300a4762694ee53c022f83e24ffd4764ac187375ed16dd1456ae
     channel: pinned
     purpose: >-
       Sim-to-real evaluation worker, the published sim_real_eval role
@@ -154,23 +154,23 @@ images:
   v1_runtime_host:
     repo: dhdevspace/auto_mns
     tag: "tevv-runtime-host-v1.0.0-rc"
-    digest: sha256:c235f44777ff9b544960a166053c61178e1c1219d968b228fad238b4f661f302
+    digest: sha256:d2ab6538a3d0e861a30929190ea9ce0b5859d6940ab147356e83c47d8e033600
     channel: pinned
     purpose: >-
-      MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim release/v1.0.0-next a7feed0d5074, dirty=false): the shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc2 plugin, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
+      MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim release/v1.0.0-next d9f44b8ab7d6, dirty=false): the shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc3 pin, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
 
   v1_authoring:
     repo: dhdevspace/auto_mns
     tag: "mns-authoring-v1.0.0-rc"
-    digest: sha256:05db21352165644be84041f5439df113a6b6b4b49e2c96f687db6be6b82c8d97
+    digest: sha256:b7915ef54cf98ce9945ccc5cb40aa2eb7d88bbc8cecbd63b575a68b1a9ea5a48
     channel: pinned
     purpose: >-
-      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0-next 6a4bce519dd2), built in release mode from the v1_runtime_host rc (labels tevv.authoring.host_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins and UDS come from the host's TEVV-Airsim commit a7feed0d5074; SDK 1.0.0rc2. Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
+      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0-next 8ac0933c23ea), built in release mode from the v1_runtime_host rc (labels tevv.authoring.host_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins and UDS come from the host's TEVV-Airsim commit d9f44b8ab7d6; SDK 1.0.0rc3; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
 
   v1_stacks:
     repo: dhdevspace/auto_mns
     tag: "mns-stacks-v1.0.0-rc"
-    digest: sha256:7f1574cf9e71c2f94fa573d0597a7614a8730828f9cbfeb3b65236d0f4f6f447
+    digest: sha256:fcfc8b45e34277455eaeb824215558589f38f648c5b33926e98336452d1178aa
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -184,7 +184,7 @@ images:
   v1_packs:
     repo: dhdevspace/auto_mns
     tag: "mns-packs-v1.0.0-rc"
-    digest: sha256:0eac2fbf007b797489b5dcfe6edabdf1c9aa4d5347bbe46685ff3a44bb7954e9
+    digest: sha256:33f9c19f13af88dee65bf53bb0db2271d1684f8a4ac923019cec2c293939c6ce
     channel: pinned
     purpose: >-
       mns-packs (TEVV-Content-Pack-SDK docker/Dockerfile, ENTRYPOINT
@@ -196,7 +196,7 @@ images:
   v1_runtime_host_kit:
     repo: dhdevspace/auto_mns
     tag: "tevv-runtime-host-kit-v1.0.0-rc"
-    digest: sha256:e10b9acbd01f1c76c61bef99454b0b940e4e1247c653956a6bfacb97045ff913
+    digest: sha256:6deff9c383e521091e2bb7b69b9c9ea74a40e2bf49ca4d7d1a240dff499660f7
     channel: pinned
     pull: false
     purpose: >-
@@ -232,8 +232,8 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-ga14c417"
-    digest: sha256:f20e38c976bf8dc6ef06741330735398784f356475a15aba533940bb4a735cfd
+    tag: "tevv-web-dashboard-backend-v1.0.0-g7debc04"
+    digest: sha256:e65606c8d2b8e16d0e4c0da062b5dc1eb2c380c4ab146a8c01dbc214d73c67d9
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
@@ -241,8 +241,8 @@ images:
     # MNS_PACKS_IMAGE_DEFAULT; tools/images.sh baked checks the first two.
     bakes: [v1_stacks, v1_authoring]
     purpose: >-
-      MnS 1.0 dashboard backend (TEVV-Web-Dashboard release/v1.0.0-next a14c417):
-      every stack lifecycle, recording, campaign and topic call goes through
+      MnS 1.0 dashboard backend (TEVV-Web-Dashboard release/v1.0.0-next 7debc04):
+      REST takeoff reports success only once armed and climbed (pilot from integration 8621eb2); every stack lifecycle, recording, campaign and topic call goes through
       mns-stacks and pack status through mns-packs, both as sibling containers
       (no docker compose in the image). Built with --candidate-lock
       packs/v1.0.0.lock.json, so the baked defaults are the v1.0.0-rc authoring,
@@ -250,14 +250,14 @@ images:
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-ga14c417"
-    digest: sha256:749a2091277e05c950ff665a42f55e218577f78159a66be6b5423d299c8f0ac8
+    tag: "tevv-web-dashboard-frontend-v1.0.0-g7debc04"
+    digest: sha256:f72829c86938f558f6511b5a38a8836e82a8be946b6dddb4d97a7afc8a8d743a
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
-      a14c417), built with the backend above; it bakes no pins.
+      7debc04), built with the backend above; it bakes no pins.
 
 consumers:
   # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env
