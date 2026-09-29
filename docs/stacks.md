@@ -1,73 +1,149 @@
-# The product shell from a terminal (`product.sh`)
+# Headless: fly, author and campaign from a terminal
 
-`./product.sh` runs the product-shell image with this repository mounted, so
-everything the dashboard does to `scenarios/` and `generated/` is also reachable
-from a terminal, and a stack generated in one shows up in the other. The browser
-product shell it starts is the visual ScenarioLab authoring surface; for the
-full loop in a browser use `make dashboard` and the [User Guide](USER_GUIDE.md).
+Everything the dashboard does has a `make` target that runs the same images the
+same way, so a stack generated in one shows up in the other and a bag recorded
+by either has one layout. For the full loop in a browser, use `make dashboard`
+and the [User Guide](USER_GUIDE.md).
+
+| Task | Dashboard | Headless |
+| --- | --- | --- |
+| Check packs | preflight | `make pack-status` |
+| Author | editor window | `make author [SCENARIO=<name>]` |
+| Fly one scenario | Fly | `make fly SCENARIO=<name> [RECORD=1]` |
+| Stop a stack | stack down | `make stop [STACK=generated/<name>]` |
+| Record | Record button (`mns-stacks record`) | `RECORD=1` |
+| Campaign | campaign page | `make campaign CAMPAIGN=<name>` |
+| Anything else | | `make stacks ARGS="<mns-stacks command> ..."` |
+| Is the machine ready | | `make doctor` |
 
 ## Requirements
 
-Requirements: Docker Engine with Compose, Python 3 with `pip install -r tools/requirements.txt` (`./product.sh setup`, `doctor`, and `pull-images` resolve their image list through `tools/images.sh`, which needs PyYAML), an NVIDIA-capable runtime for Unreal images, X11 when opening ScenarioLab, and a Docker login that can pull the private `dhdevspace/auto_mns` images. The product wrapper mounts the active Docker config read-only so generated stacks can pull their pinned runtime dependencies.
+Docker Engine with Compose, Python 3 with PyYAML (`./setup.sh` checks it), an
+NVIDIA-capable runtime for the Unreal images, a desktop session (X11) for
+ScenarioLab and the simulator window, and a Docker login that can pull the
+private `dhdevspace/auto_mns` images. Run `./setup.sh` and `./download-packs.sh`
+first, as for the dashboard. `make doctor` checks Docker, Compose and that every
+image the channel pins is on this machine; it changes nothing and pulls nothing.
 
-## Start and stop
-
-```bash
-./product.sh setup
-./product.sh doctor
-./product.sh start
-```
-
-Open <http://127.0.0.1:8760> (`MNS_SCENARIO_LAUNCHER_PORT`; it was 8765 until the Foxglove websocket claimed that port).
-
-Stop the browser shell with:
+## Fly one scenario
 
 ```bash
-./product.sh stop
+make fly SCENARIO=vio-reference                  # generate, fly until the mission is done, stop
+make fly SCENARIO=vio-reference RECORD=1         # ... and record a bag
+make fly SCENARIO=my-scene ARGS="--timeout 900"  # extra `mns-stacks run` flags
 ```
 
-ScenarioLab launches mount authoring-only AirSim settings that select `ComputerVision` mode with no AirSim vehicles, preventing the vehicle-type prompt from blocking the authoring UI.
+`SCENARIO` is a folder under `scenarios/` (what ScenarioLab exports), another
+folder, or a `ScenarioSpec.yaml`. `make fly`:
+
+1. brings the packs to the lock's versions, the same check `make dashboard` runs
+   (`ensure-demo-packs`);
+2. runs `mns-stacks generate <scenario folder> --out generated/<name>` (no Docker
+   socket, `--network=none`, as you);
+3. runs `mns-stacks run --stack generated/<name> [--record] --until-done`, which
+   verifies the stack's resolved packs, brings the stack up, waits for the run
+   director's mission-done signal, and stops it (with `finalize_metrics`).
+
+With `RECORD=1` the bag goes to `<runs dir>/<run id>/bag` (`runs/` in this
+checkout unless `TEVV_RUNS_DIR` says otherwise), recorded by the bridge
+container exactly as the dashboard's Record button records it, so
+`sim_real_eval` and the dashboard's replay read it the same way.
+
+If a run is interrupted, `make stop` stops the last stack `make fly` started
+(`make stop STACK=generated/<name>` names another). It always runs
+`finalize_metrics` first; `docker compose down` still runs if that fails.
+
+## Author
+
+```bash
+make author                        # ScenarioLab, empty
+make author SCENARIO=my-scene      # open scenarios/my-scene
+make author-stop                   # close it
+```
+
+`make author` stages the packs for ScenarioLab (as `make dashboard` does) and
+starts the authoring image with exactly the `docker run ... editor` command the
+dashboard's editor window uses: the same container name, so only one editor
+runs whichever started it, exports to `scenarios/<name>/`, the staged packs
+from `.mns/v1/authoring-data`, and the desktop's X11 cookie. Run it from a
+terminal on the desktop. `MNS_AUTHORING_DOCKER_GPU_ARGS` (default `--gpus all`)
+and `MNS_AUTHORING_DOCKER_ARGS` add `docker run` flags.
+
+## Campaigns
+
+```bash
+make campaign                               # the reference campaign (scenarios/vio-reference)
+make campaign CAMPAIGN=my-test              # yours
+make campaign ARGS="status vio-reference"   # any `mns-stacks campaign` subcommand
+make campaign-status CAMPAIGN=my-test       # one row per flight
+```
+
+See [Campaigns](campaigns.md).
+
+## Any mns-stacks command
+
+`make stacks ARGS="..."` passes its arguments straight to `mns-stacks`:
+
+```bash
+make stacks ARGS=--help
+make stacks ARGS="status --stack generated/my-scene --json"
+make stacks ARGS="logs --stack generated/my-scene --tail 200"
+make stacks ARGS="record start --stack generated/my-scene"
+make stacks ARGS="check"
+```
+
+Every command takes `--json`; the result then comes in one envelope,
+`{"schema": "mns.stacks_cli.v1", "command", "ok", "exit_code", "result",
+"warnings", "error"}`, with exit code 0 (ok), 1 (a blocking finding) or 2 (the
+command could not run).
+
+## How the targets run mns-stacks
+
+`tools/mns-stacks.sh` is the one wrapper all of them use (and
+`tools/images.sh drift` and `osmo/campaign.py`). It runs `$MNS_STACKS_IMAGE` as
+a sibling container, the way the dashboard does:
+
+- this checkout, the runs directory, and any pack store, image-set file or
+  contract outside the checkout are mounted **at their host paths**, and
+  mns-stacks is told them (`MNS_WORKSPACE_ROOT`, `SIM2REAL_RUNS_DIR`), so every
+  bind mount it hands Compose resolves on the host;
+- the Docker socket (and your Docker login, read-only) is mounted only for the
+  commands that drive containers: `run`, `stop`, `status`, `logs`, `record`,
+  `check`, and `campaign run|status|watch|cancel`. Everything else runs with
+  `--network=none` as you, so generated files are yours.
+
+`make` exports the selected channel's images and roots (`CHANNEL=`,
+`IMAGE_MODE=`), as it does for the dashboard. To run a local build instead of a
+pin, put `MNS_STACKS_IMAGE=mns-stacks:local-test` (or `MNS_PACKS_IMAGE`,
+`MNS_AUTHORING_IMAGE`) in `./.env`; the wrapper prints a note that it is using
+the override.
 
 ## Setup and the image cache
 
-`setup` creates the local content-addressed PackStore, refreshes the 14 immutable production pins, and then refreshes the 14 mutable development tags used by `make dashboard`. This is the deliberate operation that replaces matching local development tags with their published versions; normal dashboard starts never do that. No product configuration uses `local/...` repository names or per-level runtime images.
-
-If Docker Hub is temporarily unreachable, `setup` retries each exact pull three times with backoff. Once all pins are cached, `./product.sh doctor` confirms the active set without contacting the registry. Generated stacks default to `MNS_IMAGE_PULL_POLICY=missing`, so they use cached, digest-verified images and pull only when a pin is absent. Set it to `always` only for a deliberate per-run registry check; use `./product.sh pull-images` for the normal refresh workflow.
-
-Use the pull helper directly when you only want to refresh the image cache:
-
-```bash
-./product.sh pull-images                 # active product set
-./product.sh pull-images --dry-run       # print exact refs without pulling
-./product.sh pull-images --development    # explicitly refresh dashboard development tags
-./product.sh pull-images --all-catalog   # optional catalog entries too
-./product.sh pull-images --refresh-moving
-```
-
-`--refresh-moving` runs `tools/images.sh bump --channel moving`: it advances every `channel: moving` row — the dashboard, autopilot, QGroundControl and sim-real-eval images, whose tags are republished in place — to whatever digest that tag resolves to now, regenerates the image files, and then pulls them. It deliberately does **not** touch the v1 release rows: those are `channel: pinned`, and `bump` refuses pinned rows so a release pin only ever moves by hand. Because it rewrites `images/catalog.yaml`, it cannot be combined with `--dry-run`; use `tools/images.sh report` to preview instead. Commit and review those catalog changes before using them for a release. The normal command never silently changes a digest.
-
-The v1 image set contains ScenarioLab authoring, the product shell, the stack generator, and one generic TEVVRuntimeHost. Customer setup only pulls images; it never builds source. MnSPackaging is upstream content-production tooling and is not part of this consumer image set.
-
-Every image reference in this repository is authored in `images/catalog.yaml` and rendered by `tools/images.sh sync`. Pins use `repo:tag@sha256:...`: the digest is the release contract and the tag keeps the reference readable. `tools/images.sh report` shows staleness, `bump` rewrites both parts, and `verify` is the CI drift gate. See [Image operations](images.md), [ADR 0002](adr/0002-one-image-catalog.md), and the platform [image-versioning ADR](https://github.com/DinoHub/MnS-Integration-Platform/blob/main/docs/adr/0001-image-versioning-and-digest-pinning.md).
-
-## Headless CLI
-
-The same product shell image exposes equivalent CLI actions:
+`./setup.sh` pulls every pinned image the channel needs; `make doctor` confirms
+the set without contacting the registry. Generated stacks default to
+`MNS_IMAGE_PULL_POLICY=missing`, so they use cached, digest-verified images and
+pull only when a pin is absent.
 
 ```bash
-./product.sh cli check
-./product.sh cli runtime --scenario /workspace/scenarios/<scenario> --out /workspace/generated/<scenario> --no-run
-./product.sh cli run-stack --stack /workspace/generated/my_scenario --detach
-./product.sh cli status --stack /workspace/generated/my_scenario
-./product.sh cli logs --stack /workspace/generated/my_scenario
-./product.sh cli stop --stack /workspace/generated/my_scenario
+tools/pull-all-images.sh                  # refresh the active product set (make pull-images)
+tools/pull-all-images.sh --dry-run        # print exact refs without pulling
+tools/pull-all-images.sh --development    # refresh the tags make dashboard's development mode uses
+tools/pull-all-images.sh --all-catalog    # optional catalog entries too
+tools/pull-all-images.sh --refresh-moving
 ```
 
-Paths passed to the container must be under this repository, mounted as `/workspace`.
+`--refresh-moving` runs `tools/images.sh bump --channel moving`: it advances
+every `channel: moving` row (QGroundControl and sim-real-eval until their
+immutable v1.0.0 tags are pinned) to whatever digest that tag resolves to now,
+regenerates the image files, and then pulls them. It does **not** touch the v1
+release rows: those are `channel: pinned`, and `bump` refuses pinned rows so a
+release pin only moves by hand. Because it rewrites `images/catalog.yaml`, it
+cannot be combined with `--dry-run`; use `tools/images.sh report` to preview.
 
-Nothing records a bag on this path; the User Guide's
-[Running stacks without the dashboard](USER_GUIDE.md#running-stacks-without-the-dashboard)
-shows how to record one from your own container.
+Every image reference is authored in `images/catalog.yaml` and rendered by
+`tools/images.sh sync`. See [Changing a container image](images.md) and
+[ADR 0002](adr/0002-one-image-catalog.md).
 
-Content packs for this path are installed with `./download-packs.sh` or the
-installer underneath it; see [packs/README.md](../packs/README.md#installing).
+Content packs are installed with `./download-packs.sh` or the installer
+underneath it; see [packs/README.md](../packs/README.md#installing).

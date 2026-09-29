@@ -5,8 +5,10 @@ file next. Read this before any other page under `docs/`: the others each go
 deep on one box here.
 
 This page is about the **generated** path -- a ScenarioSpec turned into a
-stack by the platform's generator image, which is the only path this
-repository ships.
+stack by `mns-stacks generate`, which is the only path this repository ships.
+Nothing here runs from source: every box is an image pinned in
+`images/catalog.yaml`, and every pack a version pinned in
+`packs/v1.0.0.lock.json`.
 
 ## The actors
 
@@ -15,11 +17,11 @@ repository ships.
 | **You** | a browser on `http://localhost:3001`, or a terminal in this repository | -- |
 | **dashboard-backend** | FastAPI, `http://localhost:8001`. The only thing in the loop that both listens to you and can run docker. Runs in *distribution mode*: no platform checkout, no platform Python. | `make dashboard` (`docker-compose-dashboard.yml`) |
 | **dashboard-frontend**, **dashboard-lichtblick** | the UI and the topic viewer | `make dashboard` |
-| **product shell** | the platform's launcher, baked into `MNS_PRODUCT_SHELL_IMAGE`. Same code the dashboard reaches through the generator image and `tevv-campaign`; a second front door without a browser. | `./product.sh` |
-| **generator** | `MNS_STACK_GENERATOR_IMAGE`, run once per Generate. Reads a ScenarioSpec, writes a stack directory, exits. | the backend, or `./product.sh cli` |
-| **ScenarioLab** | the Unreal editor, `MNS_AUTHORING_IMAGE`, on your X display | the backend's Author phase |
-| **a generated stack** | runtime host (Unreal + AirSim), ROS 2 bridge, autopilot SITL, optional VIO estimator and sim-real-eval worker -- `generated/<name>/compose.yml` | the backend's Launch, or `./product.sh cli` |
-| **ros2-tools** | one container from the bridge image, outside any compose project. Foxglove websocket for Lichtblick; bag recording execs into it. | the backend, when the bridge image changes |
+| **mns-stacks** | `MNS_STACKS_IMAGE` (MnS-Integration-Platform `platform/stacks`): `generate` a stack from a ScenarioSpec (no Docker socket), then `run`/`stop`/`status`/`logs`, `record start/stop`, `campaign ...` (with the socket). One command per call; it exits. | the backend, or `make fly`/`stop`/`campaign`/`stacks` through `tools/mns-stacks.sh` |
+| **mns-packs** | `MNS_PACKS_IMAGE` (TEVV-Content-Pack-SDK): `install` a pack into the store, `stage-authoring --lock` it for ScenarioLab, `verify`, `status` | `tools/install-demo-packs.sh`, `tools/stage-authoring-packs.sh` (behind `./download-packs.sh`, `make dashboard` and the Content phase) |
+| **ScenarioLab** | the Unreal editor, `MNS_AUTHORING_IMAGE`, on your X display | the backend's Author phase, or `make author` (the same `docker run`) |
+| **a generated stack** | runtime host (Unreal + AirSim), ROS 2 bridge, autopilot SITL, optional VIO estimator and sim-real-eval worker -- `generated/<name>/` | `mns-stacks run` |
+| **ros2-tools** | one container from the bridge image, outside any compose project. Foxglove websocket for Lichtblick, and bag replay. | the backend, when the bridge image changes |
 
 ```mermaid
 flowchart LR
@@ -29,23 +31,25 @@ flowchart LR
     BE["dashboard-backend :8001<br/>docker.sock · ~/.docker · this repo at its own path"]
     LB["lichtblick"]
   end
-  PS["./product.sh<br/>product-shell image"]
-  GEN["generator image<br/>one run per Generate"]
+  MK["make fly · stop · author · campaign<br/>(tools/mns-stacks.sh, tools/author.sh)"]
+  STK["mns-stacks<br/>generate · run · stop · record · campaign"]
+  PK["mns-packs<br/>install · stage-authoring --lock"]
   SL["ScenarioLab<br/>X display"]
-  subgraph STACK["generated/&lt;name&gt;/compose.yml"]
+  subgraph STACK["generated/&lt;name&gt;/"]
     RH["runtime host"]
-    BR["ros2 bridge"]
+    BR["ros2 bridge<br/>(records the bag)"]
     AP["autopilot"]
     VIO["vio estimator"]
   end
-  RT["ros2-tools<br/>foxglove ws · bag record"]
+  RT["ros2-tools<br/>foxglove ws · replay"]
   YOU --> FE --> BE
-  YOU --> PS
-  BE -- "docker run" --> GEN
-  BE -- "docker run" --> SL
-  BE -- "compose up" --> STACK
-  PS -- "same code" --> GEN
-  PS -- "compose up" --> STACK
+  YOU --> MK
+  BE -- "docker run" --> STK
+  BE -- "docker run" --> PK
+  BE -- "docker run editor" --> SL
+  MK -- "docker run" --> STK
+  MK -- "docker run editor" --> SL
+  STK -- "compose up / down" --> STACK
   BE -- "docker run" --> RT
   BR -- "published topics" --> RT --> LB
 ```
@@ -55,10 +59,14 @@ this repository:
 
 | Mount | Why |
 | --- | --- |
-| `/var/run/docker.sock` | it drives docker: runs the generator, `compose up`s stacks, creates `ros2-tools` |
+| `/var/run/docker.sock` | it drives docker: runs mns-stacks, mns-packs and ScenarioLab, creates `ros2-tools` |
 | `${DOCKER_CONFIG:-$HOME/.docker}` at `/root/.docker`, read-only | a pull uses **this container's** credentials, not your shell's ([details](dashboard-images.md#6-credentials-the-socket-alone-is-not-enough)) |
-| `${MSRS_ROOT:-$PWD}` at the **identical** host path | every path the backend writes is valid for the generator container and for compose on the host, unchanged |
-| `${TEVV_RUNS_DIR:-./runs}` (in this checkout) at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports |
+| `${MSRS_ROOT:-$PWD}` at the **identical** host path | every path the backend hands mns-stacks is a host path, valid for Compose on the host, unchanged |
+| `${TEVV_RUNS_DIR:-./runs}` (in this checkout) at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports; the backend passes its host path to mns-stacks |
+
+The headless targets follow the same rule: `tools/mns-stacks.sh` mounts this
+checkout and the runs directory at their host paths, and the Docker socket
+only for the commands that drive containers. See [Headless](stacks.md).
 
 ## What lands on disk
 
@@ -69,48 +77,47 @@ phases without redoing them: phase completion is computed from what exists.
 | Path | Written by | Read by |
 | --- | --- | --- |
 | `images/catalog.yaml` | you (`tools/images.sh bump`, or by hand) | `tools/images.sh sync` -- and nothing else, directly |
-| `images/*.generated.env`, `images/image-set*.generated.yaml`, `product-images.env` | `tools/images.sh sync`; committed | `make dashboard` (env files), the generator (`MNS_IMAGE_SET_FILE`) |
-| `packs/*.lock.json` | the release | `tools/install-demo-packs.sh` |
-| `.mns/<channel>/pack-store/` | `./download-packs.sh` (or `make dashboard MNS_DEMO_PACKS=...`) -> the product-shell image's installer | the generator, ScenarioLab (staged copy), the runtime host |
-| `.mns/<channel>/authoring-data/ResolvedPacks/` | `tools/stage-authoring-packs.sh` | ScenarioLab |
-| `scenarios/<name>/ScenarioSpec.yaml` (+ `includes:` files) | ScenarioLab export, or the Generate form; `tevv-campaign init` | the generator; `CampaignSpec.scenario` |
+| `images/*.generated.env`, `images/image-set*.generated.yaml` | `tools/images.sh sync`; committed | `make` (env files), mns-stacks (`MNS_IMAGE_SET_FILE`) |
+| `packs/*.lock.json` | the release (`make pack-lock`) | `tools/install-demo-packs.sh`, `mns-packs stage-authoring --lock` |
+| `.mns/<channel>/pack-store/` | `./download-packs.sh` (or the Content phase) -> `mns-packs install` | mns-stacks, ScenarioLab (staged copy), the runtime host |
+| `.mns/<channel>/authoring-data/ResolvedPacks/` | `tools/stage-authoring-packs.sh` -> `mns-packs stage-authoring --lock` | ScenarioLab |
+| `scenarios/<name>/ScenarioSpec.yaml` (+ `includes:` files) | ScenarioLab export, or the Generate form; `mns-stacks campaign init` | `mns-stacks generate`; `CampaignSpec.scenario` |
 | `scenarios/<name>/ScenarioSpec.baseline.yaml` | the backend, a snapshot of the authored spec before the form's sensor edits | the backend, to show what the form changed |
 | `scenarios/<name>/phase-state.json` | the backend: the `prerun` block (ROS 2 and Metrics phases) and the Author-skip flag | the backend's Launch |
-| `scenarios/<name>/CampaignSpec.yaml`, `routes/*.yaml` | you, from `scenarios/vio-reference/` or `tevv-campaign init` | `tevv-campaign` |
-| `generated/<name>/compose.yml`, `.env` | the generator; gitignored | `docker compose up` -- by the backend or the product shell |
-| `generated/<name>/config/topic_names.yaml`, `config/sim2real/topics.yaml`, `config/vio/` | the generator | the bridge, the estimator, the recorder, sim-real-eval. **The only place topic names may be read from.** |
-| `<runs>/<name>/<bag>/`, `<runs>/<name>/run.json` | `ros2-tools`, driven by the backend's recorder | Analysis, sim-real-eval, the integration bundle |
-| `<runs>/<name>/validation.json` | `validate_recording` (a campaign step, or `make validate`) | the integration bundle, `tevv-campaign status` |
-| `<runs>/_reports/*.json` | `sim-real-eval` | the Analysis phase, `tevv-campaign status` |
-| `<campaigns>/<id>/manifest.json`, `progress.jsonl`, `campaign.lock` | `tevv-campaign run` | `tevv-campaign status|watch|cancel`, `/api/campaign/jobs/*` |
+| `scenarios/<name>/CampaignSpec.yaml`, `routes/*.yaml` | you, from `scenarios/vio-reference/` or `mns-stacks campaign init` | `mns-stacks campaign` |
+| `generated/<name>/` (compose file, `.env`, `config/`) | `mns-stacks generate`; gitignored | `mns-stacks run/stop/status` |
+| `generated/<name>/config/topic_names.yaml`, `config/sim2real/topics.yaml`, `config/vio/` | `mns-stacks generate` | the bridge, the estimator, the recorder, sim-real-eval. **The only place topic names may be read from.** |
+| `<runs>/<run id>/bag/`, `<runs>/<run id>/run.json` | `mns-stacks record` / `run --record` (the bridge container records) | Analysis, replay, sim-real-eval, the integration bundle |
+| `<runs>/<name>/validation.json` | `validate_recording` (a campaign step) | the integration bundle, `mns-stacks campaign status` |
+| `<runs>/_reports/*.json` | `sim-real-eval` | the Analysis phase, `mns-stacks campaign status` |
+| `<campaigns>/<id>/campaign_manifest.json`, `progress.jsonl`, `campaign.lock` | `mns-stacks campaign run` | `campaign status|watch|cancel`, `/api/campaign/jobs/*` |
 
 ## The phases, one at a time
 
 The dashboard's stepper is the order things have to happen in. Each row: what
-you do, which endpoint the frontend calls, what appears on disk, which actor
-does the work.
+you do, what appears on disk, which actor does the work.
 
-| Step | You | Endpoint | On disk afterwards | Who acts |
-| --- | --- | --- | --- | --- |
-| **0 Content** | pick the engine line; install missing level and object packs | `/api/content` | `.mns/<channel>/pack-store/`, `authoring-data/` | backend runs the product-shell image's installer |
-| **1a Author** | open ScenarioLab, build the world, export | `/api/scenario/editor`, `/api/product-shell` | `scenarios/<name>/ScenarioSpec.yaml` | ScenarioLab on your display |
-| **1b Generate** | sensors, cameras, vehicle in the form; Generate | `POST /api/scenario/generate` | `ScenarioSpec.baseline.yaml`; the merged spec; `generated/<name>/` | backend writes the spec, runs the **generator** once |
-| **1c ROS 2** | domain id, namespace, which topics a bag records, autostart | saved into `phase-state.json` `prerun` | `scenarios/<name>/phase-state.json` | backend |
-| **1d Metrics** | what the sim logs | same block | same file | backend |
-| **2 Launch** | Up | `/api/scenario` lifecycle | containers from `generated/<name>/compose.yml`; a bag under `<runs>/` if autostart | backend: `compose up`, then the recorder execs into `ros2-tools` |
-| **3 Runtime** | arm, take off, hover; tune sensors live; teleop; watch topics | `/api/flight-controls`, `/api/sensor-controls`, `/api/teleop`, `/api/run-state`, `/api/stacks` | `settings.json` edits for hot sensor tuning; `/run_state` published | backend to the autopilot and AirSim; Lichtblick from `ros2-tools` |
-| **4 Analysis** | run a Sim2Real evaluation; read VIO results; export telemetry; download the integration bundle | `/api/sim2real`, `/api/vio-stress`, `/api/telemetry`, `/api/exports` | `<runs>/_reports/`; CSV/Parquet exports | backend shells out to `sim-real-eval`; reads `metric_results` |
+| Step | You | On disk afterwards | Who acts |
+| --- | --- | --- | --- |
+| **0 Content** | pick the engine line; install missing level and object packs | `.mns/<channel>/pack-store/`, `authoring-data/` | the backend runs `tools/install-demo-packs.sh` (mns-packs) |
+| **1a Author** | open ScenarioLab, build the world, export | `scenarios/<name>/ScenarioSpec.yaml` | ScenarioLab on your display |
+| **1b Generate** | sensors, cameras, vehicle in the form; Generate | `ScenarioSpec.baseline.yaml`; the merged spec; `generated/<name>/` | the backend writes the spec, runs `mns-stacks generate` once |
+| **1c ROS 2** | domain id, namespace, which topics a bag records, autostart | `scenarios/<name>/phase-state.json` | backend |
+| **1d Metrics** | what the sim logs | same file | backend |
+| **2 Launch** | Up | the stack's containers; a bag under `<runs>/` if autostart | `mns-stacks run` (it verifies the stack's resolved packs first), then `mns-stacks record start` |
+| **3 Runtime** | arm, take off, hover; tune sensors live; teleop; watch topics | `settings.json` edits for hot sensor tuning; `/run_state` published | backend to the autopilot and AirSim; Lichtblick from `ros2-tools` |
+| **4 Analysis** | run a Sim2Real evaluation; read VIO results; export telemetry; download the integration bundle | `<runs>/_reports/`; CSV/Parquet exports | backend shells out to `sim-real-eval`; reads `metric_results` |
+| **Down** | Down | the stack's final metrics under `<runs>/` | `mns-stacks stop` (always `finalize_metrics` first) |
 
 Two rules make the table work:
 
-1. **The backend never imports platform code.** It reaches the platform three
-   ways only: run the generator image, `compose up` what the generator wrote,
-   or exec a CLI (`sim-real-eval`, `tevv-campaign`) whose `--json` output is
-   the API. The contracts package is not in the backend image either, so
-   spec rules are validated by the generator, not the form.
-2. **The backend never starts a stack image itself.** The generator writes the
-   pins into `generated/<name>/.env`; compose pulls. Which pins, and why a
-   generated stack re-pulls or does not, is
+1. **The backend never imports platform or SDK code.** It reaches them by
+   running their images: `mns-stacks` and `mns-packs` with `--json` (the
+   `mns.stacks_cli.v1` / `mns.packs_cli.v1` envelopes are the API) and
+   `sim-real-eval`. Spec rules are validated by `mns-stacks`, not the form.
+2. **The backend never starts a stack image itself.** `mns-stacks generate`
+   writes the pins into `generated/<name>/.env`; `mns-stacks run` brings them
+   up. Which pins, and why a generated stack re-pulls or does not, is
    [How the dashboard gets its images](dashboard-images.md).
 
 ```mermaid
@@ -118,51 +125,51 @@ sequenceDiagram
   actor You
   participant FE as frontend
   participant BE as backend
-  participant GEN as generator image
-  participant D as docker (host)
+  participant MS as mns-stacks (sibling)
   participant ST as generated stack
   participant RT as ros2-tools
   You->>FE: Generate (sensors, cameras, vehicle)
   FE->>BE: POST /api/scenario/generate
   BE->>BE: scenarios/n/ScenarioSpec.baseline.yaml, merged ScenarioSpec.yaml
-  BE->>D: docker run MNS_STACK_GENERATOR_IMAGE -v repo:repo -e MNS_IMAGE_SET_FILE -e MNS_PACK_STORE_ROOT
-  D->>GEN: start
-  GEN->>GEN: generated/n/{compose.yml,.env,config/}
-  GEN-->>BE: exit 0
+  BE->>MS: generate scenarios/n --out generated/n (no socket, --network=none)
+  MS-->>BE: {stack_dir, services, resolved_packs}
   You->>FE: ROS 2 / Metrics
   FE->>BE: prerun block
   BE->>BE: scenarios/n/phase-state.json
   You->>FE: Launch
-  FE->>BE: up
-  BE->>D: docker compose -f generated/n/compose.yml up
-  D->>ST: runtime host, bridge, autopilot, estimator
-  BE->>RT: exec ros2 bag record (prerun.record_topics)
+  BE->>MS: run --stack generated/n (socket)
+  MS->>ST: verify resolved packs, compose up
+  BE->>MS: record start --stack generated/n
+  MS->>ST: ros2 bag record in the bridge -> runs/<run id>/bag
   ST-->>RT: published topics
   RT-->>You: Lichtblick (foxglove ws)
-  RT->>RT: <runs>/n/<bag>/, run.json
+  You->>FE: Down
+  BE->>MS: stop --stack generated/n
+  MS->>ST: finalize_metrics, compose down
 ```
 
 ## Without the browser: the same loop from a terminal
 
 ```bash
-./product.sh setup                   # exact pins pulled, packs installed
-./product.sh doctor                  # every channel ref present?
-./product.sh cli runtime scenarios/<name>      # generate + up one stack
-./product.sh start                   # the launcher's own HTTP UI on :8760
+make doctor                                   # Docker, Compose, every pinned image present?
+make author                                   # ScenarioLab, as the dashboard opens it
+make fly SCENARIO=<name> RECORD=1             # generate, fly until done, stop; bag in runs/
+make stop                                     # if a fly was interrupted
+make stacks ARGS="status --stack generated/<name> --json"
 ```
 
-`product.sh` runs the product-shell image with this repository mounted at its
-own path -- the same mount rule the backend uses -- so `scenarios/` and
-`generated/` are shared between the two front doors. A stack generated from
-the dashboard shows up in the shell, and the other way round.
+The targets run the same images with the same mounts as the dashboard, so
+`scenarios/`, `generated/` and the runs directory are shared between the two:
+a stack generated from the dashboard can be stopped from a terminal, and a
+headless bag replays in the dashboard. Details: [Headless](stacks.md).
 
 ## Campaigns: the loop, N times, scored
 
 A campaign is the experiment *over* a scenario: the same stack flown once per
 variant and repeat with one thing different each time, every flight recorded,
-gated and scored. The generator never sees a CampaignSpec -- each run is
-materialised into a complete ScenarioSpec first, so any single run reproduces
-on its own.
+gated and scored. `mns-stacks generate` never sees a CampaignSpec -- each run
+is materialised into a complete ScenarioSpec first, so any single run
+reproduces on its own.
 
 ```
 scenarios/vio-reference/
@@ -180,40 +187,40 @@ make campaign ARGS="preflight vio-reference"   # + disk, ports, images
 make campaign-status CAMPAIGN=vio-reference    # one row per flight
 ```
 
-`make campaign` is `./product.sh cli campaign ...`, so it is `tevv-campaign`
-inside the product-shell image, against `scenarios/` here. Start your own with
-`make campaign ARGS="init my-test"`, which scaffolds from the reference.
+`make campaign` is `mns-stacks campaign ...` from the pinned image, against
+`scenarios/` here. Start your own with `make campaign ARGS="init my-test"`,
+which scaffolds from the reference.
 
 ```mermaid
 flowchart TD
   A["CampaignSpec.yaml"] --> B["validate<br/>schema · route · calibration vs rig"]
   B --> C["preflight<br/>disk · ports · images"]
   C --> D["one ScenarioSpec per run"]
-  D --> E["generator -> stack -> flown on the route"]
+  D --> E["mns-stacks generate -> run --record --until-done"]
   E --> F["validate_recording<br/>runs/&lt;key&gt;/validation.json"]
   F --> G["sim-real-eval<br/>reports/&lt;key&gt;.json"]
   G --> H["status<br/>manifest + validation + report, one row per flight"]
   E -. "progress.jsonl · campaign.lock" .-> H
 ```
 
-The dashboard's `/api/campaign/*` endpoints shell out to the same
-`tevv-campaign` binary (`TEVV_CAMPAIGN_BIN`) and return its `--json`. A
-campaign holds the GPU, the simulator ports and the X display for hours, so
-one runs at a time: the lock file refuses a second, and `cancel` is
-cooperative -- the current flight is torn down cleanly and its bundle written.
+The dashboard's `/api/campaign/*` endpoints run the same `mns-stacks
+campaign ... --json`. A campaign holds the GPU, the simulator ports and the X
+display for hours, so one runs at a time: the lock file refuses a second, and
+`cancel` is cooperative -- the current flight is torn down cleanly and its
+bundle written.
 
 ## Where each part is documented
 
 | Part | Page |
 | --- | --- |
 | this page: the loop, the files, the actors | you are here |
-| the image catalog, channels, `sync`/`verify`/`bump` | [Changing a container image](images.md) |
+| `make fly`, `make author`, `make campaign`, `make stacks`, `make doctor` | [Headless](stacks.md) |
+| the image catalog, channels, `sync`/`verify`/`bump`, pending digests, the host pin | [Changing a container image](images.md) |
 | `make dashboard` step by step, `IMAGE_MODE`, precedence, the credentials mount, the pull-policy override, `ros2-tools` | [How the dashboard gets its images](dashboard-images.md) |
 | why one catalog | [ADR 0002](adr/0002-one-image-catalog.md) |
 | channels, the pack store, locks, installing and removing packs | [packs/README.md](../packs/README.md) |
-| `product.sh` and the headless CLI | [The product shell from a terminal](cli.md) |
 | which topics a generated stack publishes | [What will this stack publish?](topics.md) |
 | running campaigns | [Campaigns](campaigns.md) |
 | the reference campaign itself | [`scenarios/vio-reference/README.md`](../scenarios/vio-reference/README.md) |
-| the whole product across repositories, and the platform's internals | TEVV-Airsim docs, *Architecture -> TEVV Platform Map*; MnS-Integration-Platform `docs/running-a-campaign.md`, `docs/topic-and-frame-contracts.md` |
+| the v1.0.0 architecture across repositories: who owns what | MnS-Integration-Platform `docs/v1.0.0-architecture.md` |
 | the compose file's own statement of the mounts and precedence | the header comment of `docker-compose-dashboard.yml` |

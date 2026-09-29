@@ -85,8 +85,8 @@ it causes. `osmo config show <TYPE> > f.json`, edit, `osmo config update <TYPE>
 ## Per run
 
 ```bash
-# 1. Generate. stackgen decides what the run IS; the workflow only schedules it.
-./product.sh cli runtime --scenario /workspace/scenarios/vio-osmo-condo --no-run
+# 1. Generate. mns-stacks decides what the run IS; the workflow only schedules it.
+make stacks ARGS="generate scenarios/vio-osmo-condo --profile docker --out $PWD/generated/vio-osmo-condo"
 
 # 2. Put the images in the compute node's containerd store.
 kind load docker-image --name osmo --nodes osmo-worker2 \
@@ -531,7 +531,7 @@ holding position in real wind must lean into it. The value is a 0-10 visual
 intensity (at or below 1 read as a 0-1 fraction), not m/s. The tevv_ws harness
 this replaced sent `wind N 0 0` over RPC, which was physics wind; the move to a
 declared condition kept the traceability and lost the physics.
-`tevv-campaign validate` now warns on any wind and fails the nested spelling
+`mns-stacks campaign validate` now warns on any wind and fails the nested spelling
 (platform `feat/campaign-target-osmo`). The second lesson: diff the vehicle's
 motion, not only the stacks.
 
@@ -737,7 +737,7 @@ CampaignSpec mission / evaluation --osmo/campaign.py submit--> --set / --set-str
 | --- | --- | --- |
 | `environment.{id,version,artifact_digest}` | `content-packs/resolved-pack-set.json` | sim; the level must be in the v1 pack store |
 | `environment.weather`, `time_of_day`, `wind_mps` / `wind_from_deg` | `scenario/scenario_conditions.json`; `unreal-airsim/host-launch-args.json` where the generator emits it | sim |
-| top-level `conditions.weather` / `conditions.time_of_day` | `scenario/scenario_conditions.json`, **instead of** `environment.weather` / `time_of_day`: the generator takes the top-level block whole and the two are not merged, so a variant's `environment.weather` under a base with `conditions.weather` is dropped and flies the base world. `time_of_day`, like `weather`, needs `enabled: true` or the host keeps the level's sky. The platform's `tevv-campaign validate` fails both (`conditions.shadowed.*`, `conditions.time_of_day.*`); `osmo/campaign.py` does not check | sim |
+| top-level `conditions.weather` / `conditions.time_of_day` | `scenario/scenario_conditions.json`, **instead of** `environment.weather` / `time_of_day`: the generator takes the top-level block whole and the two are not merged, so a variant's `environment.weather` under a base with `conditions.weather` is dropped and flies the base world. `time_of_day`, like `weather`, needs `enabled: true` or the host keeps the level's sky. `mns-stacks campaign validate` fails both (`conditions.shadowed.*`, `conditions.time_of_day.*`); `osmo/campaign.py` does not check | sim |
 | `runtime.profile` | `unreal-airsim/settings.json` (vehicle type, ArduPilot's UDP pair) | sim |
 | `vehicles[0].start` | `settings.json` | sim: the spawn |
 | `vehicles[0].cameras`, `sensors`, `dynamics` | `settings.json`, `topic_names.yaml` | sim and bridge |
@@ -764,8 +764,8 @@ rather than an error:
 The workflow file names no image; its `*_image` values are empty, and a
 submit without them is refused (`Could not parse docker image`). Every run
 flies the images `images/catalog.yaml` pins for the product's channel, read
-from `images/image-set.generated.yaml`, the file the stack generator uses.
-Two overrides, the generator's own: `MNS_IMAGE_SET_FILE` (another file) and
+from `images/image-set.generated.yaml`, the file `mns-stacks generate` uses.
+Two overrides, the same as mns-stacks': `MNS_IMAGE_SET_FILE` (another file) and
 `MNS_IMAGE_SET` (another set). Otherwise the set is `MNS_CHANNEL`'s (default
 `v1`).
 
@@ -861,8 +861,9 @@ anything.
 runner already validates the spec, expands `variants × seeds × repeats`,
 merges each variant's overrides into a materialised ScenarioSpec, generates a
 stack per run, scores the evidence, and renders `status`. The executor reuses
-every one of those by shelling into the product shell — `campaign plan`
-writes every run's spec to disk, `runtime --no-run` generates its stack — and
+every one of those through the pinned `mns-stacks` image (`tools/mns-stacks.sh`)
+— `campaign plan` writes every run's spec to disk, `generate` writes its stack —
+and
 replaces only the middle of the runner's `run_one`: instead of a compose
 command it submits the workflow, polls it, and pulls the evidence back.
 
@@ -871,18 +872,19 @@ Where things land, and why the layout is fixed:
 ```
 <checkout>/generated/campaigns/<id>/
   campaign_manifest.json      mns.vio_campaign_manifest.v1 — what `status` reads
-  <run_key>/ScenarioSpec.yaml written by the platform (as root: the product shell is)
-  stacks/<run_key>/           written by the generator (as this user); the workflow's `stack=`
+  <run_key>/ScenarioSpec.yaml written by mns-stacks campaign plan (as this user)
+  stacks/<run_key>/           written by mns-stacks generate (as this user); the workflow's `stack=`
   runs/<run_key>/             bag/, eval/*/…, validation.json, topics.yaml, run.json
   reports/<run_key>.json      the campaign-level evaluator (vio-stress)
 ```
 
 `<checkout>` is the one the cluster mounts at `/workspace` (read from the
 kind config), even when the executor runs from a worktree beneath it: that
-checkout owns the pack store the generator needs, and a `stack=` value is a
-path under its `generated/`. The stacks sit beside the run directories, not
-inside them, because `campaign plan` creates those as root and the generator
-runs as the invoking user.
+checkout owns the pack store `mns-stacks generate` needs, and a `stack=` value
+is a path under its `generated/`. mns-stacks sees that checkout at its own host
+path (`tools/mns-stacks.sh` mounts it identically), so every path it prints is a
+host path. The stacks sit beside the run directories, not inside them, so a
+run directory holds only evidence.
 
 Nothing downstream reads anything else, so an executor that lands these files
 gets `campaign status` — and the dashboard's campaign view — unchanged.

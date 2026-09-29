@@ -173,8 +173,8 @@ want a node-local cache that is a platform decision, not a repository one.
 ## 5. Images: the catalog is already the right shape
 
 `images/catalog.yaml` is one row per image with an explicit digest, and every
-env file, image set and pack-lock pin is rendered from it and verified offline
-on every PR (`tools/images.sh verify`). OSMO wants digest-pinned images from a
+env file, image set and pack-lock pin is rendered from it and verified, with
+no network, on every PR (`tools/images.sh verify`). OSMO wants digest-pinned images from a
 registry the cluster can reach. That is the same discipline, so the work is
 rendering, not redesign: another generated output beside
 `images/*.generated.env` that emits the `--set` pins a workflow needs.

@@ -4,22 +4,43 @@ One rule: **every image reference in this repository is authored in
 `images/catalog.yaml` and nowhere else.** If you are typing a `repo:tag`
 anywhere but there, stop.
 
-The catalog renders seven files. All are committed, all carry a
+The catalog renders six files, and `tools/images.sh verify` also checks the
+pins `packs/v1.0.0.lock.json` restates. All are committed, all carry a
 `# GENERATED from images/catalog.yaml` header, none are hand-edited:
 
 | Generated file | Who reads it |
 | --- | --- |
-| `product-images.env` | channel-independent tool pins (`./tools.sh`) |
-| `images/v1.0.0.generated.env` | the v1 channel: product shell, ScenarioLab, generator, runtime host, bridge, dashboard |
+| `images/v1.0.0.generated.env` | the v1 channel: `mns-packs`, `mns-stacks`, ScenarioLab, the runtime host and its kit, the bridge, the dashboard |
 | `images/development.generated.env` | `make dashboard`'s development defaults (tag-only refs) |
-| `images/image-set.generated.yaml` | production stack generator overlay with exact pins |
-| `images/image-set.development.generated.yaml` | dashboard development overlay with tag-only refs |
+| `images/image-set.generated.yaml` | what generated stacks run (`MNS_IMAGE_SET_FILE` for `mns-stacks generate`), exact pins |
+| `images/image-set.development.generated.yaml` | the same, tag-only refs, for development mode |
 | `images/platform-images.generated.env` | the dashboard compose file's inline images |
+| `product-images.env` | no pins in v1.0.0; kept because the pinned dashboard backend recognises this checkout by it |
 
 Regenerate with `tools/images.sh sync`. `tools/images.sh verify` regenerates
 into a temp dir and diffs against the committed copies, exiting nonzero on any
-drift — that is the CI gate (`make verify-images`). Both are offline: no
-registry calls, no network flakiness, runnable on every PR.
+drift — that is the CI gate (`make verify-images`). Both run without a
+network: no registry calls, no network flakiness, runnable on every PR.
+
+`verify` also reports two things as a **WARNING** that never fails it (a pin
+being filled in, or labels that disagree, is recoverable):
+
+- **Pending digests.** A `channel: pinned` row may carry `pending: "<why>"`
+  and `digest: null`: it names its tag (an rc image the release owner has not
+  pushed or pinned yet) and renders tag-only until the digest is known. v1.0.0
+  starts with `v1_packs`, `v1_stacks` and `v1_runtime_host_kit` pending (their
+  `-v1.0.0-rc` images are built in phase 4). Once an image is pushed,
+  `tools/images.sh bump --only KEY` resolves the pinned tag's digest, writes
+  it, and deletes the `pending:` line; `status` lists pending rows under
+  NEEDS YOU until then.
+- **One host pin.** The runtime host image is the source of truth, so
+  `verify` compares the labels of the images `consumers.release_channels.v1.host_pin`
+  names: the host's `tevv.host.kit_image` must name the pinned kit digest, the
+  authoring image's `tevv.authoring.host_image` must name the pinned host
+  digest, and its `tevv.authoring.shared_set_id` must equal the host's
+  `tevv.host.shared_set_id`. `verify` reads images already in the local Docker
+  store only (it says NOTE when one is not there); `status` also asks the
+  registry.
 
 ## Start here
 
@@ -31,11 +52,11 @@ One prioritized list: **NEEDS YOU** (something is stale, drifted, invalid, or
 has an open follow-up) and **FYI** (known and deliberate — unpublished images,
 `./.env` overrides). Exits nonzero only when the first list is non-empty.
 `--offline` skips every registry lookup and still checks catalog validity,
-artifact drift, follow-ups and overrides.
+artifact drift, pending digests, follow-ups and overrides.
 
-It does not shell out to docker, so two things stay separate:
-`tools/images.sh baked` (needs docker) and `tools/images.sh drift` (needs the
-generator image). `status` says so in its last line rather than pretending to
+Two things stay separate: `tools/images.sh baked` (needs docker) and
+`tools/images.sh drift` (regenerates the committed stacks with the pinned
+`mns-stacks`). `status` says so in its last line rather than pretending to
 have covered them.
 
 CI runs it for you: `verify` gates every PR touching the catalog or its
@@ -74,9 +95,10 @@ PR that touches the file. Delete the entry when it is done.
 | Re-pin a `-latest` image that was republished | `tools/images.sh bump` — reports `TAG_MOVED`, rewrites the digest |
 | Upgrade a third-party image (prom, grafana, nvcr…) | edit the `tag:` in the catalog, then `bump --only KEY` to resolve its digest. Never bulk-bumped: someone else's version bump is a deliberate upgrade |
 | Pin a branch or preview build | edit `tag:` + `digest:` by hand, set `channel: pinned`, `sync` |
+| Pin an rc image that is not pushed yet | `channel: pinned`, its `tag:`, `digest: null`, `pending: "<who pins it, when>"`, `sync`; later `bump --only KEY` |
 | Add an image the repo did not reference before | add an `images:` row **and** a `consumers:` binding, then `sync` |
 | Check what is stale | `tools/images.sh report` (online) |
-| Check nobody hand-edited a generated file | `tools/images.sh verify` (offline) |
+| Check nobody hand-edited a generated file | `tools/images.sh verify` (no network) |
 
 After any catalog edit: `tools/images.sh sync && tools/images.sh verify`, and
 commit the catalog together with the regenerated files. A PR that changes one
@@ -107,13 +129,14 @@ backend needs a credentials mount to pull anything at all is in
 **1. Local development overrides.** `make dashboard` defaults to the generated tag-only development image set. A matching locally built tag wins, while an absent tag is pulled from the registry. Shell/.env image overrides still take precedence through `tools/load-images-env.sh` — that is how a dashboard backend/frontend built locally from a TEVV-Web-Dashboard branch runs before it is published: `DASHBOARD_BACKEND_IMAGE=local/tevv-web-dashboard-backend:v2-dev` in `./.env`, and `tools/images.sh status` lists it under FYI. `IMAGE_MODE=production make dashboard` selects the immutable digest-pinned artifacts instead.
 
 **2. Baked backend defaults.** The dashboard-backend image carries
-`MNS_AUTHORING_IMAGE_DEFAULT` and the generator equivalent *inside the built
-image*. No file to render, so no `sync` can fix it: it needs a backend
-rebuild, then `tools/images.sh bump --only dashboard_backend`. Compose
-deployments pass the env through and are unaffected; an image-only deploy is
-not. `tools/images.sh baked` reports the drift.
+`MNS_STACKS_IMAGE_DEFAULT` and `MNS_AUTHORING_IMAGE_DEFAULT` *inside the built
+image* (the `bakes:` list on the `v1_dashboard_backend` row). No file to
+render, so no `sync` can fix it: it needs a backend rebuild, then a repin of
+`v1_dashboard_backend`. Compose deployments pass the env through and are
+unaffected; an image-only deploy is not. `tools/images.sh baked` reports the
+drift.
 
-**3. A locally-present newer image.** Development mode intentionally uses a matching local tag and never pulls merely to check for a newer remote copy. If the tag is absent, `make dashboard` pulls it. Production mode remains digest-pinned and ignores a different local build. After publishing, other developers run `./product.sh setup` to refresh the approved remote set.
+**3. A locally-present newer image.** Development mode intentionally uses a matching local tag and never pulls merely to check for a newer remote copy. If the tag is absent, `make dashboard` pulls it. Production mode remains digest-pinned and ignores a different local build. After publishing, other developers run `./setup.sh` (or `make pull-images`) to refresh the approved remote set.
 
 ## Channels
 
@@ -126,9 +149,10 @@ not. `tools/images.sh baked` reports the drift.
 - `moving` — a mutable tag (typically `-latest`) republished in place. Tag
   never changes, digest does; reported as `TAG_MOVED`.
 - `upstream` — third-party image on a version tag. Never auto-bumped.
-- `pinned` — published, deliberately off the release line (branch or preview
-  build). Digest required, verified by `report`, refused by `bump`, moved by
-  hand. The row should say in a comment why, and how to get back.
+- `pinned` — an exact release image (every v1 row), or a branch or preview
+  build. Digest required, verified by `report`, refused by `bump`, moved by
+  hand; the one exception is a `pending:` row, whose digest `bump --only KEY`
+  fills in. The row's purpose says what it is.
 - `local` — locally built, `repo` starts with `local/`, `digest: null`,
   skipped by `verify` and `bump`.
 - `unpublished` — referenced by this repo but absent from the registry.
@@ -152,7 +176,7 @@ catalog rows use the immutable tag plus its full manifest digest. The
 `-latest` alias is for discovery and developer pulls; it is not a production
 pin. Retagging the same manifest does not duplicate its layers in the registry.
 
-The production M-S image set is remote-only and digest-pinned. The dashboard’s transitional development mode derives tag-only refs from that same catalog, allowing a local build to win without adding `local/...` repository names.
+The production M-S image set is remote-only and digest-pinned. The dashboard’s development mode derives tag-only refs from that same catalog, allowing a local build to win without adding `local/...` repository names.
 
 Use locally available development tags and pull only missing ones:
 
@@ -165,10 +189,8 @@ make dashboard
 Explicitly refresh every approved production pin:
 
 ```bash
-./tools/pull-all-images.sh
-# or
-./product.sh pull-images
-./product.sh pull-images --development    # explicitly refresh dashboard development tags
+./tools/pull-all-images.sh                  # or: make pull-images
+./tools/pull-all-images.sh --development    # explicitly refresh dashboard development tags
 # inspect without pulling
 ./tools/pull-all-images.sh --dry-run
 # include every optional catalog image
