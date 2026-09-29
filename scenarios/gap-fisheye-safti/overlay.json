@@ -1,0 +1,15 @@
+{
+  "_comment": [
+    "Applied by tools/gap-tests/gap.sh stack after the generator runs: what the ScenarioSpec cannot say yet.",
+    "Images and DISABLE_RPC_AUX_SENSORS as in gap-fisheye-xfs/overlay.json.",
+    "TimeOfDay: the #216 real-sun keys, Singapore (UTC+8)."
+  ],
+  "env": {
+    "AIRSIM_IMAGE": "dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-bloomfix.16",
+    "ROS2_IMAGE": "tevv-airsim-ros2-bridge:v1.0.0-shmfix.1",
+    "DISABLE_RPC_AUX_SENSORS": "false"
+  },
+  "settings": {
+    "TimeOfDay": {"Date": "2026-09-28", "TimeZone": 8.0, "SolarTime": 9.0}
+  }
+}

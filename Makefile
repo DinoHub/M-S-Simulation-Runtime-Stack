@@ -94,7 +94,7 @@ else
 $(error IMAGE_MODE must be development or production)
 endif
 
-.PHONY: help ps topics campaign campaign-status verify-images pull-images ensure-images ensure-demo-packs pack-lock stage-authoring-packs dashboard dashboard-down print-channel-env
+.PHONY: help ps topics campaign campaign-status gap-stack gap-flight gap-replay gap-down verify-images pull-images ensure-images ensure-demo-packs pack-lock stage-authoring-packs dashboard dashboard-down print-channel-env
 
 ensure-images:  ## Use local image tags; pull only those that are missing
 	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
@@ -222,6 +222,9 @@ help:
 	@echo "  campaign         fly a run matrix over one scenario, scored [CAMPAIGN=name]"
 	@echo "                   or any subcommand: ARGS=\"status vio-reference\""
 	@echo "  campaign-status  one row per flight: recording verdict and accuracy [CAMPAIGN=name]"
+	@echo "  gap-flight       one sim-to-real gap test flight on the fisheye rig [GAP=gap-fisheye-xfs OUT=runs/gap-tests/x TIME= WEATHER= FLARE= VEIL=]"
+	@echo "  gap-replay       OpenVINS + scoring on a gap flight [OUT= TAG=r1 CONFIG=t2|t2zc]"
+	@echo "  gap-stack        only generate the gap stack [GAP=]; gap-down stops it"
 	@echo "  ps               running containers (name/status/image)"
 	@echo "Images and packs:"
 	@echo "  ensure-images    use local tags and pull only missing images [IMAGE_MODE=development|production]"
@@ -260,6 +263,29 @@ campaign: ensure-images  ## Fly a campaign (CAMPAIGN=<name>, or ARGS="<subcomman
 
 campaign-status:  ## One row per flight of a campaign (CAMPAIGN=<name>)
 	./product.sh cli campaign status $(CAMPAIGN)
+
+# Sim-to-real gap tests on the fisheye VIO rig (tools/gap-tests/README.md): a stack
+# generated from scenarios/$(GAP)/, one flight under one condition, then OpenVINS
+# replayed on the bag and scored. Run on the host, not through the product shell.
+#
+#   make gap-flight GAP=gap-fisheye-safti OUT=runs/gap-tests/city-1 TIME=16
+#   make gap-replay OUT=runs/gap-tests/city-1
+GAP ?= gap-fisheye-xfs
+OUT ?= runs/gap-tests/$(GAP)-$(shell date +%Y%m%d-%H%M%S)
+TAG ?= r1
+CONFIG ?=
+gap-stack:  ## Generate the gap-test stack (GAP=<scenario>)
+	tools/gap-tests/gap.sh stack $(GAP)
+
+gap-flight: ensure-images  ## Fly one gap-test flight (GAP= OUT= TIME= WEATHER= FLARE= VEIL=)
+	tools/gap-tests/gap.sh stack $(GAP)
+	tools/gap-tests/gap.sh fly $(GAP) $(OUT) $(if $(TIME),--time $(TIME)) $(if $(WEATHER),--weather $(WEATHER)) $(if $(FLARE),--flare $(FLARE)) $(if $(VEIL),--veil $(VEIL)) $(if $(CHASE),--chase)
+
+gap-replay:  ## Replay OpenVINS on a gap flight and score it (OUT= TAG= CONFIG=)
+	tools/gap-tests/gap.sh replay $(OUT) $(TAG) $(if $(CONFIG),--config $(CONFIG))
+
+gap-down:
+	tools/gap-tests/gap.sh down $(GAP)
 
 # CI gate for the image catalog (images/catalog.yaml): regenerates
 # product-images.env / images/*.generated.* into a temp location and diffs

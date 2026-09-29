@@ -1,0 +1,16 @@
+# Re-run after the veil fix and the real sun (bloomfix.16), 28 Sep 2026 at the XFS origin,
+# clock = UTC-8 standard meridian. Route xfs_yard_box (yaw 180 -> 90 -> 0).
+#   <tag>          <clock|->  <weather|level>  <flare>  <veil>
+# Baseline: level weather, default start time 09:00 (sun az 133, el 33, behind the hangar).
+base-a           -     level  on   on
+base-b           -     level  on   on
+# Low sun east (az 107, el 14): hidden behind the hangar from the spawn (checked), so a
+# no-sun-in-view control at the same height as the west case.
+east07-hidden    7     clear  on   on
+# Low sun west (az 252, el 15): in the back camera on the yaw-90 leg.
+west16           16    clear  on   on
+west16-noflare   16    clear  off  on
+west16-noveil    16    clear  off  off
+# Dusk (el ~6) and night (el -38).
+dusk             16.75 clear  on   on
+night            21    clear  on   on
