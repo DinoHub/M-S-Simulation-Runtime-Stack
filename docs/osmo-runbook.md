@@ -85,7 +85,7 @@ it causes. `osmo config show <TYPE> > f.json`, edit, `osmo config update <TYPE>
 ### A fourth: evaluation on the service node
 
 ```bash
-osmo/cpu-platform.sh
+osmo/cpu-platform.sh      # setup-local-osmo.sh runs it after a dev login
 ```
 
 It gives pool `default` a second platform, `cpu`, on `osmo-worker`, and loads
@@ -93,8 +93,10 @@ the bridge and sim_real_eval images there. The workflow's `eval` and
 `eval-light` resources name that platform, so the evaluate and aggregate
 groups run there and the flight stays on the GPU node.
 
-Without it, a submit is refused: the platform does not exist. The script is
-idempotent. [osmo-evaluation.md](osmo-evaluation.md) explains why the
+Without it, a submit is refused: the platform does not exist. `campaign.py
+images` and `campaign.py run` check that `osmo resource list --pool default
+--platform cpu` lists a node, and stop with "run osmo/cpu-platform.sh" if it
+does not. The script is idempotent. [osmo-evaluation.md](osmo-evaluation.md) explains why the
 platform needs its own user template: OSMO's shared one requests
 `nvidia.com/gpu: "0"`, and KAI then gives the pod the `nvidia` runtime.
 

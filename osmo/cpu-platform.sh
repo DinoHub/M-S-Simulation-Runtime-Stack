@@ -3,7 +3,7 @@
 # (osmo-worker, node_group=service), and load onto that node the images the
 # evaluate and aggregate groups run. Idempotent: re-running changes nothing.
 #
-#   osmo/cpu-platform.sh            # after setup-local-osmo.sh and osmo login
+#   osmo/cpu-platform.sh            # setup-local-osmo.sh runs it; by hand, after osmo login
 #
 # Why. Every task used to land on the GPU node: pool `default` has one platform,
 # and its pod template `default_compute` selects node_group=compute. A run's
@@ -30,8 +30,10 @@ echo "== pod templates cpu_user, service_node"
 #                 and gives it runtimeClassName nvidia -- which the service node
 #                 has no handler for, so the pod never starts ("no runtime for
 #                 \"nvidia\" is configured"; XFS run 79).
-#   service_node  default_compute (pull policy, dev login) selecting
-#                 node_group=service instead of compute.
+#   service_node  default_compute (dev login) selecting node_group=service
+#                 instead of compute, with imagePullPolicy IfNotPresent set on
+#                 both containers whether or not default_compute has it: the
+#                 service node gets its images from `kind load`, never a pull.
 osmo config show POD_TEMPLATE > "$TMP/pt.json"
 if python3 - "$TMP/pt.json" <<'PY'
 import copy, json, sys
@@ -42,6 +44,12 @@ for c in user["spec"]["containers"]:
         c.get("resources", {}).get(part, {}).pop("nvidia.com/gpu", None)
 node = copy.deepcopy(d["default_compute"])
 node["spec"]["nodeSelector"] = {"node_group": "service"}
+containers = node["spec"].setdefault("containers", [])
+for cname in ("{{USER_CONTAINER_NAME}}", "osmo-ctrl"):
+    c = next((c for c in containers if c.get("name") == cname), None)
+    if c is None:
+        c = {"name": cname}; containers.append(c)
+    c["imagePullPolicy"] = "IfNotPresent"
 for name, want in (("cpu_user", user), ("service_node", node)):
     if d.get(name) != want:
         d[name] = want; changed = True
@@ -56,15 +64,20 @@ fi
 
 echo "== pool default: platforms default and cpu"
 # The user and node templates move from the pool's common list into each
-# platform's own: the default platform keeps exactly the merge it had
-# (default_ctrl, default_user, default_compute), and cpu gets
-# (default_ctrl, cpu_user, service_node).
+# platform's own: default_user and default_compute leave the common list and
+# go to the front of the default platform's override list (if not there
+# already), so the default platform keeps the merge it had; cpu gets
+# (common..., cpu_user, service_node). Every other entry of either list stays,
+# in its order.
 osmo config show POOL default > "$TMP/pool.json"
 if python3 - "$TMP/pool.json" <<'PY'
 import json, sys
 p = sys.argv[1]; d = json.load(open(p)); before = json.dumps(d, sort_keys=True)
-d["common_pod_template"] = ["default_ctrl"]
-d["platforms"]["default"]["override_pod_template"] = ["default_user", "default_compute"]
+moved = ["default_user", "default_compute"]
+d["common_pod_template"] = [t for t in d.get("common_pod_template") or [] if t not in moved]
+default = d["platforms"]["default"]
+override = list(default.get("override_pod_template") or [])
+default["override_pod_template"] = [t for t in moved if t not in override] + override
 d["platforms"]["cpu"] = {
     "description": "CPU-only tasks on the service node (osmo-worker): evaluation and aggregation",
     "host_network_allowed": False, "privileged_allowed": False,
@@ -94,6 +107,10 @@ PY
 for ref in "${refs[@]}"; do
   if docker exec osmo-worker crictl inspecti "docker.io/$ref" >/dev/null 2>&1; then
     echo "present: $ref"
+  elif ! docker image inspect "$ref" >/dev/null 2>&1; then
+    # Not fatal: setup-local-osmo.sh runs this on a fresh host. `campaign.py
+    # images` reports the image until it is loaded.
+    echo "not on this host: $ref -- docker pull it, then re-run osmo/cpu-platform.sh" >&2
   else
     kind load docker-image --name osmo --nodes osmo-worker "$ref"
   fi

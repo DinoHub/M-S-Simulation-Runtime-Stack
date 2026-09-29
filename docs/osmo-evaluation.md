@@ -169,13 +169,16 @@ workflow's end.
 | `aggregate` | verdict | service node | `cpu` | as above |
 | host | vio-stress | this workstation | | the campaign-level scorer runs after the matrix |
 
-The `cpu` platform is set up by `osmo/cpu-platform.sh`:
+The `cpu` platform is set up by `osmo/cpu-platform.sh`, which
+`setup-local-osmo.sh` runs at the end:
 - it adds a pod template selecting `node_group: service`, and the platform;
 - it loads the bridge and sim_real_eval images onto that node;
 - the platform allows no host mounts, so a task that asks for `/workspace`
   there is refused at submit rather than starting on an empty path.
 
-`campaign.py images` checks the evaluation images on both nodes.
+`campaign.py images` checks the evaluation images on both nodes, and that
+the service node serves platform `cpu`. `campaign.py run` refuses to submit
+without that platform.
 
 **What moving them changed.** On the GPU node, a run's evaluation waited
 behind the next run's flight gang: 138 s on XFS. Two evaluations then held
@@ -191,9 +194,10 @@ that took 8-9 s. The difference is pod start-up on the service node. It is a
 latency gain for a matrix, not for one run, and not a throughput gain: on XFS
 the flights already ran almost back to back.
 
-Run 80 was the first flown this way: XFS wind-6 with native physics wind
-(generator v1.0.1), flight group on `osmo-worker2`, evaluate and aggregate on
-`osmo-worker`. It passed, ATE 0.445 m, with a 1.20 deg lean into the wind.
+Run 80 was the first flown this way: XFS wind-6 with native physics wind.
+Its stack came from a generator v1.0.1 built locally, not from the v1.0.0
+this repository pins; physics wind needs v1.0.1, and that repin is pending.
+Flight group on `osmo-worker2`, evaluate and aggregate on `osmo-worker`. It passed, ATE 0.445 m, with a 1.20 deg lean into the wind.
 
 ## Adding an evaluator
 

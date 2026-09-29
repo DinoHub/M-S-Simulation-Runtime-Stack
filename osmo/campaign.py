@@ -362,7 +362,8 @@ def gpu_nodes() -> list[str]:
 
 
 def verify_images(refs: dict[str, str]) -> dict[str, dict[str, Any]]:
-    """Is the image each tag names on the GPU node the one the catalog pins?
+    """Is the image each tag names on the GPU node and, for evaluation images,
+    the service node the one the catalog pins?
 
     A kind node's containerd holds what `kind load` gave it, by tag and image
     id, with no registry digest -- so a `repo:tag@sha256:` reference cannot be
@@ -402,8 +403,9 @@ def verify_images(refs: dict[str, str]) -> dict[str, dict[str, Any]]:
             row["problem"] = f"{repo}@{digest} is not on this host: docker pull it, then kind load"
         elif None in node_ids or not node_ids:
             missing = [n for n, i in (row.get("nodes") or {}).items() if i is None]
+            nodes_flag = f"--nodes {','.join(missing)} " if missing else ""
             row["problem"] = (f"{tag_ref} is not on {', '.join(missing) or 'the GPU node'}: "
-                              f"kind load docker-image --name osmo --nodes {','.join(missing)} {tag_ref}")
+                              f"kind load docker-image --name osmo {nodes_flag}{tag_ref}")
         elif node_ids != {pinned_id}:
             row["problem"] = (f"the node's {tag_ref} is not the pinned image "
                               f"(node {sorted(i[:19] for i in node_ids)}, pinned {pinned_id[:19]})")
@@ -413,8 +415,40 @@ def verify_images(refs: dict[str, str]) -> dict[str, dict[str, Any]]:
     return report
 
 
+CPU_PLATFORM_FIX = "run osmo/cpu-platform.sh (after osmo login)"
+
+
+def cpu_platform_problem() -> str | None:
+    """Why the evaluate and aggregate groups could not be scheduled, or None.
+
+    They name platform `cpu` of pool `default` (osmo/cpu-platform.sh). Without
+    it a submit is refused; with the platform but no node behind it, the
+    evaluation would queue forever. So a node must be listed for it."""
+    try:
+        proc = subprocess.run(["osmo", "resource", "list", "--pool", "default",
+                               "--platform", "cpu", "--format-type", "json"],
+                              capture_output=True, text=True)
+    except FileNotFoundError:
+        return "the osmo CLI is not on PATH"
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout).strip().splitlines()
+        return (f"`osmo resource list --pool default --platform cpu` failed"
+                f" ({err[-1] if err else f'exit {proc.returncode}'}): is platform cpu set up? "
+                + CPU_PLATFORM_FIX)
+    try:
+        resources = json.loads(proc.stdout).get("resources") or []
+    except (json.JSONDecodeError, AttributeError):
+        resources = []
+    if not resources:
+        return f"no node serves pool default, platform cpu (the evaluation platform): {CPU_PLATFORM_FIX}"
+    return None
+
+
 def resolve_images(allow_drift: bool) -> tuple[dict[str, str], dict[str, Any]]:
     """The images a run is submitted with, and the record of how they were checked."""
+    platform_problem = cpu_platform_problem()
+    if platform_problem:
+        sys.exit(f"[campaign] {platform_problem}")
     name, refs = pinned_images()
     report = verify_images(refs)
     bad = {var: row for var, row in report.items() if not row["ok"]}
@@ -1312,7 +1346,8 @@ def expose_nodeport(wf: str, pod: str, node_port: int = FOXGLOVE_NODE_PORT) -> s
 
 
 def cmd_images(args: argparse.Namespace) -> int:
-    """Print the catalog's images for this channel and check the GPU node.
+    """Print the catalog's images for this channel, check them on the GPU and
+    service nodes, and check the service node serves platform cpu.
 
     Also the way to submit the workflow by hand: the last line is the
     --set-string a bare `osmo workflow submit` needs, since the workflow file
@@ -1324,8 +1359,11 @@ def cmd_images(args: argparse.Namespace) -> int:
         print(f"  {var:22} {'ok  ' if row['ok'] else 'DRIFT'} {row['pinned']}")
         if not row["ok"]:
             print(f"  {'':22}       {row['problem']}")
+    platform_problem = cpu_platform_problem()
+    print(f"  {'evaluation platform':22} " + (f"DRIFT {platform_problem}" if platform_problem
+                                               else "ok   pool default, platform cpu"))
     print("--set-string " + " ".join(f"{v}={r['submitted']}" for v, r in report.items()))
-    return 0 if all(r["ok"] for r in report.values()) else 1
+    return 0 if all(r["ok"] for r in report.values()) and not platform_problem else 1
 
 
 def cmd_reindex(args: argparse.Namespace) -> int:
