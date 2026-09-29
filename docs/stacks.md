@@ -116,7 +116,9 @@ a sibling container, the way the dashboard does:
   as root, so every file it writes is yours;
 - the Docker socket is mounted only for the commands that drive containers:
   `run`, `stop`, `status`, `restart`, `logs`, `record`, `check`, and
-  `campaign run|status|watch|cancel`. Those also get the socket's group
+  `campaign run|preflight|status|watch|cancel` (preflight inspects the pinned
+  images and the host's listening ports), with `--network=host`. Those also
+  get the socket's group
   (`--group-add`) and your Docker login read-only at `/tmp/.docker`
   (`DOCKER_CONFIG`). Everything else runs with `--network=none`.
 

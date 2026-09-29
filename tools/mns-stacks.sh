@@ -14,9 +14,9 @@
 # so every bind mount it hands Compose resolves on the host. It always runs as
 # the host user (never root), so every file it writes is yours. The Docker
 # socket, with its group and your Docker login, is mounted only for the
-# commands that drive containers (run, stop, status, restart, logs, record,
-# check, and campaign run/status/watch/cancel); the rest run with
-# --network=none. The same rule as the dashboard backend's mns_cli.docker_argv.
+# commands that drive containers or look at the host (run, stop, status,
+# restart, logs, record, check, and campaign run/preflight/status/watch/
+# cancel), together with --network=host; the rest run with --network=none. The same rule as the dashboard backend's mns_cli.docker_argv.
 #
 # Inputs come from the environment; `make` exports the selected channel's
 # (make fly / make stacks), and each has the same default as `make dashboard`:
@@ -67,12 +67,14 @@ fi
 HOST_UID="${MNS_HOST_UID:-$(id -u)}"
 HOST_GID="${MNS_HOST_GID:-$(id -g)}"
 
-# Which commands need the Docker socket (the contract's table).
+# Which commands need the Docker socket (and the host network). campaign
+# preflight inspects the pinned images (docker image/manifest inspect) and
+# the host's listening ports (ss -ltn), as the dashboard runs it.
 needs_socket=false
 case "$1" in
   run|stop|status|restart|logs|record|check) needs_socket=true ;;
   campaign)
-    case "${2:-}" in run|status|watch|cancel) needs_socket=true ;; esac ;;
+    case "${2:-}" in run|preflight|status|watch|cancel) needs_socket=true ;; esac ;;
 esac
 
 args=(--rm --pull "${MNS_IMAGE_PULL_POLICY:-missing}"
