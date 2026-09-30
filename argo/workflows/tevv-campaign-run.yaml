@@ -67,6 +67,12 @@ spec:
         value: ""
       - name: frame_stats_topics # image topics whose per-frame freshness the recorder logs (diagnostic)
         value: ""
+      - name: frame_dump_topics  # image topics the recorder saves as grey frames after takeoff (diagnostic)
+        value: ""
+      - name: frame_dump_window  # "from,to" seconds after takeoff
+        value: "15,35"
+      - name: bridge_poll_rate_hz  # how often the bridge asks the simulator for images
+        value: "30.0"
       - name: runtime_host_image
       - name: bridge_image
       - name: autopilot_image    # the ArduPilot or PX4 image, to match `autopilot`
@@ -150,6 +156,8 @@ spec:
           - {name: VIZ_HOLD_SEC, value: "0"}
           - {name: CAMERA_INFO_TOPICS, value: "{{workflow.parameters.camera_info_topics}}"}
           - {name: FRAME_STATS_TOPICS, value: "{{workflow.parameters.frame_stats_topics}}"}
+          - {name: FRAME_DUMP_TOPICS, value: "{{workflow.parameters.frame_dump_topics}}"}
+          - {name: FRAME_DUMP_WINDOW, value: "{{workflow.parameters.frame_dump_window}}"}
           - {name: DS_HOST, value: 127.0.0.1}
           - {name: RMW_IMPLEMENTATION, value: rmw_fastrtps_cpp}
           - {name: ROS_DOMAIN_ID, value: "0"}
@@ -210,7 +218,8 @@ spec:
             - {name: ARDUPILOT_HOME_LON, value: "-115.579201"}
             - {name: ARDUPILOT_HOME_ALT, value: "1183.0"}
             - {name: INSTANCE_NUM, value: "0"}
-            # PX4
+            # PX4 (MAVLINK_MODE=router is set by autopilot_px4.sh: the ArduPilot image
+            # reads it too, and in router mode its mavlink-router takes SITL's TCP 5760)
             - {name: MAVLINK_TARGET, value: 127.0.0.1}
             - {name: PX4_INSTANCE, value: "0"}      # the image bakes 1; compose overrides it to 0
             - {name: PX4_SIM_MODEL, value: none_iris}
@@ -222,7 +231,6 @@ spec:
             - {name: MAV_0_BROADCAST, value: "1"}
             - {name: MAV_1_BROADCAST, value: "1"}
             - {name: MAV_2_BROADCAST, value: "1"}
-            - {name: MAVLINK_MODE, value: router}
             - {name: SWARM_ID, value: "1"}
             - {name: SWARM_SIZE, value: "1"}
           securityContext:
@@ -241,6 +249,7 @@ spec:
             - {name: HOME, value: /home/ros}
             - {name: STACK_DIR, value: "{{workflow.parameters.stack_dir}}"}
             - {name: VEHICLE, value: "{{workflow.parameters.vehicle}}"}
+            - {name: POLL_RATE_HZ, value: "{{workflow.parameters.bridge_poll_rate_hz}}"}
             - {name: SIM_HOST, value: 127.0.0.1}
             - {name: SIM_PORT, value: "41451"}
             - {name: SIM_DIAL_WAIT_SEC, value: "900"}

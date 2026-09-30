@@ -1,12 +1,56 @@
 # Investigation: stereo VIO divergence that appeared after 25 Sep 2026
 
-**Status: open.** The root cause is not found yet. This page records what changed, what was
-measured, what is ruled out, and the next experiments, so the work can be picked up
-without repeating it.
+**Status: cause identified; one confirming experiment pending an idle GPU.** OpenVINS's
+sliding window is a fixed 11 camera frames. At the ~25 Hz camera rate the PX4 pipeline
+delivers on an idle host, that is about 0.44 s: too little parallax for the route's 40 °/s
+corner, so the filter diverges there. At ~11 Hz the same 11 frames span about 1 s, and it
+does not diverge.
+
+The camera rate is not set anywhere. It is whatever the simulator and bridge manage, and
+it halves when something else loads the GPU: another session's simulator did exactly that
+during these experiments. That is the drift. On 25 Sep the host was busier, the cameras ran
+slower, and the runs passed. Since then they run at full rate, and the runs diverge.
 
 Related: [the OSMO/Argo benchmark](../../argo/README.md#benchmark-argo-against-osmo-30-sep-2026),
 [migration decision log](2026-09-30-argo-migration-decisions.md) entries 21, 27 and 28.
 Tools: [`tools/vio-drift/`](../../tools/vio-drift/README.md).
+
+## The finding, in numbers
+
+All runs are on the `vio-osmo-xfs` yard-box campaign, PX4, on Argo unless noted, 30 Sep.
+
+| Condition | Cameras (bag) | Estimator updates | Runs | Passed (ATE ≤ 1 m) |
+| --- | --- | --- | --- | --- |
+| Idle GPU, default config | 23–27 Hz | ~13.5/s | 13 (compose, OSMO, Argo) | 2 |
+| Another simulator on the GPU, default config | 10.8–11.0 Hz | ~7.1/s | 6 | 6 (0.30–1.13 m) |
+| Another simulator on the GPU, bridge `poll_rate_hz` 12 | 10.8–10.9 Hz | ~7.4/s | 3 | 3 (0.42–0.74 m) |
+| Another simulator on the GPU, `max_clones` 22 | 10.9–11.1 Hz | — | 3 | 3 (0.28–0.58 m) |
+
+- **The contended rows come from GPU sharing, not from any setting of mine.** The six
+  "default config" runs are the frame-dump runs. The dump was first taken for the cause,
+  but they all started after another session's simulator had taken the same GPU (08:06
+  UTC). Every run before that point had 23 Hz cameras and diverged; every run after it had
+  11 Hz cameras and passed.
+- **The same effect on identical images, with no load involved.** The 29 Sep compose
+  recording (26.5 Hz cameras) replays deterministically. Only the window changes:
+
+| Replay of the 29 Sep recording | Error at the end of the flight |
+| --- | --- |
+| Default: 11 clones at 26.5 Hz, about 0.42 s | 52.8 m |
+| `track_frequency` 20.8 | 20.1 m |
+| `track_frequency` 15 | 36.9 m |
+| `track_frequency` 11 | 2.6 m |
+| `max_clones` 22 | 1.7 m |
+
+- **The history matches.**
+  - The two good 25 Sep flights still on disk had 12.9–14.4 Hz and gappy cameras
+    (wind-6-r1), or gappy delivery (calm-r2). The two bad ones had 27 Hz.
+  - A 25 Sep sim log shows the engine at ~23 FPS: a loaded host.
+  - The estimator config was tuned when the bridge delivered 20.8 Hz ("11 clones = 0.50 s
+    measured window").
+- **Still to confirm live:** a clean A/B on an *idle* GPU, with the bridge at 12 Hz and with
+  `max_clones` 22, each against the default. The other simulator held the GPU for the rest
+  of the session, and every run in that window came out at 11 Hz.
 
 ## Symptom
 
@@ -70,7 +114,10 @@ distinct flights. Earlier write-ups said "10 of 12", which counted attempts.
 | H4 | Camera–IMU time offset | Replay with `timeshift_cam_imu` −50/−25/+25/+50 ms, and with online calibration | Every shift is worse. Online calibration converges to −2 ms and still diverges at 24.6 s |
 | H5 | Stale frames (new stamp, previous pixels) | Per-frame freshness in flight (`FRAME_STATS_TOPICS`) | About 10 % stale on Argo in good *and* bad runs (0.55 m against 7.4 m). The 29 Sep compose bag shows a 25 % burst at the corner and 0 % in straight flight: present, but it does not separate good from bad |
 | H6 | Engine frame rate (~23 FPS on 25 Sep against ~50 today) | Engine capped at 23 FPS (`t.MaxFPS`, verified from the sim log), 3 flights | 0 of 3 good (4.0, 5.3, 10.3 m) |
-| H7 | Camera rate against the rate the config was tuned for | Replay capped at 20.8 and 15 Hz | Delays the divergence, does not remove it (see 5 above) |
+| H7 | Camera rate against the rate the config was tuned for | Replay capped at 20.8 and 15 Hz | Delays the divergence, does not remove it (see 5 above). Refined by H8 |
+| H8 | **Camera rate against the window length (confirmed)** | Live at ~11 Hz; replay at 11 Hz and with 22 clones | See "The finding, in numbers" |
+| — | IMU noise differs per run | Parked gyro noise cross-correlated between runs (`imuseed.py`) | It differs (0.22–0.39 correlation). AirSim seeds it with a fixed 42, and the per-run difference comes from the free-running clock's tick timing, so there is no seed to fix. It is not what flips the outcome: rate does |
+| — | `SteppableClock` (lockstep), ArduPilot only | 2 flights each way | 0.95 and 1.00 m against 1.19 and 1.25 m on `ScalableClock`: slightly better, not decisive. ArduPilot's cameras ran at 10–11 Hz both ways; the other simulator held the GPU. PX4 must stay on `ScalableClock` (not lockstep) |
 | — | Engine hitches at the corner | Wall gaps between capture services (`hitch.py`) | None over 100 ms, good or bad; p99 67–86 ms on Argo, 42–62 ms on OSMO |
 | — | Boot-to-takeoff time | Sim log start to ground-truth takeoff | 39.0 ± 0.2 s in every run |
 | — | The task-script changes on this branch | Diff against the 25 Sep `osmo/files` | The same behaviour for this stack; compose diverged without them |
@@ -94,21 +141,32 @@ These are real, but none of them is the drift:
 - **The registry holds re-scored evidence as separate attempts** (see "How the 25 Sep row
   was counted"). Count distinct flights, not attempts, before comparing rates.
 
-## Next experiments, most informative first
+## What to change
 
-1. **Record the corner images of a good and a bad run, and diff them.** Every other input is
-   equal, so the difference is in the pixels: exposure, blur, content, staleness pattern.
-   About 0.2 GB per run at half resolution in grey is enough. It was not run: the disk was
-   full (see Operational).
-2. **Seed the IMU noise.** `generate_noise: true` may draw a new random sequence each run. A
-   fixed seed would show whether the per-run randomness is the IMU's rather than the
-   renderer's.
-3. **Fly with the steppable (lockstep) clock** that the OpenVINS config assumes. It removes
-   the render-versus-stamp race altogether. If divergence stops, the config and the clock
-   must be made to agree.
-4. **Reset the host state.** The shift began after 25 Sep 16:00, on a host that has not
-   rebooted since 25 Sep 11:09. A GPU reset or a reboot, then a few flights, tests a
-   host-state cause. That needs the user: it affects every session on the machine.
+1. **Size the estimator's window in seconds, not frames.** `max_clones` scales with the
+   camera rate (22 at 25 Hz, about 0.9 s). Or cap `track_frequency` near the rate the
+   config was tuned for. On the fixed recording, both cut the error 20–30×.
+2. **Make the camera rate part of the scenario.** At the moment it falls out of GPU load.
+   Pin it: the bridge's `poll_rate_hz` is now an override (`POLL_RATE_HZ`, template
+   parameter `bridge_poll_rate_hz`). The stack generator should derive it from the
+   ScenarioSpec's cameras.
+3. **Record and gate it.** The recording validator should fail a run whose camera rate is
+   outside the scenario's bounds, the way it gates the IMU. A campaign that compares
+   estimators across runs must not let a neighbour's GPU load pick the frame rate.
+4. **Give campaign runs the GPU to themselves.** On the cluster, a whole-GPU request plus
+   Kueue does this; on a shared host, check for other simulators first. The design doc's
+   risk list already names shared hosts.
+
+## Experiments run on 30 Sep (the earlier list)
+
+1. **Corner images of a good and a bad run.** The recorder gained an opt-in frame dump
+   (`FRAME_DUMP_TOPICS`). Every dump run passed, but because of the other simulator (see
+   above), not the dump, so there was no bad run to diff against. The rate finding made
+   the pixel diff unnecessary.
+2. **IMU noise seed.** It cannot be fixed per run, and it is not the lever (see H-table).
+3. **Lockstep clock.** A small gain on ArduPilot. Not applicable to PX4 as configured.
+4. **Host or GPU reset.** Not needed: the "state" was other GPU load, not stuck host
+   state.
 
 ## Operational note
 

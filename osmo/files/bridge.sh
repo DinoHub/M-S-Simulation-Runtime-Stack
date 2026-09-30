@@ -46,6 +46,7 @@ echo "sim RPC ${SIM_HOST}:${SIM_PORT} reachable"
 # With the iceoryx2 path the bridge must subscribe to the simulator's own camera
 # names (airsim/<vehicle>/<camera>/fisheye); unset, it waits on its legacy default
 # names forever. Take them from the stack's settings.json.
+# POLL_RATE_HZ (default 30) is how often the bridge asks the simulator for images.
 CAMERA_ARGS=()
 if [ "${ENABLE_VIO:-false}" = true ]; then
   names=$(python3 - "$S/unreal-airsim/settings.json" "$VEHICLE" <<'CAMS'
@@ -64,7 +65,7 @@ exec /entrypoint.sh ros2 launch airsim_ros2_bridge single_vehicle.launch.py \
   enable_vio:="${ENABLE_VIO:-false}" \
   auto_discover_cameras:=false \
   disable_rpc_aux_sensors:=false \
-  poll_rate_hz:=30.0 \
+  poll_rate_hz:="${POLL_RATE_HZ:-30.0}" \
   topic_prefix:=/ \
   topic_names_config:=/tmp/topic_names.yaml \
   enable_mavros:="${ENABLE_MAVROS}" \

@@ -40,6 +40,7 @@ Code: `argo/`, `osmo/campaign.py`, `osmo/backends.py` (PR #113). Measurements:
 | 26 | Task files must survive OSMO's Jinja | Accepted |
 | 27 | Benchmark the backends interleaved, not concurrently | Accepted |
 | 28 | Estimator scores are not compared across sittings | Accepted |
+| 29 | Autopilot-specific settings live in the autopilot's script, not the pod | Accepted |
 
 ---
 
@@ -393,3 +394,19 @@ runs with OSMO's 25 Sep runs had made the Argo pod look like the cause.
 
 **Decision.** A backend comparison is only valid inside one interleaved sitting (entry
 27). The drift since 25 Sep is its own investigation, not a migration blocker: [VIO divergence investigation](2026-09-30-vio-divergence-drift.md). Count distinct flights, not registry attempts: several 25 Sep attempts were one bag scored twice.
+
+## 29. Autopilot-specific settings live in the autopilot's script, not the pod
+
+**Evidence.** Entry 17's shared environment set PX4's `MAVLINK_MODE=router` for both
+autopilots. The ArduPilot image reads the same variable: in router mode its
+mavlink-router took TCP 5760, SITL could not bind it ("bind failed on port 5760 -
+Address already in use"), and MAVROS never connected. Every flight since entry 17 was
+PX4, so it went unnoticed until an ArduPilot run.
+
+**Decision.** `MAVLINK_MODE` is set by `autopilot_px4.sh` (`${MAVLINK_MODE:-router}`,
+which is a no-op on OSMO, where the workflow already sets it). A variable that more than
+one image reads does not go in the shared environment.
+
+**Also.** Estimator results depend on the camera rate the host happens to deliver (VIO
+divergence investigation). The bridge's poll rate is now a template parameter
+(`bridge_poll_rate_hz`, default 30), so a run can pin it.

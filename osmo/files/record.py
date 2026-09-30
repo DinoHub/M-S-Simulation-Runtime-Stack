@@ -134,6 +134,43 @@ def main():
             node.create_subscription(Image, topic, make_stats(topic), qos_profile_sensor_data)
         print("frame statistics for %s into frame_stats.jsonl" % ", ".join(stats_topics))
 
+    # Opt-in frame dump (FRAME_DUMP_TOPICS; FRAME_DUMP_WINDOW="15,35" seconds
+    # after takeoff): full-resolution grey frames as frames/<camera>/<stamp>.npy,
+    # only inside the window, so two runs can be compared pixel for pixel at the
+    # same point of the route. Takeoff is the first ground-truth sample 0.5 m
+    # above the first one.
+    dump_topics = [t for t in os.environ.get("FRAME_DUMP_TOPICS", "").split(",") if t]
+    if dump_topics:
+        import numpy as np
+        from sensor_msgs.msg import Image
+        lo, hi = (float(x) for x in os.environ.get("FRAME_DUMP_WINDOW", "15,35").split(","))
+        takeoff = dict(z0=None, t=None)
+
+        def on_truth(msg):
+            z = msg.pose.pose.position.z
+            if takeoff["z0"] is None:
+                takeoff["z0"] = z
+            elif takeoff["t"] is None and abs(z - takeoff["z0"]) > 0.5:
+                takeoff["t"] = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+                print("frame dump: takeoff at %.2f; dumping %.0f-%.0f s after it" % (takeoff["t"], lo, hi))
+        node.create_subscription(Odometry, "/ground_truth/odom", on_truth, 10)
+
+        def make_dump(topic):
+            out = run_dir / "frames" / topic.strip("/").replace("/", "_")
+            out.mkdir(parents=True, exist_ok=True)
+            def callback(msg):
+                if takeoff["t"] is None:
+                    return
+                st = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+                if not lo <= st - takeoff["t"] <= hi:
+                    return
+                ch = max(1, len(msg.data) // max(1, msg.height * msg.width))
+                img = np.frombuffer(msg.data, np.uint8).reshape(msg.height, msg.width, ch)[..., :3]
+                np.save(out / ("%.6f.npy" % st), img.mean(axis=2).astype(np.uint8))
+            return callback
+        for topic in dump_topics:
+            node.create_subscription(Image, topic, make_dump(topic), qos_profile_sensor_data)
+
     # The pilot announces the end of the flight; the bag closes a
     # few seconds later. RECORD_SEC is the cap for a pilot that
     # never gets there, and the whole window when nothing flies.

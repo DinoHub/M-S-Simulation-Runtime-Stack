@@ -1,5 +1,8 @@
 #!/bin/bash
 set -e
+# PX4 talks to MAVROS through its mavlink-router. Set here rather than in a pod-wide
+# environment: the ArduPilot image reads the same variable and must not see it.
+export MAVLINK_MODE="${MAVLINK_MODE:-router}"
 # The generated compose sleeps 20 s here. A fixed sleep is a guess
 # that is either wasted time or not enough; wait for the port.
 deadline=$(( $(date +%s) + SIM_DIAL_WAIT_SEC ))
