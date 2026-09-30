@@ -33,4 +33,6 @@ generated/
 !/scenarios/vio-osmo-condo-ardupilot/
 !/scenarios/vio-osmo-xfs/
 !/scenarios/vio-osmo-xfs-ardupilot/
+# The spec plus the casio-edge compose, DDS config and prepare step it needs.
+!/scenarios/casio-siyi/
 !/scenarios/vio-reference/**
