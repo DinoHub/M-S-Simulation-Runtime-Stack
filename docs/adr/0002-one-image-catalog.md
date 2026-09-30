@@ -323,11 +323,13 @@ restructure (one owner per concern, see MnS-Integration-Platform
   visible in git without inventing a digest.
 - **`pull: false`.** The kit image is pinned for checks and never pulled by
   setup: product users never need it.
-- **One host pin.** `consumers.release_channels.v1.host_pin` names the host,
-  kit and authoring rows. `verify` (local images) and `status` (also the
-  registry) compare their labels — `tevv.host.kit_image`,
-  `tevv.authoring.host_image`, `tevv.host.shared_set_id` /
-  `tevv.authoring.shared_set_id` — and warn, never fail, on a mismatch.
+- **One host pin, one kit.** `consumers.release_channels.v1.host_pin` names the
+  host, kit and authoring rows. `verify` (local images) and `status` (also the
+  registry) compare their labels: `tevv.host.kit_image` ==
+  `tevv.authoring.kit_image` == the kit row's digest, and
+  `tevv.host.shared_set_id` == `tevv.authoring.shared_set_id`; an authoring
+  image's `shared_plugins_source` or `host_check_waived` label is flagged. A
+  mismatch warns on `-next` and fails `verify --release`.
 - **Baked defaults** follow the backend: `bakes: [v1_stacks, v1_authoring]`,
   and `baked-pins` resolves release-channel variables, not only
   `product_env` ones. *Later (2026-09-30):* the backend bakes no pins at all

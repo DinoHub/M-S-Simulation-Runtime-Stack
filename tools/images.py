@@ -54,12 +54,13 @@ failure), run by `verify` and `status`:
   pending rows          a pinned row with `pending:` names its tag but not
                         its digest yet (an rc image not yet pinned)
   host pin labels       the host image's tevv.host.kit_image label must name
-                        the pinned kit digest; the authoring image's
-                        tevv.authoring.host_image must name the pinned host
-                        digest and its tevv.authoring.shared_set_id must equal
-                        the host's tevv.host.shared_set_id. `verify` reads
-                        local images only (no registry); `status` also asks
-                        the registry.
+                        the pinned kit digest, and so must the authoring
+                        image's tevv.authoring.kit_image; its
+                        tevv.authoring.shared_set_id must equal the host's
+                        tevv.host.shared_set_id; shared_plugins_source or
+                        host_check_waived on it warn. `verify` reads local
+                        images only (no registry); `status` also asks the
+                        registry. `verify --release` fails on these warnings.
 """
 from __future__ import annotations
 
@@ -869,8 +870,19 @@ _DIGEST_IN_RE = re.compile(r"sha256:[0-9a-f]{64}")
 
 LABEL_HOST_KIT_IMAGE = "tevv.host.kit_image"
 LABEL_HOST_SHARED_SET = "tevv.host.shared_set_id"
-LABEL_AUTHORING_HOST_IMAGE = "tevv.authoring.host_image"
+# The authoring image's kit-only labels (TEVV-Authoring #33): the kit it was
+# built against, the shared plugin set it compiled, and two escape hatches.
+LABEL_AUTHORING_KIT_IMAGE = "tevv.authoring.kit_image"
 LABEL_AUTHORING_SHARED_SET = "tevv.authoring.shared_set_id"
+LABEL_AUTHORING_PLUGINS_SOURCE = "tevv.authoring.shared_plugins_source"
+LABEL_AUTHORING_CHECK_WAIVED = "tevv.authoring.host_check_waived"
+# Before #33 the authoring image named the host instead of the kit.
+LABEL_AUTHORING_HOST_IMAGE_OLD = "tevv.authoring.host_image"
+
+
+def _label_set(value: str | None) -> bool:
+    """A label that is present and not a spelled-out "off"."""
+    return bool(value) and str(value).strip().lower() not in ("0", "false", "no", "none", "off")
 
 
 def _digest_in(value: str | None) -> str | None:
@@ -919,11 +931,18 @@ def host_pin_findings(catalog: dict[str, Any], *, remote: bool,
                       labels_of: Any = None) -> list[tuple[str, str]]:
     """[(WARNING|NOTE, message)] for each release channel's host_pin.
 
-    The host image is the source of truth: its kit image and the authoring
-    image's host and shared plugin set are derived from it. A disagreement is
-    recoverable (repin, or rebuild the authoring image), so it warns. A check
-    that cannot run (image not local, label absent on an image built before
-    the labels existed) says so as a NOTE rather than passing silently.
+    One kit, three places: the catalog's kit row, the host image's
+    `tevv.host.kit_image` and the authoring image's `tevv.authoring.kit_image`
+    must name the same digest, and the authoring image's
+    `tevv.authoring.shared_set_id` must equal the host's
+    `tevv.host.shared_set_id`. An authoring image built from a dev plugin source
+    (`tevv.authoring.shared_plugins_source`) or with its host check waived
+    (`tevv.authoring.host_check_waived`) is flagged too.
+
+    Lenient: a disagreement is recoverable (repin, or rebuild the authoring
+    image), so it is a WARNING; `verify --release` turns the WARNINGs into
+    failures. A check that cannot run (image not local, digest pending) is a
+    NOTE, never a pass in disguise.
     """
     images = catalog["images"]
     labels_of = labels_of or (lambda ref: image_labels(ref, remote=remote))
@@ -934,56 +953,84 @@ def host_pin_findings(catalog: dict[str, Any], *, remote: bool,
             continue
         host_key, kit_key, auth_key = pin["host"], pin.get("kit"), pin.get("authoring")
         host_row = images[host_key]
-        host_ref = image_ref(images, host_key)
-        if not host_row.get("digest"):
-            out.append(("NOTE", f"{name}: host pin checks skipped: {host_key} has no digest yet"))
-            continue
-        host_labels, why = labels_of(host_ref)
-        if host_labels is None:
-            out.append(("NOTE", f"{name}: host pin checks skipped: {host_ref} {why}"))
-            continue
+        kit_digest = images[kit_key].get("digest") if kit_key else None
+        kit_ref = image_ref(images, kit_key) if kit_key else "<the pinned host kit>"
+        rebuild = (f"rebuild the authoring image with --kit {kit_ref} --strict"
+                   if kit_key else "rebuild the authoring image against the pinned kit, --strict")
 
-        if kit_key:
-            want = images[kit_key].get("digest")
-            got = _digest_in(host_labels.get(LABEL_HOST_KIT_IMAGE))
+        host_labels: dict[str, str] | None = None
+        if not host_row.get("digest"):
+            out.append(("NOTE", f"{name}: host checks skipped: {host_key} has no digest yet"))
+        else:
+            host_ref = image_ref(images, host_key)
+            host_labels, why = labels_of(host_ref)
+            if host_labels is None:
+                out.append(("NOTE", f"{name}: host checks skipped: {host_ref} {why}"))
+        host_kit = _digest_in((host_labels or {}).get(LABEL_HOST_KIT_IMAGE))
+
+        if host_labels is not None and kit_key:
             if not host_labels.get(LABEL_HOST_KIT_IMAGE):
                 out.append(("WARNING", f"{name}: {host_key} has no {LABEL_HOST_KIT_IMAGE} label, "
                             f"so its kit cannot be confirmed; pin a host built with the kit image"))
-            elif not want:
+            elif not kit_digest:
                 out.append(("WARNING", f"{name}: {kit_key} is pending, but {host_key} names its kit "
-                            f"{got}: pin that digest (tools/images.sh bump --only {kit_key})"))
-            elif got != want:
-                out.append(("WARNING", f"{name}: {host_key}'s {LABEL_HOST_KIT_IMAGE} is {got}, but "
-                            f"{kit_key} pins {want}: pin the kit the host was built with"))
+                            f"{host_kit}: pin that digest (tools/images.sh bump --only {kit_key})"))
+            elif host_kit != kit_digest:
+                out.append(("WARNING", f"{name}: {host_key}'s {LABEL_HOST_KIT_IMAGE} is {host_kit}, "
+                            f"but {kit_key} pins {kit_digest}: pin the kit the host was built with"))
 
-        if auth_key:
-            auth_ref = image_ref(images, auth_key)
-            auth_labels, why = labels_of(auth_ref)
-            if auth_labels is None:
-                out.append(("NOTE", f"{name}: authoring checks skipped: {auth_ref} {why}"))
-                continue
-            recorded = auth_labels.get(LABEL_AUTHORING_HOST_IMAGE)
-            if not recorded:
-                out.append(("WARNING", f"{name}: {auth_key} has no {LABEL_AUTHORING_HOST_IMAGE} "
-                            f"label, so the host it was built against is unknown; rebuild it "
-                            f"from runtime-host.lock.json in release mode"))
-            elif _digest_in(recorded) != host_row["digest"]:
-                out.append(("WARNING", f"{name}: {auth_key} was built against host "
-                            f"{_digest_in(recorded) or recorded}, but {host_key} pins "
-                            f"{host_row['digest']}: rebuild the authoring image against the "
-                            f"pinned host (or pin the host it names)"))
-            host_set = host_labels.get(LABEL_HOST_SHARED_SET)
-            auth_set = auth_labels.get(LABEL_AUTHORING_SHARED_SET)
-            if not host_set or not auth_set:
-                missing = [label for label, value in ((LABEL_HOST_SHARED_SET, host_set),
-                                                      (LABEL_AUTHORING_SHARED_SET, auth_set))
-                           if not value]
-                out.append(("WARNING", f"{name}: shared plugin set not comparable: "
-                            f"{', '.join(missing)} missing"))
-            elif host_set != auth_set:
-                out.append(("WARNING", f"{name}: {auth_key} shared_set_id {auth_set} differs from "
-                            f"{host_key}'s {host_set}: the editor compiled other shared plugins "
-                            f"than the runtime (`mns-packs host check` lists them)"))
+        if not auth_key:
+            continue
+        auth_ref = image_ref(images, auth_key)
+        auth_labels, why = labels_of(auth_ref)
+        if auth_labels is None:
+            out.append(("NOTE", f"{name}: authoring checks skipped: {auth_ref} {why}"))
+            continue
+
+        # The kit the authoring image was built against, against the pinned
+        # kit (or the host's, while the kit row is still pending).
+        want_kit = kit_digest or host_kit
+        auth_kit = _digest_in(auth_labels.get(LABEL_AUTHORING_KIT_IMAGE))
+        if not auth_labels.get(LABEL_AUTHORING_KIT_IMAGE):
+            if auth_labels.get(LABEL_AUTHORING_HOST_IMAGE_OLD):
+                out.append(("WARNING", f"{name}: {auth_key} predates the kit labels (it records "
+                            f"{LABEL_AUTHORING_HOST_IMAGE_OLD}, not {LABEL_AUTHORING_KIT_IMAGE}), "
+                            f"so its kit cannot be confirmed; {rebuild}"))
+            else:
+                out.append(("WARNING", f"{name}: {auth_key} has no {LABEL_AUTHORING_KIT_IMAGE} "
+                            f"label, so the kit it was built against is unknown; {rebuild}"))
+        elif not want_kit:
+            out.append(("NOTE", f"{name}: {auth_key} names kit {auth_kit}; nothing to compare it "
+                        f"with until {kit_key or 'the kit row'} is pinned"))
+        elif auth_kit != want_kit:
+            out.append(("WARNING", f"{name}: {auth_key} was built against kit {auth_kit or '?'}, "
+                        f"but the pinned kit is {want_kit}; {rebuild}"))
+
+        source = auth_labels.get(LABEL_AUTHORING_PLUGINS_SOURCE)
+        if source:
+            out.append(("WARNING", f"{name}: {auth_key} compiled its shared plugins from "
+                        f"{source} ({LABEL_AUTHORING_PLUGINS_SOURCE}), not from the pinned host's "
+                        f"commit; {rebuild}"))
+        waived = auth_labels.get(LABEL_AUTHORING_CHECK_WAIVED)
+        if _label_set(waived):
+            out.append(("WARNING", f"{name}: {auth_key} was built with its host check waived "
+                        f"({LABEL_AUTHORING_CHECK_WAIVED}={waived}); {rebuild}"))
+
+        if host_labels is None:
+            out.append(("NOTE", f"{name}: shared plugin set not compared: no host labels"))
+            continue
+        host_set = host_labels.get(LABEL_HOST_SHARED_SET)
+        auth_set = auth_labels.get(LABEL_AUTHORING_SHARED_SET)
+        if not host_set or not auth_set:
+            missing = [label for label, value in ((LABEL_HOST_SHARED_SET, host_set),
+                                                  (LABEL_AUTHORING_SHARED_SET, auth_set))
+                       if not value]
+            out.append(("WARNING", f"{name}: shared plugin set not comparable: "
+                        f"{', '.join(missing)} missing"))
+        elif host_set != auth_set:
+            out.append(("WARNING", f"{name}: {auth_key} shared_set_id {auth_set} differs from "
+                        f"{host_key}'s {host_set}: the editor compiled other shared plugins "
+                        f"than the runtime (`mns-packs host check` lists them); {rebuild}"))
     return out
 
 
@@ -1058,7 +1105,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     # and never fails the gate (see the module docstring).
     for key, note in pending_rows(catalog):
         print(f"WARNING: images.{key} is pending, pinned by tag only: {note}", file=sys.stderr)
-    for level, message in host_pin_findings(catalog, remote=False):
+    host_findings = host_pin_findings(catalog, remote=False)
+    for level, message in host_findings:
         print(f"{level}: {message}", file=sys.stderr)
     artifacts = render_all(catalog)
     drifted = []
@@ -1075,12 +1123,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
     names += sorted(catalog["consumers"].get("pack_locks") or {})
     checked = ", ".join(names)
     if release_mode(args):
-        problems = release_problems(catalog)
+        # A host-pin disagreement warns on -next and fails a release. A NOTE
+        # (the check could not run: image not in the local store) does not.
+        problems = release_problems(catalog) + [
+            f"host pin: {message}" for level, message in host_findings if level == "WARNING"]
         if problems:
             for problem in problems:
                 print(f"RELEASE: {problem}", file=sys.stderr)
             print(f"verify --release: {len(problems)} problem(s); a release pins every image "
-                  f"by an immutable tag and its digest (docs/images.md, 'Releasing')",
+                  f"by an immutable tag and its digest, with one kit across host and authoring "
+                  f"(docs/images.md, 'Releasing')",
                   file=sys.stderr)
             return 1
         print("verify --release: every release image is pinned by tag and digest")
@@ -1329,14 +1381,34 @@ def _selftest_pending_and_host_pin() -> None:
         return lambda ref: (table.get(ref), "" if table.get(ref) is not None else "absent")
 
     good_host = {LABEL_HOST_KIT_IMAGE: f"r/i@{one}", LABEL_HOST_SHARED_SET: "tree1"}
-    good_auth = {LABEL_AUTHORING_HOST_IMAGE: f"r/i:h@{zero}", LABEL_AUTHORING_SHARED_SET: "tree1"}
+    good_auth = {LABEL_AUTHORING_KIT_IMAGE: f"r/i:k@{one}", LABEL_AUTHORING_SHARED_SET: "tree1"}
     assert host_pin_findings(catalog, remote=False, labels_of=labels(good_host, good_auth)) == []
-    found = host_pin_findings(catalog, remote=False, labels_of=labels(
-        {**good_host, LABEL_HOST_KIT_IMAGE: two},
-        {LABEL_AUTHORING_HOST_IMAGE: one, LABEL_AUTHORING_SHARED_SET: "tree2"}))
-    assert [level for level, _ in found] == ["WARNING"] * 3, f"selftest FAILED: {found}"
+
+    def warnings(host, auth):
+        return [m for level, m in host_pin_findings(catalog, remote=False,
+                                                     labels_of=labels(host, auth))
+                if level == "WARNING"]
+
+    # host kit, authoring kit and shared set each disagree: three warnings
+    found = warnings({**good_host, LABEL_HOST_KIT_IMAGE: two},
+                     {LABEL_AUTHORING_KIT_IMAGE: zero, LABEL_AUTHORING_SHARED_SET: "tree2"})
+    assert len(found) == 3, f"selftest FAILED: {found}"
+    assert all("--strict" in m for m in found[1:]), f"selftest FAILED: fix text: {found}"
+    # a dev plugin source and a waived host check each warn
+    found = warnings(good_host, {**good_auth, LABEL_AUTHORING_PLUGINS_SOURCE: "/src/airsim",
+                                 LABEL_AUTHORING_CHECK_WAIVED: "true"})
+    assert len(found) == 2, f"selftest FAILED: {found}"
+    assert warnings(good_host, {**good_auth, LABEL_AUTHORING_CHECK_WAIVED: "false"}) == []
+    # an authoring image from before the kit labels warns that it predates them
+    found = warnings(good_host, {LABEL_AUTHORING_HOST_IMAGE_OLD: f"r/i:h@{zero}",
+                                 LABEL_AUTHORING_SHARED_SET: "tree1"})
+    assert len(found) == 1 and "predates the kit labels" in found[0], f"selftest FAILED: {found}"
+    # no images at all: NOTEs only, never a warning
     skipped = host_pin_findings(catalog, remote=False, labels_of=labels(None, None))
-    assert [level for level, _ in skipped] == ["NOTE"], f"selftest FAILED: {skipped}"
+    assert [level for level, _ in skipped] == ["NOTE", "NOTE"], f"selftest FAILED: {skipped}"
+    # authoring is checked against the catalog kit even when the host is not local
+    found = warnings(None, {**good_auth, LABEL_AUTHORING_KIT_IMAGE: f"r/i@{two}"})
+    assert len(found) == 1 and "built against kit" in found[0], f"selftest FAILED: {found}"
 
     # the release guard's -rc detector
     for tag, rc in (("mns-stacks-v1.0.0-rc", True), ("mns-stacks-v1.0.0-rc.2", True),

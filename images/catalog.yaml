@@ -168,7 +168,7 @@ images:
     digest: sha256:b7915ef54cf98ce9945ccc5cb40aa2eb7d88bbc8cecbd63b575a68b1a9ea5a48
     channel: pinned
     purpose: >-
-      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0-next 8ac0933c23ea), built in release mode from the v1_runtime_host rc (labels tevv.authoring.host_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins and UDS come from the host's TEVV-Airsim commit d9f44b8ab7d6; SDK 1.0.0rc3; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
+      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0-next 8ac0933c23ea), built in release mode from the v1_runtime_host rc (labels tevv.authoring.host_image / tevv.authoring.shared_set_id; it predates the kit-only labels of TEVV-Authoring #33, so verify warns until a --kit --strict rebuild is pinned): the nine shared Scenario* plugins and UDS come from the host's TEVV-Airsim commit d9f44b8ab7d6; SDK 1.0.0rc3; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
 
   v1_stacks:
     repo: dhdevspace/auto_mns
@@ -290,13 +290,14 @@ consumers:
         MNS_ROS2_BRIDGE_IMAGE: v1_ros2_bridge
         DASHBOARD_BACKEND_IMAGE: v1_dashboard_backend
         DASHBOARD_FRONTEND_IMAGE: v1_dashboard_frontend
-      # One host pin: the kit and the authoring image are derived from the
-      # host. tools/images.sh verify reads these images' labels (local
-      # images only; status also asks the registry) and WARNS, never fails,
-      # when they disagree:
-      #   host  tevv.host.kit_image       == the kit row's digest
-      #   authoring tevv.authoring.host_image == the host row's digest
+      # One host pin, one kit: tools/images.sh verify reads these images'
+      # labels (local images only; status also asks the registry) and WARNS
+      # when they disagree; verify --release FAILS:
+      #   host tevv.host.kit_image == authoring tevv.authoring.kit_image
+      #     == the kit row's digest
       #   authoring tevv.authoring.shared_set_id == host tevv.host.shared_set_id
+      #   authoring tevv.authoring.shared_plugins_source / host_check_waived:
+      #     present = a dev build; rebuild with --kit <kit row> --strict
       host_pin:
         host: v1_runtime_host
         kit: v1_runtime_host_kit

@@ -33,14 +33,26 @@ being filled in, or labels that disagree, is recoverable):
   `tools/images.sh bump --only KEY` resolves the pinned tag's digest, writes
   it, and deletes the `pending:` line; `status` lists pending rows under
   NEEDS YOU until then.
-- **One host pin.** The runtime host image is the source of truth, so
-  `verify` compares the labels of the images `consumers.release_channels.v1.host_pin`
-  names: the host's `tevv.host.kit_image` must name the pinned kit digest, the
-  authoring image's `tevv.authoring.host_image` must name the pinned host
-  digest, and its `tevv.authoring.shared_set_id` must equal the host's
-  `tevv.host.shared_set_id`. `verify` reads images already in the local Docker
-  store only (it says NOTE when one is not there); `status` also asks the
-  registry.
+- **One host pin, one kit.** The runtime host's kit is the source of truth,
+  so `verify` compares the labels of the images
+  `consumers.release_channels.v1.host_pin` names:
+  - the host's `tevv.host.kit_image`, the authoring image's
+    `tevv.authoring.kit_image` and the catalog's `v1_runtime_host_kit` digest
+    must all be the same kit;
+  - the authoring image's `tevv.authoring.shared_set_id` must equal the
+    host's `tevv.host.shared_set_id`;
+  - an authoring image labelled `tevv.authoring.shared_plugins_source` (built
+    from a dev plugin checkout) or `tevv.authoring.host_check_waived` is a dev
+    build.
+
+  Each of these is a WARNING on `release/v1.0.0-next` and a failure under
+  `verify --release`. The fix is the same for every authoring finding: rebuild
+  the authoring image with `--kit <the catalog's v1_runtime_host_kit ref>
+  --strict` (TEVV-Authoring). An authoring image from before the kit labels
+  (it records `tevv.authoring.host_image` instead) gets a warning that it
+  predates them. `verify` reads images already in the local Docker store only
+  (it says NOTE when one is not there, and a NOTE never fails a release);
+  `status` also asks the registry.
 
 ## Releasing: what `verify --release` requires
 
