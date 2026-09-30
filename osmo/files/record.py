@@ -63,8 +63,9 @@ TOPICS = [
     # the images. On XFS the estimator held for twenty seconds and
     # then ran away under OSMO but not under compose, and nothing in
     # the bag could say whether the frames had thinned out.
-    ("/camera/front/camera_info", CameraInfo, "sensor_msgs/msg/CameraInfo", qos_profile_sensor_data),
-    ("/camera/front_right/camera_info", CameraInfo, "sensor_msgs/msg/CameraInfo", qos_profile_sensor_data),
+    *[(t, CameraInfo, "sensor_msgs/msg/CameraInfo", qos_profile_sensor_data)
+      for t in os.environ.get("CAMERA_INFO_TOPICS",
+                              "/camera/front/camera_info,/camera/front_right/camera_info").split(",") if t],
     # The recording validator's imu_gravity and imu_flu gates read this; without
     # it every run was marked invalid for "only 0 inertial samples".
     ("/imu/data", Imu, "sensor_msgs/msg/Imu", qos_profile_sensor_data),

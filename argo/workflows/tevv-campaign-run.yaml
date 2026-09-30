@@ -1,0 +1,323 @@
+# One TEVV run on Argo Workflows: fly a generated stack, record evidence, judge it.
+# docs/design/2026-09-30-campaigns-openshift-argo.md, section 4.2.
+#
+#   fly        one pod: the recorder is the main container (the lead); the discovery
+#              server, sim, bridge, autopilot, estimator, relay and pilot are sidecars.
+#              Argo stops the sidecars when the recorder exits, and every container
+#              shares the pod's IPC namespace, so iceoryx2 zero-copy works (ENABLE_VIO).
+#   evaluate   vio-eval, spawn-eval, validate -- each reads the recorder's output
+#   verdict    gates from the CampaignSpec
+#
+# The per-task scripts are osmo/files/*, unchanged in behaviour, delivered as the
+# ConfigMap tevv-run-files (argo/submit.sh builds it). Every *_HOST is 127.0.0.1:
+# one pod, one network namespace.
+#
+# Prototype limits, on the way to the design: the checkout comes from the node's
+# /workspace (hostPath, dev clusters only), and steps share a per-workflow volume
+# instead of an artifact repository.
+#
+# Exit codes as on OSMO: 0 pass; 1 a real verdict, never retried; 42 the platform
+# was not ready and 137 OOM, both retried.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: tevv-campaign-run
+spec:
+  entrypoint: run
+  serviceAccountName: tevv-runner
+  podGC:
+    strategy: OnWorkflowSuccess
+  arguments:
+    parameters:
+      - name: stack_dir          # absolute path under /workspace, e.g. /workspace/generated/<stack>
+      - name: fly
+        value: "false"
+      - name: autopilot          # ardupilot | px4 (px4 is not wired yet)
+        value: ardupilot
+      - name: vehicle
+        value: Drone1
+      - name: enable_vio         # "true": images over iceoryx2 shared memory
+        value: "true"
+      - name: estimator          # "true": run the estimator and the QoS relay in the pod
+        value: "false"
+      - name: route_b64
+        value: ""
+      - name: record_sec
+        value: "300"
+      - name: est_topic
+        value: /ov_msckf/odomimu
+      - name: camera_info_topics
+        value: /camera/front/camera_info,/camera/front_right/camera_info
+      - name: relay_topics       # best-effort image topics to republish reliable for the estimator
+        value: ""
+      - name: gates_json
+        value: '{"ate_trans_m.rmse": {"max": 1.0}}'
+      - name: max_fall_ms
+        value: "0.5"
+      - name: runtime_host_image
+      - name: bridge_image
+      - name: ardupilot_image
+      - name: vio_estimator_image
+      - name: sim_real_eval_image
+  volumeClaimTemplates:
+    - metadata:
+        name: work
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
+  volumes:
+    - name: workspace
+      hostPath: {path: /workspace, type: Directory}
+    - name: files
+      configMap: {name: tevv-run-files}
+    - name: shm
+      emptyDir: {medium: Memory, sizeLimit: 8Gi}
+    - name: iceoryx
+      emptyDir: {medium: Memory, sizeLimit: 256Mi}
+
+  templates:
+    - name: run
+      dag:
+        tasks:
+          - name: fly
+            template: fly
+          - name: vio-eval
+            template: vio-eval
+            dependencies: [fly]
+            when: "'{{workflow.parameters.estimator}}' == 'true'"
+          - name: spawn-eval
+            template: spawn-eval
+            dependencies: [fly]
+          - name: validate
+            template: validate
+            dependencies: [fly]
+          - name: verdict
+            template: verdict
+            dependencies: [vio-eval, spawn-eval, validate]
+
+    # ---- fly: one pod ---------------------------------------------------------
+    - name: fly
+      retryStrategy:
+        limit: 2
+        expression: "asInt(lastRetry.exitCode) == 42 || asInt(lastRetry.exitCode) == 137"
+      podSpecPatch: '{"runtimeClassName": "nvidia"}'
+      # One user for the whole pod, as the compose stack runs it (HOST_UID:GID): iceoryx2
+      # does not connect a subscriber and a publisher running as different users, so a
+      # root bridge next to the uid-1000 simulator got no frames. Only the autopilot
+      # still needs root (its entrypoint drops privileges with gosu).
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      container:                      # the lead: its exit ends the pod
+        name: recorder
+        image: "{{workflow.parameters.bridge_image}}"
+        command: [/bin/bash, -c, "cp /files/* /tmp/ && exec /bin/bash /tmp/record.sh"]
+        env:
+          - {name: HOME, value: /tmp}
+          - {name: OUT_DIR, value: /work/run}
+          - {name: RUN_ID, value: "{{workflow.name}}"}
+          - {name: RECORD_SEC, value: "{{workflow.parameters.record_sec}}"}
+          - {name: READY_WAIT_SEC, value: "900"}
+          - {name: VIZ_HOLD_SEC, value: "0"}
+          - {name: CAMERA_INFO_TOPICS, value: "{{workflow.parameters.camera_info_topics}}"}
+          - {name: DS_HOST, value: 127.0.0.1}
+          - {name: RMW_IMPLEMENTATION, value: rmw_fastrtps_cpp}
+          - {name: ROS_DOMAIN_ID, value: "0"}
+          - {name: RCUTILS_LOGGING_USE_STDOUT, value: "1"}
+          - {name: PYTHONUNBUFFERED, value: "1"}
+        resources:
+          requests: {cpu: "1", memory: 1Gi}
+        volumeMounts:
+          - {name: work, mountPath: /work}
+          - {name: files, mountPath: /files}
+          - {name: shm, mountPath: /dev/shm}
+      sidecars:
+        # Pods get no multicast, so DDS discovery goes through a server on localhost.
+        - name: discovery-server
+          image: "{{workflow.parameters.bridge_image}}"
+          command: [/bin/bash, -c, "cp /files/* /tmp/ && exec /bin/bash /tmp/discovery_server.sh"]
+          env:
+            - {name: HOME, value: /tmp}
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+          volumeMounts:
+            - {name: files, mountPath: /files}
+
+        - name: sim
+          image: "{{workflow.parameters.runtime_host_image}}"
+          command: [/bin/bash, -c, "cp /files/* /tmp/ && exec /bin/bash /tmp/sim.sh"]
+          env:
+            - {name: NVIDIA_DRIVER_CAPABILITIES, value: all}
+            - {name: STACK_DIR, value: "{{workflow.parameters.stack_dir}}"}
+            - {name: AUTOPILOT_HOST, value: 127.0.0.1}
+          resources:
+            requests: {cpu: "6", memory: 16Gi}
+            limits: {nvidia.com/gpu: "1"}
+          volumeMounts:
+            - {name: workspace, mountPath: /workspace, readOnly: true}
+            - {name: files, mountPath: /files}
+            - {name: shm, mountPath: /dev/shm}
+            - {name: iceoryx, mountPath: /tmp/iceoryx2}
+
+        - name: autopilot
+          image: "{{workflow.parameters.ardupilot_image}}"
+          command: [/bin/bash, -c, "if [ '{{workflow.parameters.fly}}' != true ]; then exec sleep infinity; fi; cp /files/* /tmp/ && exec /bin/bash /tmp/autopilot_ardupilot.sh"]
+          env:
+            - {name: SIM_HOST, value: 127.0.0.1}
+            - {name: SIM_PORT, value: "41451"}
+            - {name: SIM_DIAL_WAIT_SEC, value: "900"}
+            - {name: MAVLINK_GCS_HOST, value: 127.0.0.1}
+            - {name: MAVLINK_C2_HOST, value: 127.0.0.1}
+            - {name: MAVLINK_C2_PORT, value: "14552"}
+            - {name: HOST_NETWORK_MODE, value: "false"}
+            - {name: INSTANCE_NUM, value: "0"}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          resources:
+            requests: {cpu: "2", memory: 2Gi}
+          volumeMounts:
+            - {name: files, mountPath: /files}
+
+        - name: bridge
+          image: "{{workflow.parameters.bridge_image}}"
+          command: [/bin/bash, -c, "cp /files/* /tmp/ && exec /bin/bash /tmp/bridge.sh"]
+          env:
+            - {name: HOME, value: /tmp}
+            - {name: STACK_DIR, value: "{{workflow.parameters.stack_dir}}"}
+            - {name: VEHICLE, value: "{{workflow.parameters.vehicle}}"}
+            - {name: SIM_HOST, value: 127.0.0.1}
+            - {name: SIM_PORT, value: "41451"}
+            - {name: SIM_DIAL_WAIT_SEC, value: "900"}
+            - {name: DS_HOST, value: 127.0.0.1}
+            - {name: AUTOPILOT, value: "{{workflow.parameters.autopilot}}"}
+            - {name: AUTOPILOT_HOST, value: 127.0.0.1}
+            - {name: ENABLE_MAVROS, value: "{{workflow.parameters.fly}}"}
+            - {name: ENABLE_VIO, value: "{{workflow.parameters.enable_vio}}"}
+            - {name: RMW_IMPLEMENTATION, value: rmw_fastrtps_cpp}
+            - {name: ROS_DOMAIN_ID, value: "0"}
+            - {name: RCUTILS_LOGGING_USE_STDOUT, value: "1"}
+            - {name: RCUTILS_COLORIZED_OUTPUT, value: "0"}
+          resources:
+            requests: {cpu: "2", memory: 4Gi}
+          volumeMounts:
+            - {name: workspace, mountPath: /workspace, readOnly: true}
+            - {name: files, mountPath: /files}
+            - {name: shm, mountPath: /dev/shm}
+            - {name: iceoryx, mountPath: /tmp/iceoryx2}
+
+        # The bridge publishes images best-effort; OpenVINS subscribes reliable.
+        - name: relay
+          image: "{{workflow.parameters.vio_estimator_image}}"
+          command: [/bin/bash, -c, "if [ '{{workflow.parameters.estimator}}' != true ] || [ -z '{{workflow.parameters.relay_topics}}' ]; then exec sleep infinity; fi; cp /files/* /tmp/; DS=$(getent hosts 127.0.0.1 | awk '{print $1}'); export ROS_DISCOVERY_SERVER=$DS:11811; source /opt/ros/humble/setup.bash; exec python3 /tmp/qos_relay.py $(echo '{{workflow.parameters.relay_topics}}' | tr , ' ')"]
+          env:
+            - {name: HOME, value: /tmp}
+            - {name: RMW_IMPLEMENTATION, value: rmw_fastrtps_cpp}
+            - {name: ROS_DOMAIN_ID, value: "0"}
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+          volumeMounts:
+            - {name: files, mountPath: /files}
+            - {name: shm, mountPath: /dev/shm}
+
+        - name: vio
+          image: "{{workflow.parameters.vio_estimator_image}}"
+          command: [/bin/bash, -c, "if [ '{{workflow.parameters.estimator}}' != true ]; then exec sleep infinity; fi; cp /files/* /tmp/ && exec /bin/bash /tmp/vio.sh"]
+          env:
+            - {name: STACK_DIR, value: "{{workflow.parameters.stack_dir}}"}
+            - {name: DS_HOST, value: 127.0.0.1}
+            - {name: HOME, value: /tmp}
+            - {name: RMW_IMPLEMENTATION, value: rmw_fastrtps_cpp}
+            - {name: ROS_DOMAIN_ID, value: "0"}
+            - {name: RCUTILS_LOGGING_USE_STDOUT, value: "1"}
+          resources:
+            requests: {cpu: "2", memory: 4Gi}
+          volumeMounts:
+            - {name: workspace, mountPath: /workspace, readOnly: true}
+            - {name: files, mountPath: /files}
+            - {name: shm, mountPath: /dev/shm}
+
+        - name: pilot
+          image: "{{workflow.parameters.bridge_image}}"
+          command: [/bin/bash, -c, "if [ '{{workflow.parameters.fly}}' != true ]; then exec sleep infinity; fi; cp /files/* /tmp/ && exec /bin/bash /tmp/pilot.sh"]
+          env:
+            - {name: HOME, value: /tmp}
+            - {name: VEHICLE, value: "{{workflow.parameters.vehicle}}"}
+            - {name: AUTOPILOT, value: "{{workflow.parameters.autopilot}}"}
+            - {name: ROUTE_B64, value: "{{workflow.parameters.route_b64}}"}
+            - {name: FLY_DISTANCE_M, value: "8"}
+            - {name: FLY_ALTITUDE_M, value: "3.0"}
+            - {name: FLY_SPEED_MS, value: "1.0"}
+            - {name: DS_HOST, value: 127.0.0.1}
+            - {name: RMW_IMPLEMENTATION, value: rmw_fastrtps_cpp}
+            - {name: ROS_DOMAIN_ID, value: "0"}
+            - {name: RCUTILS_LOGGING_USE_STDOUT, value: "1"}
+            - {name: PYTHONUNBUFFERED, value: "1"}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - {name: files, mountPath: /files}
+
+    # ---- evaluate: CPU only, each reads the recorder's output --------------------
+    - name: vio-eval
+      container:
+        image: "{{workflow.parameters.sim_real_eval_image}}"
+        command: [/bin/sh, -c]
+        args:
+          - >-
+            mkdir -p /work/eval/vio &&
+            printf 'sim:\n  ground_truth: /ground_truth/odom\n  estimate: %s\n  clock: /clock\n' '{{workflow.parameters.est_topic}}' > /tmp/topics.yaml &&
+            python3 /files/flight_window.py /work/run/bag /work/eval/vio '{{workflow.parameters.est_topic}}' &&
+            sim-real-eval trajectory /work/run --topics /tmp/topics.yaml --profile sim
+            --est /work/eval/vio/estimate.tum --gt /work/eval/vio/ground_truth.tum
+            --out /work/eval/vio/vio; rc=$?; [ $rc -le 1 ] || exit $rc
+        volumeMounts:
+          - {name: work, mountPath: /work}
+          - {name: files, mountPath: /files}
+
+    - name: spawn-eval
+      container:
+        image: "{{workflow.parameters.bridge_image}}"
+        command: [/bin/bash, -c]
+        args:
+          - >-
+            source /opt/ros/humble/setup.bash && mkdir -p /work/eval/spawn &&
+            python3 /files/spawn_check.py /work/run/bag /work/eval/spawn/spawn.json; rc=$?; [ $rc -le 1 ] || exit $rc
+        env:
+          - {name: MAX_FALL_MS, value: "{{workflow.parameters.max_fall_ms}}"}
+        volumeMounts:
+          - {name: work, mountPath: /work}
+          - {name: files, mountPath: /files}
+
+    - name: validate
+      container:
+        image: "{{workflow.parameters.bridge_image}}"
+        command: [/bin/bash, -c]
+        args:
+          - >-
+            source /opt/ros/humble/setup.bash && source /ws/install/setup.bash && mkdir -p /work/eval/validate &&
+            printf 'sim:\n  ground_truth: /ground_truth/odom\n  estimate: %s\n  clock: /clock\n' '{{workflow.parameters.est_topic}}' > /tmp/topics.yaml &&
+            python3 /files/validate_recording.py /work/run/bag --topics /tmp/topics.yaml
+            --json /work/eval/validate/validation.json; rc=$?;
+            head -c 2000 /work/eval/validate/validation.json 2>/dev/null; [ $rc -le 2 ] || exit $rc
+        env:
+          - {name: VEHICLE, value: "{{workflow.parameters.vehicle}}"}
+        volumeMounts:
+          - {name: work, mountPath: /work}
+          - {name: files, mountPath: /files}
+
+    # ---- verdict: the one pass/fail decision ------------------------------------
+    - name: verdict
+      container:
+        image: "{{workflow.parameters.sim_real_eval_image}}"
+        command: [python3, /files/verdict.py]
+        env:
+          - {name: REPORT_DIR, value: /work/eval}
+          - {name: GATES, value: "{{workflow.parameters.gates_json}}"}
+          - {name: OUTPUT_DIR, value: /work/verdict}
+        volumeMounts:
+          - {name: work, mountPath: /work}
+          - {name: files, mountPath: /files}

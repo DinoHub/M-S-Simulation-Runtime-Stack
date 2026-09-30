@@ -13,5 +13,5 @@ echo "discovery server $DS_HOST -> $ROS_DISCOVERY_SERVER"
 # The calibration is frozen beside the scenario and staged into the
 # generated stack; it is part of the run, not of the image.
 exec ros2 launch ov_msckf subscribe.launch.py \
-  config_path:="/workspace/generated/${STACK}/config/vio/estimator_config.yaml" \
+  config_path:="${STACK_DIR:-/workspace/generated/${STACK}}/config/vio/estimator_config.yaml" \
   max_cameras:=2 use_stereo:=true
