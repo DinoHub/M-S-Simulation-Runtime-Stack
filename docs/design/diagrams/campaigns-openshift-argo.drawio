@@ -1,0 +1,252 @@
+<mxfile>
+  <diagram name="system-architecture" id="system">
+    <mxGraphModel dx="1800" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="TP" value="Trigger plane" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1300" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="SUITES" value="&lt;b&gt;Test-suite repo&lt;/b&gt;&lt;br/&gt;CampaignSpec + ScenarioSpec&lt;br/&gt;+ component under test (image, config)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="TP">
+          <mxGeometry x="20" y="40" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="CI" value="&lt;b&gt;Native CI runners&lt;/b&gt;&lt;br/&gt;GitHub / GitLab runners, or OpenShift Pipelines (Tekton)&lt;br/&gt;on PR: validate + preflight; on merge: submit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="TP">
+          <mxGeometry x="340" y="40" width="320" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="DASH" value="&lt;b&gt;TEVV Web Dashboard&lt;/b&gt;&lt;br/&gt;campaign page, launch, results" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="TP">
+          <mxGeometry x="700" y="40" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="DEV" value="&lt;b&gt;Developer&lt;/b&gt;&lt;br/&gt;make campaign / tevv-campaign" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="TP">
+          <mxGeometry x="1000" y="40" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="CR" value="Campaign runner — one CLI, swappable execution backends" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="230" width="1300" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="MAT" value="&lt;b&gt;Plan&lt;/b&gt;&lt;br/&gt;variants x repeats -&amp;gt; one ScenarioSpec per run&lt;br/&gt;validate, preflight, image resolution" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="CR">
+          <mxGeometry x="20" y="40" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="GEN" value="&lt;b&gt;Stack generator&lt;/b&gt; (stackgen)&lt;br/&gt;ScenarioSpec -&amp;gt; settings, bridge config,&lt;br/&gt;estimator config, topic contract" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="CR">
+          <mxGeometry x="340" y="40" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="EXEC" value="&lt;b&gt;Executor interface&lt;/b&gt;&lt;br/&gt;submit / status / wait / fetch / logs / cancel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="CR">
+          <mxGeometry x="660" y="40" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="VERD" value="&lt;b&gt;Verdict + registry&lt;/b&gt;&lt;br/&gt;gates, manifest, run registry rows" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="CR">
+          <mxGeometry x="980" y="40" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="BCOMP" value="compose backend (exists)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1" parent="CR">
+          <mxGeometry x="660" y="135" width="95" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="BOSMO" value="osmo backend (exists)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1" parent="CR">
+          <mxGeometry x="762" y="135" width="95" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="BARGO" value="argo backend (new)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="CR">
+          <mxGeometry x="865" y="135" width="95" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="HOST" value="Single GPU host (compose backend)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="470" width="300" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="HOSTSTACK" value="docker compose stack&lt;br/&gt;sim, bridge, autopilot, component, pilot, recorder&lt;br/&gt;ipc: host, /dev/shm&lt;br/&gt;&lt;i&gt;CI runner on a dedicated sim-gpu label&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="HOST">
+          <mxGeometry x="20" y="40" width="260" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="OCP" value="OpenShift cluster (restricted-v2 SCC, NVIDIA GPU Operator)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="380" y="470" width="1380" height="820" as="geometry" />
+        </mxCell>
+        <mxCell id="ARGO" value="&lt;b&gt;Argo Workflows controller&lt;/b&gt;&lt;br/&gt;WorkflowTemplate tevv-campaign-run" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="OCP">
+          <mxGeometry x="20" y="40" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="KUEUE" value="&lt;b&gt;Kueue&lt;/b&gt;&lt;br/&gt;ClusterQueue gpu-sim: quota, priority, preemption" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="OCP">
+          <mxGeometry x="330" y="40" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="LOGS" value="&lt;b&gt;OpenShift logging + monitoring&lt;/b&gt;&lt;br/&gt;replaces the OSMO-side Loki/Alloy stack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="OCP">
+          <mxGeometry x="640" y="40" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="IREG" value="&lt;b&gt;Internal image registry&lt;/b&gt;&lt;br/&gt;mirrored, digest-pinned images" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="OCP">
+          <mxGeometry x="970" y="40" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="POD" value="Run pod — Argo containerSet, one per run (shared IPC namespace, localhost DDS)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="OCP">
+          <mxGeometry x="20" y="160" width="920" height="400" as="geometry" />
+        </mxCell>
+        <mxCell id="C_SIM" value="&lt;b&gt;sim&lt;/b&gt;&lt;br/&gt;TEVV runtime host (UE 5.8.2)&lt;br/&gt;-RenderOffScreen, Vulkan&lt;br/&gt;nvidia.com/gpu: 1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="POD">
+          <mxGeometry x="20" y="40" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="C_BR" value="&lt;b&gt;bridge&lt;/b&gt;&lt;br/&gt;AirSim ROS 2 bridge&lt;br/&gt;iceoryx2 zero-copy images" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="POD">
+          <mxGeometry x="240" y="40" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="C_AP" value="&lt;b&gt;autopilot&lt;/b&gt;&lt;br/&gt;ArduPilot or PX4 SITL&lt;br/&gt;MAVROS on localhost" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="POD">
+          <mxGeometry x="460" y="40" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="C_CUT" value="&lt;b&gt;component under test&lt;/b&gt;&lt;br/&gt;estimator today (mns.vio_estimator);&lt;br/&gt;planner / controller after platform ADR 0002" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="POD">
+          <mxGeometry x="680" y="40" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="C_PIL" value="&lt;b&gt;pilot&lt;/b&gt;&lt;br/&gt;route or mission from the CampaignSpec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="POD">
+          <mxGeometry x="20" y="170" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="C_REC" value="&lt;b&gt;recorder&lt;/b&gt; (lead)&lt;br/&gt;ros2 bag -&amp;gt; /out; its exit ends the pod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="POD">
+          <mxGeometry x="240" y="170" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="C_FOX" value="&lt;b&gt;foxglove&lt;/b&gt; (optional)&lt;br/&gt;live view via Route" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1" parent="POD">
+          <mxGeometry x="460" y="170" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="VOLS" value="&lt;b&gt;Pod volumes&lt;/b&gt;: emptyDir(Memory) at /dev/shm and /tmp/iceoryx2 (iceoryx2 transport);&lt;br/&gt;emptyDir /cfg (generated stack config); emptyDir /out (recording, logs);&lt;br/&gt;PVC /packs read-only (level + asset packs)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;align=left;spacingLeft=8;" vertex="1" parent="POD">
+          <mxGeometry x="20" y="280" width="880" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="EVAL" value="Evaluate + aggregate — DAG tasks, CPU only" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="OCP">
+          <mxGeometry x="970" y="160" width="390" height="400" as="geometry" />
+        </mxCell>
+        <mxCell id="E_VAL" value="&lt;b&gt;validate-recording&lt;/b&gt;&lt;br/&gt;topic rates, stamps, gaps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="EVAL">
+          <mxGeometry x="20" y="40" width="350" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="E_PERF" value="&lt;b&gt;performance eval&lt;/b&gt; (sim-real-eval)&lt;br/&gt;ATE / RPE, landmarks, divergence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="EVAL">
+          <mxGeometry x="20" y="115" width="350" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="E_SAFE" value="&lt;b&gt;safety eval&lt;/b&gt; (new)&lt;br/&gt;collisions, min separation, time to safe state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="EVAL">
+          <mxGeometry x="20" y="190" width="350" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="E_VERD" value="&lt;b&gt;verdict&lt;/b&gt;&lt;br/&gt;CampaignSpec gates -&amp;gt; pass / fail per run" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="EVAL">
+          <mxGeometry x="20" y="300" width="350" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="S_PACK" value="&lt;b&gt;Pack store&lt;/b&gt;&lt;br/&gt;PVC, ReadOnlyMany&lt;br/&gt;populated from the pack mirror" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#ffffff;" vertex="1" parent="OCP">
+          <mxGeometry x="40" y="620" width="220" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="S_S3" value="&lt;b&gt;Artifact store&lt;/b&gt;&lt;br/&gt;S3 (ODF / MinIO)&lt;br/&gt;bags, logs, reports" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#ffffff;" vertex="1" parent="OCP">
+          <mxGeometry x="520" y="620" width="220" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="S_REG" value="&lt;b&gt;Run registry&lt;/b&gt;&lt;br/&gt;Postgres&lt;br/&gt;campaigns, runs, verdicts" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#ffffff;" vertex="1" parent="OCP">
+          <mxGeometry x="1060" y="620" width="220" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="NOTE" value="Nothing on the host: no hostPath, no hostIPC, no host network, arbitrary UID" style="text;html=1;fontStyle=2;align=left;" vertex="1" parent="OCP">
+          <mxGeometry x="40" y="770" width="700" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="AG" value="Air-gap inputs (classified cloud)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="40" width="380" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="AG_IMG" value="&lt;b&gt;Image mirror&lt;/b&gt; (oc-mirror)&lt;br/&gt;images/catalog.yaml digests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="AG">
+          <mxGeometry x="20" y="40" width="340" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="AG_PACK" value="&lt;b&gt;Pack release mirror&lt;/b&gt;&lt;br/&gt;packs/v1.0.0.lock.json archives" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="AG">
+          <mxGeometry x="20" y="150" width="340" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="AG_GIT" value="&lt;b&gt;Git mirror&lt;/b&gt;&lt;br/&gt;runtime stack + test-suite repos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="AG">
+          <mxGeometry x="20" y="260" width="340" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="SUITES" target="CI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="validate, submit" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="CI" target="MAT">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="DASH" target="EXEC">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="DEV" target="VERD">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="MAT" target="GEN">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="GEN" target="EXEC">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="docker compose" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="BCOMP" target="HOSTSTACK">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="747" y="440" /><mxPoint x="190" y="440" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e8" value="submit WorkflowTemplate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="BARGO" target="ARGO">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="952" y="455" /><mxPoint x="540" y="455" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e9" value="admit" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="ARGO" target="KUEUE">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="start run pod" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.152;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ARGO" target="POD">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="/out -&gt; artifact" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.66;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="POD" target="S_S3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="mount read-only" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.141;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="S_PACK" target="POD">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" value="artifact in" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.08;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="S_S3" target="EVAL">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="E_VERD" target="S_REG" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" value="mirror images" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.51;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="AG" target="IREG">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" value="pods, logs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;exitX=0.837;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="POD" target="LOGS">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram name="run-workflow" id="run">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="r0" />
+        <mxCell id="r1" parent="r0" />
+
+        <mxCell id="WT" value="WorkflowTemplate tevv-campaign-run — one Workflow per run (variant x seed x repeat)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="r1">
+          <mxGeometry x="40" y="40" width="1520" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="PAR" value="&lt;b&gt;Parameters&lt;/b&gt;&lt;br/&gt;campaign, run_key, scenario (materialised ScenarioSpec),&lt;br/&gt;image refs (digests), autopilot, route, gates, fly, viz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;align=left;spacingLeft=8;" vertex="1" parent="WT">
+          <mxGeometry x="20" y="40" width="460" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="S1" value="&lt;b&gt;1. generate&lt;/b&gt;&lt;br/&gt;stackgen: ScenarioSpec -&amp;gt; stack config&lt;br/&gt;output artifact: cfg.tgz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="WT">
+          <mxGeometry x="20" y="170" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="S2" value="&lt;b&gt;2. fly&lt;/b&gt; (containerSet, GPU)&lt;br/&gt;sim, bridge, autopilot, component,&lt;br/&gt;pilot, recorder (lead), foxglove&lt;br/&gt;output artifact: bag + logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="WT">
+          <mxGeometry x="340" y="170" width="300" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="S3a" value="&lt;b&gt;3a. validate-recording&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="WT">
+          <mxGeometry x="720" y="140" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="S3b" value="&lt;b&gt;3b. performance eval&lt;/b&gt; (sim-real-eval)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="WT">
+          <mxGeometry x="720" y="200" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="S3c" value="&lt;b&gt;3c. safety eval&lt;/b&gt; (new)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="WT">
+          <mxGeometry x="720" y="260" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="S4" value="&lt;b&gt;4. verdict&lt;/b&gt;&lt;br/&gt;gates from the CampaignSpec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="WT">
+          <mxGeometry x="1060" y="190" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="S5" value="&lt;b&gt;5. register&lt;/b&gt;&lt;br/&gt;run registry row, manifest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="WT">
+          <mxGeometry x="1300" y="190" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="EXIT" value="&lt;b&gt;Exit codes&lt;/b&gt; (kept from the OSMO workflow): 0 pass; 1 a real verdict, never retried;&lt;br/&gt;42 platform not ready and 137 OOM -&amp;gt; Argo retryStrategy with expression on exit code" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;align=left;spacingLeft=8;" vertex="1" parent="WT">
+          <mxGeometry x="20" y="340" width="960" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="DIFF" value="&lt;b&gt;Differences from OSMO&lt;/b&gt;: the run group is one pod, so shared memory, localhost DDS and gang start come from Kubernetes itself;&lt;br/&gt;no discovery-server task; no osmo-ctrl sidecar; artifacts move through the Argo artifact repository instead of osmo data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;align=left;spacingLeft=8;" vertex="1" parent="WT">
+          <mxGeometry x="20" y="440" width="1480" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="re1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="r1" source="S1" target="S2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="r1" source="S2" target="S3a">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="r1" source="S2" target="S3b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="r1" source="S2" target="S3c">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="r1" source="S3a" target="S4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="r1" source="S3b" target="S4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="r1" source="S3c" target="S4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="r1" source="S4" target="S5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
