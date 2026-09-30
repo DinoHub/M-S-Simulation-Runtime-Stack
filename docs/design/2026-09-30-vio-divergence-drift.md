@@ -19,18 +19,18 @@ Tools: [`tools/vio-drift/`](../../tools/vio-drift/README.md).
 
 All runs are on the `vio-osmo-xfs` yard-box campaign, PX4, on Argo unless noted, 30 Sep.
 
-| Condition | Cameras (bag) | Estimator updates | Runs | Passed (ATE ≤ 1 m) |
+| Condition | Cameras (bag) | Estimator updates | Runs | Passed (ATE ≤ 1 m) / diverged (> 3 m) |
 | --- | --- | --- | --- | --- |
-| Idle GPU, default config | 23–27 Hz | ~13.5/s | 13 (compose, OSMO, Argo) | 2 |
-| Another simulator on the GPU, default config | 10.8–11.0 Hz | ~7.1/s | 6 | 6 (0.30–1.13 m) |
-| Another simulator on the GPU, bridge `poll_rate_hz` 12 | 10.8–10.9 Hz | ~7.4/s | 3 | 3 (0.42–0.74 m) |
-| Another simulator on the GPU, `max_clones` 22 | 10.9–11.1 Hz | — | 3 | 3 (0.28–0.58 m) |
+| Idle GPU, default config | 23–27 Hz | ~13.5/s | 13 (compose, OSMO, Argo) | 2 passed, 11 diverged |
+| Another simulator on the GPU, default config | 10.8–11.0 Hz | ~7.1/s | 6 | 5 passed (0.30–0.83 m), 1 at 1.13 m; none diverged |
+| Another simulator on the GPU, bridge `poll_rate_hz` 12 | 10.8–10.9 Hz | ~7.4/s | 3 | 3 passed (0.42–0.74 m) |
+| Another simulator on the GPU, `max_clones` 22 | 10.9–11.1 Hz | — | 3 | 3 passed (0.28–0.58 m) |
 
 - **The contended rows come from GPU sharing, not from any setting of mine.** The six
   "default config" runs are the frame-dump runs. The dump was first taken for the cause,
   but they all started after another session's simulator had taken the same GPU (08:06
   UTC). Every run before that point had 23 Hz cameras and diverged; every run after it had
-  11 Hz cameras and passed.
+  11 Hz cameras and stayed under 1.13 m.
 - **The same effect on identical images, with no load involved.** The 29 Sep compose
   recording (26.5 Hz cameras) replays deterministically. Only the window changes:
 
