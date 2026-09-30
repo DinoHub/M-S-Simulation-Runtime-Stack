@@ -58,6 +58,21 @@ RUNS_DIR="$(cd "$runs" && pwd)"
 
 PACK_STORE="${MNS_PACK_STORE_ROOT:-$ROOT/.mns/v1/pack-store}"
 IMAGE_SET_FILE="${MNS_IMAGE_SET_FILE:-$ROOT/images/image-set.generated.yaml}"
+# Generated stacks take their images from the image-set file alone, so an
+# image override in the shell or ./.env (MNS_RUNTIME_HOST_IMAGE,
+# MNS_ROS2_BRIDGE_IMAGE) is applied to a copy of it, with a NOTE per override,
+# for the commands that generate stacks. Without overrides the file is used
+# as it is.
+case "$1" in
+  generate|campaign)
+    if effective="$("${PYTHON:-python3}" "$ROOT/tools/images.py" effective-image-set \
+          --in "$IMAGE_SET_FILE" --out "$ROOT/.mns/image-set.effective.yaml" --dotenv "$ROOT/.env")"; then
+      IMAGE_SET_FILE="$effective"
+    else
+      echo "WARNING: could not apply the shell/./.env image overrides to $IMAGE_SET_FILE (see above);" >&2
+      echo "         generated stacks run its images unchanged" >&2
+    fi ;;
+esac
 CONTRACT="${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-$ROOT/packs/runtime-host-compatibility.v1.json}"
 KIT="${MNS_CAPABILITY_KIT:-}"
 if [[ -n "$KIT" ]]; then

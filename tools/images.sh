@@ -27,6 +27,10 @@
 #   tools/images.sh selftest        # regression guard on synthetic fixtures (offline,
 #                                    # no real catalog/network involved); `verify` always
 #                                    # runs this first, so it rarely needs invoking directly
+#   tools/images.sh effective-image-set --in FILE --out FILE
+#                                    # the image-set file generated stacks run, with the
+#                                    # shell/./.env image overrides applied (prints its path;
+#                                    # tools/mns-stacks.sh and make dashboard call it)
 #
 # sync/verify/report/bump are implemented in tools/images.py (YAML-heavy,
 # needs pyyaml). drift/baked stay here: they are docker plumbing (drift runs
@@ -39,7 +43,7 @@ MODE="${1:-}"
 [[ $# -gt 0 ]] && shift || true
 
 case "$MODE" in
-  sync|verify|report|bump|selftest|status|refs|local-refs)
+  sync|verify|report|bump|selftest|status|refs|local-refs|effective-image-set)
     # setup.sh, make doctor and pull-all-images.sh reach these subcommands, so
     # this is on the customer path: fail with the fix rather than "python3:
     # command not found". images.py carries the matching pyyaml guard.
@@ -55,7 +59,7 @@ case "$MODE" in
   baked)
     ;;
   *)
-    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest|refs|local-refs> [args...]" >&2
+    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest|refs|local-refs|effective-image-set> [args...]" >&2
     exit 2
     ;;
 esac

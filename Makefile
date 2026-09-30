@@ -197,7 +197,7 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):ros2-tools:"Foxglove websocket" || exit 1
 	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
-	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
+	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE="$$($(EFFECTIVE_IMAGE_SET))" \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
 	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
 	@# ros2-tools is created outside Compose by the backend. It serves the
@@ -291,6 +291,14 @@ RECORD ?=
 KEEP ?=
 STACK ?=
 ARGS ?=
+# The image-set file the dashboard's generated stacks run: the selected one,
+# or a copy with the shell/./.env image overrides applied (MNS_RUNTIME_HOST_IMAGE,
+# MNS_ROS2_BRIDGE_IMAGE), each with a NOTE. tools/mns-stacks.sh does the same
+# for make fly / make campaign. Falls back to the selected file, with the
+# error, when the overrides cannot be applied.
+EFFECTIVE_IMAGE_SET = python3 tools/images.py effective-image-set --in "$(CURDIR)/$(DASHBOARD_IMAGE_SET_FILE)" \
+	--out "$(CURDIR)/.mns/image-set.effective.yaml" --dotenv "$(CURDIR)/.env" || echo "$(CURDIR)/$(DASHBOARD_IMAGE_SET_FILE)"
+
 MNS_STACKS_ENV = . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 	export MNS_IMAGE_SET_FILE=$(CURDIR)/$(DASHBOARD_IMAGE_SET_FILE) MNS_HOST_UID=$$(id -u) MNS_HOST_GID=$$(id -g)
 

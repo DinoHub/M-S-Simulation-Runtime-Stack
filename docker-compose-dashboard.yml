@@ -190,7 +190,8 @@ services:
       - MNS_STACKS_IMAGE=${MNS_STACKS_IMAGE:-}
       # Reported (presence + host label) by the Content phase, and the host
       # the authoring preflight grades against; the generated stacks take the
-      # runtime host from MNS_IMAGE_SET_FILE, not from this.
+      # runtime host from MNS_IMAGE_SET_FILE, into which `make dashboard`
+      # writes an override of this (tools/images.sh effective-image-set).
       - MNS_RUNTIME_HOST_IMAGE=${MNS_RUNTIME_HOST_IMAGE:-}
       # Optional overrides, empty by default (HOST paths; the backend mounts
       # them into its mns-stacks / mns-packs siblings at the same path):

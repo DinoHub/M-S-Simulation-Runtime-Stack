@@ -2129,6 +2129,119 @@ def cmd_baked_pins(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# effective-image-set: the release channel's .env image overrides, applied to
+# the image set generated stacks run
+# --------------------------------------------------------------------------
+
+def image_set_slots(catalog: dict[str, Any], image_set: str) -> dict[str, list[tuple[str, ...]]]:
+    """var -> the image-set slots it overrides, e.g. MNS_RUNTIME_HOST_IMAGE ->
+    [("simulators", "tevv_runtime_host")]. A release channel var binds a
+    catalog key; the image set's slots name catalog keys too, so a var owns
+    every slot holding its key. Only channels that select this image set count."""
+    sets = catalog["consumers"].get("image_sets") or {}
+    if image_set not in sets:
+        raise CatalogError(f"consumers.image_sets.{image_set} is not declared; known: {', '.join(sets)}")
+    by_key: dict[str, list[tuple[str, ...]]] = {}
+
+    def walk(node: Any, path: tuple[str, ...]) -> None:
+        if isinstance(node, dict):
+            for name, child in node.items():
+                walk(child, path + (str(name),))
+        elif isinstance(node, str):
+            by_key.setdefault(node, []).append(path)
+
+    walk(sets[image_set].get("images") or {}, ())
+    out: dict[str, list[tuple[str, ...]]] = {}
+    for spec in (catalog["consumers"].get("release_channels") or {}).values():
+        if spec.get("image_set") != image_set:
+            continue
+        for var, key in spec["vars"].items():
+            if key in by_key:
+                out[var] = by_key[key]
+    return out
+
+
+def _dotenv(path: Path) -> dict[str, str]:
+    """KEY -> value from a dotenv file, last assignment winning, quotes stripped
+    (the same reading as tools/load-images-env.sh's dotenv_value)."""
+    env: dict[str, str] = {}
+    if not path.is_file():
+        return env
+    for line in path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+        if m:
+            value = m.group(2).strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            env[m.group(1)] = value
+    return env
+
+
+def effective_overrides(catalog: dict[str, Any], image_set: str, environ: dict[str, str],
+                        dotenv: dict[str, str]) -> list[tuple[str, str, str, tuple[str, ...]]]:
+    """(var, value, where, slot) for every channel image var the shell or ./.env
+    sets to something other than its pin. The shell wins over ./.env, as in
+    load-images-env.sh. A value equal to the pin in either form (tag@digest or
+    the bare tag) is not an override: make exports the pins into the shell."""
+    images = catalog["images"]
+    channels = catalog["consumers"].get("release_channels") or {}
+    var_key = {var: key for spec in channels.values() if spec.get("image_set") == image_set
+               for var, key in spec["vars"].items()}
+    out = []
+    for var, slots in sorted(image_set_slots(catalog, image_set).items()):
+        if environ.get(var):
+            value, where = environ[var], "the environment"
+        elif dotenv.get(var):
+            value, where = dotenv[var], "./.env"
+        else:
+            continue
+        key = var_key[var]
+        if value in {image_ref(images, key), development_ref(images, key),
+                     f"{images[key]['repo']}:{images[key]['tag']}"}:
+            continue
+        for slot in slots:
+            out.append((var, value, where, slot))
+    return out
+
+
+def cmd_effective_image_set(args: argparse.Namespace) -> int:
+    """Print the image-set file generated stacks should run: --in unchanged when
+    no channel image var is overridden, else --out, a copy of --in with each
+    overridden slot replaced (a NOTE per override on stderr). This is how
+    `MNS_RUNTIME_HOST_IMAGE=...` in ./.env reaches make fly / make campaign /
+    dashboard stacks, which take their images from the image-set file only."""
+    catalog = load_catalog()
+    image_set = args.image_set or os.environ.get("MNS_IMAGE_SET") or "v1"
+    src = Path(args.src)
+    overrides = effective_overrides(catalog, image_set, dict(os.environ),
+                                    _dotenv(Path(args.dotenv)))
+    if not overrides:
+        print(src)
+        return 0
+    doc = yaml.safe_load(src.read_text(encoding="utf-8")) or {}
+    try:
+        node = doc["image_sets"][image_set]["images"]
+    except (KeyError, TypeError):
+        sys.exit(f"image set {image_set!r} is not in {src}")
+    for var, value, where, slot in overrides:
+        target = node
+        for name in slot[:-1]:
+            target = target.setdefault(name, {})
+        old = target.get(slot[-1])
+        target[slot[-1]] = value
+        print(f"NOTE: {var} from {where} overrides the image set's {'.'.join(slot)} "
+              f"({old}): generated stacks run {value}", file=sys.stderr)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    header = (f"# GENERATED by tools/images.py effective-image-set from {src},\n"
+              "# with the image overrides the shell or ./.env sets (a NOTE names each).\n"
+              "# Rewritten on every make fly / make campaign / make dashboard; do not edit.\n")
+    out.write_text(header + yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    print(out)
+    return 0
+
+
+# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
@@ -2176,6 +2289,14 @@ def main(argv: list[str]) -> int:
     p_rv = sub.add_parser("resolve-var")
     p_rv.add_argument("var")
     p_rv.set_defaults(fn=cmd_resolve_var)
+
+    p_eis = sub.add_parser("effective-image-set",
+                           help="apply the channel's .env/shell image overrides to an image-set file")
+    p_eis.add_argument("--in", dest="src", required=True, help="the selected image-set file")
+    p_eis.add_argument("--out", required=True, help="where the overridden copy goes")
+    p_eis.add_argument("--image-set", default=None, help="image set name (default: $MNS_IMAGE_SET or v1)")
+    p_eis.add_argument("--dotenv", default=str(DOTENV_PATH), help="the dotenv file (default: ./.env)")
+    p_eis.set_defaults(fn=cmd_effective_image_set)
 
     p_bp = sub.add_parser("baked-pins")
     p_bp.add_argument("key")
