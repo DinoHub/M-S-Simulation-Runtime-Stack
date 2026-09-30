@@ -1,0 +1,261 @@
+# casio-edge perception stack against the casio-siyi simulation.
+#
+# Derived from casio-edge's compose.sims_x86.yml. What changed, and why:
+#   - Every service joins the generated stack's agent_internal-1 network
+#     instead of the host network. The stack's ROS graph and the PX4 MAVLink
+#     router live on that docker network, not on the host.
+#   - cyclonedds.xml is this folder's, shared with the stack, not the
+#     Jetson's (whose interfaces and peers describe the drone).
+#   - MAVROS talks to PX4's mavlink-router MAVROS endpoint
+#     (px4-drone-1:14555) instead of 127.0.0.1:15550 on the Jetson.
+#   - casio_pointcloud and casio_description use sim time like the rest: the
+#     sim stamps images and TF from /clock, so wall-time TF lookups fail.
+#   - mediamtx binds all interfaces and publishes WebRTC and RTSP on the
+#     host's 127.0.0.1; streaming publishes to it by service name.
+#   - The siyi_camera and siyi_gimbal nodes are absent: the bridge publishes
+#     /camera/image_raw and /camera/camera_info from the simulated A8 mini.
+#
+#   scenarios/casio-siyi/casio/prepare-stack.sh    # writes .env beside this file
+#   docker compose -f scenarios/casio-siyi/casio/compose.sim.yml up -d
+name: casio-sim
+
+x-ros-environment: &ros-environment
+  ROS_DOMAIN_ID: "42"
+  RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+  CYCLONEDDS_URI: file:///configs/cyclonedds.xml
+
+x-casio: &casio
+  networks: [stack]
+  ipc: host
+  restart: unless-stopped
+  extra_hosts:
+    - host.docker.internal:host-gateway
+
+services:
+
+  detection:
+    <<: *casio
+    image: dhdevspace/auto_mns:casio-detection
+    container_name: casio-detection
+    gpus: all
+    environment:
+      <<: *ros-environment
+    volumes:
+      - ./cyclonedds.xml:/configs/cyclonedds.xml:ro
+      # The generated desktop engine is incompatible with the Jetson engine.
+      - detection_x86_models:/models/detection
+      - ${CASIO_MODELS_DIR:?run prepare-stack.sh}/detection/yolo11s.onnx:/model_sources/yolo11s.onnx:ro
+    command: >
+      bash -c "
+      mkdir -p /models/detection/engines &&
+      cp -u /model_sources/yolo11s.onnx /models/detection/yolo11s.onnx &&
+      if [ ! -s /models/detection/engines/yolo11s.engine ]; then
+        trtexec --onnx=/models/detection/yolo11s.onnx --saveEngine=/models/detection/engines/yolo11s.engine --fp16;
+      fi &&
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      source /detection_ws/install/setup.bash &&
+      ros2 run casio_detection detector_node --ros-args
+      --params-file /detection_ws/install/share/casio_detection/config/detector.yaml
+      -p use_sim_time:=true
+      -p publish_empty:=true
+      -p backend:=tensorrt
+      -p engine_path:=/models/detection/engines/yolo11s.engine
+      "
+
+  depth_anything_v3:
+    <<: *casio
+    image: dhdevspace/auto_mns:casio-da3
+    container_name: casio-depth-anything-v3
+    gpus: all
+    environment:
+      <<: *ros-environment
+    volumes:
+      - ./cyclonedds.xml:/configs/cyclonedds.xml:ro
+      # Keep desktop TensorRT engines separate from the incompatible Jetson cache.
+      - da3_x86_models:/models/depth_anything_v3
+      - ${CASIO_MODELS_DIR:?run prepare-stack.sh}/depth_anything_v3/DA3METRIC-LARGE.onnx:/model_sources/DA3METRIC-LARGE.onnx:ro
+    command: >
+      bash -c "
+      cp -u /model_sources/DA3METRIC-LARGE.onnx /models/depth_anything_v3/DA3METRIC-LARGE.onnx &&
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      source /ws/install/setup.bash &&
+      ros2 launch casio_depth_anything_v3 depth_anything_v3.launch.py
+      input_image_topic:=/camera/image_raw
+      input_camera_info_topic:=/camera/camera_info
+      output_depth_topic:=/depth/image
+      "
+
+  casio_pointcloud:
+    <<: *casio
+    image: dhdevspace/auto_mns:casio-node
+    container_name: casio-pointcloud
+    environment:
+      <<: *ros-environment
+      # Forward RViz and other X11 GUI windows to the host desktop.
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      - ./cyclonedds.xml:/configs/cyclonedds.xml:ro
+      # Makes host rosbags available at the same path regardless of username.
+      - ${HOME}:${HOME}:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 launch casio_pointcloud depth_mapping.launch.py
+      depth_topic:=/depth/image
+      camera_info_topic:=/camera/camera_info
+      map_frame:=map
+      tf_lookup_timeout_s:=0.3
+      use_sim_time:=true
+      pixel_stride:=10
+      "
+
+  casio_description:
+    <<: *casio
+    image: dhdevspace/auto_mns:casio-node
+    container_name: casio-description
+    environment:
+      <<: *ros-environment
+    volumes:
+      - ./cyclonedds.xml:/configs/cyclonedds.xml:ro
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 launch casio_description robot_description.launch.py
+      use_sim_time:=true
+      "
+
+  casio_range:
+    <<: *casio
+    image: dhdevspace/auto_mns:casio-node
+    container_name: casio-range
+    environment:
+      <<: *ros-environment
+    volumes:
+      - ./cyclonedds.xml:/configs/cyclonedds.xml:ro
+      - ${CASIO_DEPLOYMENT_DIR:?run prepare-stack.sh}/configs/localisation_pipeline_params.yaml:/configs/localisation_pipeline_params.yaml:ro
+      - ${HOME}:${HOME}:ro
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 launch casio_range target_tracking.launch.py
+      params_file:=/configs/localisation_pipeline_params.yaml
+      use_sim_time:=true
+      "
+
+  casio_surveillance:
+    <<: *casio
+    image: dhdevspace/auto_mns:casio-node
+    container_name: casio-surveillance
+    environment:
+      <<: *ros-environment
+    volumes:
+      - ./cyclonedds.xml:/configs/cyclonedds.xml:ro
+      - ${CASIO_DEPLOYMENT_DIR:?run prepare-stack.sh}/configs/localisation_pipeline_params.yaml:/configs/localisation_pipeline_params.yaml:ro
+    command: >
+      ros2 run casio_surveillance surveillance --ros-args
+      --params-file /configs/localisation_pipeline_params.yaml
+      -p use_sim_time:=true
+
+  mavros:
+    <<: *casio
+    image: dhdevspace/auto_mns:casio-node
+    container_name: casio-mavros
+    environment:
+      <<: *ros-environment
+    volumes:
+      - ./cyclonedds.xml:/configs/cyclonedds.xml:ro
+    # px4-drone-1:14555 is the MAVROS endpoint of PX4's mavlink-router
+    # (server mode); 15550 is only the local port, kept from the Jetson.
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      ros2 run mavros mavros_node --ros-args
+      -p fcu_url:=udp://:15550@px4-drone-1:14555
+      -p target_system_id:=1
+      -p target_component_id:=1
+      -p use_sim_time:=true
+      "
+
+  streaming:
+    <<: *casio
+    image: dhdevspace/auto_mns:casio-detection
+    container_name: casio-streaming
+    depends_on:
+      - mediamtx
+    environment:
+      <<: *ros-environment
+    volumes:
+      - ./cyclonedds.xml:/configs/cyclonedds.xml:ro
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      source /detection_ws/install/setup.bash &&
+      exec ros2 run casio_detection annotated_stream_node --ros-args
+      -p use_sim_time:=true
+      -p encoder:=x264enc
+      -p output_url:=rtsp://mediamtx:8554/annotated
+      -p bitrate_kbps:=2000
+      -p fps_cap:=30.0
+      -p target_gps_topic:=/target/gps
+      "
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.19.2
+    container_name: casio-mediamtx
+    networks: [stack]
+    restart: unless-stopped
+    # Published on the host's loopback only. The browser connects to
+    # 127.0.0.1:8889 (WHEP signalling) and 127.0.0.1:8189/udp (ICE media).
+    ports:
+      - 127.0.0.1:8554:8554
+      - 127.0.0.1:8889:8889
+      - 127.0.0.1:8189:8189/udp
+    environment:
+      MTX_RTMP: "no"
+      MTX_HLS: "no"
+      MTX_WEBRTC: "yes"
+      MTX_SRT: "no"
+      MTX_RTSPTRANSPORTS: tcp
+      MTX_RTSPADDRESS: ":8554"
+      MTX_WEBRTCADDRESS: ":8889"
+      MTX_WEBRTCLOCALUDPADDRESS: ":8189"
+      MTX_WEBRTCIPSFROMINTERFACES: "no"
+      MTX_WEBRTCADDITIONALHOSTS: "127.0.0.1"
+      MTX_PATHS_ANNOTATED_SOURCE: publisher
+
+  cloud_relay:
+    <<: *casio
+    image: dhdevspace/auto_mns:casio-node
+    container_name: casio-cloud-relay
+    environment:
+      <<: *ros-environment
+    volumes:
+      - ./cyclonedds.xml:/configs/cyclonedds.xml:ro
+      - ${CASIO_DEPLOYMENT_DIR:?run prepare-stack.sh}/configs/localisation_pipeline_params.yaml:/configs/localisation_pipeline_params.yaml:ro
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 run casio_uplink cloud_relay_node --ros-args
+      --params-file /configs/localisation_pipeline_params.yaml
+      -p use_sim_time:=true
+      "
+
+networks:
+  stack:
+    name: ${CASIO_STACK_NETWORK:?run prepare-stack.sh}
+    external: true
+
+volumes:
+  # Persists the PC/GPU-specific YOLO engine separately from Jetson artifacts.
+  detection_x86_models:
+  # Persists the PC-specific DA3 engine without mixing it with Jetson artifacts.
+  da3_x86_models:

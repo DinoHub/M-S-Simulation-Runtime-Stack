@@ -1,0 +1,68 @@
+schema: mns.scenario.v1
+id: casio-siyi
+name: Casio perception on a SIYI A8 mini
+stack_name: casio-siyi
+
+# A single PX4 quadrotor over the SAFTI level carrying one camera modelled on
+# the SIYI A8 mini, for the casio-edge perception stack (DA3, YOLO detector,
+# target localiser and tracker, surveillance, annotated stream, cloud relay).
+#
+# The casio containers are not part of this generated stack. They run from
+# casio/compose.sim.yml beside this spec and join the stack's
+# agent_internal-1 network; casio/README.md has the steps.
+#
+# The environment names the level pack by id, version and digest, matching
+# packs/standalone-v2-ue582.lock.json.
+
+environment:
+  id: safti-level
+  version: 1.0.3
+  artifact_digest: sha256:1dbd30834a4c96654ea20a7f011b74399891bd0331abcf2ab3aae4157f03c9c2
+
+runtime:
+  profile: airsim_unreal_px4_docker
+  features:
+    sim_real_eval: false
+    ros2_bridge: true
+    qgroundcontrol: false
+    # Off on purpose. casio runs its own MAVROS (it expects /mavros/..., not
+    # the bridge's /Drone1/mavros/...), and two MAVROS instances on one flight
+    # controller fight over the offboard stream.
+    mavros: false
+
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  # casio's domain. The stack's CycloneDDS switch is applied after
+  # generation by casio/prepare-stack.sh.
+  ros_domain_id: 42
+  start:
+    x: 0
+    y: 0
+    z: 0
+    yaw: 0
+  cameras:
+    # SIYI A8 mini: 81 deg horizontal FOV, 25 fps video, 1280 x 720 is one
+    # of its video modes. Tilted 25 deg down like a surveillance gimbal
+    # (the A8 mini's pitch range is -135 to +45 deg). Mounted under the nose,
+    # clear of the rotor arms. Specs:
+    # https://siyi.biz/en/product/tri-axis-single-camera-gimbal/a8-mini/spec/
+    siyi:
+      position:
+        x: 0.15
+        y: 0
+        z: 0.10
+      rotation:
+        pitch: -25
+      capture_settings:
+      - image_type: 0
+        width: 1280
+        height: 720
+        fov_degrees: 81
+  sensors:
+    imu: true
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
