@@ -57,7 +57,18 @@ then `./product.sh cli stop --stack /workspace/generated/casio-siyi`.
   pitch as radians, so the 25 deg down mount appears 7.6 deg up in TF while
   the image is rendered correctly. Projections into `map` (target localiser,
   point cloud) are wrong until the bridge carries the fix
-  (TEVV-Airsim-ROS2-Bridge `fix/camera-tf-settings-degrees`).
+  (TEVV-Airsim-ROS2-Bridge `fix/camera-tf-settings-degrees`). A local image
+  with the fix on the v1.0.0 source is
+  `dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-camtilt.1`
+  (branch `fix/camera-tf-degrees-v1.0.0`); set it as `ROS2_IMAGE` in the
+  generated stack's `.env`.
+- **Camera rate is 12 to 21 Hz, set by Unreal's GPU time.** The A8 mini
+  delivers 25 fps. `bench/camera-rate.sh` recreates the bridge and measures
+  `/camera/image_raw` beside load, CPU and GPU use;
+  `bench/2026-09-30-camera-rate.csv` is the run that established it on an
+  RTX 5080 / 24 cores. Both bridge images gave the same rates, host load
+  stayed at 4 to 7, and the rate fell as the runtime host's GPU use rose from
+  about 80 to 95 %, with or without an image pull running.
 - **No autonomous flight yet.** `localPlanner`, `pathFollower` and
   `mission_bt` are not in this compose, so nothing publishes
   `/mavros/setpoint_raw/local`. Fly the drone another way (QGroundControl,
