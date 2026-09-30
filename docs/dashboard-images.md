@@ -115,12 +115,23 @@ mns-stacks:
 | `MNS_CAPABILITY_KIT`, `MNS_AUTHORING_PROJECT` | empty | optional overrides: a local kit folder instead of the pinned host's kit, and a ScenarioLab project for the preflight's graded host check |
 | `MNS_ROS2_BRIDGE_IMAGE` → `AIRSIM_BRIDGE_IMAGE` | **required** — the error names the env file to source | the backend, for the `ros2-tools` container |
 | `MNS_IMAGE_SET` | `v1` | mns-stacks: which `image_sets` entry a stack resolves roles from |
-| `MNS_IMAGE_SET_FILE` | the production overlay; `make dashboard` overrides per `IMAGE_MODE` | mns-stacks: which rendered file holds that entry |
+| `MNS_IMAGE_SET_FILE` | the production overlay; `make dashboard` overrides per `IMAGE_MODE`, with the image overrides applied (below) | mns-stacks: which rendered file holds that entry |
 | `MNS_IMAGE_PULL_POLICY` | `missing` | see the next section |
 
-A generated stack's runtime host therefore comes from `MNS_IMAGE_SET_FILE`,
-**not** from `MNS_RUNTIME_HOST_IMAGE` — that variable is passed for the
-Content phase's report and the compose file says so.
+A generated stack's images come from `MNS_IMAGE_SET_FILE` alone; mns-stacks
+reads no `*_IMAGE` variable. So that an override still reaches the stacks,
+`make dashboard` (and `tools/mns-stacks.sh`, for `make fly` and `make campaign`)
+passes a copy of the selected file with the overrides applied,
+`.mns/image-set.effective.yaml`, whenever the shell or `./.env` sets
+`MNS_RUNTIME_HOST_IMAGE` or `MNS_ROS2_BRIDGE_IMAGE` to something other than its
+pin. Each override prints a NOTE naming the image-set slot it replaced
+(`tools/images.sh effective-image-set`). Without an override the selected file
+is passed as it is. The mapping comes from `images/catalog.yaml`: a release
+channel variable owns every slot of its channel's image set that holds the same
+catalog key. The other slots (autopilots, QGroundControl, sim-real-eval, the
+VIO estimator) have no variable; point `MNS_IMAGE_SET_FILE` at your own file to
+change them. The backend also reads `MNS_RUNTIME_HOST_IMAGE` directly, for the
+Content phase's report.
 
 ### 5. `MNS_IMAGE_PULL_POLICY` — an override, not a setting
 
