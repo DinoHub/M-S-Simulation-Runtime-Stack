@@ -212,10 +212,10 @@ images:
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns
     tag: "tevv-airsim-ros2-bridge-humble-v1.0.0-rc"
-    digest: sha256:b142653e054f66625cd81f22e4dc1aa642783e9774223e4048af9902480d142b
+    digest: sha256:68af89693de7d70e3903719a139ece6bde0013b12132ba8a3c56b4f91cb7e0bf
     channel: pinned
     purpose: >-
-      MnS 1.0 AirSim<->ROS 2 bridge (TEVV-Airsim-ROS2-Bridge release/v1.0.0-next 93083bf37ccf): the v1.0.0 build (459952e) plus the image-capture dedupe fix (one host capture = one image), so recordings pass fresh_frames; built like v1.0.0 (docker/Dockerfile, ROS_DISTRO=humble, same base); 158 colcon tests green.
+      MnS 1.0 AirSim<->ROS 2 bridge (TEVV-Airsim-ROS2-Bridge release/v1.0.0-next 61b2b8a66553): the v1.0.0 build (459952e) plus the image-capture dedupe fix and image publisher history depth 5, so recordings pass fresh_frames and stereo_skew; built like v1.0.0 (docker/Dockerfile, ROS_DISTRO=humble, same base); 158 colcon tests green.
 
   v1_px4:
     repo: dhdevspace/auto_mns
