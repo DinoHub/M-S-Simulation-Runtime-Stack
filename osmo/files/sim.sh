@@ -3,7 +3,7 @@
 # checkout is mounted read-only, and these are the paths the compose
 # stack binds one by one.
 set -e
-S="/workspace/generated/${STACK}/config"
+S="${STACK_DIR:-/workspace/generated/${STACK}}/config"
 test -d "$S" || { echo "no generated stack at $S; generate it first" >&2; exit 1; }
 # The image runs as uid 1000 (ue4), so / is not writable and the
 # compose stack's /simrunner paths cannot be recreated here. Every
@@ -65,9 +65,23 @@ print("scenario args from the stack: %d" % len(args))
 ARGS
   mapfile -d '' SCENARIO_ARGS < "$R/launch-args.bin"
 else
-  # A stack generated before host-launch-args.json existed.
+  # A stack generated before host-launch-args.json existed. Its render settings
+  # (r.Fisheye.SyncCaptureFPS, the Lumen card budget, ...) and the scenario
+  # conditions are then only on the compose command line, so take them from
+  # there; without them the fisheye rig captured at a few Hz.
   echo "no host-launch-args.json in $S/unreal-airsim; using the fixed flag list" >&2
+  COMPOSE_ARGS=()
+  if [ -f "$S/../docker-compose.yml" ]; then
+    mapfile -t COMPOSE_ARGS < <(grep -oE -- '-ini:Engine:\[SystemSettings\]:[^ "'"'"']+' "$S/../docker-compose.yml" | sort -u)
+    # Counted without the length expansion: OSMO renders this file through Jinja,
+    # where a brace followed by a hash opens a comment and fails the submit.
+    echo "render settings from the stack's compose file: $(printf '%s\n' "${COMPOSE_ARGS[@]}" | grep -c .)"
+    if grep -q -- '-MnSScenarioConditions=' "$S/../docker-compose.yml" && [ -f "$R/scenario_conditions.json" ]; then
+      COMPOSE_ARGS+=(-MnSScenarioConditions="$R/scenario_conditions.json")
+    fi
+  fi
   SCENARIO_ARGS=(
+    "${COMPOSE_ARGS[@]}"
     -ini:Engine:[SystemSettings]:r.Vulkan.RHIThread=0
     -ini:Engine:[SystemSettings]:r.PSOPrecaching=0
     -ini:Engine:[SystemSettings]:r.Vulkan.AllowPSOPrecaching=0
