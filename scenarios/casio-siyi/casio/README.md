@@ -20,6 +20,21 @@ network, the documented way to attach an autonomy stack
 (see "Connecting your autonomy stack" in the User Guide). They do not use host
 networking: the stack's ROS graph and MAVLink router are not on the host.
 
+## On a new machine
+
+1. Product setup, once: `./setup.sh`, then `./download-packs.sh` (the SAFTI
+   level, `safti-level` 1.0.3, must be in the pack store).
+2. This branch: `git fetch && git checkout feat/casio-sim-integration`.
+3. casio-config unpacked so that `~/casio-config/deployment/configs/` and
+   `~/casio-config/models/` exist, or `CASIO_DEPLOYMENT_DIR` /
+   `CASIO_MODELS_DIR` exported before `prepare-stack.sh`.
+4. Images: `docker pull` the three casio images and
+   `dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-camtilt.1`
+   (or set `CASIO_BRIDGE_IMAGE` to another bridge build with PR #82).
+5. Disk: the casio images unpack to about 52 GB (`casio-da3` 24 GB,
+   `casio-detection` 24 GB, `casio-node` 4 GB), plus about 1 GB per generated
+   stack and two TensorRT engines on first start.
+
 ## Before the first run
 
 - Pull the images: `dhdevspace/auto_mns:casio-node`, `casio-da3`,
