@@ -22,8 +22,8 @@
 #   tools/images.sh bump [--only KEY] [--channel review|moving]
 #   tools/images.sh drift           # regenerate committed ScenarioSpecs with the
 #                                    # pinned mns-stacks into a tmp dir, diff vs generated/
-#   tools/images.sh baked           # assert the released dashboard-backend image's
-#                                    # baked mns-stacks/authoring refs match the catalog
+#   tools/images.sh baked           # for a row declaring `bakes:`, assert the released
+#                                    # image's baked refs match the catalog (none in v1.0.0)
 #   tools/images.sh selftest        # regression guard on synthetic fixtures (offline,
 #                                    # no real catalog/network involved); `verify` always
 #                                    # runs this first, so it rarely needs invoking directly
@@ -124,15 +124,17 @@ sys.exit(0 if env.get("artifact_digest") else 1)
     exit 0
 fi
 
-# --- baked: assert the released dashboard-backend's baked mns-stacks/ ---
-# authoring refs match the pins in images/catalog.yaml. Driven by the
-# catalog's `bakes:` edge on v1_dashboard_backend (tools/images.py baked-pins),
-# not a hardcoded var-name pair — this is the CI-assert form of the old
-# script's advisory baked_pins_check().
+# --- baked: assert a released image's baked refs match the pins in ---
+# images/catalog.yaml. Driven by the catalog's `bakes:` edge on
+# v1_dashboard_backend (tools/images.py baked-pins), not a hardcoded var-name
+# pair. In v1.0.0 the backend bakes nothing (TEVV-Web-Dashboard#122): its
+# row declares no `bakes:`, and this reports that and exits 0.
 if [[ "$MODE" == "baked" ]]; then
     pins="$("$PY" "$ROOT/tools/images.py" baked-pins v1_dashboard_backend)"
     if [[ -z "$pins" ]]; then
-        echo "no bakes: declared on v1_dashboard_backend in images/catalog.yaml — nothing to check"
+        echo "v1_dashboard_backend declares no bakes: in images/catalog.yaml — the backend"
+        echo "bakes no image pins (it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and"
+        echo "MNS_AUTHORING_IMAGE from images/v1.0.0.generated.env at run time); nothing to check"
         exit 0
     fi
     backend_ref=$(sed -n 's/^DASHBOARD_BACKEND_IMAGE=//p' "$ROOT/images/v1.0.0.generated.env")

@@ -122,9 +122,10 @@ services:
       # fixed via FOXGLOVE_BRIDGE_PORT; both must track the same knob).
       - FOXGLOVE_PROBE_PORT=${FOXGLOVE_BRIDGE_PORT:-8764}
       # distribution mode: generate and run through the pinned mns-stacks.
-      # The mns-stacks/authoring pins are BAKED into the backend image as
-      # defaults (MNS_*_IMAGE_DEFAULT), so the image lines below are overrides
-      # -- empty is fine on an image-only deploy; make passes them explicitly.
+      # The backend bakes NO image pins: MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and
+      # MNS_AUTHORING_IMAGE below are its only source, from the channel env
+      # file (images/v1.0.0.generated.env). Left empty, the backend still
+      # starts, and the action needing that image fails naming the variable.
       # Defaults to the directory compose was invoked from, which is this
       # repository for every normal invocation — so `docker compose up` works
       # without anyone exporting a path first. It stayed required for a long

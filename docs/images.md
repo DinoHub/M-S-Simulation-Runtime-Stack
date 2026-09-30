@@ -169,13 +169,13 @@ backend needs a credentials mount to pull anything at all is in
 
 **1. Local development overrides.** `make dashboard` defaults to the generated tag-only development image set. A matching locally built tag wins, while an absent tag is pulled from the registry. Shell/.env image overrides still take precedence through `tools/load-images-env.sh` — that is how a dashboard backend/frontend built locally from a TEVV-Web-Dashboard branch runs before it is published: `DASHBOARD_BACKEND_IMAGE=local/tevv-web-dashboard-backend:v2-dev` in `./.env`, and `tools/images.sh status` lists it under FYI. `IMAGE_MODE=production make dashboard` selects the immutable digest-pinned artifacts instead.
 
-**2. Baked backend defaults.** The dashboard-backend image carries
-`MNS_STACKS_IMAGE_DEFAULT` and `MNS_AUTHORING_IMAGE_DEFAULT` *inside the built
-image* (the `bakes:` list on the `v1_dashboard_backend` row). No file to
-render, so no `sync` can fix it: it needs a backend rebuild, then a repin of
-`v1_dashboard_backend`. Compose deployments pass the env through and are
-unaffected; an image-only deploy is not. `tools/images.sh baked` reports the
-drift.
+**2. Baked defaults (none now).** A pin baked into another image cannot be
+fixed by `sync`: it needs a rebuild of the image that bakes it. The dashboard
+backend used to bake the mns-stacks and authoring refs, so every rebuild of
+either forced a backend rebuild. Since TEVV-Web-Dashboard#122 it bakes
+nothing and takes `MNS_STACKS_IMAGE`, `MNS_PACKS_IMAGE` and
+`MNS_AUTHORING_IMAGE` from the channel env file at run time. No row declares
+`bakes:`, and `tools/images.sh baked` would report drift if one ever did.
 
 **3. A locally-present newer image.** Development mode intentionally uses a matching local tag and never pulls merely to check for a newer remote copy. If the tag is absent, `make dashboard` pulls it. Production mode remains digest-pinned and ignores a different local build. After publishing, other developers run `./setup.sh` (or `make pull-images`) to refresh the approved remote set.
 

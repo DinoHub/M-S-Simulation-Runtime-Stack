@@ -182,6 +182,11 @@ jobs:
           # The backend gets the v1.0.0 image variables, and no retired ones.
           grep -q 'MNS_STACKS_IMAGE: ' config.out
           grep -q 'MNS_PACKS_IMAGE: ' config.out
+          # The backend bakes no image pins, so these three must arrive
+          # non-empty from the pin file, or its actions fail.
+          for var in MNS_STACKS_IMAGE MNS_PACKS_IMAGE MNS_AUTHORING_IMAGE; do
+            grep -Eq "^ +$var: [^ ]+" config.out || { echo "$var is empty in the backend's env" >&2; exit 1; }
+          done
           grep -q 'MNS_CAPABILITY_KIT: ' config.out
           grep -q 'TEVV_RUNS_DIR: /' config.out
           grep -q 'MNS_AUTHORING_PROJECT: ' config.out

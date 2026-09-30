@@ -68,7 +68,10 @@ follow_ups: []
 # row's ref as a build-time default (<VAR>_DEFAULT, where VAR is the row's
 # release-channel or product_env variable). `tools/images.sh baked` walks
 # these edges and asserts the released image's baked value still matches the
-# pin here.
+# pin here. No row declares one in v1.0.0: a baked pin makes every rebuild of
+# the baked image force a rebuild of the one baking it, so images take their
+# pins at run time instead (the dashboard backend stopped baking in
+# TEVV-Web-Dashboard#122).
 #
 # `consumers:` binds an image (by key) to how it is actually referenced, so no
 # image is listed twice under two different names:
@@ -238,9 +241,12 @@ images:
     source:
       repo: DinoHub/TEVV-Web-Dashboard
       commit: 7debc04787bbeddc53d169e31ee3ab158e322789
-    # Bakes MNS_AUTHORING_IMAGE_DEFAULT, MNS_STACKS_IMAGE_DEFAULT and
-    # MNS_PACKS_IMAGE_DEFAULT; tools/images.sh baked checks the first two.
-    bakes: [v1_stacks, v1_authoring]
+    # No `bakes:`. From TEVV-Web-Dashboard#122 on the backend bakes no image
+    # pins: it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and MNS_AUTHORING_IMAGE
+    # from images/v1.0.0.generated.env through docker-compose-dashboard.yml,
+    # so rebuilding mns-stacks, mns-packs or the authoring image is a repin
+    # here, never a dashboard rebuild. (The 7debc04 build pinned below still
+    # carries its old *_IMAGE_DEFAULTs; compose's env values win over them.)
     purpose: >-
       MnS 1.0 dashboard backend (TEVV-Web-Dashboard release/v1.0.0-next 7debc04):
       REST takeoff reports success only once armed and climbed (pilot from integration 52e7cb2); every stack lifecycle, recording, campaign and topic call goes through
