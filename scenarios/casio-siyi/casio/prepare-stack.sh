@@ -59,6 +59,18 @@ with open(path, "w") as f:
     yaml.safe_dump(doc, f, sort_keys=False)
 EOF
 
+# 2b. casio owns map -> base_link, as on the Jetson: casio_pointcloud's
+#     pose_to_tf publishes it from /mavros/global_position/local. The bridge
+#     must then publish neither odom -> base_link nor map -> odom, or base_link
+#     gets two parents. The bridge's switch for the first edge is a launch
+#     argument the generator does not wire, so it is added to the command.
+set_env "$stack/.env" LOCALIZATION_SOURCE external
+if ! grep -q 'suppress_bridge_odom_tf:=' "$compose"; then
+  sed -i 's|^\(\s*\)- localization_source:=\(.*\)$|&\n\1- suppress_bridge_odom_tf:=true|' "$compose"
+fi
+grep -q 'suppress_bridge_odom_tf:=true' "$compose" \
+  || { echo "could not add suppress_bridge_odom_tf to the bridge command in $compose" >&2; exit 1; }
+
 # 3. Domain check: casio's compose is fixed to 42.
 domains=$(grep -oE 'ROS_DOMAIN_ID: *[0-9]+' "$compose" | grep -oE '[0-9]+$' | sort -u | tr '\n' ' ')
 if [[ "$domains" != "42 " ]]; then

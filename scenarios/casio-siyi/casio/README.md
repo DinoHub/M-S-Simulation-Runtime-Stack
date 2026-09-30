@@ -10,7 +10,7 @@ What the simulation provides, under the names casio expects:
 | casio needs | Comes from |
 | --- | --- |
 | `/camera/image_raw`, `/camera/camera_info` | the bridge, from the simulated A8 mini: 1280 x 720, 81 deg horizontal FOV, about 21 Hz, frame `siyi_optical` |
-| `/tf`, `/tf_static` | the bridge: `map -> odom -> base_link -> siyi_body -> siyi_optical` |
+| `/tf`, `/tf_static` | casio's own `pose_to_tf` (in `casio_pointcloud`) publishes `map -> base_link` from `/mavros/global_position/local`, as on the Jetson; the bridge publishes the static `base_link -> siyi_body -> siyi_optical` and nothing above `base_link` (`prepare-stack.sh` sets `localization_source:=external` and `suppress_bridge_odom_tf:=true`) |
 | `/clock` | the bridge (every casio node runs with `use_sim_time:=true`) |
 | a flight controller for MAVROS | PX4 SITL, through its mavlink-router MAVROS endpoint `px4-drone-1:14555`, sysid 1 |
 | ROS 2 over CycloneDDS, domain 42 | the stack is switched to CycloneDDS by `prepare-stack.sh`; everything shares `cyclonedds.xml` |
@@ -76,6 +76,7 @@ then `./product.sh cli stop --stack /workspace/generated/casio-siyi`.
 - **Ideal lens.** The simulated camera is a distortion-free pinhole; its
   intrinsics are on `/camera/camera_info`. The real A8 mini's calibration
   applies to the drone, not to this camera.
-- **`casio_description`** publishes the drone's URDF frames. If it names a
+- **Pose is the PX4 estimate, not ground truth.** Because casio owns `map -> base_link`, TF carries the EKF pose that MAVROS reports; the sim's truth stays on the bridge's odometry topics.
+- **`casio_description`** publishes the drone's URDF frames (today only `base_link -> gimbal_mount`; its moving joints need `/joint_states`). If it names a
   frame the bridge already publishes (`base_link`, `siyi_optical`), the two
   TF trees conflict; check it with `ros2 run tf2_tools view_frames`.
