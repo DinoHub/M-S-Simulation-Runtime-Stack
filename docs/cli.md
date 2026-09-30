@@ -56,14 +56,16 @@ The same product shell image exposes equivalent CLI actions:
 
 ```bash
 ./product.sh cli check
-./product.sh cli runtime --scenario /workspace/scenarios/<scenario> --out /workspace/generated/<scenario> --no-run
-./product.sh cli run-stack --stack /workspace/generated/my_scenario --detach
-./product.sh cli status --stack /workspace/generated/my_scenario
-./product.sh cli logs --stack /workspace/generated/my_scenario
-./product.sh cli stop --stack /workspace/generated/my_scenario
+./product.sh cli runtime --scenario scenarios/<scenario> --out generated/<scenario> --no-run
+./product.sh cli run-stack --stack generated/my_scenario --detach
+./product.sh cli status --stack generated/my_scenario
+./product.sh cli logs --stack generated/my_scenario
+./product.sh cli stop --stack generated/my_scenario
 ```
 
-Paths passed to the container must be under this repository, mounted as `/workspace`.
+Paths passed to the container must be under this repository. The shell mounts it at
+its own path and runs from it, so a relative path means the same file inside and out,
+and every path it hands to Docker is a real host path.
 
 Nothing records a bag on this path; the User Guide's
 [Running stacks without the dashboard](USER_GUIDE.md#running-stacks-without-the-dashboard)

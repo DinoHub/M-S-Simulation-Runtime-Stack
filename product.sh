@@ -42,11 +42,15 @@ export MNS_PACK_STORE_ROOT="$PACK_STORE_ROOT"
 # Mounted read-only into the product shell at /mnt/mns/packs.
 PACKS_DIR="${MNS_PACKS_DIR:-$CHANNEL_DIR/packs}"
 export MNS_PACKS_DIR="$PACKS_DIR"
-# Paths the shell sees: the checkout is mounted at /workspace, so anything
-# under $ROOT maps 1:1 and anything outside is unreachable from the container.
+# Paths the shell sees: the checkout is mounted at its own host path, so a path
+# under $ROOT is the same string inside the container and on the host, and
+# anything outside is unreachable from the container. The shell hands paths to
+# the host's Docker daemon (docker compose --project-directory, bind mounts), so
+# they must be host paths: with the checkout at /workspace the daemon resolved
+# them against the host's own /workspace and mounted empty stubs.
 container_path() {
   case "$1" in
-    "$ROOT"/*) printf '/workspace/%s' "${1#"$ROOT"/}" ;;
+    "$ROOT"/*) printf '%s' "$1" ;;
     *) echo "ERROR: $1 is outside the checkout $ROOT; the product shell cannot see it" >&2; exit 2 ;;
   esac
 }
@@ -81,29 +85,34 @@ run_shell() {
   if [[ -f "$docker_config" ]]; then
     docker_config_args=(-v "$docker_config:/root/.docker/config.json:ro")
   fi
-  if [[ "${1:-}" == "cli" ]]; then mode=(--rm); port_args=(); shift; fi
-  # MNS_IMAGE_SET_FILE below is a CONTAINER path, not the host path:
-  # launcher.py's require_workspace_path()
-  # (MnS-Integration-Platform/apps/scenario_launcher/launcher.py:252) rejects
-  # any --image-set-file/MNS_IMAGE_SET_FILE outside MNS_WORKSPACE_ROOT
-  # (/workspace, mounted below). The launcher translates this back to a real
-  # HOST path via MNS_HOST_WORKSPACE_ROOT (also set below) when it re-mounts
-  # the workspace for the nested generator container it spawns — the same
-  # docker-outside-of-docker indirection docker-compose-dashboard.yml's
-  # MNS_WORKSPACE_ROOT comment describes.
-  # Contrast tools/images.sh drift, which runs the generator directly from
-  # the host with an identical-path mount ($ROOT:$ROOT) and so passes the
-  # HOST path form instead.
+  local user_args=()
+  if [[ "${1:-}" == "cli" ]]; then
+    mode=(--rm); port_args=(); shift
+    # The CLI runs as you, so the campaign folders it creates are yours: as root it
+    # made <out>/<campaign>/<run>/ root-owned and the generator, which runs as
+    # you, could not write the stack into it. The socket's group gives it Docker.
+    user_args=(--user "$(id -u):$(id -g)" --group-add "$(stat -c %g /var/run/docker.sock)" -e HOME=/tmp)
+    [[ -f "$docker_config" ]] && docker_config_args=(-v "$docker_config:/tmp/.docker/config.json:ro" -e DOCKER_CONFIG=/tmp/.docker)
+  fi
+  # `-e SIM2REAL_RUNS_DIR` (no value) hands the generator container the runs dir
+  # a campaign sets while it generates each run's stack; the generator pins it
+  # into the stack's .env, which is where the bridge's /bags mount comes from.
+  # Without it the stack got the /tmp/tevv-runs default and every campaign bag
+  # was written outside the campaign.
+  # MNS_WORKSPACE_ROOT and MNS_HOST_WORKSPACE_ROOT are both $ROOT: the
+  # launcher's container-to-host translation becomes the identity, as in the
+  # dashboard's identical-path mount and tools/images.sh drift. MNS_IMAGE_SET_FILE
+  # must sit under MNS_WORKSPACE_ROOT (launcher.py require_workspace_path()).
   docker run "${mode[@]}" \
     "${port_args[@]}" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     "${docker_config_args[@]}" \
-    -v "$ROOT:/workspace:rw" \
+    -v "$ROOT:$ROOT:rw" -w "$ROOT" \
     -v "$PACKS_DIR:/mnt/mns/packs:ro" \
     -e "MNS_PACKS_DIR=/mnt/mns/packs" \
     -e MNS_LAUNCH_BACKEND=docker \
-    -e MNS_WORKSPACE_ROOT=/workspace \
-    -e MNS_GENERATED_STACKS_ROOT=/workspace/generated \
+    -e "MNS_WORKSPACE_ROOT=$ROOT" \
+    -e "MNS_GENERATED_STACKS_ROOT=$ROOT/generated" \
     -e "MNS_PACK_STORE_ROOT=$CONTAINER_PACK_STORE" \
     "${authoring_contract_args[@]}" \
     -e "MNS_HOST_WORKSPACE_ROOT=$ROOT" \
@@ -115,12 +124,13 @@ run_shell() {
     -e "MNS_AUTHORING_DOCKER_ARGS=$AUTHORING_DOCKER_ARGS" \
     -e "MNS_AUTHORING_DOCKER_GPU_ARGS=${MNS_AUTHORING_DOCKER_GPU_ARGS:-}" \
     -e "MNS_STACK_GENERATOR_IMAGE=$MNS_STACK_GENERATOR_IMAGE" \
-    -e "MNS_STACK_GENERATOR_DOCKER_ARGS=-e MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$CONTAINER_CONTRACT${MNS_STACK_GENERATOR_DOCKER_ARGS:+ $MNS_STACK_GENERATOR_DOCKER_ARGS}" \
+    -e "MNS_STACK_GENERATOR_DOCKER_ARGS=-e MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$CONTAINER_CONTRACT -e SIM2REAL_RUNS_DIR${MNS_STACK_GENERATOR_DOCKER_ARGS:+ $MNS_STACK_GENERATOR_DOCKER_ARGS}" \
     -e "MNS_IMAGE_SET=$IMAGE_SET" \
-    -e MNS_IMAGE_SET_FILE=/workspace/images/image-set.generated.yaml \
+    -e "MNS_IMAGE_SET_FILE=$ROOT/images/image-set.generated.yaml" \
     -e "DISPLAY=${DISPLAY:-:0}" \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
     "${xauth_args[@]}" \
+    "${user_args[@]}" \
     "$MNS_PRODUCT_SHELL_IMAGE" "$@"
 }
 

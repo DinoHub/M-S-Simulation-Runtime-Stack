@@ -168,7 +168,7 @@ on its own.
 scenarios/vio-reference/
   ScenarioSpec.yaml        the world and the rig
   CampaignSpec.yaml        variants x repeats, the route, retention, scoring
-  routes/reference-flight.yaml
+  routes/reference-flight-yard.yaml   the flown route (reference-flight.yaml mirrored for the XFS yard)
   openvins/                the estimator's calibration
 ```
 
