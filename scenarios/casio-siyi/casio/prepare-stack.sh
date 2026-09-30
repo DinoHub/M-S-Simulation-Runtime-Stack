@@ -71,6 +71,15 @@ fi
 grep -q 'suppress_bridge_odom_tf:=true' "$compose" \
   || { echo "could not add suppress_bridge_odom_tf to the bridge command in $compose" >&2; exit 1; }
 
+# 2c. Bridge image with the camera-tilt fix (TEVV-Airsim-ROS2-Bridge #82):
+#     v1.0.0 publishes a settings camera's pitch as radians, so the 25 deg
+#     down A8 mini shows 7.6 deg up in TF. Regeneration writes v1.0.0 back.
+bridge_image=${CASIO_BRIDGE_IMAGE:-dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-camtilt.1}
+set_env "$stack/.env" ROS2_IMAGE "$bridge_image"
+if ! docker image inspect "$bridge_image" >/dev/null 2>&1; then
+  echo "note: $bridge_image is not local yet; run-stack will pull it" >&2
+fi
+
 # 3. Domain check: casio's compose is fixed to 42.
 domains=$(grep -oE 'ROS_DOMAIN_ID: *[0-9]+' "$compose" | grep -oE '[0-9]+$' | sort -u | tr '\n' ' ')
 if [[ "$domains" != "42 " ]]; then
