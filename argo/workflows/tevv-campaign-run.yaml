@@ -7,6 +7,8 @@
 #              shares the pod's IPC namespace, so iceoryx2 zero-copy works (ENABLE_VIO).
 #   evaluate   vio-eval, spawn-eval, validate -- each reads the recorder's output
 #   verdict    gates from the CampaignSpec
+#   export     (on exit) the evidence into export_dir, in the run-bundle layout the OSMO
+#              executor downloads into: bag/, mission.json, eval/<step>/
 #
 # The per-task scripts are osmo/files/*, unchanged in behaviour, delivered as the
 # ConfigMap tevv-run-files (argo/submit.sh builds it). Every *_HOST is 127.0.0.1:
@@ -24,6 +26,7 @@ metadata:
   name: tevv-campaign-run
 spec:
   entrypoint: run
+  onExit: export
   serviceAccountName: tevv-runner
   # Pods and the scratch volume go once the run succeeds (the bag is large); pods stay
   # 30 minutes first so their logs can be read. The verdict survives in the workflow's
@@ -36,7 +39,7 @@ spec:
       - name: stack_dir          # absolute path under /workspace, e.g. /workspace/generated/<stack>
       - name: fly
         value: "false"
-      - name: autopilot          # ardupilot | px4 (px4 is not wired yet)
+      - name: autopilot          # ardupilot | px4: picks osmo/files/autopilot_<autopilot>.sh
         value: ardupilot
       - name: vehicle
         value: Drone1
@@ -60,9 +63,11 @@ spec:
         value: '{"ate_trans_m.rmse": {"max": 1.0}}'
       - name: max_fall_ms
         value: "0.5"
+      - name: export_dir         # under /workspace: where the evidence lands; empty keeps it in the run
+        value: ""
       - name: runtime_host_image
       - name: bridge_image
-      - name: ardupilot_image
+      - name: autopilot_image    # the ArduPilot or PX4 image, to match `autopilot`
       - name: vio_estimator_image
       - name: sim_real_eval_image
   volumeClaimTemplates:
@@ -89,20 +94,26 @@ spec:
 
   templates:
     - name: run
+      # A failed fly or evaluator still leads to a verdict, as on OSMO: whatever was
+      # recorded is judged, and the verdict says what was missing.
       dag:
         tasks:
           - name: fly
             template: fly
+            continueOn: {failed: true}
           - name: vio-eval
             template: vio-eval
             dependencies: [fly]
             when: "'{{workflow.parameters.estimator}}' == 'true'"
+            continueOn: {failed: true}
           - name: spawn-eval
             template: spawn-eval
             dependencies: [fly]
+            continueOn: {failed: true}
           - name: validate
             template: validate
             dependencies: [fly]
+            continueOn: {failed: true}
           - name: verdict
             template: verdict
             dependencies: [vio-eval, spawn-eval, validate]
@@ -177,17 +188,40 @@ spec:
             - {name: iceoryx, mountPath: /tmp/iceoryx2}
 
         - name: autopilot
-          image: "{{workflow.parameters.ardupilot_image}}"
-          command: [/bin/bash, -c, "if [ '{{workflow.parameters.fly}}' != true ]; then exec sleep infinity; fi; cp /files/* /tmp/ && exec /bin/bash /tmp/autopilot_ardupilot.sh"]
+          image: "{{workflow.parameters.autopilot_image}}"
+          command: [/bin/bash, -c, "if [ '{{workflow.parameters.fly}}' != true ]; then exec sleep infinity; fi; cp /files/* /tmp/ && exec /bin/bash /tmp/autopilot_{{workflow.parameters.autopilot}}.sh"]
+          # Both autopilots' settings, as the OSMO workflow sets them; each image
+          # reads its own. PX4 dials the simulator (TCP 4560) and serves MAVROS on
+          # its router's 14555; ArduPilot takes the simulator's sensors over UDP and
+          # serves MAVROS on TCP 5760. All of it on localhost here.
           env:
             - {name: SIM_HOST, value: 127.0.0.1}
             - {name: SIM_PORT, value: "41451"}
             - {name: SIM_DIAL_WAIT_SEC, value: "900"}
+            - {name: HOST_NETWORK_MODE, value: "false"}
+            # ArduPilot
             - {name: MAVLINK_GCS_HOST, value: 127.0.0.1}
             - {name: MAVLINK_C2_HOST, value: 127.0.0.1}
             - {name: MAVLINK_C2_PORT, value: "14552"}
-            - {name: HOST_NETWORK_MODE, value: "false"}
+            - {name: ARDUPILOT_HOME_LAT, value: "42.764938"}
+            - {name: ARDUPILOT_HOME_LON, value: "-115.579201"}
+            - {name: ARDUPILOT_HOME_ALT, value: "1183.0"}
             - {name: INSTANCE_NUM, value: "0"}
+            # PX4
+            - {name: MAVLINK_TARGET, value: 127.0.0.1}
+            - {name: PX4_INSTANCE, value: "0"}      # the image bakes 1; compose overrides it to 0
+            - {name: PX4_SIM_MODEL, value: none_iris}
+            - {name: PX4_SIMULATOR, value: none}
+            - {name: PX4_SYS_AUTOSTART, value: "10016"}
+            - {name: PX4_HOME_LAT, value: "42.764938"}
+            - {name: PX4_HOME_LON, value: "-115.579201"}
+            - {name: PX4_HOME_ALT, value: "1183.0"}
+            - {name: MAV_0_BROADCAST, value: "1"}
+            - {name: MAV_1_BROADCAST, value: "1"}
+            - {name: MAV_2_BROADCAST, value: "1"}
+            - {name: MAVLINK_MODE, value: router}
+            - {name: SWARM_ID, value: "1"}
+            - {name: SWARM_SIZE, value: "1"}
           securityContext:
             runAsUser: 0
             runAsGroup: 0
@@ -256,9 +290,12 @@ spec:
             - {name: files, mountPath: /files}
             - {name: shm, mountPath: /dev/shm}
 
+        # A flight that fails exits 1, and ends as a completed container, as on OSMO:
+        # the recorder's mission.json says how the flight went, and a sidecar exit
+        # code other than 0/143 would fail the pod before anything was judged.
         - name: pilot
           image: "{{workflow.parameters.bridge_image}}"
-          command: [/bin/bash, -c, "if [ '{{workflow.parameters.fly}}' != true ]; then exec sleep infinity; fi; cp /files/* /tmp/ && exec /bin/bash /tmp/pilot.sh"]
+          command: [/bin/bash, -c, "if [ '{{workflow.parameters.fly}}' != true ]; then exec sleep infinity; fi; cp /files/* /tmp/ && /bin/bash /tmp/pilot.sh; rc=$?; if [ $rc -le 1 ]; then exit 0; fi; exit $rc"]
           env:
             - {name: HOME, value: /home/ros}
             - {name: VEHICLE, value: "{{workflow.parameters.vehicle}}"}
@@ -285,12 +322,12 @@ spec:
         command: [/bin/sh, -c]
         args:
           - >-
-            mkdir -p /work/eval/vio &&
+            mkdir -p /work/eval/vio-eval &&
             printf 'sim:\n  ground_truth: /ground_truth/odom\n  estimate: %s\n  clock: /clock\n' '{{workflow.parameters.est_topic}}' > /tmp/topics.yaml &&
-            python3 /files/flight_window.py /work/run/bag /work/eval/vio '{{workflow.parameters.est_topic}}' &&
+            python3 /files/flight_window.py /work/run/bag /work/eval/vio-eval '{{workflow.parameters.est_topic}}' &&
             sim-real-eval trajectory /work/run --topics /tmp/topics.yaml --profile sim
-            --est /work/eval/vio/estimate.tum --gt /work/eval/vio/ground_truth.tum
-            --out /work/eval/vio/vio; rc=$?; [ $rc -le 1 ] || exit $rc
+            --est /work/eval/vio-eval/estimate.tum --gt /work/eval/vio-eval/ground_truth.tum
+            --out /work/eval/vio-eval/vio; rc=$?; [ $rc -le 1 ] || exit $rc
         volumeMounts:
           - {name: work, mountPath: /work}
           - {name: files, mountPath: /files}
@@ -301,8 +338,8 @@ spec:
         command: [/bin/bash, -c]
         args:
           - >-
-            source /opt/ros/humble/setup.bash && mkdir -p /work/eval/spawn &&
-            python3 /files/spawn_check.py /work/run/bag /work/eval/spawn/spawn.json; rc=$?; [ $rc -le 1 ] || exit $rc
+            source /opt/ros/humble/setup.bash && mkdir -p /work/eval/spawn-eval &&
+            python3 /files/spawn_check.py /work/run/bag /work/eval/spawn-eval/spawn.json; rc=$?; [ $rc -le 1 ] || exit $rc
         env:
           - {name: MAX_FALL_MS, value: "{{workflow.parameters.max_fall_ms}}"}
         volumeMounts:
@@ -334,11 +371,38 @@ spec:
         env:
           - {name: REPORT_DIR, value: /work/eval}
           - {name: GATES, value: "{{workflow.parameters.gates_json}}"}
-          - {name: OUTPUT_DIR, value: /work/verdict}
+          - {name: OUTPUT_DIR, value: /work/eval/verdict}
         volumeMounts:
           - {name: work, mountPath: /work}
           - {name: files, mountPath: /files}
       outputs:
         parameters:
           - name: verdict
-            valueFrom: {path: /work/verdict/verdict.json, default: "{}"}
+            valueFrom: {path: /work/eval/verdict/verdict.json, default: "{}"}
+
+    # ---- export: on exit, whatever the run reached -----------------------------------
+    # The evidence, out of the per-workflow volume before it goes, into the layout the
+    # OSMO executor downloads into (osmo/campaign.py run_one): bag/ and mission.json
+    # from the recorder, eval/<step>/ from each evaluator. This attempt's files replace
+    # the last attempt's, never merge with them. A dev-cluster stand-in for an artifact
+    # repository (the design's phase 4). The scratch volume's files are world-writable;
+    # the copies are not.
+    - name: export
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+      container:
+        image: "{{workflow.parameters.bridge_image}}"
+        command: [/bin/bash, -c]
+        args:
+          - >-
+            d='{{workflow.parameters.export_dir}}'; [ -n "$d" ] || { echo "no export_dir"; exit 0; };
+            case "$d" in /workspace/*) ;; *) echo "export_dir $d is not under /workspace" >&2; exit 2 ;; esac;
+            mkdir -p "$d" && rm -rf "$d/bag" "$d/mission.json" "$d/eval" || exit 1;
+            if [ -d /work/run ]; then cp -a /work/run/. "$d/"; fi;
+            if [ -d /work/eval ]; then cp -a /work/eval "$d/eval"; fi;
+            chmod -R go-w "$d";
+            echo "workflow {{workflow.name}}: {{workflow.status}}"; ls -la "$d" "$d/eval" 2>/dev/null; exit 0
+        volumeMounts:
+          - {name: work, mountPath: /work}
+          - {name: workspace, mountPath: /workspace}

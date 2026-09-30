@@ -116,6 +116,18 @@ the dashboard all call:
 The CampaignSpec gains `execution.backend` (default `compose`), and the CLI a `--backend`
 flag that overrides it. The run manifest records which backend ran each run.
 
+**Where the interface lives first (phase 2).** The Argo backend went in beside the OSMO
+one, in the runtime stack's executor (`osmo/campaign.py --backend argo`, with the cluster
+calls in `osmo/backends.py`), not in the platform's runner. The platform's runner executes
+inside the product-shell container, which has no cluster client, kubeconfig or OSMO
+session. That is also why the OSMO executor was written outside it. The two cluster
+backends therefore share one executor today: materialise, generate, image checks, verdict,
+run registry, manifest. Each backend answers in OSMO's vocabulary, so the registry and the
+scorecard need no change. The interface moves into the platform's runner, next to compose,
+once the product shell carries a cluster client. `execution.backend` in the CampaignSpec
+waits for that move too. Until then the choice is the executor's `--backend` flag (or
+`TEVV_CAMPAIGN_BACKEND`). The manifest's `target` and each `run.json` record it.
+
 ## 6. What OpenShift demands
 
 ### 6.1 Arbitrary-UID, non-root images
@@ -230,6 +242,10 @@ to be accurate everywhere. No safety evaluator exists yet: step 3c is new work.
   iceoryx2 connects between the sim and bridge containers, the fisheye cameras run at
   10.6–29 Hz against 12–29 Hz on compose, and a flight with OpenVINS live scored 0.63 m
   ATE. Every container must run as one user and mount the same `/dev/shm`.
+- **Estimator divergence in one pod.** On the phase 2 prototype, stereo OpenVINS diverged
+  in 4 of 4 flights at the route point where it diverged in 2 of 12 OSMO flights, with the
+  same images and config (`argo/README.md`). Until that is explained, an estimator number
+  from the Argo backend is not comparable with one from OSMO or compose.
 - **Live viewing.** Foxglove through an OpenShift Route needs websocket support on the router.
   Phase 2 checks it.
 - **Measurement noise on shared hosts.** During one measured flight, CI builds used 5–17 of 24
