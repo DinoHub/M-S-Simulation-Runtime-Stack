@@ -9,6 +9,7 @@ Remove it once the estimator subscribes with SensorDataQoS.
 import sys
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
@@ -24,7 +25,12 @@ def main():
         pub = node.create_publisher(Image, topic + "_reliable", pub_qos)
         keep.append(node.create_subscription(Image, topic, pub.publish, sub_qos, raw=True))
         node.get_logger().info(f"relaying {topic} -> {topic}_reliable")
-    rclpy.spin(node)
+    # Argo stops sidecars with SIGTERM once the recorder exits, and fails the pod on any
+    # sidecar exit code other than 143/137; a clean stop must not read as a failure.
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
 
 
 if __name__ == "__main__":

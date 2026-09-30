@@ -11,7 +11,9 @@ DS_IP=$(getent hosts "$DS_HOST" | awk '{print $1; exit}')
 export ROS_DISCOVERY_SERVER="${DS_IP}:11811"
 echo "discovery server $DS_HOST -> $ROS_DISCOVERY_SERVER"
 # The calibration is frozen beside the scenario and staged into the
-# generated stack; it is part of the run, not of the image.
+# generated stack; it is part of the run, not of the image. USE_STEREO=false
+# for a rig of independent mono cameras (the fisheye front + back): the launch
+# file's own default, true, overrides the config.
 exec ros2 launch ov_msckf subscribe.launch.py \
   config_path:="${STACK_DIR:-/workspace/generated/${STACK}}/config/vio/estimator_config.yaml" \
-  max_cameras:=2 use_stereo:=true
+  max_cameras:="${MAX_CAMERAS:-2}" use_stereo:="${USE_STEREO:-true}"

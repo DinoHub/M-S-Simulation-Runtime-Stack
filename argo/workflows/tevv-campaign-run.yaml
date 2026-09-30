@@ -25,8 +25,12 @@ metadata:
 spec:
   entrypoint: run
   serviceAccountName: tevv-runner
+  # Pods and the scratch volume go once the run succeeds (the bag is large); pods stay
+  # 30 minutes first so their logs can be read. The verdict survives in the workflow's
+  # status as the verdict step's output parameter.
   podGC:
     strategy: OnWorkflowSuccess
+    deleteDelayDuration: 30m
   arguments:
     parameters:
       - name: stack_dir          # absolute path under /workspace, e.g. /workspace/generated/<stack>
@@ -50,6 +54,8 @@ spec:
         value: /camera/front/camera_info,/camera/front_right/camera_info
       - name: relay_topics       # best-effort image topics to republish reliable for the estimator
         value: ""
+      - name: vio_use_stereo     # "false" for independent mono cameras (the fisheye rig)
+        value: "true"
       - name: gates_json
         value: '{"ate_trans_m.rmse": {"max": 1.0}}'
       - name: max_fall_ms
@@ -67,6 +73,10 @@ spec:
         resources:
           requests:
             storage: 10Gi
+  # Every fly-pod container mounts the same /dev/shm. Fast DDS picks its
+  # shared-memory transport between processes on one host, and every container
+  # looks like one host: a container with its own /dev/shm sees the topics but
+  # never receives a sample (the pilot waited forever for /mavros/state).
   volumes:
     - name: workspace
       hostPath: {path: /workspace, type: Directory}
@@ -106,7 +116,10 @@ spec:
       # One user for the whole pod, as the compose stack runs it (HOST_UID:GID): iceoryx2
       # does not connect a subscriber and a publisher running as different users, so a
       # root bridge next to the uid-1000 simulator got no frames. Only the autopilot
-      # still needs root (its entrypoint drops privileges with gosu).
+      # still needs root (its entrypoint drops privileges with gosu). Bridge-image
+      # containers keep that image's home, /home/ros, as under compose: with
+      # HOME=/tmp the bridge's DDS clean-up removed the launch log under /tmp/.ros
+      # and ros2 launch then failed every process it started after MAVROS.
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
@@ -116,7 +129,7 @@ spec:
         image: "{{workflow.parameters.bridge_image}}"
         command: [/bin/bash, -c, "cp /files/* /tmp/ && exec /bin/bash /tmp/record.sh"]
         env:
-          - {name: HOME, value: /tmp}
+          - {name: HOME, value: /home/ros}
           - {name: OUT_DIR, value: /work/run}
           - {name: RUN_ID, value: "{{workflow.name}}"}
           - {name: RECORD_SEC, value: "{{workflow.parameters.record_sec}}"}
@@ -140,11 +153,12 @@ spec:
           image: "{{workflow.parameters.bridge_image}}"
           command: [/bin/bash, -c, "cp /files/* /tmp/ && exec /bin/bash /tmp/discovery_server.sh"]
           env:
-            - {name: HOME, value: /tmp}
+            - {name: HOME, value: /home/ros}
           resources:
             requests: {cpu: 250m, memory: 256Mi}
           volumeMounts:
             - {name: files, mountPath: /files}
+            - {name: shm, mountPath: /dev/shm}
 
         - name: sim
           image: "{{workflow.parameters.runtime_host_image}}"
@@ -181,12 +195,13 @@ spec:
             requests: {cpu: "2", memory: 2Gi}
           volumeMounts:
             - {name: files, mountPath: /files}
+            - {name: shm, mountPath: /dev/shm}
 
         - name: bridge
           image: "{{workflow.parameters.bridge_image}}"
           command: [/bin/bash, -c, "cp /files/* /tmp/ && exec /bin/bash /tmp/bridge.sh"]
           env:
-            - {name: HOME, value: /tmp}
+            - {name: HOME, value: /home/ros}
             - {name: STACK_DIR, value: "{{workflow.parameters.stack_dir}}"}
             - {name: VEHICLE, value: "{{workflow.parameters.vehicle}}"}
             - {name: SIM_HOST, value: 127.0.0.1}
@@ -228,6 +243,7 @@ spec:
           command: [/bin/bash, -c, "if [ '{{workflow.parameters.estimator}}' != true ]; then exec sleep infinity; fi; cp /files/* /tmp/ && exec /bin/bash /tmp/vio.sh"]
           env:
             - {name: STACK_DIR, value: "{{workflow.parameters.stack_dir}}"}
+            - {name: USE_STEREO, value: "{{workflow.parameters.vio_use_stereo}}"}
             - {name: DS_HOST, value: 127.0.0.1}
             - {name: HOME, value: /tmp}
             - {name: RMW_IMPLEMENTATION, value: rmw_fastrtps_cpp}
@@ -244,7 +260,7 @@ spec:
           image: "{{workflow.parameters.bridge_image}}"
           command: [/bin/bash, -c, "if [ '{{workflow.parameters.fly}}' != true ]; then exec sleep infinity; fi; cp /files/* /tmp/ && exec /bin/bash /tmp/pilot.sh"]
           env:
-            - {name: HOME, value: /tmp}
+            - {name: HOME, value: /home/ros}
             - {name: VEHICLE, value: "{{workflow.parameters.vehicle}}"}
             - {name: AUTOPILOT, value: "{{workflow.parameters.autopilot}}"}
             - {name: ROUTE_B64, value: "{{workflow.parameters.route_b64}}"}
@@ -260,6 +276,7 @@ spec:
             requests: {cpu: 500m, memory: 512Mi}
           volumeMounts:
             - {name: files, mountPath: /files}
+            - {name: shm, mountPath: /dev/shm}
 
     # ---- evaluate: CPU only, each reads the recorder's output --------------------
     - name: vio-eval
@@ -321,3 +338,7 @@ spec:
         volumeMounts:
           - {name: work, mountPath: /work}
           - {name: files, mountPath: /files}
+      outputs:
+        parameters:
+          - name: verdict
+            valueFrom: {path: /work/verdict/verdict.json, default: "{}"}

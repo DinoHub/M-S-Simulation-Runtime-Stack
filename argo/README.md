@@ -30,6 +30,64 @@ LOCAL_IMAGES=1 argo/submit.sh <generated stack dir> fly=true estimator=true WAIT
 - **`LOCAL_IMAGES=1`:** for images side-loaded with `kind load`, which keep their tag but not
   their registry digest.
 
+A fisheye VIO flight with OpenVINS live, on the gap-test XFS stack and route from PR #107
+(`tools/gap-tests/gap.sh stack` generates the stack):
+
+```bash
+LOCAL_IMAGES=1 RUNTIME_HOST_IMAGE=dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-bloomfix.16 \
+BRIDGE_IMAGE=tevv-airsim-ros2-bridge:v1.0.0-shmfix.1 \
+argo/submit.sh <gap-fisheye-xfs stack> fly=true estimator=true vio_use_stereo=false \
+  relay_topics=/fisheye_front/image_raw,/fisheye_back/image_raw \
+  camera_info_topics=/fisheye_front/camera_info,/fisheye_back/camera_info \
+  "route_b64=$(cat scenarios/gap-fisheye-xfs/routes/xfs_yard_box.b64)" \
+  'gates_json={"ate_trans_m.rmse": {"max": 5.0}}'
+```
+
+The verdict is the `verdict` step's output parameter, so it outlives the run's pods
+(kept 30 minutes after a success) and its scratch volume:
+
+```bash
+kubectl -n tevv-argo get wf <name> -o json \
+  | jq -r '.status.nodes[] | select(.displayName=="verdict") | .outputs.parameters[0].value'
+```
+
+## Measured (kind, one RTX 5080 node, 30 Sep 2026)
+
+Parked, gap-fisheye-xfs, bloomfix.16 host, shmfix bridge:
+
+- **Transport:** iceoryx2 shared memory between the sim and bridge containers, with one
+  recipient on each of the four streams.
+- **Fisheye rates:** 10.6–29 Hz, against 12–29 Hz on compose.
+- **IMU:** 200 Hz.
+- **Recording:** passes validation.
+
+Flying, same stack, ArduPilot, OpenVINS live (monocular, through the QoS relay), route
+`xfs_yard_box_v1` (13 waypoints, 49 m path):
+
+- **Run time:** 3 min 10 s from submit to verdict. The fly pod took 2 min 43 s; the
+  evaluation and verdict steps took 20 s.
+- **Recording:** 117,292 messages. They include 15,203 estimates, 3,613 frames of
+  `camera_info` per fisheye and 26,740 IMU samples.
+- **Estimator:** ATE RMSE 0.63 m over the 66 s airborne window (0.72 m over the whole
+  recording). The gate at 5 m passes. This is one run. On compose, replays of this stack
+  scored 0.90–1.24 m, and live runs sometimes diverged.
+
+Three things had to match the compose stack before the parked rates did:
+
+- **One user across the pod.** iceoryx2 connected nothing while the bridge ran as root next to
+  the uid-1000 simulator.
+- **The simulator's camera names for the bridge.**
+- **The stack's render settings on the simulator's command line** (`r.Fisheye.SyncCaptureFPS`).
+  Without them the fisheye rig captured at 3–5 Hz.
+
+Two more things had to match before the flight did:
+
+- **`/dev/shm` shared by every container, not only the sim and bridge.** Fast DDS uses
+  shared memory between processes on one host. A pilot without the mount saw
+  `/mavros/state` advertised but received none of its messages.
+- **Sidecars that exit 0 or 143 on SIGTERM.** Argo fails the pod for any other exit code
+  from a sidecar it stops. The relay's rclpy shutdown exception exited 1.
+
 ## Prototype limits (on the way to the design)
 
 | Here | Design |
