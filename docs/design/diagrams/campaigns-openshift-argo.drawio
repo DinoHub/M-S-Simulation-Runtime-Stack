@@ -64,7 +64,7 @@
         <mxCell id="IREG" value="&lt;b&gt;Internal image registry&lt;/b&gt;&lt;br/&gt;mirrored, digest-pinned images" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="OCP">
           <mxGeometry x="970" y="40" width="280" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="POD" value="Run pod — Argo containerSet, one per run (shared IPC namespace, localhost DDS)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="OCP">
+        <mxCell id="POD" value="Run pod — recorder plus sidecars, one per run (shared IPC namespace, localhost DDS)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;container=1;collapsible=0;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="OCP">
           <mxGeometry x="20" y="160" width="920" height="400" as="geometry" />
         </mxCell>
         <mxCell id="C_SIM" value="&lt;b&gt;sim&lt;/b&gt;&lt;br/&gt;TEVV runtime host (UE 5.8.2)&lt;br/&gt;-RenderOffScreen, Vulkan&lt;br/&gt;nvidia.com/gpu: 1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;" vertex="1" parent="POD">
@@ -197,7 +197,7 @@
         <mxCell id="S1" value="&lt;b&gt;1. generate&lt;/b&gt;&lt;br/&gt;stackgen: ScenarioSpec -&amp;gt; stack config&lt;br/&gt;output artifact: cfg.tgz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="WT">
           <mxGeometry x="20" y="170" width="260" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="S2" value="&lt;b&gt;2. fly&lt;/b&gt; (containerSet, GPU)&lt;br/&gt;sim, bridge, autopilot, component,&lt;br/&gt;pilot, recorder (lead), foxglove&lt;br/&gt;output artifact: bag + logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="WT">
+        <mxCell id="S2" value="&lt;b&gt;2. fly&lt;/b&gt; (one pod, GPU)&lt;br/&gt;recorder (main) + sidecars: sim, bridge,&lt;br/&gt;autopilot, component, pilot, foxglove&lt;br/&gt;output artifact: bag + logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="WT">
           <mxGeometry x="340" y="170" width="300" height="100" as="geometry" />
         </mxCell>
         <mxCell id="S3a" value="&lt;b&gt;3a. validate-recording&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="WT">

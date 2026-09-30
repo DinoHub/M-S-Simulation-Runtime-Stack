@@ -37,7 +37,7 @@ unchanged on each, and test suites are onboarded through CI.
 
 | Question | Proposal | Why |
 | --- | --- | --- |
-| Workflow engine on the cluster | Argo Workflows | Several containers in one pod (`containerSet`), a DAG with artifacts, and it runs on stock Kubernetes and OpenShift |
+| Workflow engine on the cluster | Argo Workflows | Several containers in one pod (a main container with sidecars), a DAG with artifacts, and it runs on stock Kubernetes and OpenShift |
 | What a run is | One Argo Workflow: generate, then fly (one pod), then evaluate, then verdict | Keeps the OSMO workflow's three phases and exit-code contract |
 | The fly step | One pod, all real-time containers in it | Shared IPC namespace, so iceoryx2 zero-copy works, DDS runs over localhost, and every container starts and stops together |
 | Queueing and GPU quota | Kueue `ClusterQueue gpu-sim` | Priority and preemption across teams, without OSMO pools |
@@ -87,14 +87,16 @@ the Argo fly pod brings shared memory back, with `emptyDir` (medium `Memory`) vo
 | Step | Template | Output |
 | --- | --- | --- |
 | 1. generate | stackgen image; `ScenarioSpec` parameter in | artifact `cfg.tgz` |
-| 2. fly | `containerSet`: sim (GPU), bridge, autopilot, component under test, pilot, recorder (lead), foxglove (optional) | artifact: bag + logs |
+| 2. fly | recorder (main container) with sidecars: sim (GPU), bridge, autopilot, component under test, pilot, foxglove (optional) | artifact: bag + logs |
 | 3a. validate-recording | bridge image, `validate_recording.py` | JSON report |
 | 3b. performance eval | sim-real-eval image | ATE/RPE, landmarks, divergence |
 | 3c. safety eval (new) | sim-real-eval image | collisions, minimum separation, time to a safe state |
 | 4. verdict | `verdict.py` against the CampaignSpec gates | pass or fail |
 | 5. register | run-registry row, manifest | — |
 
-The recorder is the lead: its exit ends the fly pod. The OSMO exit codes are kept: `0` pass;
+The recorder is the lead: its exit ends the fly pod, and Argo then stops the sidecars. A
+`containerSet` would not do this, since it ends only when every container has exited. The
+OSMO exit codes are kept: `0` pass;
 `1` a real verdict, never retried; `42` platform not ready and `137` out of memory, both
 retried through an Argo `retryStrategy` expression on the exit code.
 
@@ -224,8 +226,10 @@ to be accurate everywhere. No safety evaluator exists yet: step 3c is new work.
 - **Pod size.** The OSMO run group requests about 21 of the GPU node's 24 cores, sidecars
   included. As one pod, the fly step needs a node with that much free, since a pod cannot be
   split across nodes.
-- **Shared-memory transport in one pod** is designed, not yet measured. Phase 2 measures it
-  against RPC.
+- **Shared-memory transport in one pod** is measured on the phase 2 prototype (`argo/README.md`):
+  iceoryx2 connects between the sim and bridge containers, the fisheye cameras run at
+  10.6–29 Hz against 12–29 Hz on compose, and a flight with OpenVINS live scored 0.63 m
+  ATE. Every container must run as one user and mount the same `/dev/shm`.
 - **Live viewing.** Foxglove through an OpenShift Route needs websocket support on the router.
   Phase 2 checks it.
 - **Measurement noise on shared hosts.** During one measured flight, CI builds used 5–17 of 24
