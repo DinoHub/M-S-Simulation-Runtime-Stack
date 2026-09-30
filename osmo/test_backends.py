@@ -202,5 +202,19 @@ class Submit(unittest.TestCase):
                 self.assertTrue(callable(getattr(cls, call)), f"{cls.__name__}.{call}")
 
 
+class TaskFiles(unittest.TestCase):
+    def test_every_file_osmo_ships_survives_its_jinja(self):
+        # OSMO renders each `files:` entry as a Jinja template before the task
+        # starts: `{#` opens a comment, `{{` and `{%` an expression. A shell
+        # length expansion in sim.sh failed every OSMO submit with "Missing end
+        # of comment tag".
+        root = Path(__file__).resolve().parent / "files"
+        for path in sorted(root.iterdir()):
+            if path.suffix in (".sh", ".py"):
+                text = path.read_text()
+                for token in ("{#", "{{", "{%"):
+                    self.assertNotIn(token, text, f"{path.name} contains {token}")
+
+
 if __name__ == "__main__":
     unittest.main()

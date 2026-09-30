@@ -1,5 +1,7 @@
 # Design: campaigns on OpenShift with Argo Workflows — one campaign runner, three backends
 
+Decisions taken while building it, and where they depart from this doc: [decision log](2026-09-30-argo-migration-decisions.md).
+
 Status: **proposal** for the M-S-Simulation-Runtime-Stack and MnS-Integration-Platform
 owners, and for DSTA's platform discussion. Date: 30 Sept 2026.
 
@@ -242,10 +244,11 @@ to be accurate everywhere. No safety evaluator exists yet: step 3c is new work.
   iceoryx2 connects between the sim and bridge containers, the fisheye cameras run at
   10.6–29 Hz against 12–29 Hz on compose, and a flight with OpenVINS live scored 0.63 m
   ATE. Every container must run as one user and mount the same `/dev/shm`.
-- **Estimator divergence in one pod.** On the phase 2 prototype, stereo OpenVINS diverged
-  in 4 of 4 flights at the route point where it diverged in 2 of 12 OSMO flights, with the
-  same images and config (`argo/README.md`). Until that is explained, an estimator number
-  from the Argo backend is not comparable with one from OSMO or compose.
+- **Estimator results that moved without a code change.** An interleaved benchmark
+  (`argo/README.md`) found stereo OpenVINS diverging on OSMO and Argo alike today. The
+  same images and config scored 0.45–0.9 m on 25 Sep. Argo itself was 14 % faster per run
+  (170 against 198 s) at the same GPU load. A campaign's scores are only comparable within
+  one sitting until the cause is found, whichever backend runs it.
 - **Live viewing.** Foxglove through an OpenShift Route needs websocket support on the router.
   Phase 2 checks it.
 - **Measurement noise on shared hosts.** During one measured flight, CI builds used 5–17 of 24

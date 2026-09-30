@@ -73,7 +73,9 @@ else
   COMPOSE_ARGS=()
   if [ -f "$S/../docker-compose.yml" ]; then
     mapfile -t COMPOSE_ARGS < <(grep -oE -- '-ini:Engine:\[SystemSettings\]:[^ "'"'"']+' "$S/../docker-compose.yml" | sort -u)
-    echo "render settings from the stack's compose file: ${#COMPOSE_ARGS[@]}"
+    # Counted without the length expansion: OSMO renders this file through Jinja,
+    # where a brace followed by a hash opens a comment and fails the submit.
+    echo "render settings from the stack's compose file: $(printf '%s\n' "${COMPOSE_ARGS[@]}" | grep -c .)"
     if grep -q -- '-MnSScenarioConditions=' "$S/../docker-compose.yml" && [ -f "$R/scenario_conditions.json" ]; then
       COMPOSE_ARGS+=(-MnSScenarioConditions="$R/scenario_conditions.json")
     fi

@@ -8,6 +8,8 @@ workflow per run through the campaign executor's `--backend argo`.
 fly (one pod) -> vio-eval | spawn-eval | validate -> verdict      (on exit: export)
 ```
 
+Why it is built this way, decision by decision: [the migration decision log](../docs/design/2026-09-30-argo-migration-decisions.md).
+
 The fly pod's main container is the recorder, and its exit ends the pod. The discovery
 server, sim, bridge, autopilot, estimator, relay and pilot are sidecars, which Argo stops
 when the recorder exits. All of them share the pod's IPC namespace, so the bridge can take
@@ -115,17 +117,80 @@ over RPC: the iceoryx2 path is the fisheye rig's), XFS yard, v1 image set:
   product shell and flown in one pod: MAVROS connected, OFFBOARD, the full 51 m route,
   landed. The evidence lands in `runs/<key>/`, and the registry gets the run's status,
   Argo's timings, the gate rows, six headline metrics and the artifact paths.
-- **The estimator does not do as well as on OSMO.** The images match by digest, and the
-  stack config and the route are identical to `vio-osmo-xfs` on OSMO (25 Sep). There, 10 of
-  12 scored runs came in at 0.45–1.5 m. All four stereo runs here diverged 30–40 s into the flight, at
-  the point where the other 2 OSMO runs diverged (6.6 m, 15 m). Same failure mode,
-  much more often. Not the cause, as measured:
-  - camera and IMU rates in the bag: cameras 23.3 Hz here against 23.6 Hz, IMU 189 Hz
-    against 192 Hz;
-  - estimator CPU: 4.4 ms mean and 15 ms max per update, against a 43 ms frame period;
-  - Fast DDS shared memory against UDP only, over one run.
-  Still open: timing between the simulator, bridge and estimator when they share one node.
-  The mono fisheye flight above, 0.63 m, did not diverge.
+- **The estimator scores are not an Argo effect.** These runs diverged, but so does OSMO
+  today: see the benchmark below.
+
+## Benchmark: Argo against OSMO (30 Sep 2026)
+
+The same CampaignSpec (`vio-osmo-xfs`, calm, PX4, pinhole stereo OpenVINS, `yard-box`
+route, 1.0 m ATE gate) ran under two campaign ids, `vio-bench-osmo` and `vio-bench-argo`,
+so each backend kept its own evidence. Both used the same v1 images, checked by digest on
+the node, the same kind cluster and the same GPU node, three runs each.
+
+The runs were interleaved (OSMO, Argo, Argo, OSMO, OSMO, Argo, then the OSMO run whose
+first submit failed, see below), so host-load drift falls on both. They could not run at
+the same time: the GPU node advertises one `nvidia.com/gpu`, so a second simulator pod
+would only have queued. Host GPU and CPU were sampled every 5 s.
+
+| Median of 3 | OSMO | Argo |
+| --- | --- | --- |
+| **Wall, `campaign.py run` start to exit** | **198 s** | **170 s** |
+| Before submit (plan, generate, image check) | ~8 s | ~8 s |
+| Submit to fly start (scheduling) | 6 s | 0 s |
+| Fly start to bag start (sim boot, bridge ready) | 24 s | 23 s |
+| Fly phase (boot, flight, landing) | 134 s | 127 s |
+| Evaluate and verdict | 45 s | 30 s |
+| Evidence to the host after the workflow ends | 5 s (S3 download) | 5 s (exit-handler copy) |
+| Camera rate in the bag | 25.8 Hz | 23.7 Hz |
+| IMU and estimator rates | 190 / 151 Hz | 190 / 151 Hz |
+| GPU utilisation during the fly phase (mean / max) | 55 / 100 % | 55 / 100 % |
+| GPU memory, max | 7.5 GB | 7.5 GB |
+| GPU node CPU (mean, % of one core) | 365 % | 329 % |
+| ATE RMSE (1.0 m gate) | 5.34 m, 3 of 3 failed | 5.87 m, 3 of 3 failed |
+| OpenVINS diverges at (s after takeoff) | 23.0–23.4 | 21.7–27.8 |
+
+- **Argo is 28 s (14 %) faster per run.** The gain is scheduling and hand-off, not the
+  flight:
+  - OSMO spends 6 s in its gang scheduler and 15 s more in its evaluate phase, which it
+    runs as a separate group;
+  - Argo starts the fly pod at once, and its evaluate steps start as soon as the recorder
+    exits.
+  At three runs, the fly phase difference (7 s) is within run-to-run noise.
+- **The same load on the machine.** GPU utilisation, GPU memory and host load match. The
+  GPU node's CPU is about 10 % lower on Argo; OSMO also runs its per-task sidecars.
+- **Cameras about 8 % slower in the Argo pod** (23.7 against 25.8 Hz), in every run. On
+  OSMO the bridge is a separate pod; here it shares the node's CPU with the simulator.
+  It is small and consistent, but not yet explained.
+- **Estimator accuracy is the same on both, and bad on both.** All six runs diverged at
+  the same point of the route, about 22–28 s after takeoff. On 25 Sep, the same
+  CampaignSpec with the same image digests scored 0.45–0.9 m on OSMO, on the same boot
+  and GPU driver (580.178.04, installed that morning).
+  - Something outside the backends changed between the afternoon of 25 Sep and today.
+  - The earlier reading, that the Argo pod made OpenVINS diverge more often, was wrong;
+    it compared Argo today with OSMO five days ago.
+  - The cause is not found; it is tracked separately from this migration.
+- **Found on the way:** the OSMO backend could not submit at all with this branch's
+  `sim.sh`. OSMO renders every task file through Jinja, and a shell length expansion
+  (`${#…}`) opened a Jinja comment. It is fixed, and `osmo/test_backends.py` now checks
+  every shipped file for Jinja delimiters.
+
+Raw per-run numbers:
+
+| Backend | Run | Workflow | Wall | Fly | Eval | Cameras | ATE | Diverges at |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| osmo | calm-r2 | `sim-bridge-vio-85` | 197 s | 135 s | 43 s | 25.7 Hz | 2.75 m | 23.3 s |
+| osmo | calm-r3 | `sim-bridge-vio-86` | 198 s | 133 s | 45 s | 25.8 Hz | 5.34 m | 23.4 s |
+| osmo | calm-r1 | `sim-bridge-vio-87` | 198 s | 134 s | 45 s | 25.8 Hz | 8.36 m | 23.0 s |
+| argo | calm-r1 | `tevv-campaign-run-rcj8z` | 169 s | 125 s | 30 s | 23.8 Hz | 5.87 m | 27.8 s |
+| argo | calm-r2 | `tevv-campaign-run-cxxmw` | 170 s | 128 s | 30 s | 23.6 Hz | 2.92 m | 21.7 s |
+| argo | calm-r3 | `tevv-campaign-run-5msqx` | 170 s | 127 s | 30 s | 23.7 Hz | 8.64 m | 27.1 s |
+
+How the phases are measured:
+- **Phase times:** each backend's own clock, as the registry records it: submitted,
+  started (OSMO: the run group; Argo: the fly pod), evaluate start, end.
+- **Boot:** the bag's first stamp minus the start.
+- **Divergence:** the first time the estimate, aligned on its first 10 s, is 3 m off the
+  ground truth.
 
 Three things had to match the compose stack before the parked rates did:
 
