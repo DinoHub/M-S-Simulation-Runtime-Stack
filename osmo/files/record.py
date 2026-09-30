@@ -133,6 +133,38 @@ def main():
     print("bridge publishing; recording %.0fs into %s"
           % (record_sec, bag_dir))
 
+    # Every other camera the bridge serves, by its CameraInfo: one small
+    # message per delivered frame, so the bag carries each camera's real
+    # rate without the images. The two above are the estimator's; a rig
+    # added for render load (a fisheye surround, say) is recorded too.
+    #
+    # By name first. CAMERA_INFO_TOPICS is what campaign.py derived from
+    # the stack (settings.json and topic_names.yaml, by the bridge image's
+    # own naming rules). A plain discovery-server CLIENT is told only about
+    # endpoints it matches (see the docstring), so listing the graph cannot
+    # be relied on to find a topic nothing here subscribes to yet. The
+    # graph is still looked at, briefly, for a camera the list missed, such
+    # as a submit by hand without the value.
+    def also_record(topic):
+        if topic in counts:
+            return
+        writer.create_topic(rosbag2_py.TopicMetadata(
+            name=topic, type="sensor_msgs/msg/CameraInfo", serialization_format="cdr"))
+        counts[topic] = 0
+        node.create_subscription(CameraInfo, topic, make_writer(topic), qos_profile_sensor_data)
+        TOPICS.append((topic, CameraInfo, "sensor_msgs/msg/CameraInfo", qos_profile_sensor_data))
+        print("  also recording %s" % topic)
+
+    named = [t.strip() for t in os.environ.get("CAMERA_INFO_TOPICS", "").split(",") if t.strip()]
+    for topic in named:
+        also_record(topic)
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.2)
+    for topic, types in sorted(node.get_topic_names_and_types()):
+        if "sensor_msgs/msg/CameraInfo" in types:
+            also_record(topic)
+
     start = time.time()
     while time.time() - start < record_sec:
         rclpy.spin_once(node, timeout_sec=0.2)

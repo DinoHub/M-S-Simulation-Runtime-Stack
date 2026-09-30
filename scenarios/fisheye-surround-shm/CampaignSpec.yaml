@@ -1,0 +1,120 @@
+# Parked-then-flown measurement of the fisheye rig's cost on SHM. No evaluator:
+# the numbers are delivered rate per camera (from each camera_info in the bag),
+# sim real-time factor (/clock vs receive time) and GPU load sampled alongside.
+schema: mns.campaign.v1
+id: fisheye-surround-shm
+name: 'Fisheye surround rig over iceoryx2: none vs tiled vs shared cubemap'
+scenario: ./ScenarioSpec.yaml
+mission:
+  source: external
+  autopilot: ardupilot
+  trajectory: ./routes/yard-box.yaml
+  done: timeout
+  timeout_s: 420
+variants:
+- id: baseline
+  name: No cameras (render floor)
+  overrides:
+    vehicles:
+    - id: drone_1
+      name: Drone1
+      runtime_name: Drone1
+      ros_domain_id: 1
+      start: &id001
+        x: 423
+        y: -906
+        z: -21.0
+      cameras: {}
+      sensors: &id003
+        imu:
+          generate_noise: true
+          angular_random_walk: 0.5833
+          velocity_random_walk: 0.2039
+          gyro_bias_stability: 0.0
+          accel_bias_stability: 0.0
+        gps: true
+        barometer: true
+        magnetometer: true
+        gpu_lidar: false
+- id: tiled
+  name: '4x 190-deg fisheye, per-camera tiled render (AirLib default: round-robin,
+    1 camera per frame)'
+- id: shared
+  name: 4x 190-deg fisheye, one shared cubemap, 30 Hz synchronized burst
+  overrides:
+    conditions:
+      render:
+        system_settings:
+          r.Fisheye.SyncCaptureFPS: 30
+          r.Fisheye.LensRainWeatherScale: 0
+    vehicles:
+    - id: drone_1
+      name: Drone1
+      runtime_name: Drone1
+      ros_domain_id: 1
+      start: *id001
+      cameras:
+        fisheye_front:
+          position:
+            x: 0
+            y: 0
+            z: -0.15
+          rotation:
+            roll: 0
+            pitch: 0
+            yaw: 0
+          capture_settings:
+          - &id002
+            image_type: 0
+            width: 512
+            height: 512
+            fov_degrees: 190
+            fisheye_lens_type: Circular   # see ScenarioSpec.yaml
+            fisheye_shared_cubemap: true
+            fisheye_shared_cubemap_group: surround
+            fisheye_shared_cubemap_offset_z: -0.35
+        fisheye_right:
+          position:
+            x: 0
+            y: 0
+            z: -0.15
+          rotation:
+            roll: 0
+            pitch: 0
+            yaw: 90
+          capture_settings:
+          - *id002
+        fisheye_back:
+          position:
+            x: 0
+            y: 0
+            z: -0.15
+          rotation:
+            roll: 0
+            pitch: 0
+            yaw: 180
+          capture_settings:
+          - *id002
+        fisheye_left:
+          position:
+            x: 0
+            y: 0
+            z: -0.15
+          rotation:
+            roll: 0
+            pitch: 0
+            yaw: 270
+          capture_settings:
+          - *id002
+      sensors: *id003
+repeats: 2
+recording:
+  keep: all
+  topics:
+  - /clock
+  - /ground_truth/odom
+  - /imu/data
+  - /fisheye_front/camera_info
+  - /fisheye_right/camera_info
+  - /fisheye_back/camera_info
+  - /fisheye_left/camera_info

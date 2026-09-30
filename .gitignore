@@ -33,4 +33,6 @@ generated/
 !/scenarios/vio-osmo-condo-ardupilot/
 !/scenarios/vio-osmo-xfs/
 !/scenarios/vio-osmo-xfs-ardupilot/
+!/scenarios/vio-osmo-xfs-surround/
+!/scenarios/fisheye-surround-shm/
 !/scenarios/vio-reference/**

@@ -40,5 +40,28 @@ class ContainerPath(unittest.TestCase):
         self.assertIn("outside", err.getvalue())
 
 
+class CameraInfoTopics(unittest.TestCase):
+    """The recorder subscribes by name to what the stack's bridge will publish."""
+
+    def run_with(self, returncode: int, stdout: str, stderr: str = ""):
+        import subprocess
+        from unittest import mock
+        done = subprocess.CompletedProcess([], returncode, stdout, stderr)
+        with mock.patch.object(campaign.subprocess, "run", return_value=done), \
+                contextlib.redirect_stdout(io.StringIO()):
+            return campaign.camera_info_topics(Path("/stack"))
+
+    def test_only_camera_info_topics_of_every_bridge(self):
+        out = ('[{"topics": [{"topic": "/camera/front/camera_info"}, {"topic": "/imu/data"},'
+               ' {"topic": "/fisheye_front_Scene/camera_info"}]},'
+               ' {"topics": [{"topic": "/camera/front/camera_info"}]}]')
+        self.assertEqual(self.run_with(0, out),
+                         ["/camera/front/camera_info", "/fisheye_front_Scene/camera_info"])
+
+    def test_a_failed_preview_is_an_empty_list(self):
+        self.assertEqual(self.run_with(1, "", "no compose file"), [])
+        self.assertEqual(self.run_with(0, "not json"), [])
+
+
 if __name__ == "__main__":
     unittest.main()
