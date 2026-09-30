@@ -65,6 +65,8 @@ spec:
         value: "0.5"
       - name: export_dir         # under /workspace: where the evidence lands; empty keeps it in the run
         value: ""
+      - name: frame_stats_topics # image topics whose per-frame freshness the recorder logs (diagnostic)
+        value: ""
       - name: runtime_host_image
       - name: bridge_image
       - name: autopilot_image    # the ArduPilot or PX4 image, to match `autopilot`
@@ -147,6 +149,7 @@ spec:
           - {name: READY_WAIT_SEC, value: "900"}
           - {name: VIZ_HOLD_SEC, value: "0"}
           - {name: CAMERA_INFO_TOPICS, value: "{{workflow.parameters.camera_info_topics}}"}
+          - {name: FRAME_STATS_TOPICS, value: "{{workflow.parameters.frame_stats_topics}}"}
           - {name: DS_HOST, value: 127.0.0.1}
           - {name: RMW_IMPLEMENTATION, value: rmw_fastrtps_cpp}
           - {name: ROS_DOMAIN_ID, value: "0"}

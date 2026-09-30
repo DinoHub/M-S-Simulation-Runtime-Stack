@@ -246,7 +246,7 @@ to be accurate everywhere. No safety evaluator exists yet: step 3c is new work.
   ATE. Every container must run as one user and mount the same `/dev/shm`.
 - **Estimator results that moved without a code change.** An interleaved benchmark
   (`argo/README.md`) found stereo OpenVINS diverging on OSMO and Argo alike today. The
-  same images and config scored 0.45–0.9 m on 25 Sep. Argo itself was 14 % faster per run
+  same images and config scored 0.45–0.82 m in 7 of 9 flights on 25 Sep ([investigation](2026-09-30-vio-divergence-drift.md)). Argo itself was 14 % faster per run
   (170 against 198 s) at the same GPU load. A campaign's scores are only comparable within
   one sitting until the cause is found, whichever backend runs it.
 - **Live viewing.** Foxglove through an OpenShift Route needs websocket support on the router.

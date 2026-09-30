@@ -106,6 +106,34 @@ def main():
             name=topic, type=type_str, serialization_format="cdr"))
         node.create_subscription(msg_type, topic, make_writer(topic), qos)
 
+    # Opt-in frame statistics (FRAME_STATS_TOPICS, comma-separated image
+    # topics): per frame, its stamp, how much it differs from the previous
+    # frame and its brightness, into frame_stats.jsonl beside the bag. It says
+    # whether the renderer handed the estimator stale frames (new stamp, the
+    # previous frame's pixels) without recording gigabytes of images.
+    stats_topics = [t for t in os.environ.get("FRAME_STATS_TOPICS", "").split(",") if t]
+    if stats_topics:
+        import numpy as np
+        from sensor_msgs.msg import Image
+        stats_file = open(run_dir / "frame_stats.jsonl", "w")
+        last = dict()
+
+        def make_stats(topic):
+            def callback(msg):
+                ch = max(1, len(msg.data) // max(1, msg.height * msg.width))
+                img = np.frombuffer(msg.data, np.uint8).reshape(msg.height, msg.width, ch)
+                small = img[::4, ::4, :3].mean(axis=2)
+                prev = last.get(topic)
+                diff = float(np.abs(small - prev).mean()) if prev is not None else None
+                last[topic] = small
+                stats_file.write(json.dumps(dict(
+                    topic=topic, stamp=msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9,
+                    recv=time.time(), diff=diff, mean=round(float(small.mean()), 2))) + "\n")
+            return callback
+        for topic in stats_topics:
+            node.create_subscription(Image, topic, make_stats(topic), qos_profile_sensor_data)
+        print("frame statistics for %s into frame_stats.jsonl" % ", ".join(stats_topics))
+
     # The pilot announces the end of the flight; the bag closes a
     # few seconds later. RECORD_SEC is the cap for a pilot that
     # never gets there, and the whole window when nothing flies.
@@ -148,6 +176,8 @@ def main():
         "messages": dict(counts),
         "publishers": publishers}, indent=2))
 
+    if stats_topics:
+        stats_file.close()
     del writer          # flush and close the bag
     total = sum(counts.values())
     for topic, _, _, _ in TOPICS:

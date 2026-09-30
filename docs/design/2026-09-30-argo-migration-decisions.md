@@ -387,9 +387,9 @@ Interleaving spreads host-load drift across both backends.
 ## 28. Estimator scores are not compared across sittings
 
 **Evidence.** The same CampaignSpec, with the same image digests and a byte-identical
-generated stack, scored 0.45–0.9 m on OSMO on 25 Sep and 2.8–8.6 m on OSMO and Argo alike
+generated stack, scored 0.45–0.82 m in 7 of 9 distinct OSMO flights on 25 Sep and 2.8–8.6 m on OSMO and Argo alike
 on 30 Sep. That is the same host boot and the same GPU driver. Comparing Argo's 30 Sep
 runs with OSMO's 25 Sep runs had made the Argo pod look like the cause.
 
 **Decision.** A backend comparison is only valid inside one interleaved sitting (entry
-27). The drift since 25 Sep is its own investigation, not a migration blocker.
+27). The drift since 25 Sep is its own investigation, not a migration blocker: [VIO divergence investigation](2026-09-30-vio-divergence-drift.md). Count distinct flights, not registry attempts: several 25 Sep attempts were one bag scored twice.

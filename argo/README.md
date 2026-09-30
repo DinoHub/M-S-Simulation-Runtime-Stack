@@ -163,12 +163,13 @@ would only have queued. Host GPU and CPU were sampled every 5 s.
   It is small and consistent, but not yet explained.
 - **Estimator accuracy is the same on both, and bad on both.** All six runs diverged at
   the same point of the route, about 22–28 s after takeoff. On 25 Sep, the same
-  CampaignSpec with the same image digests scored 0.45–0.9 m on OSMO, on the same boot
-  and GPU driver (580.178.04, installed that morning).
+  CampaignSpec with the same image digests scored 0.45–0.82 m in 7 of 9 distinct OSMO
+  flights, on the same boot and GPU driver (580.178.04, installed that morning).
   - Something outside the backends changed between the afternoon of 25 Sep and today.
   - The earlier reading, that the Argo pod made OpenVINS diverge more often, was wrong;
     it compared Argo today with OSMO five days ago.
-  - The cause is not found; it is tracked separately from this migration.
+  - The cause is not found. It is tracked in
+    [the VIO divergence investigation](../docs/design/2026-09-30-vio-divergence-drift.md).
 - **Found on the way:** the OSMO backend could not submit at all with this branch's
   `sim.sh`. OSMO renders every task file through Jinja, and a shell length expansion
   (`${#…}`) opened a Jinja comment. It is fixed, and `osmo/test_backends.py` now checks
