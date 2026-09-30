@@ -109,9 +109,9 @@ mns-stacks:
 
 | Variable | Default in compose | Read by |
 | --- | --- | --- |
-| `MNS_STACKS_IMAGE` | empty (baked default, see below) | the backend, to generate, run, record and fly campaigns |
-| `MNS_PACKS_IMAGE` | empty (the pack lock's pin) | pack install, staging and status (`tools/install-demo-packs.sh`, `mns-packs`) |
-| `MNS_AUTHORING_IMAGE` | empty (baked default) | the backend, to launch ScenarioLab |
+| `MNS_STACKS_IMAGE` | empty; the only source (nothing is baked, see below) | the backend, to generate, run, record and fly campaigns |
+| `MNS_PACKS_IMAGE` | empty; the only source (the pack lock's pin for the installer) | the backend's pack status, and pack install and staging (`tools/install-demo-packs.sh`, `mns-packs`) |
+| `MNS_AUTHORING_IMAGE` | empty; the only source | the backend, to launch ScenarioLab |
 | `MNS_CAPABILITY_KIT`, `MNS_AUTHORING_PROJECT` | empty | optional overrides: a local kit folder instead of the pinned host's kit, and a ScenarioLab project for the preflight's graded host check |
 | `MNS_ROS2_BRIDGE_IMAGE` → `AIRSIM_BRIDGE_IMAGE` | **required** — the error names the env file to source | the backend, for the `ros2-tools` container |
 | `MNS_IMAGE_SET` | `v1` | mns-stacks: which `image_sets` entry a stack resolves roles from |
@@ -163,16 +163,18 @@ docker inspect airsim-dashboard-api --format '{{range .Mounts}}{{.Destination}}{
 # expect: /root/.docker/config.json
 ```
 
-### 7. Baked defaults
+### 7. No baked defaults
 
-The backend image carries `MNS_STACKS_IMAGE_DEFAULT` and
-`MNS_AUTHORING_IMAGE_DEFAULT` *inside the built image* (the `bakes:` list on
-`v1_dashboard_backend`). The env lines above are overrides; an image-only
-deploy with none of them set uses the baked values. No `sync` can fix a stale
-baked default — it needs a backend rebuild and a repin of
-`v1_dashboard_backend`. `tools/images.sh baked` (needs docker) reports
-when the released backend's baked refs no longer match the catalog. Details in
-[Changing a container image](images.md#three-things-the-catalog-does-not-control).
+The backend image carries no image pins (since TEVV-Web-Dashboard#122). It
+used to bake the mns-stacks and authoring refs, which made every rebuild of
+either force a dashboard backend rebuild. Now `MNS_STACKS_IMAGE`,
+`MNS_PACKS_IMAGE` and `MNS_AUTHORING_IMAGE` from the channel env file are the
+only source, so rebuilding one of those images is a repin here (`bump` and
+`sync`) and nothing more. If one is unset, the dashboard still starts, and the
+action that needs it (generate or launch, pack status, the editor) fails with
+a message naming the variable and `images/v1.0.0.generated.env`.
+`v1_dashboard_backend` declares no `bakes:`, so `tools/images.sh baked` has
+nothing to check.
 
 ### 8. `ros2-tools`
 
@@ -192,7 +194,7 @@ docker inspect -f '{{.Config.Image}}' airsim-dashboard-api        # which backen
 docker inspect -f '{{.Config.Image}}' ros2-tools                  # which bridge
 tools/ensure-images.sh --dry-run --development
 tools/images.sh status                                            # overrides under FYI, drift under NEEDS YOU
-tools/images.sh baked                                             # baked defaults vs the catalog
+tools/images.sh baked                                             # baked refs vs the catalog (none in v1.0.0)
 make doctor                                                       # every channel ref present?
 ```
 

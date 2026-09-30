@@ -330,7 +330,11 @@ restructure (one owner per concern, see MnS-Integration-Platform
   `tevv.authoring.shared_set_id` — and warn, never fail, on a mismatch.
 - **Baked defaults** follow the backend: `bakes: [v1_stacks, v1_authoring]`,
   and `baked-pins` resolves release-channel variables, not only
-  `product_env` ones.
+  `product_env` ones. *Later (2026-09-30):* the backend bakes no pins at all
+  (TEVV-Web-Dashboard#122) and its row declares no `bakes:`. Every mns-stacks,
+  mns-packs or authoring rebuild had forced a dashboard rebuild just to
+  refresh a baked string, and the product never runs the image without the
+  compose file that passes the pins anyway.
 - **Removed:** the `airsim_tools` row (with `./tools.sh`), so `product-images.env`
   now carries no pins (it is still rendered because the pinned dashboard
   backend recognises the checkout by it); the `check-image-pins.sh` shim; the
