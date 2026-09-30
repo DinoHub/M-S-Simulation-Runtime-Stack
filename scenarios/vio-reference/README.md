@@ -44,7 +44,7 @@ And the image behind that package, in an image set beside the campaign:
 ```yaml
 # my-images.yaml
 image_sets:
-  ue582:
+  v1:
     images:
       vio_estimator: my-registry/my-estimator:v1
 ```

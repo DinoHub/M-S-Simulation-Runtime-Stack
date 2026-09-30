@@ -9,10 +9,9 @@
 #   tools/offline-export.sh /mnt/usb/mns-bundle
 #   tools/offline-export.sh /mnt/usb/mns-bundle --all-catalog
 #
-# The default set is the 15 images the product path needs (dashboard, product
-# shell, ScenarioLab, generator, runtime host, bridge, SITL, QGC). Add
-# --all-catalog for the other 42: monitoring, metrics, logs, and the legacy
-# per-world simulators behind compose/<scenario>/.
+# The default set is the images the product path needs (dashboard, product
+# shell, ScenarioLab, generator, runtime host, bridge, SITL, QGC and tools).
+# --all-catalog adds any catalog row outside that set (none today).
 #
 set -euo pipefail
 
@@ -22,7 +21,7 @@ usage() {
   echo "Usage: tools/offline-export.sh <output-dir> [--all-catalog]"
   echo
   echo "  <output-dir>    where the bundle is written (created if absent, reused if present)"
-  echo "  --all-catalog   also export monitoring, metrics, logs and legacy scenario images"
+  echo "  --all-catalog   also export catalog images outside the product set"
   echo
   echo "Env: GH_TOKEN (pack releases), MNS_TARGET_PY (default 3.12), MNS_DEMO_PACKS,"
   echo "     MNS_DEMO_PACK_LOCK"
@@ -55,25 +54,14 @@ echo "==> enumerating catalog refs"
 refs_args=()
 $ALL_CATALOG && refs_args+=(--all-catalog)
 mapfile -t prod_refs < <("$ROOT/tools/images.sh" refs "${refs_args[@]}")
-mapfile -t dev_refs  < <("$ROOT/tools/images.sh" refs --channel standalone_v2_ue582 --development)
+mapfile -t dev_refs  < <("$ROOT/tools/images.sh" refs --channel v1 --development)
 
 declare -A want=()
 for ref in "${prod_refs[@]}" "${dev_refs[@]}"; do
   [[ -n "$ref" ]] && want["$ref"]=1
 done
 
-# tools/stage-authoring-packs.sh seeds ScenarioLab's PackLibrary with
-# mns_vehicle_models and scenario_runtime_basic from the *v1* authoring image,
-# because neither standalone-v2 authoring image ships default asset packs and
-# the editor cannot add a drone without the vehicle models. It reads that image
-# straight out of product-images.env, so it is in no channel's ref list and was
-# missing from this bundle until now — `make dashboard` then tried to pull it.
-seed_ref="$(grep -E '^MNS_AUTHORING_IMAGE=' "$ROOT/product-images.env" | tail -1 | cut -d= -f2-)"
-if [[ -n "$seed_ref" ]]; then
-  want["$seed_ref"]=1
-  echo "    + ${seed_ref%%@*} (ScenarioLab default asset packs)"
-fi
-echo "    ${#want[@]} distinct refs (production pins + ue582 development tags)"
+echo "    ${#want[@]} distinct refs (production pins + development tags)"
 
 echo "==> pulling"
 for ref in "${!want[@]}"; do
@@ -140,7 +128,7 @@ echo "    $(wc -l < "$OUT/images/checksums.sha256") checksum(s)"
 # the lock, with no token and no network. It never writes that cache itself,
 # so fetch the release assets here.
 echo "==> downloading content packs"
-LOCK="${MNS_DEMO_PACK_LOCK:-$ROOT/packs/standalone-v2-ue582.lock.json}"
+LOCK="${MNS_DEMO_PACK_LOCK:-$ROOT/packs/v1.0.0.lock.json}"
 GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-$(command -v gh >/dev/null && gh auth token 2>/dev/null || true)}}"
 [[ -n "$GH_TOKEN" ]] || { echo "ERROR: set GH_TOKEN — the pack releases are private and answer 404 anonymously." >&2; exit 1; }
 

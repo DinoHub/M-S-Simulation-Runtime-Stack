@@ -22,13 +22,12 @@ export XAUTHORITY
 # Transitional image workflow: development is local-first and tag-only;
 # production keeps the immutable catalog pins.
 IMAGE_MODE ?= development
-# Which standalone-v2 release channel the dashboard runs (images/catalog.yaml
-# consumers.release_channels). Each channel owns a pack lock, a runtime-host
-# capability contract, and its own pack store + authoring data root under
-# .mns/, because packs cooked for one engine line never mount on the other
-# and the product shell stages everything in its store for ONE contract.
-#   ue582  UE 5.8.2 (default):  packs/standalone-v2-ue582.lock.json,      .mns/ue582/{pack-store,authoring-data}
-#   v2     UE 5.5.4 (previous): packs/standalone-v2-review.1.lock.json, .mns/{pack-store,authoring-data}
+# The release channel the dashboard runs (images/catalog.yaml
+# consumers.release_channels; packs/channels.json lists it for the dashboard).
+# A channel owns a pack lock, a runtime-host capability contract, and its own
+# pack store + authoring data root under .mns/<channel>/, because packs cooked
+# for one engine build never mount on another.
+#   v1  MnS 1.0, UE 5.8.2 (the stable line): packs/v1.0.0.lock.json, .mns/v1/
 CHANNEL ?= v1
 # Content packs are downloaded by ./download-packs.sh (or the dashboard's
 # Content phase), not by `make dashboard`: it stages whatever the channel's
@@ -68,50 +67,8 @@ CHANNEL_AUTHORING_CONTRACT := packs/authoring-host-compatibility.v1.json
 CHANNEL_STORE := .mns/v1/pack-store
 CHANNEL_DATA := .mns/v1/authoring-data
 PACK_RELEASE_REPO := DinoHub/TEVV-Airsim
-# The v1 authoring image bakes mns_vehicle_models; nothing is seeded from the
-# pinned v1 (5.5.4-era) authoring image on this channel.
-CHANNEL_SEED_DEFAULTS := 0
-else ifeq ($(CHANNEL),v2)
-CHANNEL_NAME := standalone_v2
-CHANNEL_ENV := images/standalone-v2-images.generated.env
-CHANNEL_DEV_ENV := images/standalone-v2-development.generated.env
-CHANNEL_IMAGE_SET := published
-CHANNEL_LOCK := packs/standalone-v2-review.1.lock.json
-CHANNEL_CONTRACT := packs/runtime-host-compatibility.json
-# The 5.5.4 authoring image embeds no contract and its shell ignores
-# MNS_AUTHORING_HOST_CONTRACT; empty = the shell's baked fixture.
-CHANNEL_AUTHORING_CONTRACT :=
-CHANNEL_STORE := .mns/pack-store
-CHANNEL_DATA := .mns/authoring-data
-# The 5.5.4 packs are one release of this repository, not per-pack releases;
-# its lock is not rebuilt by `make pack-lock`.
-PACK_RELEASE_REPO := DinoHub/M-S-Simulation-Runtime-Stack
-# Neither standalone-v2 authoring image ships the mns_vehicle_models /
-# scenario_runtime_basic default asset packs; seed them from the v1 image
-# (see tools/stage-authoring-packs.sh).
-CHANNEL_SEED_DEFAULTS := 1
-else ifeq ($(CHANNEL),ue582)
-CHANNEL_NAME := standalone_v2_ue582
-CHANNEL_ENV := images/standalone-v2-ue582.generated.env
-# No -latest aliases exist on this line yet: development and production
-# source the same pinned/local file.
-CHANNEL_DEV_ENV := images/standalone-v2-ue582.generated.env
-CHANNEL_IMAGE_SET := ue582
-CHANNEL_LOCK := packs/standalone-v2-ue582.lock.json
-CHANNEL_CONTRACT := packs/runtime-host-compatibility.ue582.json
-# ScenarioLab's own contract (same id, its plugin set): what staging validates
-# packs against, and what the Content phase uses to say "runtime only".
-CHANNEL_AUTHORING_CONTRACT := packs/authoring-host-compatibility.ue582.json
-CHANNEL_STORE := .mns/ue582/pack-store
-CHANNEL_DATA := .mns/ue582/authoring-data
-PACK_RELEASE_REPO := DinoHub/TEVV-Airsim
-# The 5.5.4-cooked vehicle-model pak mounts in the 5.8.2 ScenarioLab (verified
-# 2026-09-09: "Loaded asset pack: mns_vehicle_models (0 asset(s), 6 vehicle
-# model(s))"), so the same seed serves this channel until an authoring image
-# ships its own.
-CHANNEL_SEED_DEFAULTS := 1
 else
-$(error CHANNEL must be v1, ue582 or v2)
+$(error CHANNEL must be v1)
 endif
 
 # Exported to every script on the dashboard chain and interpolated by
@@ -123,13 +80,12 @@ CHANNEL_ENV_EXPORTS := MNS_CHANNEL=$(CHANNEL) MNS_IMAGE_SET=$(CHANNEL_IMAGE_SET)
 	MNS_AUTHORING_HOST_CONTRACT=$(if $(CHANNEL_AUTHORING_CONTRACT),$(CURDIR)/$(CHANNEL_AUTHORING_CONTRACT),) \
 	MNS_PACK_STORE_ROOT=$(CURDIR)/$(CHANNEL_STORE) \
 	MNS_AUTHORING_DATA_ROOT=$(CURDIR)/$(CHANNEL_DATA) \
-	MNS_PACKS_DIR=$(CURDIR)/.mns/$(CHANNEL)/packs \
-	MNS_SEED_AUTHORING_DEFAULTS=$(CHANNEL_SEED_DEFAULTS)
+	MNS_PACKS_DIR=$(CURDIR)/.mns/$(CHANNEL)/packs
 
 ifeq ($(IMAGE_MODE),development)
 DASHBOARD_IMAGE_SET_FILE := images/image-set.development.generated.yaml
 ENSURE_IMAGES_FLAG := --development --channel $(CHANNEL_NAME)
-LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_DEV_ENV); load_images_env ./images/standalone-v2-development.generated.env
+LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_DEV_ENV); load_images_env ./images/development.generated.env
 else ifeq ($(IMAGE_MODE),production)
 DASHBOARD_IMAGE_SET_FILE := images/image-set.generated.yaml
 ENSURE_IMAGES_FLAG := --production --channel $(CHANNEL_NAME)
@@ -271,7 +227,7 @@ help:
 	@echo "  ensure-images    use local tags and pull only missing images [IMAGE_MODE=development|production]"
 	@echo "  pull-images      explicitly refresh every exact published remote image pin"
 	@echo "  verify-images    CI gate: images/catalog.yaml matches generated artifacts"
-	@echo "  pack-status      what is locked, installed, and published since [CHANNEL=v1|ue582|v2]"
+	@echo "  pack-status      what is locked, installed, and published since"
 	@echo "  pack-lock        rebuild the channel's pack lock from published releases"
 	@echo "Content packs are downloaded with ./download-packs.sh (--list shows them)."
 

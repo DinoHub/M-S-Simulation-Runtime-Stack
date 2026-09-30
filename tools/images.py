@@ -75,9 +75,8 @@ TEMPLATE_PATH = ROOT / "images" / "product-images.env.tmpl"
 PRODUCT_ENV_PATH = ROOT / "product-images.env"
 IMAGE_SET_PATH = ROOT / "images" / "image-set.generated.yaml"
 DEVELOPMENT_IMAGE_SET_PATH = ROOT / "images" / "image-set.development.generated.yaml"
-DEVELOPMENT_ENV_PATH = ROOT / "images" / "standalone-v2-development.generated.env"
+DEVELOPMENT_ENV_PATH = ROOT / "images" / "development.generated.env"
 PLATFORM_ENV_PATH = ROOT / "images" / "platform-images.generated.env"
-STANDALONE_V2_ENV_PATH = ROOT / "images" / "standalone-v2-images.generated.env"
 ENV_EXAMPLE_PATH = ROOT / ".env.example"
 DOTENV_PATH = ROOT / ".env"
 
@@ -284,7 +283,7 @@ def development_ref(images: dict[str, Any], key: str) -> str:
     return f"{row['repo']}:{row.get('latest_tag') or row['tag']}"
 
 
-DEFAULT_CHANNEL = "standalone_v2_ue582"
+DEFAULT_CHANNEL = "v1"
 
 
 def release_channel(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> dict[str, Any]:
@@ -298,7 +297,7 @@ def release_channel(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> dic
 
 def channel_image_set(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> str:
     """The image_sets entry generated stacks use under this channel (MNS_IMAGE_SET)."""
-    return str(release_channel(catalog, name).get("image_set") or "published")
+    return str(release_channel(catalog, name).get("image_set") or name)
 
 
 def channel_keys(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> set[str]:
@@ -349,7 +348,7 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, develop
 def local_refs(catalog: dict[str, Any], channel: str = DEFAULT_CHANNEL) -> list[str]:
     """`channel: local` rows a release channel depends on — images that must
     already exist in the local Docker store because nothing can pull them.
-    Empty for a fully published channel (standalone_v2)."""
+    Empty for a fully published channel (v1)."""
     images = catalog["images"]
     return sorted(image_ref(images, key) for key in channel_keys(catalog, channel)
                   if images[key]["channel"] == "local")
@@ -464,7 +463,7 @@ def render_development_env(catalog: dict[str, Any]) -> str:
     images = catalog["images"]
     consumers = catalog["consumers"]
     groups = [
-        consumers["release_channels"]["standalone_v2"]["vars"],
+        consumers["release_channels"][DEFAULT_CHANNEL]["vars"],
         consumers["product_env"].get("dashboard", {}),
         consumers["product_env"].get("tools", {}),
         consumers["compose_env"].get("dashboard", {}),
@@ -484,14 +483,8 @@ def render_development_env(catalog: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def render_standalone_v2_env(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> str:
-    """images/standalone-v2-images.generated.env — the coordinated v2 set.
-
-    A separate file rather than another group in product-images.env, because
-    three of these bind the SAME variable names as the review group. Both in
-    one file and the later line silently wins; a consumer picks a channel by
-    picking a file, which is a choice it can make explicitly and a reader can
-    see.
+def render_channel_env(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> str:
+    """The release channel's env file (its `emits:`, e.g. images/v1.0.0.generated.env).
 
     Every row is rendered with its immutable release tag and manifest digest.
     Mutable -latest aliases are deliberately not emitted here: production
@@ -507,8 +500,8 @@ def render_standalone_v2_env(catalog: dict[str, Any], name: str = DEFAULT_CHANNE
     lines = [
         GENERATED_MARKER,
         "",
-        f"# Coordinated {name.replace('_', '-')} production pins. Sourced INSTEAD of",
-        "# product-images.env by the v2 product shell, not alongside it.",
+        f"# Coordinated {name.replace('_', '-')} release pins: the product shell,",
+        "# ScenarioLab, generator, runtime host, bridge and dashboard.",
         "#",
         "# Every ref uses an immutable date/version tag and manifest digest.",
         "# The corresponding -latest aliases are for discovery and publishing;",
@@ -554,7 +547,7 @@ def render_all(catalog: dict[str, Any]) -> dict[Path, str]:
         PLATFORM_ENV_PATH: render_platform_env(catalog),
     }
     for name, spec in (catalog["consumers"].get("release_channels") or {}).items():
-        out[ROOT / spec["emits"]] = render_standalone_v2_env(catalog, name)
+        out[ROOT / spec["emits"]] = render_channel_env(catalog, name)
     return out
 
 
@@ -714,15 +707,16 @@ def assert_invariants(catalog: dict[str, Any]) -> None:
                 + ", ".join(bad)
             )
 
-    # 4. Standalone v2 refreshes exact pins explicitly, then starts from the
+    # 4. A release channel refreshes exact pins explicitly, then starts from the
     # verified local cache. Keep the authored catalog from silently restoring
     # per-run registry checks and defeating that workflow.
     release_channels = catalog["consumers"].get("release_channels") or {}
-    if "standalone_v2" in release_channels:
-        published = (catalog["consumers"].get("image_sets") or {}).get("published") or {}
-        if published.get("pull_policy") != "missing":
+    for name, spec in release_channels.items():
+        set_name = spec.get("image_set") or name
+        image_set = (catalog["consumers"].get("image_sets") or {}).get(set_name) or {}
+        if image_set.get("pull_policy") != "missing":
             raise CatalogError(
-                "image_sets.published must use pull_policy: missing for standalone_v2; "
+                f"image_sets.{set_name} must use pull_policy: missing for channel {name}; "
                 "refresh images explicitly with tools/pull-all-images.sh"
             )
 

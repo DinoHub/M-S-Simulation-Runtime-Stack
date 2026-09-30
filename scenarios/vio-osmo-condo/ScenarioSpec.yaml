@@ -15,11 +15,8 @@ stack_name: vio-osmo-condo
 # is vio-reference's, unchanged, because the calibration is frozen against the
 # cameras and not against the world. Only the level differs.
 #
-# Condo, not XFS, for two reasons. It is on the v1 channel, which vio-reference
-# is not: that spec names xfs-level 1.0.1 sha256:08fb1485..., which is the id and
-# digest from packs/standalone-v2-ue582.lock.json, and on v1 the same level is
-# `xfs` at sha256:6750aa11... And it is 7.3 MB against xfs's 1.7 GB, which is the
-# difference between a level a kind node can hold and one it cannot.
+# Condo, not XFS: it is 7.3 MB against xfs's 1.7 GB, which is the difference
+# between a level a kind node can hold and one it cannot.
 
 environment:
   id: condo-level

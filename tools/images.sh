@@ -2,10 +2,8 @@
 # tools/images.sh — one canonical image catalog: images/catalog.yaml is the
 # single authored source; everything else (product-images.env,
 # images/image-set.generated.yaml, images/image-set.development.generated.yaml,
-# images/platform-images.generated.env,
-# images/standalone-v2-development.generated.env,
-# images/standalone-v2-images.generated.env,
-# ...) is generated and committed. See
+# images/platform-images.generated.env, images/development.generated.env,
+# images/v1.0.0.generated.env) is generated and committed. See
 # docs/adr/0002-one-image-catalog.md.
 #
 #   tools/images.sh status          # START HERE: one prioritized "what needs you"
@@ -65,11 +63,11 @@ esac
 # --- drift: regenerate committed ScenarioSpecs with the LATEST generator ---
 # image into a tmp dir and diff against generated/. Ported from
 # check-image-pins.sh --drift, sourcing the generator pin from the (generated)
-# product-images.env instead of grepping it directly — same file, same format.
+# v1 channel env instead of grepping it directly.
 if [[ "$MODE" == "drift" ]]; then
     set -a
     # shellcheck disable=SC1091
-    . "$ROOT/product-images.env"
+    . "$ROOT/images/v1.0.0.generated.env"
     set +a
     gen_ref="${MNS_STACK_GENERATOR_IMAGE:?MNS_STACK_GENERATOR_IMAGE not set — run tools/images.sh sync}"
     docker pull -q "$gen_ref" >/dev/null
@@ -80,7 +78,7 @@ if [[ "$MODE" == "drift" ]]; then
     for spec in "$ROOT"/scenarios/*/ScenarioSpec.yaml; do
         s=$(basename "$(dirname "$spec")")
         [[ -d "$ROOT/generated/$s" ]] || continue   # only diff stacks that exist
-        # The standalone-v2 image set ships ONE generic simulator
+        # The v1 image set ships ONE generic simulator
         # (tevv_runtime_host) and resolves the world from a level pack named by
         # environment.version + environment.artifact_digest. A v1 spec instead
         # names a per-world simulator key (environment.id: blocks|xfs|condo|...)
@@ -93,9 +91,8 @@ spec = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
 env = spec.get("environment") or {}
 sys.exit(0 if env.get("artifact_digest") else 1)
 ' "$spec"; then
-            echo "== $s: SKIPPED (v1 ScenarioSpec — environment has no artifact_digest,"
-            echo "   so it cannot select a standalone-v2 level pack. Re-author it in"
-            echo "   ScenarioLab to migrate.)"
+            echo "== $s: SKIPPED (environment has no artifact_digest, so it cannot"
+            echo "   select a level pack. Re-author it in ScenarioLab.)"
             continue
         fi
         # MNS_IMAGE_SET_FILE is the HOST path here (not /workspace/... as in
@@ -105,7 +102,7 @@ sys.exit(0 if env.get("artifact_digest") else 1)
         # Contrast product.sh's run_shell, which mounts the workspace at a
         # fixed container path and needs launcher.py's HOST_WORKSPACE_ROOT
         # translation instead — see the comment there.
-        docker run --rm -v "$ROOT:$ROOT" -v "$tmp:$tmp" -w "$ROOT" -e MNS_IMAGE_SET=published \
+        docker run --rm -v "$ROOT:$ROOT" -v "$tmp:$tmp" -w "$ROOT" -e MNS_IMAGE_SET=v1 \
             -e "MNS_IMAGE_SET_FILE=$ROOT/images/image-set.generated.yaml" \
             "$gen_ref" generate "scenarios/$s/ScenarioSpec.yaml" --profile docker \
             --out "$tmp/$s" >/dev/null 2>&1 || { echo "$s: GENERATION FAILED with $gen_ref"; any=1; continue; }
@@ -132,12 +129,12 @@ fi
 # not a hardcoded var-name pair — this is the CI-assert form of the old
 # script's advisory baked_pins_check().
 if [[ "$MODE" == "baked" ]]; then
-    backend_ref=$("$PY" "$ROOT/tools/images.py" resolve-var DASHBOARD_BACKEND_IMAGE)
-    pins="$("$PY" "$ROOT/tools/images.py" baked-pins dashboard_backend)"
+    pins="$("$PY" "$ROOT/tools/images.py" baked-pins v1_dashboard_backend)"
     if [[ -z "$pins" ]]; then
-        echo "no bakes: declared on dashboard_backend in images/catalog.yaml — nothing to check"
+        echo "no bakes: declared on v1_dashboard_backend in images/catalog.yaml — nothing to check"
         exit 0
     fi
+    backend_ref=$(sed -n 's/^DASHBOARD_BACKEND_IMAGE=//p' "$ROOT/images/v1.0.0.generated.env")
 
     if ! cfg=$(docker buildx imagetools inspect "$backend_ref" --format '{{json .Image}}' 2>&1); then
         # Not silently OK: an unreadable image is an unanswered question.

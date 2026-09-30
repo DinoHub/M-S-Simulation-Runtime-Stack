@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Download, checksum, and install the standalone-v2 demo packs of one lock.
+"""Download, checksum, and install the content packs of one lock.
 
 The lock (packs/*.lock.json, schema mns.pack_release_lock.v1) is the whole
 catalog: which packs exist, where each one is published, its size and
 checksum, the artifact digest the store indexes on, and the host capability
-every pack was cooked for. Two locks are shipped -- the UE 5.8.2 set (default)
-and the previous UE 5.5.4 review set -- and `make dashboard CHANNEL=...` picks one together
-with its own pack store, authoring data root and host contract.
+every pack was cooked for. The v1 channel's lock is packs/v1.0.0.lock.json;
+a channel comes with its own pack store, authoring data root and host contract.
 
 Roots come from the environment so the Makefile, product.sh and the dashboard
 backend all point the installer at the same directories:
@@ -184,9 +183,9 @@ def install_archive(image: str, archive: Path, expected_digest: str | None, stor
 
 
 def pack_release(lock: dict, pack: dict) -> dict:
-    """One release per lock (the 5.5.4 review set lives on this repository's
-    release) or one release per pack (TEVV-Airsim publishes each pack under
-    its own tag): a pack-level `release` overrides the lock-level one."""
+    """One release per lock or one release per pack (TEVV-Airsim publishes
+    each pack under its own tag): a pack-level `release` overrides the
+    lock-level one."""
     declared = pack.get("release") or lock.get("release")
     if not declared:
         raise RuntimeError(
@@ -396,7 +395,7 @@ def local_pack_archives(directory: Path) -> list[Path]:
 
 def build_parser(lock: dict | None) -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
-        description="Download, checksum, and install standalone-v2 demo packs.",
+        description="Download, checksum, and install content packs.",
         epilog="Selections come from the lock; --lock or MNS_DEMO_PACK_LOCK picks it.",
     )
     result.add_argument("--lock", type=Path, default=env_path("MNS_DEMO_PACK_LOCK", DEFAULT_LOCK_PATH),
@@ -470,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     store_root = env_path("MNS_PACK_STORE_ROOT", DEFAULT_STORE_ROOT)
 
-    packs_dir = env_path("MNS_PACKS_DIR", ROOT / ".mns" / "packs")
+    packs_dir = env_path("MNS_PACKS_DIR", ROOT / ".mns" / "v1" / "packs")
     if args.remove or args.remove_orphans:
         authoring_data = authoring_data_root_for(store_root)
         removed, warnings = ([], [])
@@ -972,8 +971,8 @@ def authoring_data_root_for(store_root: Path) -> Path:
     A store and an authoring data root are the two halves of one channel --
     the Makefile's CHANNEL_ENV_EXPORTS always sets MNS_PACK_STORE_ROOT and
     MNS_AUTHORING_DATA_ROOT together -- but stage-authoring-packs.sh defaults
-    them independently, each to its own hardcoded `.mns/ue582/...`. Passing
-    only the store therefore staged into the ue582 channel whatever store was
+    them independently, each to its own hardcoded default. Passing only the
+    store therefore staged into the default channel whatever store was
     installed into, rewriting that channel's index to describe packs it does
     not have. Deriving the sibling root here keeps the two from disagreeing:
     `<channel>/pack-store` pairs with `<channel>/authoring-data`.

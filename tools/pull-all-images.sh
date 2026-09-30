@@ -16,7 +16,7 @@ usage() {
   echo "--refresh-moving first runs 'images.sh bump --channel moving', regenerates, and"
   echo "  verifies. That advances every channel: moving row (the dashboard, autopilot"
   echo "  and QGroundControl images) to the digest its mutable tag points at"
-  echo "  now. It does NOT touch the standalone-v2 rows: those are channel: pinned,"
+  echo "  now. It does NOT touch the v1 release rows: those are channel: pinned,"
   echo "  and bump refuses pinned rows by design. Rewrites the catalog, so it is"
   echo "  refused together with --dry-run."
 }

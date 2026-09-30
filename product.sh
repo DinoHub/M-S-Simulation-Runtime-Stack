@@ -2,11 +2,10 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Which release channel to run (same knob as `make dashboard CHANNEL=`): v1 is
-# the MnS 1.0 line (UE 5.8.2, frozen render contract; default), ue582 the earlier
-# 5.8.2 review set, v2 the previous UE 5.5.4 set. Each channel has
-# its own generated image env, pack lock, runtime-host contract and, because
-# packs cooked for one engine never mount on the other, its own pack store
-# and authoring data root under .mns/.
+# MnS 1.0, UE 5.8.2, the stable line. A channel has its own generated image
+# env, pack lock, runtime-host contract and, because packs cooked for one
+# engine build never mount on another, its own pack store and authoring data
+# root under .mns/<channel>/.
 CHANNEL="${MNS_CHANNEL:-v1}"
 case "$CHANNEL" in
   v1)
@@ -17,23 +16,7 @@ case "$CHANNEL" in
     CHANNEL_AUTHORING_CONTRACT="$ROOT/packs/authoring-host-compatibility.v1.json"
     CHANNEL_DIR="$ROOT/.mns/v1"
     ;;
-  v2)
-    CHANNEL_AUTHORING_CONTRACT=""
-    CHANNEL_NAME=standalone_v2
-    CHANNEL_ENV="$ROOT/images/standalone-v2-images.generated.env"
-    CHANNEL_LOCK="$ROOT/packs/standalone-v2-review.1.lock.json"
-    CHANNEL_CONTRACT="$ROOT/packs/runtime-host-compatibility.json"
-    CHANNEL_DIR="$ROOT/.mns"
-    ;;
-  ue582)
-    CHANNEL_NAME=standalone_v2_ue582
-    CHANNEL_ENV="$ROOT/images/standalone-v2-ue582.generated.env"
-    CHANNEL_LOCK="$ROOT/packs/standalone-v2-ue582.lock.json"
-    CHANNEL_CONTRACT="$ROOT/packs/runtime-host-compatibility.ue582.json"
-    CHANNEL_AUTHORING_CONTRACT="$ROOT/packs/authoring-host-compatibility.ue582.json"
-    CHANNEL_DIR="$ROOT/.mns/ue582"
-    ;;
-  *) echo "ERROR: MNS_CHANNEL must be v1, ue582 or v2; got: $CHANNEL" >&2; exit 2 ;;
+  *) echo "ERROR: MNS_CHANNEL must be v1; got: $CHANNEL" >&2; exit 2 ;;
 esac
 # An image already set in the environment wins over the channel file, the
 # precedence tools/load-images-env.sh gives `make dashboard` (shell > ./.env >
@@ -46,9 +29,8 @@ while IFS= read -r _kv; do
   [ -n "$_kv" ] && export "${_kv%%=*}=${_kv#*=}"
 done <<< "$_preset_images"
 unset _preset_images _kv
-# The generated env names the channel's image_sets entry (MNS_IMAGE_SET);
-# `published` is the 5.5.4 set's name and the fallback for an older file.
-IMAGE_SET="${MNS_IMAGE_SET:-published}"
+# The generated env names the channel's image_sets entry (MNS_IMAGE_SET).
+IMAGE_SET="${MNS_IMAGE_SET:-$CHANNEL}"
 export MNS_DEMO_PACK_LOCK="$CHANNEL_LOCK"
 export MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT="$CHANNEL_CONTRACT"
 DATA_ROOT="${MNS_AUTHORING_DATA_ROOT:-$CHANNEL_DIR/authoring-data}"
@@ -60,9 +42,6 @@ export MNS_PACK_STORE_ROOT="$PACK_STORE_ROOT"
 # Mounted read-only into the product shell at /mnt/mns/packs.
 PACKS_DIR="${MNS_PACKS_DIR:-$CHANNEL_DIR/packs}"
 export MNS_PACKS_DIR="$PACKS_DIR"
-# The v1 authoring image bakes mns_vehicle_models itself; older channels seed
-# it from the pinned v1 authoring image (tools/stage-authoring-packs.sh).
-if [[ "$CHANNEL" == "v1" ]]; then export MNS_SEED_AUTHORING_DEFAULTS="${MNS_SEED_AUTHORING_DEFAULTS:-0}"; fi
 # Paths the shell sees: the checkout is mounted at /workspace, so anything
 # under $ROOT maps 1:1 and anything outside is unreachable from the container.
 container_path() {

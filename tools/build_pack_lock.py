@@ -3,11 +3,11 @@
 MnS pack releases.
 
     tools/build_pack_lock.py --release-repo DinoHub/TEVV-Airsim --discover
-        --host-contract packs/runtime-host-compatibility.ue582.json
-        --images-env images/standalone-v2-ue582.generated.env
-        --shell local/mns-product-shell:ue582-local.a1936b0a5f5f
+        --host-contract packs/runtime-host-compatibility.v1.json
+        --images-env images/v1.0.0.generated.env
+        --shell dhdevspace/auto_mns:mns-product-shell-v1.0.0@sha256:...
         --cache .mns/downloads/pack-cache
-        --output packs/standalone-v2-ue582.lock.json
+        --output packs/v1.0.0.lock.json
 
 (`make pack-lock` runs exactly that for the selected channel.) --discover takes
 every pack-* release cooked for the contract's host id, newest version per

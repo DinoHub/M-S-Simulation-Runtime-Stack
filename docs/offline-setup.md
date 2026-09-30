@@ -3,12 +3,10 @@
 How to take this repository onto a machine with no network: build a bundle on a
 connected host, carry it over, and bring the dashboard up on the target.
 
-Proven end to end on 2026-09-18: Ubuntu 24.04.5, Docker CE 29.8.1 with the
-containerd image store, RTX 5080 — `make dashboard` up with no registry access.
-
-> **Channel.** The bundle and `./.env` this procedure writes are for the `ue582`
-> channel. `make dashboard` now defaults to `CHANNEL=v1`, so on the target start it
-> with `make dashboard CHANNEL=ue582` until the scripts learn the v1 image set.
+Proven end to end on 2026-09-18 (Ubuntu 24.04.5, Docker CE 29.8.1 with the
+containerd image store, RTX 5080 — `make dashboard` up with no registry access)
+on the earlier UE 5.8.2 review channel. The scripts now bundle the v1 channel,
+the only one; that v1 bundle has not yet been through a full offline import.
 
 Three scripts do the work; everything below is the manual procedure around them.
 
@@ -174,7 +172,7 @@ Budget **~85 GB** on the target for this: ~30 GB bundle, ~25 GB of Docker images
 once loaded, and ~28 GB under `.mns/`. Once `make dashboard` has come up
 successfully you can delete `~/ECW/deployment/mns-offline-bundle` and recover its
 30 GB — the images are in Docker's store and the packs are installed in
-`.mns/ue582/pack-store` by then.
+`.mns/v1/pack-store` by then.
 
 If the target is too tight for that, the scripts take any path, so you can point
 them straight at the drive instead and keep it plugged in for the whole import:
@@ -236,14 +234,14 @@ everything else.
 All of these work with no network:
 
 ```bash
-tools/ensure-images.sh --development --channel standalone_v2_ue582 --dry-run   # expect: 0 would pull
+tools/ensure-images.sh --development --dry-run   # expect: 0 would pull
 tools/install-demo-packs.sh --check --all                                      # expect: all installed
 tools/images.sh verify                                                         # catalog vs generated files
 
 docker run --rm --gpus all --entrypoint nvidia-smi \
   dhdevspace/auto_mns:tevv-runtime-host-20260910.1                             # NVIDIA runtime
 
-make dashboard CHANNEL=ue582   # http://127.0.0.1:3001
+make dashboard   # http://127.0.0.1:3001
 ```
 
 The NVIDIA check uses an image the import just loaded, because you cannot pull
@@ -295,5 +293,5 @@ cd ~/ECW/deployment/mns-offline-bundle/images
 comm -23 <(ls -1 *.tar | sort) <(cut -f1 manifest.tsv | sort -u) | xargs -r rm -v
 ```
 
-Switching `CHANNEL` away from `ue582` means re-running the import so
-`./.env` is regenerated for that channel's image set.
+After updating the checkout to a new release, re-run the import so `./.env` is
+regenerated for its image set.
