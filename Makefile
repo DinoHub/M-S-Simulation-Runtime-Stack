@@ -170,7 +170,9 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	@# Create these as the HOST user first. The backend container runs as
 	@# root, so if it mkdirs generated/ itself the directory lands root-owned
 	@# and mns-stacks generate (which runs as you) cannot write into it.
-	@mkdir -p generated scenarios
+	@# The pack drop-in directory is a bind source too; a root-owned one
+	@# would need sudo to drop a pack archive into.
+	@mkdir -p generated scenarios "$(CURDIR)/.mns/$(CHANNEL)/packs"
 	@# Same for the runs directory: compose would create a missing bind source
 	@# as root, and the recorder (the host uid) then cannot write a bag into it
 	@# ("Failed to create database directory"). TEVV_RUNS_DIR may come from the
