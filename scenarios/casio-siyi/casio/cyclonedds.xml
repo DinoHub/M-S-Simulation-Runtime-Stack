@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  CycloneDDS for the casio-siyi simulation: used by BOTH the generated stack
-  (copied to generated/casio-siyi/config/dds/ by prepare-stack.sh) and the
-  casio containers (mounted by compose.sim.yml).
+  CycloneDDS for the casio-siyi simulation: the spec's runtime.ros.dds_config.
+  The generator copies it to the stack's config/dds/ and every container in
+  the stack, casio's included, reads it as /cfg/dds/cyclonedds.xml.
 
   Every participant sits on one docker bridge network (the stack's
   agent_internal-1), so each container has a single interface and default

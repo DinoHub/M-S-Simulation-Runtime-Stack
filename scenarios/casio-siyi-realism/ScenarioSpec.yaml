@@ -1,26 +1,22 @@
 schema: mns.scenario.v1
-id: casio-siyi
-name: Casio perception on a SIYI A8 mini
-stack_name: casio-siyi
+id: casio-siyi-realism
+name: Casio perception on a SIYI A8 mini, camera realism
+stack_name: casio-siyi-realism
 
-# A single PX4 quadrotor over the SAFTI level carrying one camera modelled on
-# the SIYI A8 mini, for the casio-edge perception stack (DA3, YOLO detector,
-# target localiser and tracker, surveillance, annotated stream, cloud relay).
+# casio-siyi (../casio-siyi/ScenarioSpec.yaml) with the camera made to look
+# like the real A8's before casio sees it. Kept in step with that spec by
+# hand: only the header, the camera block, runtime.ros.dds_config and the
+# includes differ.
 #
-# Everything casio needs comes from this spec, so a regenerated stack (from
-# the dashboard or `product.sh cli runtime`) runs casio with no further step:
-#   - runtime.ros: CycloneDDS with casio's config, and casio owning
-#     map -> base_link as on the Jetson (the bridge publishes no odom TF)
-#   - runtime.images: the ROS 2 bridge build with the camera-tilt fix
-#   - casio/extensions.yaml: casio's camera topic names and its containers
-#     (mns.services), on Drone1's network and ROS domain
-# This needs a stack generator with runtime.ros and mns.services
-# (MnS-Integration-Platform feat/stackgen-scenario-services); casio/README.md
-# has the steps. casio-siyi-realism is the same scenario with the A8's lens,
-# noise and compression applied to the camera.
-#
-# The environment names the level pack by id, version and digest, matching
-# packs/v1.0.0.lock.json.
+#   - Unreal renders motion blur at the A8's 25 fps, slower auto-exposure,
+#     chromatic aberration and a little lens flare (capture_settings below).
+#   - The render is 1354 x 810 at 85.35 deg (the same 734.3 px focal length
+#     as casio-siyi): the A8's barrel distortion and off-centre optical
+#     centre see past the edges of a 1280 x 720 pinhole.
+#   - The bridge publishes it as /camera/image_sim; the camera_realism
+#     service (extensions.yaml) remaps it onto the A8's Kalibr lens model,
+#     adds sensor noise and a JPEG round trip, and publishes the 1280 x 720
+#     /camera/image_raw and the A8's calibrated /camera/camera_info.
 
 environment:
   id: safti-level
@@ -39,7 +35,7 @@ runtime:
     mavros: false
   ros:
     rmw: cyclonedds
-    dds_config: casio/cyclonedds.xml
+    dds_config: ../casio-siyi/casio/cyclonedds.xml
     localization_source: external
   images:
     # v1.0.0 publishes a settings camera's pitch as radians, so the 25 deg
@@ -48,7 +44,11 @@ runtime:
     ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-camtilt.1
 
 includes:
-  extensions: casio/extensions.yaml
+  # casio-siyi's extensions, then this scenario's changes to them (later
+  # files win, mapping by mapping).
+  extensions:
+  - ../casio-siyi/casio/extensions.yaml
+  - extensions.yaml
 
 vehicles:
 - id: drone_1
@@ -83,9 +83,23 @@ vehicles:
         pitch: -25
       capture_settings:
       - image_type: 0
-        width: 1280
-        height: 720
-        fov_degrees: 82.1
+        # The Kalibr model's undistorted extent at fx 734.3 is x -634.7..672.3,
+        # y -400.7..339.7 px about the centre: 1354 x 810 covers it with 4 px
+        # to spare. 2 * atan(677 / 734.3) = 85.35 deg.
+        width: 1354
+        height: 810
+        fov_degrees: 85.35
+        # Unreal post-process units. Written in AirSim's own casing: the
+        # generator passes keys through, and snake_case motion_blur_target_fps
+        # would become MotionBlurTargetFps, which AirSim does not read.
+        MotionBlurAmount: 0.6
+        MotionBlurMax: 5.0
+        MotionBlurTargetFPS: 25.0
+        AutoExposureSpeedUp: 1.0
+        AutoExposureSpeedDown: 1.0
+        ChromaticAberrationIntensity: 0.4
+        ChromaticAberrationStartOffset: 0.4
+        LensFlareIntensity: 0.2
   sensors:
     imu: true
     gps: true
