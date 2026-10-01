@@ -33,6 +33,8 @@ generated/
 !/scenarios/vio-osmo-condo-ardupilot/
 !/scenarios/vio-osmo-xfs/
 !/scenarios/vio-osmo-xfs-ardupilot/
-# The spec plus the casio-edge compose, DDS config and prepare step it needs.
+# casio-edge on the simulated SIYI A8 mini: the spec, its services and DDS
+# config, and the bench; and the same scenario with camera realism.
 !/scenarios/casio-siyi/
+!/scenarios/casio-siyi-realism/
 !/scenarios/vio-reference/**

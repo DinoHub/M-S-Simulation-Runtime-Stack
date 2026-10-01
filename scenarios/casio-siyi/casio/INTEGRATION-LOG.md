@@ -2,21 +2,25 @@
 
 What it took to run the casio-edge stack (built for a Jetson Orin NX with a
 SIYI A8 mini) against the simulation, in the order the problems were found.
-Status is as of 30 September 2026.
+Status is as of 1 October 2026.
 
 ## Fixes
 
 | # | Problem | Fix | Where | Status |
 | --- | --- | --- | --- | --- |
 | 1 | No simulated SIYI camera; casio expects `/camera/image_raw` and `/camera/camera_info` | New PX4 scenario over SAFTI with one camera modelled on the A8 mini: 1280 x 720, 81 deg HFOV, 25 deg down | `scenarios/casio-siyi/ScenarioSpec.yaml` | done |
-| 2 | The bridge names the camera `/camera/siyi/image_raw` | Topic renames `siyi_Scene/image -> camera/image_raw`, `siyi_Scene/camera_info -> camera/camera_info` in the generated `topic_names.yaml` | `casio/prepare-stack.sh` | done |
+| 2 | The bridge names the camera `/camera/siyi/image_raw` | Topic renames `siyi_Scene/image -> camera/image_raw`, `siyi_Scene/camera_info -> camera/camera_info` in the generated `topic_names.yaml` | `casio/prepare-stack.sh` | superseded by 13 |
 | 3 | casio runs CycloneDDS on domain 42; the stack ran FastDDS on domain 1 | `ros_domain_id: 42` in the spec; the stack switched to CycloneDDS through its `.env` and `config/dds/` | spec, `casio/prepare-stack.sh`, `casio/cyclonedds.xml` | done |
 | 4 | casio's compose uses host networking, but the stack's ROS graph and PX4 MAVLink router live on a docker network | Every casio service joins the stack's `agent_internal-1` network; one `cyclonedds.xml` shared by stack and casio replaces the Jetson's | `casio/compose.sim.yml` | done |
 | 5 | casio's MAVROS points at `udp://127.0.0.1:15550@`, where nothing listens in the sim | `fcu_url:=udp://:15550@px4-drone-1:14555` (PX4's mavlink-router MAVROS endpoint); the stack's own MAVROS is off so the two do not fight | `casio/compose.sim.yml`, spec `mavros: false` | done |
 | 6 | `casio_pointcloud` and `casio_description` ran on wall time while everything is stamped from `/clock` | `use_sim_time:=true` on both | `casio/compose.sim.yml` | done |
 | 7 | mediamtx and streaming talked over 127.0.0.1, which does not exist between containers | mediamtx binds all interfaces, publishes 8554 / 8889 / 8189/udp on the host's loopback; streaming publishes to `rtsp://mediamtx:8554/annotated` | `casio/compose.sim.yml` | done |
 | 8 | TF showed the camera 7.6 deg **up** while the sim rendered it 25 deg down: the bridge read the settings `Pitch` (degrees) as radians | `degreesToRadians` before `toQuaternion` in the settings camera TF | TEVV-Airsim-ROS2-Bridge PR #82 (main); branch `fix/camera-tf-degrees-v1.0.0`, built locally as `tevv-airsim-ros2-bridge-humble-v1.0.0-camtilt.1` | PR open; local image in use |
-| 9 | `base_link` had two parents: casio's `pose_to_tf` (`map -> base_link` from MAVROS) and the bridge (`map -> odom -> base_link`) | Bridge set to `localization_source:=external` and `suppress_bridge_odom_tf:=true`, so casio owns the pose as on the Jetson; the generator does not wire the second flag, so it is added to the bridge command | `casio/prepare-stack.sh` | done |
+| 9 | `base_link` had two parents: casio's `pose_to_tf` (`map -> base_link` from MAVROS) and the bridge (`map -> odom -> base_link`) | Bridge set to `localization_source:=external` and `suppress_bridge_odom_tf:=true`, so casio owns the pose as on the Jetson; the generator does not wire the second flag, so it is added to the bridge command | `casio/prepare-stack.sh` | superseded by 13 |
+| 10 | The spawn (`start: 0/0/0`) put the drone about 12 m under SAFTI's terrain: the camera saw only sky dome | `start` set to the level's PlayerStart (75.3, -78.3, -12.3) | spec | done |
+| 11 | The simulated camera's fx (750 px at 81 deg) did not match the real A8 (734.3 px) | `fov_degrees: 82.1` | spec | done |
+| 12 | Fixes 2, 3, 4 and 9 and the bridge image were patches on the generated stack, lost on every regeneration, and casio ran from a second compose file | Stack generator gains `runtime.ros` (RMW, DDS config, TF ownership), `runtime.images`, `extensions."mns.topics"` and `extensions."mns.services"` (containers on a vehicle's network, files staged into the stack) | MnS-Integration-Platform `feat/stackgen-scenario-services` | local generator image |
+| 13 | — | The spec and `casio/extensions.yaml` carry all of it; `prepare-stack.sh` and `compose.sim.yml` are gone. `casio-siyi-realism` adds the camera realism | spec, `casio/extensions.yaml`, `scenarios/casio-siyi-realism/` | done |
 
 ## Verified
 
