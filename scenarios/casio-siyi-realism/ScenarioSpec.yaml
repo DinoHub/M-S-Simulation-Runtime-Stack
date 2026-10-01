@@ -1,0 +1,108 @@
+schema: mns.scenario.v1
+id: casio-siyi-realism
+name: Casio perception on a SIYI A8 mini, camera realism
+stack_name: casio-siyi-realism
+
+# casio-siyi (../casio-siyi/ScenarioSpec.yaml) with the camera made to look
+# like the real A8's before casio sees it. Kept in step with that spec by
+# hand: only the header, the camera block, runtime.ros.dds_config and the
+# includes differ.
+#
+#   - Unreal renders motion blur at the A8's 25 fps, slower auto-exposure,
+#     chromatic aberration and a little lens flare (capture_settings below).
+#   - The render is 1354 x 810 at 85.35 deg (the same 734.3 px focal length
+#     as casio-siyi): the A8's barrel distortion and off-centre optical
+#     centre see past the edges of a 1280 x 720 pinhole.
+#   - The bridge publishes it as /camera/image_sim; the camera_realism
+#     service (extensions.yaml) remaps it onto the A8's Kalibr lens model,
+#     adds sensor noise and a JPEG round trip, and publishes the 1280 x 720
+#     /camera/image_raw and the A8's calibrated /camera/camera_info.
+
+environment:
+  id: safti-level
+  version: 1.0.3
+  artifact_digest: sha256:1dbd30834a4c96654ea20a7f011b74399891bd0331abcf2ab3aae4157f03c9c2
+
+runtime:
+  profile: airsim_unreal_px4_docker
+  features:
+    sim_real_eval: false
+    ros2_bridge: true
+    qgroundcontrol: false
+    # Off on purpose. casio runs its own MAVROS (it expects /mavros/..., not
+    # the bridge's /Drone1/mavros/...), and two MAVROS instances on one flight
+    # controller fight over the offboard stream.
+    mavros: false
+  ros:
+    rmw: cyclonedds
+    dds_config: ../casio-siyi/casio/cyclonedds.xml
+    localization_source: external
+  images:
+    # v1.0.0 publishes a settings camera's pitch as radians, so the 25 deg
+    # down mount appears 7.6 deg up in TF. This build carries the fix
+    # (TEVV-Airsim-ROS2-Bridge PR #82); drop the override once v1 pins it.
+    ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-camtilt.1
+
+includes:
+  # casio-siyi's extensions, then this scenario's changes to them (later
+  # files win, mapping by mapping).
+  extensions:
+  - ../casio-siyi/casio/extensions.yaml
+  - extensions.yaml
+
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  # casio's domain.
+  ros_domain_id: 42
+  # NED metres from the Unreal world origin (MnSOrigin), not from the level's
+  # PlayerStart. SAFTI's world origin is about 12 m below the terrain, so
+  # 0/0/0 spawns the drone underground (the camera then sees only sky dome).
+  # This is the level's PlayerStart, among the level's clothed mannequins.
+  start:
+    x: 75.3
+    y: -78.3
+    z: -12.3
+    yaw: 0
+  cameras:
+    # SIYI A8 mini: 25 fps video, 1280 x 720 is one of its video modes.
+    # Horizontal FOV 82.1 deg, from the Kalibr calibration of the real camera
+    # (fx 734.3 px at 1280 wide: 2 * atan(640 / 734.3)); the spec sheet's
+    # 81 deg would give fx 750 px and scale DA3's metric depth by 2 %.
+    # Tilted 25 deg down like a surveillance gimbal (the A8 mini's pitch
+    # range is -135 to +45 deg). Mounted under the nose,
+    # clear of the rotor arms. Specs:
+    # https://siyi.biz/en/product/tri-axis-single-camera-gimbal/a8-mini/spec/
+    siyi:
+      position:
+        x: 0.15
+        y: 0
+        z: 0.10
+      rotation:
+        pitch: -25
+      capture_settings:
+      - image_type: 0
+        # The Kalibr model's undistorted extent at fx 734.3 is x -634.7..672.3,
+        # y -400.7..339.7 px about the centre: 1354 x 810 covers it with 4 px
+        # to spare. 2 * atan(677 / 734.3) = 85.35 deg.
+        width: 1354
+        height: 810
+        fov_degrees: 85.35
+        # Unreal post-process units. Written in AirSim's own casing: the
+        # generator passes keys through, and snake_case motion_blur_target_fps
+        # would become MotionBlurTargetFps, which AirSim does not read.
+        MotionBlurAmount: 0.6
+        MotionBlurMax: 5.0
+        MotionBlurTargetFPS: 25.0
+        AutoExposureSpeedUp: 1.0
+        AutoExposureSpeedDown: 1.0
+        ChromaticAberrationIntensity: 0.4
+        ChromaticAberrationStartOffset: 0.4
+        LensFlareIntensity: 0.2
+  sensors:
+    imu: true
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false

@@ -1,0 +1,94 @@
+schema: mns.scenario.v1
+id: casio-siyi
+name: Casio perception on a SIYI A8 mini
+stack_name: casio-siyi
+
+# A single PX4 quadrotor over the SAFTI level carrying one camera modelled on
+# the SIYI A8 mini, for the casio-edge perception stack (DA3, YOLO detector,
+# target localiser and tracker, surveillance, annotated stream, cloud relay).
+#
+# Everything casio needs comes from this spec, so a regenerated stack (from
+# the dashboard or `product.sh cli runtime`) runs casio with no further step:
+#   - runtime.ros: CycloneDDS with casio's config, and casio owning
+#     map -> base_link as on the Jetson (the bridge publishes no odom TF)
+#   - runtime.images: the ROS 2 bridge build with the camera-tilt fix
+#   - casio/extensions.yaml: casio's camera topic names and its containers
+#     (mns.services), on Drone1's network and ROS domain
+# This needs a stack generator with runtime.ros and mns.services
+# (MnS-Integration-Platform feat/stackgen-scenario-services); casio/README.md
+# has the steps. casio-siyi-realism is the same scenario with the A8's lens,
+# noise and compression applied to the camera.
+#
+# The environment names the level pack by id, version and digest, matching
+# packs/v1.0.0.lock.json.
+
+environment:
+  id: safti-level
+  version: 1.0.3
+  artifact_digest: sha256:1dbd30834a4c96654ea20a7f011b74399891bd0331abcf2ab3aae4157f03c9c2
+
+runtime:
+  profile: airsim_unreal_px4_docker
+  features:
+    sim_real_eval: false
+    ros2_bridge: true
+    qgroundcontrol: false
+    # Off on purpose. casio runs its own MAVROS (it expects /mavros/..., not
+    # the bridge's /Drone1/mavros/...), and two MAVROS instances on one flight
+    # controller fight over the offboard stream.
+    mavros: false
+  ros:
+    rmw: cyclonedds
+    dds_config: casio/cyclonedds.xml
+    localization_source: external
+  images:
+    # v1.0.0 publishes a settings camera's pitch as radians, so the 25 deg
+    # down mount appears 7.6 deg up in TF. This build carries the fix
+    # (TEVV-Airsim-ROS2-Bridge PR #82); drop the override once v1 pins it.
+    ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-camtilt.1
+
+includes:
+  extensions: casio/extensions.yaml
+
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  # casio's domain.
+  ros_domain_id: 42
+  # NED metres from the Unreal world origin (MnSOrigin), not from the level's
+  # PlayerStart. SAFTI's world origin is about 12 m below the terrain, so
+  # 0/0/0 spawns the drone underground (the camera then sees only sky dome).
+  # This is the level's PlayerStart, among the level's clothed mannequins.
+  start:
+    x: 75.3
+    y: -78.3
+    z: -12.3
+    yaw: 0
+  cameras:
+    # SIYI A8 mini: 25 fps video, 1280 x 720 is one of its video modes.
+    # Horizontal FOV 82.1 deg, from the Kalibr calibration of the real camera
+    # (fx 734.3 px at 1280 wide: 2 * atan(640 / 734.3)); the spec sheet's
+    # 81 deg would give fx 750 px and scale DA3's metric depth by 2 %.
+    # Tilted 25 deg down like a surveillance gimbal (the A8 mini's pitch
+    # range is -135 to +45 deg). Mounted under the nose,
+    # clear of the rotor arms. Specs:
+    # https://siyi.biz/en/product/tri-axis-single-camera-gimbal/a8-mini/spec/
+    siyi:
+      position:
+        x: 0.15
+        y: 0
+        z: 0.10
+      rotation:
+        pitch: -25
+      capture_settings:
+      - image_type: 0
+        width: 1280
+        height: 720
+        fov_degrees: 82.1
+  sensors:
+    imu: true
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
