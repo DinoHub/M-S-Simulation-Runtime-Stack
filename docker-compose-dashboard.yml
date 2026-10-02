@@ -278,7 +278,7 @@ services:
   # run_summary}.json. It serves the results read-only on :8770 (bound to
   # localhost) for the dashboard's Run metrics panel. See docs/metrics.md.
   metrics-service:
-    image: ${METRICS_SERVICE_IMAGE:-dhdevspace/auto_mns:tevv-jsonl-ingest-latest}
+    image: ${METRICS_SERVICE_IMAGE:?source images/platform-images.generated.env}
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: ${DASHBOARD_CONTAINER_PREFIX:-}mns-metrics-service
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
