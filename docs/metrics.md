@@ -28,7 +28,7 @@ the scenario automatically and write one event log per run.
 | Near miss | Close approaches below a distance threshold (`near_miss.detected`) | off |
 | Obstacle clearance | Distance from the vehicle to the nearest obstacle | off |
 | Distance to target | Distance to the scenario's goal; `goal.reached` when it is reached | off |
-| Sensor health | Expected against observed sensor rates (`sensor.health`) | off |
+| Sensor health | Expected against observed sensor rates (`sensor.health`) | only where the runtime host emits it; no switch in the catalog |
 | Autopilot and estimator | Mode, arming, GPS and the autopilot's own position estimate (`estimator.local_position`) | on |
 | Scenario lifecycle | `run.started`, `scenario.started`, `scenario.ready`, phase changes, `run.ended` | on |
 
@@ -129,4 +129,6 @@ carry the old path in their `.env`: regenerate them.
 | `completed: false` | The run had no `run.ended`: the stack was removed without the graceful stop. Use Stop in the dashboard or `./product.sh cli stop`. |
 | Path length counts obstacles | The run predates the controlled-vehicle filter; re-score it by touching its `events.jsonl`. |
 | Monitor shows "metrics service not reachable" | Start the dashboard with `make dashboard`, or check port 8770 is free (`METRICS_SERVICE_PORT` in `.env`). |
+| FAIL on `collision_count` with one collision at speed 0 near the start | The vehicle resting on the ground at spawn registers as a contact. It counts by default; raise `max_collisions` in `config/metrics/evaluation.yaml` if your test should tolerate it. |
+| `goal_reached: true` within the first second | The scenario defines no goal, so the distance-to-target observer treats the spawn point as the target. Give the scenario a target, or ignore the check for that scenario. |
 | Grafana panels are empty | Grafana reads a separate ClickHouse archive that is not part of the product; the files and the Run metrics panel do not need it. |
