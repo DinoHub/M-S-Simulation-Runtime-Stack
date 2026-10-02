@@ -1,6 +1,6 @@
 schema: mns.campaign.v1
-id: stereo-xfs
-name: Stereo rig over XFS, three calm flights
+id: stereo-xfs-openvins
+name: Stereo rig over XFS, three calm flights, OpenVINS
 
 # The scenario names no estimator. The component under test is attached here,
 # from outside the ScenarioSpec, and the evaluator scores what the stack
@@ -9,7 +9,7 @@ scenario: ./ScenarioSpec.yaml
 
 extensions:
   mns.components:
-    - ../../components/mac-vo
+    - ../../components/openvins
 
 evaluation:
   evaluator: vio-stress

@@ -1,0 +1,37 @@
+%YAML:1.0
+# Pinhole variant: 640x480, 80 deg horizontal FOV -> fx = 320/tan(40 deg) = 381.4.
+# Gazebo-parity mount lifted clear of the airframe: 0.15 m ahead, 0.25 m above.
+# Stereo: cam1 (front_right) is the same camera 0.12 m to the right (FLU y = -0.12).
+cam0:
+  T_imu_cam:
+    - [0.0, 0.0, 1.0, 0.15]
+    - [-1.0, 0.0, 0.0, 0.0]
+    - [0.0, -1.0, 0.0, 0.25]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [1]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: radtan
+  intrinsics: [381.4, 381.4, 320.0, 240.0]
+  resolution: [640, 480]
+  rostopic: /camera/front/image_raw
+  timeshift_cam_imu: 0.0 # lockstep run; the steppable clock does not advance while a capture is pending
+cam1:
+  T_imu_cam:
+    - [0.0, 0.0, 1.0, 0.15]
+    - [-1.0, 0.0, 0.0, -0.12]
+    - [0.0, -1.0, 0.0, 0.25]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [0]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: radtan
+  intrinsics: [381.4, 381.4, 320.0, 240.0]
+  resolution: [640, 480]
+  # Published name, i.e. after the rename map in the generated stack's
+  # config/topic_names.yaml, which remaps EVERY camera and not only the first.
+  # This read /front_right_Scene/image -- the bridge's native, pre-rename name --
+  # so cam1 subscribed to a topic no stack publishes and a run configured for
+  # stereo fed the estimator one camera. (OpenCV YAML: no trailing comments on values.)
+  rostopic: /camera/front_right/image_raw
+  timeshift_cam_imu: 0.0
