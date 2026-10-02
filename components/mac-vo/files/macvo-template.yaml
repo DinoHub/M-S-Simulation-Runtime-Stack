@@ -1,5 +1,15 @@
-# MAC-VO's odometry pipeline, verbatim from MAC-VO-ROS2 (MIT) at a22f89e,
-# MACVO_ROS2/config/zedcam_macvo.yaml, without its ZED-specific Camera block.
+# MAC-VO's odometry pipeline, from MAC-VO-ROS2 (MIT) at a22f89e,
+# MACVO_ROS2/config/zedcam_macvo.yaml without its ZED-specific Camera block,
+# with the keypoint selector, outlier filter and optimizer of upstream's
+# outdoor config (src/Config/Experiment/MACVO/MACVO.yaml).
+#
+# Why outdoor: the ZED config caps keypoint depth at fx*baseline, the depth of
+# one pixel of disparity after MAC-VO's 320x320 resize (254 px * 0.12 m = 30 m
+# on the sim's stereo rig). In an open scene most texture is farther than that,
+# MAC-VO loses track (fewer than 10 matches) and keeps the last pose, so the
+# motion during every lost frame is dropped. Replaying stereo-xfs calm-r1 with
+# tools/replay.sh: ZED config 4.13 m ATE, 132 of 663 frames lost; outdoor
+# selectors 0.96 m, none lost, scale 1.004.
 # The adaptor's `config` step appends the Camera block (fx, fy, cx, cy, bl)
 # from the stack contract's primary stereo pair and writes /work/macvo.yaml.
 Common:
@@ -8,7 +18,7 @@ Common:
   max_depth: &max_depth auto
 
 Odometry:
-  name: MACVO_Jetson
+  name: MACVO
   args:
     # Device directive to the VO system
     # NOTE: the system may not follow this device config strictly since some module
@@ -37,13 +47,11 @@ Odometry:
         min_flow_cov: 0.25
 
   keypoint:
-    type: CovAwareSelector
+    type: CovAwareSelector_NoDepth
     args:
       device: *device
       kernel_size: 7
       mask_width: 32
-      max_depth: *max_depth
-      max_depth_cov: 250.0
       max_match_cov: 100.0
   
   mappoint:
@@ -68,17 +76,8 @@ Odometry:
     args:
 
   outlier:
-    type: FilterCompose
+    type: CovarianceSanityFilter
     args:
-      filter_args:
-        - type: CovarianceSanityFilter
-          args:
-        - type: SimpleDepthFilter
-          args:
-            min_depth: 0.05
-            max_depth: *max_depth
-        - type: LikelyFrontOfCamFilter
-          args:
   
   postprocess:
     type: MotionInterpolate
@@ -89,8 +88,10 @@ Odometry:
     args:
   
   optimizer:
-    type: TwoFramePoseOptimizer
+    type: ReprojectOptimizer
     args:
       device: cpu
       vectorize: true
       parallel: true
+      use_fancy_cov: false
+      constraint: disparity

@@ -13,7 +13,7 @@ kind: estimator
 
 images:
   macvo: dhdevspace/auto_mns:mac-vo-ros2-a22f89e-cu128
-  adaptor: dhdevspace/auto_mns:mac-vo-adaptor-0.1.0
+  adaptor: dhdevspace/auto_mns:mac-vo-adaptor-0.2.0
 build:
   macvo: {context: docker/macvo}
   adaptor: {context: adaptor}
@@ -59,7 +59,7 @@ services:
     after: [config]
     volumes: ["work:/work:ro"]
     command: ["ros2", "run", "MACVO_ROS2", "MACVO", "--config", "/work/macvo.yaml"]
-  # Stereo in (paired, RGB, throttled), pose out (full stamp, ENU/FLU base_link).
+  # Stereo in (paired, RGB, paced on its poses), pose out (full stamp, ENU/FLU base_link).
   adaptor:
     role: adaptor
     image: adaptor
@@ -67,3 +67,6 @@ services:
     command: [run]
     environment:
       MNS_ADAPTOR_MAX_HZ: "10"
+      # MAC-VO answers frame k when frame k+1 arrives: two in flight keeps it
+      # fed without ever queueing a pair it would split (see node_stamps.Pacer).
+      MNS_ADAPTOR_MAX_INFLIGHT: "2"
