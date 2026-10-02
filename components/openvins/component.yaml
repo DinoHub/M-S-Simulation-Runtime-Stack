@@ -23,9 +23,11 @@ produces:
   # OpenVINS's own odometry (the IMU's pose in its world frame); the
   # evaluator aligns it to ground truth as it always has.
   estimate: {topic: /ov_msckf/odomimu}
-# Static initialisation: the estimate starts once the parked drone has
-# filled the IMU window, before take-off.
-ready: {topics: [/ov_msckf/odomimu], timeout_s: 180}
+# Ready once it tracks features: OpenVINS publishes its track image from the
+# first stereo frames, but its odometry only after the drone starts moving
+# (static initialisation waits for the take-off jerk), so the estimate
+# cannot be the ready signal for a flight that waits on it.
+ready: {topics: [/ov_msckf/trackhist], timeout_s: 180}
 
 requires:
   autopilot: [px4, ardupilot]
