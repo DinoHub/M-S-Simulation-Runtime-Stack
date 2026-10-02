@@ -40,9 +40,18 @@ the scenario automatically and write one event log per run.
 # ScenarioSpec.yaml
 runtime:
   metrics:
-    enabled: true
-    requested: [near_miss, obstacle_clearance, distance_to_target]
+    preset: trajectory              # safety, trajectory or everything
+    requested:
+      - bEnableNearMiss             # a detector switch by name turns it on
+      - target.distance.sampled     # so does an event type a detector produces
+    settings:                       # explicit values, applied last
+      NearMissRadiusCm: 300
 ```
+
+The detector names, their defaults and the presets are in the platform's
+`stackgen/metrics_catalog.yaml`, the same list the dashboard's Metrics step
+shows. A name the catalog does not know fails generation instead of being
+ignored.
 
 **Where the log is.** `generated/<stack>/outputs/metrics/run_<id>/events.jsonl`, one JSON event per line (schema 2.x). The stack's `config/metrics/metrics_runtime.json` records what was requested for that stack.
 
