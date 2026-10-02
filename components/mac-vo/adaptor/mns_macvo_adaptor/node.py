@@ -4,7 +4,8 @@ Inbound, it feeds MAC-VO the stack's primary stereo pair under the topics
 MAC-VO-ROS2 hard-codes (the ZED wrapper's left/right image_rect_color):
 - paired by exact stamp (the bridge captures both cameras in one call);
 - converted from bgr8 to the RGB MAC-VO assumes;
-- throttled to what MAC-VO keeps up with.
+- paced on MAC-VO's own poses (at most MNS_ADAPTOR_MAX_INFLIGHT pairs
+  unanswered), under a MNS_ADAPTOR_MAX_HZ ceiling.
 
 Outbound, it turns MAC-VO's /macvo/pose (its left camera's pose relative to
 the first frame, FRD "NED" camera axes, stamped with only the nanosecond
@@ -29,7 +30,7 @@ from std_msgs.msg import String
 
 from . import contract as contract_mod
 from . import frames
-from .node_stamps import StampCache
+from .node_stamps import Pacer, StampCache
 
 MACVO_LEFT = "/zed/zed_node/left/image_rect_color"
 MACVO_RIGHT = "/zed/zed_node/right/image_rect_color"
@@ -64,10 +65,12 @@ class Adaptor(Node):
         self.estimate_topic = os.environ.get("MNS_ESTIMATE_TOPIC", vehicle["roles"]["estimate"]["topic"])
         self.min_period = 1.0 / max(0.1, float(os.environ.get("MNS_ADAPTOR_MAX_HZ", "10")))
         self.cache = StampCache()
+        self.pacer = Pacer(int(os.environ.get("MNS_ADAPTOR_MAX_INFLIGHT", "2")),
+                           float(os.environ.get("MNS_ADAPTOR_INFLIGHT_TIMEOUT_S", "1.0")))
         self.pending: dict[str, dict[int, Image]] = {"L": {}, "R": {}}
         self.last_relay = 0.0
         self.prev: tuple[float, np.ndarray] | None = None
-        self.stats = {"in_pairs": 0, "relayed": 0, "dropped_throttle": 0, "poses": 0,
+        self.stats = {"in_pairs": 0, "relayed": 0, "dropped_throttle": 0, "dropped_busy": 0, "poses": 0,
                       "stamp_misses": 0, "latency_s": None}
 
         reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
@@ -104,7 +107,11 @@ class Adaptor(Node):
         if now - self.last_relay < self.min_period:
             self.stats["dropped_throttle"] += 1
             return
+        if not self.pacer.ready(now):
+            self.stats["dropped_busy"] += 1
+            return
         self.last_relay = now
+        self.pacer.sent(self._key(left), now)
         self.cache.add(left.header.stamp.sec, left.header.stamp.nanosec)
         self.pub_left.publish(to_rgb(left))
         self.pub_right.publish(to_rgb(right))
@@ -115,6 +122,7 @@ class Adaptor(Node):
         if stamp is None:
             self.stats["stamp_misses"] += 1
             return
+        self.pacer.answered(stamp[0] * 1_000_000_000 + stamp[1])
         p, q = msg.pose.position, msg.pose.orientation
         t_cam = frames.pose_to_matrix((p.x, p.y, p.z), (q.x, q.y, q.z, q.w))
         t_base = frames.base_motion(t_cam, self.t_bc)
