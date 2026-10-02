@@ -78,7 +78,7 @@ changes.
 |---|---|
 | Path length, travel time, average speed | Per controlled vehicle, from ground truth; moving obstacles are not counted |
 | Acceleration, jerk, curvature | Smoothness of the flown path |
-| Collisions | Count, episodes, worst impact speed, what was hit |
+| Collisions | Count, episodes, worst impact speed, what was hit. A contact at 5 cm/s or less before the vehicle first moves (resting on the ground at spawn) is reported separately as a spawn contact and not counted |
 | Near misses | Episodes and closest distance (when that observer is on) |
 | Goal reached | From `goal.reached` (when the distance-to-target observer is on) |
 | Position error | The autopilot's position estimate against ground truth (RMS, maximum) |
@@ -129,6 +129,6 @@ carry the old path in their `.env`: regenerate them.
 | `completed: false` | The run had no `run.ended`: the stack was removed without the graceful stop. Use Stop in the dashboard or `./product.sh cli stop`. |
 | Path length counts obstacles | The run predates the controlled-vehicle filter; re-score it by touching its `events.jsonl`. |
 | Monitor shows "metrics service not reachable" | Start the dashboard with `make dashboard`, or check port 8770 is free (`METRICS_SERVICE_PORT` in `.env`). |
-| FAIL on `collision_count` with one collision at speed 0 near the start | The vehicle resting on the ground at spawn registers as a contact. It counts by default; raise `max_collisions` in `config/metrics/evaluation.yaml` if your test should tolerate it. |
+| `spawn_contacts: 1` in the results | The vehicle resting on the ground before it first moves touches the level at speed 0. That is reported as a spawn contact and is not counted as a collision; any contact after the vehicle has moved, or faster than 5 cm/s, counts. |
 | `goal_reached: true` within the first second | The scenario defines no goal, so the distance-to-target observer treats the spawn point as the target. Give the scenario a target, or ignore the check for that scenario. |
 | Grafana panels are empty | Grafana reads a separate ClickHouse archive that is not part of the product; the files and the Run metrics panel do not need it. |

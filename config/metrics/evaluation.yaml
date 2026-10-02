@@ -19,6 +19,7 @@ evaluation:
   # Totals across all controlled vehicles. -1 = no limit.
   max_path_length_m: -1
   max_travel_time_sec: -1
-  # Any collision fails the run, including a contact at spawn.
+  # Any collision fails the run. The vehicle resting on the ground before it
+  # first moves is a spawn contact, reported separately and not counted here.
   max_collisions: 0
   require_goal_reached: true
