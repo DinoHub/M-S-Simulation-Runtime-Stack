@@ -685,7 +685,7 @@ Everything lives inside the folder you cloned, `M-S-Simulation-Runtime-Stack/`.
 | `.mns/v1/pack-store/` | Installed level and object packs. |
 | `.env` | Local settings. Defaults only; see [section 8](#8-optional-configuration). |
 
-`runs/` is the one runs folder: the dashboard, `./product.sh`, every generated
+`runs/` is the one runs folder: the dashboard, `make fly`/`make stop`, every generated
 stack and the metrics service all read and write it. [Metrics](metrics.md)
 explains what is measured, how a run is scored and the full layout of `runs/`.
 

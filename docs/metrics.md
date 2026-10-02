@@ -1,7 +1,7 @@
 # Metrics: where everything is
 
 Every simulation run is measured the same way, whether you start it from the
-dashboard, from `./product.sh cli`, or as part of a campaign:
+dashboard, from `make fly` / `mns-stacks run`, or as part of a campaign:
 
 ```mermaid
 flowchart LR
@@ -61,7 +61,7 @@ When the stack stops, the simulator is given up to 60 seconds to shut down
 cleanly. That writes the final `run.ended` event. The finalize step then adds
 `manifest.json` (run outcome, event counts, entities, timing, provenance) and a
 copy of the scenario and stack configuration to the run folder. Stopping from
-the dashboard and `./product.sh cli stop --stack ...` do the same.
+the dashboard, `make stop` and `mns-stacks stop --stack ...` do the same.
 
 A run without `run.ended` was cut short, for example by `docker compose down`
 run by hand or by a crash. It is still scored, but marked `completed: false`.
@@ -104,16 +104,17 @@ maximum collisions, goal required).
 ## 5. The runs folder
 
 One folder holds every result: `runs/` in this checkout, or `TEVV_RUNS_DIR`
-in `.env` if you moved it. The dashboard, `./product.sh`, every generated stack
+in `.env` if you moved it. The dashboard, `make fly`/`make stop`, every generated stack
 and the metrics service all use it.
 
 | Path under `runs/` | Written by |
 |---|---|
 | `<stack>/<run_id>/metrics/` | metrics service |
-| `<scenario>_<time>/bag/`, `run.json` | the dashboard's recorder |
+| `<run id>/bag/`, `<run id>/run.json` | `mns-stacks record` / `run --record` (the dashboard's Record button does the same) |
+| `<run id>/metrics/<emitter run id>/` | `mns-stacks stop`: a copy of the raw event log and manifest for that launch |
 | `<name>/validation.json` | campaign recording checks |
 | `_reports/` | sim-real-eval (sim-to-real verdicts) |
-| `_campaigns/` | campaign manifests |
+| `_campaigns/` | campaign manifests from older versions, if migrated; campaigns now write `generated/campaigns/<id>/` |
 | `_calibration.yaml`, `topics.yaml` | the Calibration page |
 
 If you used an older version, some results may still be in `~/tevv-runs` or
@@ -126,7 +127,7 @@ carry the old path in their `.env`: regenerate them.
 | Symptom | Cause and fix |
 |---|---|
 | No `runs/<stack>/...` folder after a run | Is `mns-metrics-service` running (`docker ps`)? Its log (`docker logs mns-metrics-service`) names each run it scored or skipped. A run still in progress is scored two minutes after its last event. |
-| `completed: false` | The run had no `run.ended`: the stack was removed without the graceful stop. Use Stop in the dashboard or `./product.sh cli stop`. |
+| `completed: false` | The run had no `run.ended`: the stack was removed without the graceful stop. Use Stop in the dashboard or `make stop`. |
 | Path length counts obstacles | The run predates the controlled-vehicle filter; re-score it by touching its `events.jsonl`. |
 | Monitor shows "metrics service not reachable" | Start the dashboard with `make dashboard`, or check port 8770 is free (`METRICS_SERVICE_PORT` in `.env`). |
 | `spawn_contacts: 1` in the results | The vehicle resting on the ground before it first moves touches the level at speed 0. That is reported as a spawn contact and is not counted as a collision; any contact after the vehicle has moved, or faster than 5 cm/s, counts. |
