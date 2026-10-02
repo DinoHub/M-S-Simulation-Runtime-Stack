@@ -78,7 +78,7 @@ class Adaptor(Node):
         self.pub_right = self.create_publisher(Image, MACVO_RIGHT, 1)
         self.create_subscription(PoseStamped, MACVO_POSE, self.on_pose, 10)
         self.pub_est = self.create_publisher(Odometry, self.estimate_topic, 10)
-        self.pub_status = self.create_publisher(String, "/mns/component/mac-vo/status", 1)
+        self.pub_status = self.create_publisher(String, "/mns/component/mac_vo/status", 1)
         self.create_timer(2.0, self.publish_status)
         self.get_logger().info(
             f"stereo {left['image']} + {right['image']} (baseline {pair['baseline_m']} m) -> "

@@ -69,6 +69,16 @@ RUN mkdir -p MAC-VO-ROS2/Model \
     && echo "${FRONTEND_SHA256}  MAC-VO-ROS2/Model/MACVO_FrontendCov.pth" | sha256sum -c - \
     && echo "${POSENET_SHA256}  MAC-VO-ROS2/Model/MACVO_posenet.pkl" | sha256sum -c -
 
+# MAC-VO's FlowFormer builds a timm twins_svt_large backbone with
+# pretrained=True, which fetches ImageNet weights from the Hugging Face Hub
+# (MAC-VO's own checkpoint then replaces them). Fetch them now, into a fixed
+# cache, and run offline: a stack's containers should not need the internet.
+ENV HF_HOME=/opt/hf
+RUN python3 -m pip install "huggingface_hub<1" -c /tmp/constraints.txt \
+    && python3 -c "import timm; timm.create_model('twins_svt_large', pretrained=True)" \
+    && chmod -R a+rX /opt/hf
+ENV HF_HUB_OFFLINE=1
+
 WORKDIR /opt/ws
 RUN . /opt/ros/humble/setup.sh && colcon build --symlink-install
 
