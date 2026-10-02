@@ -97,6 +97,8 @@ services:
       # that path) and never infers it from its own mounts. Use an absolute
       # path in ./.env; `make dashboard` resolves ~ and relative paths itself.
       - TEVV_RUNS_DIR=${TEVV_RUNS_DIR:-${MSRS_ROOT:-${PWD}}/runs}
+      # Per-run metrics scored by the metrics-service below (Monitor → Run metrics).
+      - METRICS_SERVICE_URL=${METRICS_SERVICE_URL:-http://metrics-service:8770}
       # ONE entry, read by two consumers: the Monitor tab's Grafana panel and
       # the Launch phase's Observe embed (served to the frontend at runtime via
       # /api/services/ui-config, so enabling it is an env change here, never a
@@ -266,6 +268,30 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
+    restart: unless-stopped
+
+  # Scores every finished simulation run. The sim's MetricsEmitter writes
+  # generated/<stack>/outputs/metrics/run_<id>/events.jsonl; once a run has
+  # ended (run.ended, a finalize manifest.json, or no new events for
+  # METRICS_IDLE_SECONDS) this service runs the TEVV-Metrics ingestor on it
+  # once and writes runs/<stack>/<run_id>/metrics/{metrics,evaluated,
+  # run_summary}.json. It serves the results read-only on :8770 (bound to
+  # localhost) for the dashboard's Run metrics panel. See docs/metrics.md.
+  metrics-service:
+    image: ${METRICS_SERVICE_IMAGE:-dhdevspace/auto_mns:tevv-jsonl-ingest-latest}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
+    container_name: ${DASHBOARD_CONTAINER_PREFIX:-}mns-metrics-service
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    command: ["watch", "--root", "/data/generated", "--out", "/data/runs", "--port", "8770",
+              "--eval-config", "/config/evaluation.yaml"]
+    environment:
+      - WATCH_IDLE_SECONDS=${METRICS_IDLE_SECONDS:-120}
+    ports:
+      - "127.0.0.1:${METRICS_SERVICE_PORT:-8770}:8770"
+    volumes:
+      - ${MSRS_ROOT:-${PWD}}/generated:/data/generated:ro
+      - ${TEVV_RUNS_DIR:-${MSRS_ROOT:-${PWD}}/runs}:/data/runs
+      - ${MSRS_ROOT:-${PWD}}/config/metrics/evaluation.yaml:/config/evaluation.yaml:ro
     restart: unless-stopped
 
   # ROS2 sidecar the backend drives over the docker socket for bag replay
