@@ -1,0 +1,60 @@
+schema: mns.scenario.v1
+id: planner-xfs-ardupilot
+name: Local planner course over XFS, ArduPilot
+stack_name: planner-xfs-ardupilot
+
+# An ArduCopter over the XFS container yard with a 3D GPU lidar: the world a
+# local planner is tested in. Like stereo-xfs for estimators, it names no
+# planner. A planner attaches as a component (components/mighty,
+# components/super) and flies the course's goals (CampaignSpec.yaml).
+#
+# Sim truth is the planner's odometry (/ground_truth/odom); the bridge's
+# registered cloud is accumulated in the map frame (LOCAL_OBS_TARGET_FRAME
+# defaults to map), which is what MIGHTY and SUPER consume.
+
+environment:
+  # XFS as packs/v1.0.0.lock.json pins it (same as vio-osmo-xfs-ardupilot).
+  id: xfs-level
+  version: 1.0.1
+  artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+
+runtime:
+  profile: airsim_unreal_ardupilot_docker
+  features:
+    sim_real_eval: false
+    ros2_bridge: true
+    qgroundcontrol: false
+    # The planner's setpoints reach ArduPilot through the bridge's MAVROS
+    # (/Drone1/mavros/setpoint_raw/local), and the pilot arms and takes off
+    # through it.
+    mavros: true
+
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  ros_domain_id: 1
+  # The container yard, 2.3 m above the measured ground (NED z -18.70):
+  # see vio-osmo-xfs-ardupilot for how it was measured.
+  start:
+    x: 423
+    y: -906
+    z: -21.0
+  # One forward camera, for the live view only.
+  cameras:
+    front:
+      position:
+        x: 0.15
+        y: 0
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+  sensors:
+    imu: true
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: true
