@@ -35,4 +35,6 @@ generated/
 !/scenarios/vio-osmo-xfs-ardupilot/
 !/scenarios/vio-osmo-xfs-surround/
 !/scenarios/fisheye-surround-shm/
+# The stereo rig with no estimator: components attach to it from outside.
+!/scenarios/stereo-xfs/
 !/scenarios/vio-reference/**

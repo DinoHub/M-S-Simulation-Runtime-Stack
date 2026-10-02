@@ -1,0 +1,41 @@
+schema: mns.campaign.v1
+id: stereo-xfs
+name: Stereo rig over XFS, one calm flight
+
+# The scenario names no estimator. The component under test is attached here,
+# from outside the ScenarioSpec, and the evaluator scores what the stack
+# contract says it produces (/mns/estimate/odom), so no est_topic is needed.
+scenario: ./ScenarioSpec.yaml
+
+extensions:
+  mns.components:
+    - ../../components/mac-vo
+
+evaluation:
+  evaluator: vio-stress
+
+variants:
+  - id: calm
+    name: No wind
+
+repeats: 1
+
+recording:
+  keep: first
+  # The produced estimate and the component's own record topics are added to
+  # this list automatically.
+  topics:
+    - /camera/front/image_raw
+    - /camera/front/camera_info
+    - /camera/front_right/image_raw
+    - /camera/front_right/camera_info
+    - /imu/data
+    - /ground_truth/odom
+    - /clock
+
+mission:
+  source: external
+  trajectory: ./routes/yard-box.yaml
+  done: timeout
+  timeout_s: 10
+  autopilot: px4
