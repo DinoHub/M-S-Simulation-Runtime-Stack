@@ -8,7 +8,7 @@ stack_name: casio-siyi
 # target localiser and tracker, surveillance, annotated stream, cloud relay).
 #
 # Everything casio needs comes from this spec, so a regenerated stack (from
-# the dashboard or `product.sh cli runtime`) runs casio with no further step:
+# the dashboard or `make fly`) runs casio with no further step:
 #   - runtime.ros: CycloneDDS with casio's config, and casio owning
 #     map -> base_link as on the Jetson (the bridge publishes no odom TF)
 #   - runtime.images: the ROS 2 bridge build with the camera-tilt fix

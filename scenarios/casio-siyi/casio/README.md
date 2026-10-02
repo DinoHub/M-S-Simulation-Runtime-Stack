@@ -64,21 +64,23 @@ The Jetson's `cyclonedds.xml` is not used here; this folder's replaces it.
 
 ## Run
 
-From the dashboard: start it with the generator above,
-`MNS_STACK_GENERATOR_IMAGE=dhdevspace/auto_mns:mns-stack-generator-v1.0.0-services.1 make dashboard`,
-pick casio-siyi (or casio-siyi-realism), Generate, Run. SAFTI is a
-runtime-only level, so the scenario is the hand-written spec in this folder,
-not a ScenarioLab export.
+casio-siyi needs an `mns-stacks` image whose generator understands
+`runtime.ros`, `runtime.images`, `mns.topics` and `mns.services`
+(MnS-Integration-Platform `feat/stackgen-scenario-services-v1`). Until a
+release carries them, export it before any `make` target below:
+`export MNS_STACKS_IMAGE=dhdevspace/auto_mns:mns-stacks-v1.0.0-rc.services.1`.
+
+From the dashboard: `make dashboard`, pick casio-siyi (or
+casio-siyi-realism), Generate, Run. SAFTI is a runtime-only level, so the
+scenario is the hand-written spec in this folder, not a ScenarioLab export.
 
 From the command line:
 
 ```bash
-export MNS_STACK_GENERATOR_IMAGE=dhdevspace/auto_mns:mns-stack-generator-v1.0.0-services.1
-./product.sh cli runtime --scenario /workspace/scenarios/casio-siyi \
-  --out /workspace/generated/casio-siyi --no-run
-./product.sh cli run-stack --stack /workspace/generated/casio-siyi --detach
+make fly SCENARIO=casio-siyi KEEP=1
 ```
 
+`KEEP=1` brings the stack up and leaves it up; fly it with the bench below.
 The first start of `detection` builds its TensorRT engine into the
 `detection_x86_models` volume, which takes a few minutes. Later starts reuse it.
 
@@ -86,7 +88,8 @@ The annotated stream is at `http://127.0.0.1:8889/annotated` (WebRTC) and
 `rtsp://127.0.0.1:8554/annotated`. Only one casio stack can run at a time:
 both publish those ports.
 
-Stop with `./product.sh cli stop --stack /workspace/generated/casio-siyi`.
+Stop with `make stop` (the last `make fly`), or
+`make stop STACK=generated/casio-siyi`.
 
 ## Known limits
 
