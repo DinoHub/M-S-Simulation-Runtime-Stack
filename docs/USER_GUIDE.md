@@ -671,7 +671,8 @@ Everything lives inside the folder you cloned, `M-S-Simulation-Runtime-Stack/`.
 |---|---|---|
 | Rosbag of a run | `runs/<scenario>_<time>/bag/` (`bag_0.db3` + `metadata.yaml`) | **Replay → Bags** (plays it); **Calibration** → *Sim run* → **⬇ View bag files** (downloads it) |
 | Run record | `runs/<scenario>_<time>/run.json`: run id, stack, bag name | shown with the run in **Replay → Bags** |
-| Metrics events | `generated/<scenario>/outputs/metrics/<run id>/events.jsonl` | **Monitor → Run events** while the stack runs |
+| Metrics events | `generated/<scenario>/outputs/metrics/<run id>/events.jsonl`, closed with `manifest.json` when the stack stops | **Monitor → Run events** |
+| Run metrics and verdict | `runs/<scenario>/<run id>/metrics/` (`metrics.json`, `evaluated.json`, `run_summary.json`), scored by the metrics service | **Monitor → Run metrics**; also `http://localhost:8770/runs` |
 | Calibration reports | `runs/_reports/` | **Calibration** |
 | Hand-off bundle | downloaded by your browser | **Analysis → Record integration bundle → Download bundle** |
 
@@ -683,6 +684,10 @@ Everything lives inside the folder you cloned, `M-S-Simulation-Runtime-Stack/`.
 | `generated/<name>/` | The stack generated from it: `docker-compose.yml` and configs. |
 | `.mns/v1/pack-store/` | Installed level and object packs. |
 | `.env` | Local settings. Defaults only; see [section 8](#8-optional-configuration). |
+
+`runs/` is the one runs folder: the dashboard, `./product.sh`, every generated
+stack and the metrics service all read and write it. [Metrics](metrics.md)
+explains what is measured, how a run is scored and the full layout of `runs/`.
 
 To free disk, delete old runs from `runs/`, and old scenarios with the
 🗑 icon in Author. `du -sh generated/ runs/` shows the usage.
@@ -697,7 +702,9 @@ Nothing here is needed for a normal run.
 
 | Variable | Default | Change it to |
 |---|---|---|
-| `TEVV_RUNS_DIR` | `runs/` in the checkout | keep runs and bags on another disk (an absolute path) |
+| `TEVV_RUNS_DIR` | `runs/` in the checkout | keep runs, bags and metrics on another disk (an absolute path); regenerate stacks afterwards so they pick it up |
+| `METRICS_SERVICE_PORT` | `8770` | move the metrics service's local port |
+| `METRICS_IDLE_SECONDS` | `120` | how long a run must be quiet before it is scored without a clean end |
 | `DASHBOARD_LICHTBLICK_PORT`, `FOXGLOVE_BRIDGE_PORT` | `8082`, `8764` | move a port that clashes |
 | `GRAFANA_URL` | local Grafana | empty, to hide the Grafana embed |
 | `DOCKER_CONFIG` | `~/.docker` | a non-default Docker login location |

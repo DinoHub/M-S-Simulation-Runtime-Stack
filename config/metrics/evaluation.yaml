@@ -1,0 +1,24 @@
+# Pass/fail thresholds the metrics service applies to every scored run
+# (docs/metrics.md). Read by the TEVV-Metrics ingestor (--eval-config); the
+# verdict lands in runs/<stack>/<run_id>/metrics/evaluated.json.
+#
+# Path length and travel time are off at 0 or below; max_collisions is off at
+# -1 and 0 means no collision allowed. Checks whose data a run does not have are
+# reported as not evaluated rather than failed (for example goal_reached on a
+# run without the distance-to-target observer).
+#
+# These are product defaults, deliberately loose: set the limits your test
+# actually needs here, or per campaign in the CampaignSpec evaluation block.
+evaluation:
+  metrics:
+    path_length: true
+    travel_time: true
+    goal_reached: true
+    collisions: true
+
+  # Totals across all controlled vehicles. -1 = no limit.
+  max_path_length_m: -1
+  max_travel_time_sec: -1
+  # Any collision fails the run, including a contact at spawn.
+  max_collisions: 0
+  require_goal_reached: true

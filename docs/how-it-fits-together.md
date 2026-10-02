@@ -62,7 +62,7 @@ this repository:
 | `/var/run/docker.sock` | it drives docker: runs mns-stacks, mns-packs and ScenarioLab, creates `ros2-tools` |
 | `${DOCKER_CONFIG:-$HOME/.docker}` at `/root/.docker`, read-only | a pull uses **this container's** credentials, not your shell's ([details](dashboard-images.md#6-credentials-the-socket-alone-is-not-enough)) |
 | `${MSRS_ROOT:-$PWD}` at the **identical** host path | every path the backend hands mns-stacks is a host path, valid for Compose on the host, unchanged |
-| `${TEVV_RUNS_DIR:-./runs}` (in this checkout) at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports. Its host path also arrives as `TEVV_RUNS_DIR` (the same expression as the mount source), which the backend hands to mns-stacks |
+| `${TEVV_RUNS_DIR:-./runs}` (in this checkout) at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports, per-run metrics. Its host path also arrives as `TEVV_RUNS_DIR` (the same expression as the mount source), which the backend hands to mns-stacks |
 
 The headless targets follow the same rule: `tools/mns-stacks.sh` mounts this
 checkout and the runs directory at their host paths, and the Docker socket
@@ -90,6 +90,8 @@ phases without redoing them: phase completion is computed from what exists.
 | `<runs>/<run id>/bag/`, `<runs>/<run id>/run.json` | `mns-stacks record` / `run --record` (the bridge container records) | Analysis, replay, sim-real-eval, the integration bundle |
 | `<runs>/<name>/validation.json` | `validate_recording` (a campaign step) | the integration bundle, `mns-stacks campaign status` |
 | `<runs>/_reports/*.json` | `sim-real-eval` | the Analysis phase, `mns-stacks campaign status` |
+| `generated/<name>/outputs/metrics/run_<id>/events.jsonl`, `manifest.json` | the runtime host's MetricsEmitter; `manifest.json` by finalize in `mns-stacks stop` | Monitor → Run events, the metrics service |
+| `<runs>/<name>/<run_id>/metrics/{metrics,evaluated,run_summary}.json` | `metrics-service` (TEVV-Metrics ingestor), once per finished run | Monitor → Run metrics, `http://localhost:8770/runs` ([Metrics](metrics.md)) |
 | `<campaigns>/<id>/campaign_manifest.json`, `progress.jsonl`, `campaign.lock` | `mns-stacks campaign run` | `campaign status|watch|cancel`, `/api/campaign/jobs/*` |
 
 ## The phases, one at a time
@@ -221,6 +223,7 @@ bundle written.
 | channels, the pack store, locks, installing and removing packs | [packs/README.md](../packs/README.md) |
 | which topics a generated stack publishes | [What will this stack publish?](topics.md) |
 | running campaigns | [Campaigns](campaigns.md) |
+| what is measured, how runs are scored, the runs folder | [Metrics: where everything is](metrics.md) |
 | the reference campaign itself | [`scenarios/vio-reference/README.md`](../scenarios/vio-reference/README.md) |
 | the v1.0.0 architecture across repositories: who owns what | MnS-Integration-Platform `docs/v1.0.0-architecture.md` |
 | the compose file's own statement of the mounts and precedence | the header comment of `docker-compose-dashboard.yml` |
