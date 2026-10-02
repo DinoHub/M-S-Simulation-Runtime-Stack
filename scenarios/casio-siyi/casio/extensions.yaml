@@ -11,6 +11,20 @@ mns.topics:
     siyi_Scene/image: camera/image_raw
     siyi_Scene/camera_info: camera/camera_info
 
+# casio's message types for the stack's viewer and recorder: the bridge
+# image has neither vision_msgs nor casio_interfaces, so without these
+# /detections and /objects/* show nothing in Lichtblick and are not recorded.
+mns.interfaces:
+- image: dhdevspace/auto_mns:casio-node
+  packages: [casio_interfaces, vision_msgs]
+
+# The dashboard's viewer for this scenario: the layout, and casio's annotated
+# video (mediamtx's WebRTC page; it is not a ROS topic).
+mns.viz:
+  layout: viz/lichtblick-layout.json
+  streams:
+  - {name: annotated, url: "http://localhost:8889/annotated"}
+
 mns.services:
   vehicle: Drone1
   # Paths are relative to the spec folder (scenarios/casio-siyi), not to

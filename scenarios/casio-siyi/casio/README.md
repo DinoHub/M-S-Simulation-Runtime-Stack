@@ -65,10 +65,11 @@ The Jetson's `cyclonedds.xml` is not used here; this folder's replaces it.
 ## Run
 
 casio-siyi needs an `mns-stacks` image whose generator understands
-`runtime.ros`, `runtime.images`, `mns.topics` and `mns.services`
+`runtime.ros`, `runtime.images`, `mns.topics`, `mns.services`, `mns.interfaces`
+and `mns.viz`
 (MnS-Integration-Platform `feat/stackgen-scenario-services-v1`). Until a
 release carries them, export it before any `make` target below:
-`export MNS_STACKS_IMAGE=dhdevspace/auto_mns:mns-stacks-v1.0.0-rc.services.1`.
+`export MNS_STACKS_IMAGE=dhdevspace/auto_mns:mns-stacks-v1.0.0-rc.services.2`.
 
 From the dashboard: `make dashboard`, pick casio-siyi (or
 casio-siyi-realism), Generate, Run. SAFTI is a runtime-only level, so the

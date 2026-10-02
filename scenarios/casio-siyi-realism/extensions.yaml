@@ -28,3 +28,9 @@ mns.services:
         -p use_sim_time:=true
         -p calibration_file:=/cfg/services/casio-configs/siyi_a8_calibration.yaml
         "
+
+# Paths resolve against this spec's folder, so point the viewer layout back
+# at casio-siyi's. Streams come from casio-siyi's file (lists in included
+# files are appended, so repeating them here would list each twice).
+mns.viz:
+  layout: ../casio-siyi/viz/lichtblick-layout.json
