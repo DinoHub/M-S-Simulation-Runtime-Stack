@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# One square-flight experiment on a running casio-siyi stack.
-#   [STACK=generated/casio-siyi-realism] square-flight.sh <label> [square_flight.py options]
-# Needs the generated stack up, casio included (README "Run"); STACK picks
-# which one (default generated/casio-siyi). PX4 flies
+# One square-flight experiment on a running stack with casio-edge attached.
+#   STACK=generated/<stack> square-flight.sh <label> [square_flight.py options]
+# Needs the generated stack up, casio-edge attached (README "Run"); STACK is
+# its folder (make fly prints it). PX4 flies
 # a mission (take-off, laps of a square with the nose on its centre, land),
 # so no planner is needed. While it flies this records casio's outputs,
 # sim truth over AirSim RPC, the annotated stream, cloud_relay's POSTs
@@ -17,15 +17,20 @@ set -euo pipefail
 label=${1:?usage: square-flight.sh <label> [square_flight.py options]}
 shift
 here=$(cd "$(dirname "$0")" && pwd)
-repo=$(cd "$here/../../../.." && pwd)
-stack=$(cd "$repo/${STACK:-generated/casio-siyi}" && pwd)
-# The stack's own record of what it runs: its name (container prefix), the
-# network casio is on, and whether camera realism is one of its services.
-read -r stack_name CASIO_STACK_NETWORK realism < <(python3 - "$stack/generated-manifest.json" <<'PY'
+repo=$(cd "$here/../../.." && pwd)
+stack=$(cd "$repo/${STACK:?set STACK=generated/<stack> (the folder make fly printed)}" && pwd)
+# The stack's own record of what it runs: its name (container prefix), and
+# from its contract the network and ROS domain casio is on; whether the
+# siyi-a8-realism component is attached.
+read -r stack_name CASIO_STACK_NETWORK ros_domain realism < <(python3 - "$stack" <<'PY'
 import json, sys
-m = json.load(open(sys.argv[1]))
-services = m.get("scenario_services") or {}
-print(m["stack_name"], services["network"], int("camera_realism" in services.get("services", [])))
+m = json.load(open(sys.argv[1] + "/generated-manifest.json"))
+c = json.load(open(sys.argv[1] + "/config/stack/contract.json"))
+v = c["vehicles"][0]
+ids = [x["id"] for x in m.get("components") or []]
+if "casio-edge" not in ids:
+    sys.exit("this stack has no casio-edge component attached")
+print(m["stack_name"], v["network"], v["ros_domain_id"], int("siyi-a8-realism" in ids))
 PY
 )
 bridge_image=$(sed -n 's/^ROS2_IMAGE=//p' "$stack/.env")
@@ -34,7 +39,7 @@ px4=$stack_name-px4-drone-1
 run=$stack/outputs/flights/$(date +%Y%m%d-%H%M%S)-$label
 mkdir -p "$run/rc3"
 user="$(id -u):$(id -g)"
-ros_env=(-e HOME=/tmp -e ROS_DOMAIN_ID=42 -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ros_env=(-e HOME=/tmp -e ROS_DOMAIN_ID=$ros_domain -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
          -e CYCLONEDDS_URI=file:///c.xml -v "$here/../cyclonedds.xml:/c.xml:ro")
 
 # The sim has no RC; PX4 must not abandon the mission for its absence. And
@@ -60,13 +65,13 @@ if [[ -n "${PERTURB:-}" ]]; then
   sleep 5   # let the new light / particles settle before recording
 fi
 
-# Camera realism (casio-siyi-realism): keep what the camera looked like.
+# Camera realism (the siyi-a8-realism component): keep what the camera looked like.
 if [[ $realism == 1 ]]; then
-  docker ps --format '{{.Names}}' | grep -qx "$stack_name-camera-realism" \
-    || { echo "this stack has camera realism but $stack_name-camera-realism is not running" >&2; exit 1; }
+  docker ps --format '{{.Names}}' | grep -qx "$stack_name-siyi-a8-realism-realism" \
+    || { echo "this stack has camera realism but $stack_name-siyi-a8-realism-realism is not running" >&2; exit 1; }
   python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); c=s["Vehicles"]["Drone1"]["Cameras"]["siyi"]["CaptureSettings"]; print(json.dumps({"capture_settings": c}, indent=1))' \
     "$stack/config/unreal-airsim/settings.json" > "$run/realism.json"
-  docker logs "$stack_name-camera-realism" 2>&1 | grep -m1 "camera_realism:" >> "$run/realism.json" || true
+  docker logs "$stack_name-siyi-a8-realism-realism" 2>&1 | grep -m1 "camera_realism:" >> "$run/realism.json" || true
 fi
 
 # RC3 stand-in where host.docker.internal (host-gateway) lands: the docker0 address.

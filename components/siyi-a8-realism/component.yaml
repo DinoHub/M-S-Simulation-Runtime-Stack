@@ -1,0 +1,62 @@
+# The SIYI A8 mini's camera path, applied to the simulated camera: a
+# provider component. It takes the bridge's ideal pinhole frames and
+# republishes them the way the real A8 delivers them, so components attached
+# after it (casio-edge) see an A8, not a perfect render:
+#
+#   1. lens   remaps onto the A8's Kalibr model (K, plumb_bob D); camera_info
+#             carries that K and D
+#   2. noise  shot + read noise per pixel
+#   3. jpeg   a JPEG round trip standing in for the A8's H.264 artefacts
+#
+# camera_realism.py has the details and a parameter per stage for A/B runs.
+# The render itself (resolution wide enough for the lens model, motion blur,
+# auto-exposure, chromatic aberration) is the scenario's camera: use it with
+# scenarios/casio-siyi-realism.
+#
+#   mns-stacks generate scenarios/casio-siyi-realism \
+#     --component components/siyi-a8-realism --component components/casio-edge
+schema: mns.component.v1
+id: siyi-a8-realism
+name: SIYI A8 mini camera realism
+version: 0.1.0
+kind: other
+
+images:
+  # Any ROS 2 Humble image with rclpy, numpy, OpenCV and PyYAML.
+  node: dhdevspace/auto_mns:casio-node
+
+consumes:
+- role: camera_primary
+  as: {image: /camera/image_sim, info: /camera/camera_info_sim}
+- clock
+provides:
+  camera_primary:
+    image: /camera/image_raw
+    info: /camera/camera_info
+    width: 1280
+    height: 720
+    model: pinhole
+    distortion_model: plumb_bob
+    rectified: false
+    # The A8's calibration, on camera_info.
+    K: null
+    D: null
+ready: {topics: [/camera/camera_info], timeout_s: 120}
+
+files:
+  script: camera_realism.py
+  # The real camera's Kalibr calibration, shipped with casio's deployment
+  # config (not committed; see ../casio-edge/README.md).
+  calibration: ../casio-edge/casio-config/deployment/configs/siyi_a8_calibration.yaml
+
+services:
+  realism:
+    image: node
+    run_as: image
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      python3 /cfg/component/script --ros-args
+      -p use_sim_time:=true
+      -p calibration_file:=/cfg/component/calibration
+      "
