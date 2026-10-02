@@ -7,6 +7,8 @@ casio_interfaces) on the stack network; square-flight.sh starts it.
   square_flight.py --out DIR --center-n N --center-e E
                    [--side 60] [--alt 40] [--roi-alt 15] [--laps 2] [--speed 4]
                    [--first-corner 0..3]
+  square_flight.py --out DIR --line-n N [--line-e E] [--alt 40] [--speed 4]
+                   (out to the point and back over home, then land)
 
 Offsets are metres north / east of the drone's start, which is PX4's home.
 The mission is: take off to --alt, point the nose (and so the fixed camera)
@@ -58,7 +60,7 @@ from casio_interfaces.msg import ObjectRange, TargetGps
 EARTH_R = 6378137.0
 FRAME_MISSION = 2  # MAV_FRAME_MISSION: PX4 rejects DO_ commands without a position in any other
 FRAME_REL_ALT = 3  # MAV_FRAME_GLOBAL_RELATIVE_ALT
-CMD = dict(waypoint=16, land=21, takeoff=22, change_speed=178, roi_location=195, roi_none=197)
+CMD = dict(waypoint=16, loiter_unlim=17, land=21, takeoff=22, change_speed=178, roi_location=195, roi_none=197)
 LANDED = {0: "undefined", 1: "on_ground", 2: "in_air", 3: "takeoff", 4: "landing"}
 
 
@@ -225,7 +227,9 @@ class SquareFlight(Node):
         first, last = self.truth[0], self.truth[-1]
         if last[0] - first[0] < 15.0:
             return False
-        moved = math.dist(first[1:], last[1:])
+        # Every sample, not just the two ends: a track that doubles back
+        # passes the same point again and would look still.
+        moved = max(math.dist(s[1:], last[1:]) for s in self.truth)
         v = self.local.twist.twist.linear
         return moved < 0.5 and math.hypot(v.x, v.y, v.z) > 0.5
 
@@ -267,8 +271,37 @@ class SquareFlight(Node):
         w.z_alt = float(alt)
         return w
 
+    def end_item(self):
+        """Land over home, or with --hover-at-end hold over it at --alt."""
+        nan = float("nan")
+        if self.args.hover_at_end:
+            return self.item(CMD["loiter_unlim"], 0.0, 0.0, self.args.alt, (0, 0, 0, nan))
+        return self.item(CMD["land"], 0.0, 0.0, 0.0, (0, 0, 0, nan))
+
+    def back_over_home(self):
+        """--hover-at-end: the far point has been reached and the drone is back within 3 m of home."""
+        if self.local is None:
+            return False
+        p = self.local.pose.pose.position
+        d = math.hypot(p.x, p.y)
+        self.far = max(self.far, d)
+        return self.far > 0.8 * self.reach and d < 3.0
+
     def mission(self):
         a = self.args
+        nan = float("nan")
+        if a.line_n is not None:
+            # Out and back: fly to the point and return over home, the nose
+            # (and so the camera) along the track; no ROI.
+            items = [
+                self.item(CMD["takeoff"], 0.0, 0.0, a.alt, (0, 0, 0, nan)),
+                self.item(CMD["change_speed"], params=(1, a.speed, -1, 0)),
+                self.item(CMD["waypoint"], a.line_n, a.line_e, a.alt, (0, 1.0, 0, nan)),
+                self.item(CMD["waypoint"], 0.0, 0.0, a.alt, (0, 1.0, 0, nan)),
+                self.end_item(),
+            ]
+            items[0].is_current = True
+            return items, [(a.line_n, a.line_e)]
         n0, e0, half = a.center_n, a.center_e, a.side / 2.0
         corners = [(n0 - half, e0 - half), (n0 - half, e0 + half),
                    (n0 + half, e0 + half), (n0 + half, e0 - half)]
@@ -285,7 +318,7 @@ class SquareFlight(Node):
             self.item(CMD["waypoint"], *corners[0], a.alt, (0, 1.0, 0, nan)),
             self.item(CMD["roi_none"]),
             self.item(CMD["waypoint"], 0.0, 0.0, a.alt, (0, 1.0, 0, nan)),
-            self.item(CMD["land"], 0.0, 0.0, 0.0, (0, 0, 0, nan)),
+            self.end_item(),
         ]
         items[0].is_current = True
         return items, corners
@@ -335,11 +368,15 @@ class SquareFlight(Node):
             self.spin_for(3.0)
 
         n1, e1 = corners[0]
-        path = 2 * math.hypot(n1, e1) + a.laps * 4 * a.side
+        path = 2 * math.hypot(n1, e1) + (0 if a.line_n is not None else a.laps * 4 * a.side)
         timeout = a.flight_timeout or 1.5 * (path / a.speed + 2 * a.alt / 1.5) + 120.0
         t0 = time.monotonic()
-        done = self.spin_for(timeout, lambda: self.collided() or (
-            self.airborne and self.state is not None and not self.state.armed))
+        self.far, self.reach = 0.0, max(math.hypot(n, e) for n, e in corners)
+        if a.hover_at_end:
+            finished = self.back_over_home
+        else:
+            finished = lambda: self.airborne and self.state is not None and not self.state.armed
+        done = self.spin_for(timeout, lambda: self.collided() or finished())
         if self.collided():
             p = self.truth[-1]
             self.event("collision", f"sim truth still at x={p[1]:.1f} y={p[2]:.1f} z={p[3]:.1f} "
@@ -347,10 +384,12 @@ class SquareFlight(Node):
             self.spin_for(a.tail)
             return 2
         if not done:
-            self.event("timeout", f"{timeout:.0f}s; switching to AUTO.RTL")
-            mode.custom_mode = "AUTO.RTL"
+            hold = "AUTO.LOITER" if a.hover_at_end else "AUTO.RTL"
+            self.event("timeout", f"{timeout:.0f}s; switching to {hold}")
+            mode.custom_mode = hold
             self.call(SetMode, "/mavros/set_mode", mode)
-            self.spin_for(240.0, lambda: self.state is not None and not self.state.armed)
+            if not a.hover_at_end:
+                self.spin_for(240.0, lambda: self.state is not None and not self.state.armed)
         self.event("flight_done", f"{time.monotonic() - t0:.1f}s wall")
         self.spin_for(a.tail)  # the tracker and relay lag the last frames
         return 0
@@ -363,8 +402,10 @@ class SquareFlight(Node):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--out", required=True)
-    p.add_argument("--center-n", type=float, required=True)
-    p.add_argument("--center-e", type=float, required=True)
+    p.add_argument("--center-n", type=float)
+    p.add_argument("--center-e", type=float)
+    p.add_argument("--line-n", type=float, help="out and back to this point instead of a square")
+    p.add_argument("--line-e", type=float, default=0.0)
     p.add_argument("--side", type=float, default=60.0)
     p.add_argument("--alt", type=float, default=40.0, help="metres above home")
     p.add_argument("--roi-alt", type=float, default=15.0, help="metres above home")
@@ -375,7 +416,11 @@ def main():
     p.add_argument("--first-corner", type=int, default=0, choices=range(4))
     p.add_argument("--flight-timeout", type=float, default=0.0, help="0: from the mission length")
     p.add_argument("--tail", type=float, default=5.0)
+    p.add_argument("--hover-at-end", action="store_true",
+                   help="hold over home at --alt instead of landing; the run ends once back over home")
     args = p.parse_args()
+    if args.line_n is None and (args.center_n is None or args.center_e is None):
+        p.error("give --center-n and --center-e for a square, or --line-n [--line-e] for an out and back")
     os.makedirs(args.out, exist_ok=True)
 
     rclpy.init()

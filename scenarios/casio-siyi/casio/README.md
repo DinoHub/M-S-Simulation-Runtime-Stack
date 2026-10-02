@@ -117,6 +117,14 @@ Stop with `./product.sh cli stop --stack /workspace/generated/casio-siyi`.
   home (about E -25..-8, N -19..-2), and something about 12 m tall sits near
   E 35, N 13. The ground-level mannequins near E 15..18, N 14..17 are a good
   target: 12 m altitude, 36 m square centred on E 17, N 15.5.
+  `--line-n N [--line-e E]` flies out to that point and back instead of a
+  square.
+- **Landing at home can fall through the ground.** On 2 Oct a drone that
+  had flown 100 m out and back started its landing over home and sank
+  through the level (sim truth 156 m below ground and still falling, PX4
+  stuck in "landing"); only a stack restart recovers it. Until that is
+  understood, add `--hover-at-end`: the mission ends holding over home at
+  `--alt`, and the run ends once the drone is back over home.
 - **Ideal lens in casio-siyi.** There the camera is a distortion-free
   pinhole with its intrinsics on `/camera/camera_info`. casio-siyi-realism
   applies the real A8's calibration (K and plumb_bob D), but its compression
