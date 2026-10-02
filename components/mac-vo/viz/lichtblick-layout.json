@@ -92,7 +92,7 @@
       "lichtblickPanelTitle": "Position (m); compare shapes, origins differ"
     },
     "RawMessages!macvo-status": {
-      "topicPath": "/mns/component/mac-vo/status",
+      "topicPath": "/mns/component/mac_vo/status",
       "autoExpandMode": "auto",
       "lichtblickPanelTitle": "Adaptor status"
     }

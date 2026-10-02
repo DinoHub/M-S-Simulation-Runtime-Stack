@@ -21,7 +21,7 @@ build:
 consumes: [stereo_primary, clock]
 produces:
   estimate: {topic: default}        # nav_msgs/Odometry on /mns/estimate/odom
-  record: [/macvo/pose, /mns/component/mac-vo/status]
+  record: [/macvo/pose, /mns/component/mac_vo/status]
 # The model takes a while to load and warm up; nothing is flown until the
 # estimate is published.
 ready: {topics: [/mns/estimate/odom], timeout_s: 300}
