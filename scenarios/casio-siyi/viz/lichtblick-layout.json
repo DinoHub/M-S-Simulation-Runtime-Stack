@@ -1,0 +1,141 @@
+{
+  "configById": {
+    "Image!casio-camera": {
+      "imageMode": {
+        "imageTopic": "/camera/image_raw",
+        "calibrationTopic": "/camera/camera_info",
+        "synchronize": false,
+        "rotation": 0
+      },
+      "lichtblickPanelTitle": "SIYI A8 camera"
+    },
+    "3D!casio-scene": {
+      "followTf": "base_link",
+      "followMode": "follow-position",
+      "cameraState": {
+        "distance": 60,
+        "perspective": true,
+        "phi": 50,
+        "thetaOffset": 45,
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "scene": {},
+      "transforms": {},
+      "layers": {},
+      "topics": {
+        "/objects/tracked_markers": {
+          "visible": true
+        },
+        "/ground_truth/objects": {
+          "visible": true
+        },
+        "/mission/path": {
+          "visible": true
+        },
+        "/surveillance/goal": {
+          "visible": true
+        },
+        "/depth/points": {
+          "visible": true,
+          "pointSize": 2,
+          "colorField": "z",
+          "colorMode": "colormap",
+          "colorMap": "turbo"
+        }
+      },
+      "lichtblickPanelTitle": "Scene: tracks, truth objects, mission path"
+    },
+    "Plot!casio-altitude": {
+      "paths": [
+        {
+          "value": "/ground_truth/odom.pose.pose.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "truth z (world)"
+        },
+        {
+          "value": "/mavros/global_position/rel_alt.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "PX4 altitude above home"
+        }
+      ],
+      "showLegend": true,
+      "xAxisVal": "timestamp",
+      "lichtblickPanelTitle": "Altitude (m)"
+    },
+    "StateTransitions!casio-mode": {
+      "paths": [
+        {
+          "value": "/mavros/state.mode",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/mavros/state.armed",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "isSynced": true,
+      "lichtblickPanelTitle": "PX4 mode / armed"
+    },
+    "RawMessages!casio-mission": {
+      "topicPath": "/mission/status",
+      "autoExpandMode": "auto",
+      "lichtblickPanelTitle": "Mission"
+    },
+    "RawMessages!casio-tracked": {
+      "topicPath": "/objects/tracked",
+      "autoExpandMode": "auto",
+      "lichtblickPanelTitle": "Latest tracked object"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": "Image!casio-camera",
+      "second": "3D!casio-scene",
+      "direction": "column",
+      "splitPercentage": 50
+    },
+    "second": {
+      "first": {
+        "first": "Plot!casio-altitude",
+        "second": "StateTransitions!casio-mode",
+        "direction": "column",
+        "splitPercentage": 60
+      },
+      "second": {
+        "first": "RawMessages!casio-mission",
+        "second": "RawMessages!casio-tracked",
+        "direction": "row",
+        "splitPercentage": 50
+      },
+      "direction": "column",
+      "splitPercentage": 55
+    },
+    "direction": "row",
+    "splitPercentage": 62
+  }
+}

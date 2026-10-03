@@ -1,0 +1,5 @@
+# casio-edge weights and deployment config: not ours to commit. Hard-link or copy
+# ~/casio-config here (see casio/README.md).
+casio-config/
+# The dashboard's saved pre-run state for this machine.
+phase-state.json
