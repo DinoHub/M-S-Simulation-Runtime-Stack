@@ -49,5 +49,8 @@ status=0
 "$ROOT/tools/fly.sh" "$scenario" --record -- "${run_args[@]}" "$@" || status=$?
 stack="$(cut -f1 "$ROOT/.mns/last-stack")"
 echo "== verdict (metrics service, up to ${REPORT_WAIT_S:-300} s)"
-"$ROOT/tools/mns-stacks.sh" report --stack "$stack" --wait "${REPORT_WAIT_S:-300}" || status=$?
+# The table goes to the terminal, the whole report to the stack's outputs.
+"$ROOT/tools/mns-stacks.sh" report --stack "$stack" --wait "${REPORT_WAIT_S:-300}" \
+  > "$stack/outputs/last-report.json" || status=$?
+echo "   full report: ${stack#"$ROOT"/}/outputs/last-report.json"
 exit "$status"
