@@ -29,6 +29,14 @@ produces:
 # cannot be the ready signal for a flight that waits on it.
 ready: {topics: [/ov_msckf/trackhist], timeout_s: 180}
 
+# Scored after every recorded run against sim truth, the way a campaign's
+# vio-stress evaluation aligns it (ATE, RPE, drift, availability).
+scoring:
+  builtin: estimate
+  checks:
+    ate_rmse_m: {max: 2.0}
+    availability: {min: 0.9}
+
 requires:
   autopilot: [px4, ardupilot]
 

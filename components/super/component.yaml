@@ -30,6 +30,15 @@ produces:
 # waits for its state machine before sending the first goal.
 ready: {after_takeoff: [/planner_state], timeout_s: 180}
 
+# Scored after every recorded goal mission: goals reached, time, path
+# efficiency, clearance in the run's own registered-cloud map, jerk.
+scoring:
+  builtin: planner
+  options: {tolerance_m: 1.0}
+  checks:
+    goal_success_rate: {min: 1.0}
+    min_clearance_m: {min: 0.3}
+
 requires:
   autopilot: [ardupilot]
   point_cloud_frame: odom

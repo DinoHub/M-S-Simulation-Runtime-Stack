@@ -23,6 +23,9 @@ images:
   detection: dhdevspace/auto_mns:casio-detection
   da3: dhdevspace/auto_mns:casio-da3
   mediamtx: bluenviron/mediamtx:1.19.2
+  # The truth sidecar needs only python3 + msgpack, which the stack's own
+  # ROS 2 bridge image has (the bench runs gt_objects.py in it too).
+  truth: ${ROS2_IMAGE}
 
 # casio's names for the camera, as on the Jetson: the platform renames the
 # bridge's camera to them (or, behind a provider such as siyi-a8-realism,
@@ -34,6 +37,26 @@ consumes:
 
 produces:
   record: [/detections, /objects/tracked, /target/gps, /surveillance/goal]
+
+# How the platform scores casio after a run: scoring/score.py rebuilds the
+# square-flight bench's CSVs from the bag, adds the people the truth sidecar
+# logged, and runs the bench's analyser on them. It needs a recorded run
+# (RECORD=1, or the dashboard's Record), which these topics are added to.
+scoring:
+  image: node
+  command:
+  - bash
+  - -c
+  - source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && python3 /cfg/component/score
+  needs: [bag]
+  record: [/objects/position, /surveillance/goal_valid, /camera/camera_info, /mavros/state,
+           /mavros/extended_state, /mavros/statustext/recv, /mavros/global_position/global,
+           /mavros/global_position/local, /ground_truth/odom]
+  options: {match_m: 5.0}
+  checks:
+    camera_fps: {min: 10.0}
+    gps_err_median_m: {max: 5.0}
+  timeout_s: 900
 # The detector publishes every frame (publish_empty), once its TensorRT
 # engine exists: the first start on a GPU builds it, which takes minutes.
 ready: {topics: [/detections], timeout_s: 900}
@@ -54,6 +77,10 @@ requires:
 files:
   casio-models: casio-config/models
   casio-configs: casio-config/deployment/configs
+  # The scorer and what it reuses from the bench.
+  score: scoring/score.py
+  analyse_flight: bench/analyse_flight.py
+  gt_objects: bench/gt_objects.py
 volumes:
   # TensorRT engines built on this GPU; the Jetson's are incompatible.
   detection_x86_models: {}
@@ -75,6 +102,16 @@ viz:
 # Every service keeps its image's own user: the engines and models are
 # written into volumes docker creates root-owned.
 services:
+  # Sim truth for the scorer: the level's people (and the drone), ENU from
+  # where the drone rests before take-off, logged over AirSim RPC to
+  # /mns/out (outputs/components/casio-edge/gt_objects.csv).
+  truth:
+    role: adaptor
+    image: truth
+    restart: on-failure
+    command: [python3, /cfg/component/gt_objects, --out, /mns/out, --host, host.docker.internal,
+              --rate, "1", --wait-s, "900", --settle-s, "3"]
+
   detection:
     image: detection
     gpu: true
