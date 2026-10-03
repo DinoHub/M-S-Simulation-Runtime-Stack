@@ -1,0 +1,278 @@
+# casio-edge, the Jetson perception stack (DA3 depth, YOLO detector, target
+# localiser and tracker, surveillance, annotated stream, cloud relay), as a
+# bring-your-own component. Its images are casio's own, unmodified; nothing
+# in a ScenarioSpec names it. Attach it to any scenario with a camera:
+#
+#   mns-stacks generate scenarios/casio-siyi --component components/casio-edge
+#
+# With the SIYI A8 camera realism stage in front of it:
+#
+#   mns-stacks generate scenarios/casio-siyi-realism \
+#     --component components/siyi-a8-realism --component components/casio-edge
+#
+# Paths below are relative to this folder. casio-config/ is not committed:
+# hard-link or copy ~/casio-config here (README.md, "On a new machine").
+schema: mns.component.v1
+id: casio-edge
+name: casio-edge perception
+version: 0.2.0
+kind: perception
+
+images:
+  node: dhdevspace/auto_mns:casio-node
+  detection: dhdevspace/auto_mns:casio-detection
+  da3: dhdevspace/auto_mns:casio-da3
+  mediamtx: bluenviron/mediamtx:1.19.2
+  # The truth sidecar needs only python3 + msgpack, which the stack's own
+  # ROS 2 bridge image has (the bench runs gt_objects.py in it too).
+  truth: ${ROS2_IMAGE}
+
+# casio's names for the camera, as on the Jetson: the platform renames the
+# bridge's camera to them (or, behind a provider such as siyi-a8-realism,
+# checks that the provider publishes them).
+consumes:
+- role: camera_primary
+  as: {image: /camera/image_raw, info: /camera/camera_info}
+- clock
+
+produces:
+  record: [/detections, /objects/tracked, /target/gps, /surveillance/goal]
+
+# How the platform scores casio after a run: scoring/score.py rebuilds the
+# square-flight bench's CSVs from the bag, adds the people the truth sidecar
+# logged, and runs the bench's analyser on them. It needs a recorded run
+# (RECORD=1, or the dashboard's Record), which these topics are added to.
+scoring:
+  image: node
+  command:
+  - bash
+  - -c
+  - source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && python3 /cfg/component/score
+  needs: [bag]
+  record: [/objects/position, /surveillance/goal_valid, /camera/camera_info, /mavros/state,
+           /mavros/extended_state, /mavros/statustext/recv, /mavros/global_position/global,
+           /mavros/global_position/local, /ground_truth/odom]
+  options: {match_m: 5.0}
+  checks:
+    camera_fps: {min: 10.0}
+    gps_err_median_m: {max: 5.0}
+    detection_latency_p95_ms: {max: 250}
+  timeout_s: 900
+  # Measured by the platform from the bag: a detection carries its camera
+  # frame's stamp, a target fix its detection's.
+  latency:
+  - {name: detection, label: Detection, input: /camera/camera_info, output: /detections}
+  - {name: target, label: Target report, input: /camera/camera_info, output: /target/gps}
+# The detector publishes every frame (publish_empty), once its TensorRT
+# engine exists: the first start on a GPU builds it, which takes minutes.
+ready: {topics: [/detections], timeout_s: 900}
+
+requires:
+  gpu: {min_vram_gb: 8}
+  autopilot: [px4]
+  # casio's middleware, with a DDS config for a docker network (the
+  # Jetson's names the drone's interfaces and peers).
+  rmw: cyclonedds
+  dds_config: cyclonedds.xml
+  # casio's pose_to_tf owns map -> base_link from MAVROS, as on the Jetson.
+  localization_source: external
+  # casio runs its own MAVROS (it expects /mavros/..., not the bridge's
+  # /Drone1/mavros/...); two MAVROS instances fight over the offboard stream.
+  bridge_mavros: false
+
+files:
+  casio-models: casio-config/models
+  casio-configs: casio-config/deployment/configs
+  # The scorer and what it reuses from the bench.
+  score: scoring/score.py
+  analyse_flight: bench/analyse_flight.py
+  gt_objects: bench/gt_objects.py
+volumes:
+  # TensorRT engines built on this GPU; the Jetson's are incompatible.
+  detection_x86_models: {}
+  da3_x86_models: {}
+
+# casio's message types for the stack's viewer and recorder: the bridge
+# image has neither vision_msgs nor casio_interfaces.
+interfaces:
+- image: node
+  packages: [casio_interfaces, vision_msgs]
+
+# The dashboard's viewer: the layout, and the annotated video (mediamtx's
+# WebRTC page; it is not a ROS topic).
+viz:
+  layout: viz/lichtblick-layout.json
+  streams:
+  - {name: annotated, url: "http://localhost:8889/annotated"}
+
+# Every service keeps its image's own user: the engines and models are
+# written into volumes docker creates root-owned.
+services:
+  # Sim truth for the scorer: the level's people (and the drone), ENU from
+  # where the drone rests before take-off, logged over AirSim RPC to
+  # /mns/out (outputs/components/casio-edge/gt_objects.csv).
+  truth:
+    role: adaptor
+    image: truth
+    restart: on-failure
+    command: [python3, /cfg/component/gt_objects, --out, /mns/out, --host, host.docker.internal,
+              --rate, "1", --wait-s, "900", --settle-s, "3"]
+
+  detection:
+    image: detection
+    gpu: true
+    run_as: image
+    volumes:
+      - detection_x86_models:/models/detection
+    command: >
+      bash -c "
+      mkdir -p /models/detection/engines &&
+      cp -u /cfg/component/casio-models/detection/yolo11s.onnx /models/detection/yolo11s.onnx &&
+      if [ ! -s /models/detection/engines/yolo11s.engine ]; then
+        trtexec --onnx=/models/detection/yolo11s.onnx --saveEngine=/models/detection/engines/yolo11s.engine --fp16;
+      fi &&
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      source /detection_ws/install/setup.bash &&
+      ros2 run casio_detection detector_node --ros-args
+      --params-file /detection_ws/install/share/casio_detection/config/detector.yaml
+      -p use_sim_time:=true
+      -p publish_empty:=true
+      -p backend:=tensorrt
+      -p engine_path:=/models/detection/engines/yolo11s.engine
+      "
+
+  depth_anything_v3:
+    image: da3
+    gpu: true
+    run_as: image
+    volumes:
+      - da3_x86_models:/models/depth_anything_v3
+    command: >
+      bash -c "
+      cp -u /cfg/component/casio-models/depth_anything_v3/DA3METRIC-LARGE.onnx /models/depth_anything_v3/DA3METRIC-LARGE.onnx &&
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      source /ws/install/setup.bash &&
+      ros2 launch casio_depth_anything_v3 depth_anything_v3.launch.py
+      input_image_topic:=/camera/image_raw
+      input_camera_info_topic:=/camera/camera_info
+      output_depth_topic:=/depth/image
+      "
+
+  pointcloud:
+    image: node
+    run_as: image
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 launch casio_pointcloud depth_mapping.launch.py
+      depth_topic:=/depth/image
+      camera_info_topic:=/camera/camera_info
+      map_frame:=map
+      tf_lookup_timeout_s:=0.3
+      use_sim_time:=true
+      pixel_stride:=10
+      "
+
+  description:
+    image: node
+    run_as: image
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 launch casio_description robot_description.launch.py
+      use_sim_time:=true
+      "
+
+  range:
+    image: node
+    run_as: image
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 launch casio_range target_tracking.launch.py
+      params_file:=/cfg/component/casio-configs/localisation_pipeline_params.yaml
+      use_sim_time:=true
+      "
+
+  surveillance:
+    image: node
+    run_as: image
+    command: >
+      ros2 run casio_surveillance surveillance --ros-args
+      --params-file /cfg/component/casio-configs/localisation_pipeline_params.yaml
+      -p use_sim_time:=true
+
+  # The platform gives the autopilot's MAVLink peer as MNS_FCU_URL (PX4's
+  # mavlink-router MAVROS endpoint); the Jetson's fcu_url names the drone.
+  mavros:
+    image: node
+    run_as: image
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      ros2 run mavros mavros_node --ros-args
+      -p fcu_url:=$MNS_FCU_URL
+      -p target_system_id:=1
+      -p target_component_id:=1
+      -p use_sim_time:=true
+      "
+
+  streaming:
+    image: detection
+    run_as: image
+    after: [mediamtx]
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      source /detection_ws/install/setup.bash &&
+      exec ros2 run casio_detection annotated_stream_node --ros-args
+      -p use_sim_time:=true
+      -p encoder:=x264enc
+      -p output_url:=rtsp://casio-edge-mediamtx:8554/annotated
+      -p bitrate_kbps:=2000
+      -p fps_cap:=30.0
+      -p target_gps_topic:=/target/gps
+      "
+
+  # Published on the host's loopback only. The browser connects to
+  # 127.0.0.1:8889 (WHEP signalling) and 127.0.0.1:8189/udp (ICE media).
+  # One casio stack at a time: these ports are fixed.
+  mediamtx:
+    image: mediamtx
+    run_as: image
+    ports:
+      - 127.0.0.1:8554:8554
+      - 127.0.0.1:8889:8889
+      - 127.0.0.1:8189:8189/udp
+    environment:
+      MTX_RTMP: "no"
+      MTX_HLS: "no"
+      MTX_WEBRTC: "yes"
+      MTX_SRT: "no"
+      MTX_RTSPTRANSPORTS: tcp
+      MTX_RTSPADDRESS: ":8554"
+      MTX_WEBRTCADDRESS: ":8889"
+      MTX_WEBRTCLOCALUDPADDRESS: ":8189"
+      MTX_WEBRTCIPSFROMINTERFACES: "no"
+      MTX_WEBRTCADDITIONALHOSTS: "127.0.0.1"
+      MTX_PATHS_ANNOTATED_SOURCE: publisher
+
+  # Posts to the stand-in RC3 on the host (bench/rc3_sink.py) unless the
+  # config names a real one.
+  cloud_relay:
+    image: node
+    run_as: image
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 run casio_uplink cloud_relay_node --ros-args
+      --params-file /cfg/component/casio-configs/localisation_pipeline_params.yaml
+      -p use_sim_time:=true
+      "

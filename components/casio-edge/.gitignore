@@ -1,0 +1,3 @@
+# casio-edge weights and deployment config: not ours to commit. Hard-link or copy
+# ~/casio-config here (see README.md).
+casio-config/

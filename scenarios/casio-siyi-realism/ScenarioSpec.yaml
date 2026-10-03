@@ -3,20 +3,20 @@ id: casio-siyi-realism
 name: Casio perception on a SIYI A8 mini, camera realism
 stack_name: casio-siyi-realism
 
-# casio-siyi (../casio-siyi/ScenarioSpec.yaml) with the camera made to look
-# like the real A8's before casio sees it. Kept in step with that spec by
-# hand: only the header, the camera block, runtime.ros.dds_config and the
-# includes differ.
-#
+# casio-siyi (../casio-siyi/ScenarioSpec.yaml) with the camera rendered the
+# way the real A8 needs it. Kept in step with that spec by hand: only the
+# header and the camera block differ.
 #   - Unreal renders motion blur at the A8's 25 fps, slower auto-exposure,
 #     chromatic aberration and a little lens flare (capture_settings below).
 #   - The render is 1354 x 810 at 85.35 deg (the same 734.3 px focal length
 #     as casio-siyi): the A8's barrel distortion and off-centre optical
 #     centre see past the edges of a 1280 x 720 pinhole.
-#   - The bridge publishes it as /camera/image_sim; the camera_realism
-#     service (extensions.yaml) remaps it onto the A8's Kalibr lens model,
-#     adds sensor noise and a JPEG round trip, and publishes the 1280 x 720
-#     /camera/image_raw and the A8's calibrated /camera/camera_info.
+#   - The siyi-a8-realism component (components/siyi-a8-realism) takes that
+#     render, remaps it onto the A8's Kalibr lens model, adds sensor noise
+#     and a JPEG round trip, and publishes the 1280 x 720 camera:
+#
+#   mns-stacks generate scenarios/casio-siyi-realism \
+#     --component components/siyi-a8-realism --component components/casio-edge
 
 environment:
   id: safti-level
@@ -29,33 +29,17 @@ runtime:
     sim_real_eval: false
     ros2_bridge: true
     qgroundcontrol: false
-    # Off on purpose. casio runs its own MAVROS (it expects /mavros/..., not
-    # the bridge's /Drone1/mavros/...), and two MAVROS instances on one flight
-    # controller fight over the offboard stream.
-    mavros: false
-  ros:
-    rmw: cyclonedds
-    dds_config: ../casio-siyi/casio/cyclonedds.xml
-    localization_source: external
   images:
     # v1.0.0 publishes a settings camera's pitch as radians, so the 25 deg
     # down mount appears 7.6 deg up in TF. This build carries the fix
     # (TEVV-Airsim-ROS2-Bridge PR #82); drop the override once v1 pins it.
+    # It is the tilted camera's, not any component's.
     ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-camtilt.1
-
-includes:
-  # casio-siyi's extensions, then this scenario's changes to them (later
-  # files win, mapping by mapping).
-  extensions:
-  - ../casio-siyi/casio/extensions.yaml
-  - extensions.yaml
 
 vehicles:
 - id: drone_1
   name: Drone1
   runtime_name: Drone1
-  # casio's domain.
-  ros_domain_id: 42
   # NED metres from the Unreal world origin (MnSOrigin), not from the level's
   # PlayerStart. SAFTI's world origin is about 12 m below the terrain, so
   # 0/0/0 spawns the drone underground (the camera then sees only sky dome).

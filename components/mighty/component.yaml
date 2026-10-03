@@ -1,0 +1,97 @@
+# MIGHTY (https://github.com/mit-acl/mighty, Kota Kondo et al.), a local
+# planner, as a bring-your-own component. Its image is the local-planner
+# adaptor scaffold's runtime bundle (adaptor_scaffold/adaptors/mighty): the
+# planner unmodified plus the scaffold's adaptor, which remaps its inputs and
+# turns its trajectory into MAVROS setpoints. Nothing in a ScenarioSpec names
+# it: attach it to a scenario with a lidar,
+#
+#   mns-stacks generate scenarios/planner-xfs-ardupilot --component components/mighty
+#
+# and give it goals with a campaign's mission.goals (the pilot takes off,
+# publishes each goal on /goal and waits; MIGHTY flies).
+schema: mns.component.v1
+id: mighty
+name: MIGHTY local planner
+version: 0.1.0
+kind: planner
+
+images:
+  mighty: dhdevspace/auto_mns:mighty_algo_only
+
+# Sim truth for its state, the registered cloud for obstacles. Both are read
+# raw, without TF, so they must share a frame: the cloud in odom. The
+# scaffold baked the cloud's name into MIGHTY's launch file (remap mode), so
+# the platform publishes it under that name.
+consumes:
+- ground_truth
+- {role: point_cloud, as: /Copter1/registered_point_cloud}
+- clock
+- autopilot
+
+produces:
+  record: [/Drone1/mavros/setpoint_raw/local]
+# MIGHTY starts only once the pilot has it airborne (files/wait_airborne.py),
+# so nothing of it exists before take-off: a goal mission takes off, waits
+# for its state marker, then sends the first goal.
+ready: {after_takeoff: [/NX01/point_current_state], timeout_s: 180}
+
+# Scored after every recorded goal mission: goals reached, time, path
+# efficiency, clearance in the run's own registered-cloud map, jerk.
+scoring:
+  builtin: planner
+  # MIGHTY publishes its trajectory (dynus Trajectory) after every replan.
+  options: {tolerance_m: 1.0, plan_topic: /NX01/trajectory}
+  checks:
+    goal_success_rate: {min: 1.0}
+    min_clearance_m: {min: 0.3}
+    replan_interval_max_s: {max: 2.0}
+
+# MIGHTY's message types (its trajectory, the plan its replan metrics read),
+# for the stack's recorder and viewer; they live in the planner workspace.
+interfaces:
+- image: mighty
+  packages: [dynus_interfaces]
+  setup: [/workspace/generated/mighty/.planner_ws/ros_ws/install/setup.bash]
+
+requires:
+  # The adaptor's ArduPilot policy: setpoints only while it plans, so the
+  # pilot's GUIDED take-off is not overridden (PX4 needs an OFFBOARD
+  # prestream the pilot does not give a planner yet).
+  autopilot: [ardupilot]
+  point_cloud_frame: odom
+  # Its setpoints reach the autopilot through the bridge's MAVROS.
+  bridge_mavros: true
+
+files:
+  # MIGHTY's parameters with the two fixes it needs here: a /**/mighty_node:
+  # header (the node runs in /NX01, so a bare mighty_node: key was ignored
+  # and it ran on compiled defaults), use_free_goal, v_max 2.5 m/s.
+  params: files/mighty.yaml
+  # Holds MIGHTY's launch until the vehicle hovers: it fixes its first plan
+  # point from the first state it sees, and on the ground that point is
+  # inside the ground's points ("Start is not free" on every search).
+  gate: files/wait_airborne.py
+
+services:
+  planner:
+    image: mighty
+    run_as: image
+    environment:
+      WS: /workspace/generated/mighty
+    command: >
+      bash -lc "
+      source /opt/ros/humble/setup.bash &&
+      python3 /cfg/component/gate &&
+      source $WS/.planner_ws/decomp_ws/install/setup.bash &&
+      source $WS/.planner_ws/ros_ws/install/setup.bash &&
+      export AMENT_PREFIX_PATH=$WS/adaptor_ws/install/mighty_adaptor:$AMENT_PREFIX_PATH &&
+      export PYTHONPATH=$WS/adaptor_ws/install/mighty_adaptor/lib/python3.10/site-packages:$PYTHONPATH &&
+      exec ros2 launch mighty_adaptor mighty_adaptor.launch.py
+      namespace:=NX01
+      autopilot:=ardupilot
+      odom_external_topic:=/ground_truth/odom
+      term_goal_external_topic:=/goal
+      vehicle_output_topic:=/$MNS_VEHICLE/mavros/setpoint_raw/local
+      runtime_params_file:=/cfg/component/params
+      use_rviz:=false
+      "

@@ -156,11 +156,11 @@ images:
   # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
   v1_runtime_host:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-v1.0.0-rc"
-    digest: sha256:ba3718941266bee651676adf49e8a1a7736c5d60e3a3389e0a33bb202d16a870
+    tag: "tevv-runtime-host-v1.0.0-zones.1"
+    digest: sha256:fc491d50fb3017e2c3d8c83c8d068e89abdd8f61166b2c217b555d40df94792d
     channel: pinned
     purpose: >-
-      MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim release/v1.0.0-next 131d7183fb98, dirty=false): the shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc5; carries its host contract (label tevv.host.contract); its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
+      MnS 1.0 generic TEVVRuntimeHost: tevv-runtime-host-v1.0.0-rc (TEVV-Airsim release/v1.0.0-next 131d7183fb98, sha256:ba371894...) with only its game binary swapped for one built from 131d7183fb98 + feat/pack-level-zones 786ea83f103c, so the MetricsEmitter emits zone and geofence events for the stack's zones file (MNS_ZONES_FILE) on pack levels. Cooked content, shaders, host contract and host_compatibility_id are the base image's (ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2), so level packs stay valid. The content-pack SDK plugin compiled in is a local copy matching rc5's strings, not the release asset (unreachable from the build machine); rebuild from the release once TEVV-Airsim#225 merges. Shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc5; its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing.
 
   v1_authoring:
     repo: dhdevspace/auto_mns
@@ -266,18 +266,23 @@ images:
 
   metrics_service:
     repo: dhdevspace/auto_mns
-    tag: "tevv-jsonl-ingest-v0.2.0-gda94454"
-    digest: sha256:2fb9354d42ad46669db8b2b4a1a3a72ccf00772225b7a857f24e6da1905f7611
+    tag: "tevv-jsonl-ingest-v0.4.1-g303e7c5"
+    digest: sha256:fc44dab13e67cc5544e5bd998ea96b6502236701c4a4674282217ee0e131ccb9
     channel: pinned
     source:
       repo: DinoHub/TEVV-Metrics
     purpose: >-
-      The product metrics service (TEVV-Metrics jsonl_ingestor 0.2.0, branch
-      feat/ingestor-schema-2x-service da94454): `watch` scores each finished
-      run in generated/*/outputs/metrics into runs/<stack>/<run_id>/metrics/
-      and serves them read-only on :8770. Schema 2.x events, controlled
-      vehicles only, spawn contacts excluded from collisions. See
-      docs/metrics.md.
+      The product metrics service (TEVV-Metrics jsonl_ingestor 0.4.1, branch
+      feat/component-scoring 303e7c5): `watch` scores each finished run under
+      generated/**/outputs/metrics (any run folder, campaign stacks too) into
+      runs/<stack>/<run_id>/metrics/ against the stack's own
+      config/metrics/evaluation.yaml, judges component results, and serves
+      them read-only on :8770. Spawn settling and touch-downs are ground
+      contacts, never collisions; the ground under a parked or landing
+      vehicle is not an obstacle-clearance violation. Geofences, zones and
+      coverage areas come from the stack's zones.json; the simulator's own
+      zone events for them confirm, not add. A new version re-scores
+      every run on disk. See docs/metrics.md.
 
 consumers:
   # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env

@@ -37,4 +37,8 @@ generated/
 # config, and the bench; and the same scenario with camera realism.
 !/scenarios/casio-siyi/
 !/scenarios/casio-siyi-realism/
+# The stereo rig with no estimator: components attach to it from outside.
+!/scenarios/stereo-xfs/
+# The local-planner course: planners attach to it as components.
+!/scenarios/planner-xfs-ardupilot/
 !/scenarios/vio-reference/**

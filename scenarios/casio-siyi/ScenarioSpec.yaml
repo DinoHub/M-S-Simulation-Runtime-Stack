@@ -4,20 +4,15 @@ name: Casio perception on a SIYI A8 mini
 stack_name: casio-siyi
 
 # A single PX4 quadrotor over the SAFTI level carrying one camera modelled on
-# the SIYI A8 mini, for the casio-edge perception stack (DA3, YOLO detector,
-# target localiser and tracker, surveillance, annotated stream, cloud relay).
+# the SIYI A8 mini. The scenario is the world, the drone and its camera; it
+# names no software. casio-edge attaches to it as a component, bringing its
+# own middleware, MAVROS and camera topic names (components/casio-edge):
 #
-# Everything casio needs comes from this spec, so a regenerated stack (from
-# the dashboard or `make fly`) runs casio with no further step:
-#   - runtime.ros: CycloneDDS with casio's config, and casio owning
-#     map -> base_link as on the Jetson (the bridge publishes no odom TF)
-#   - runtime.images: the ROS 2 bridge build with the camera-tilt fix
-#   - casio/extensions.yaml: casio's camera topic names and its containers
-#     (mns.services), on Drone1's network and ROS domain
-# This needs a stack generator with runtime.ros and mns.services
-# (MnS-Integration-Platform feat/stackgen-scenario-services); casio/README.md
-# has the steps. casio-siyi-realism is the same scenario with the A8's lens,
-# noise and compression applied to the camera.
+#   mns-stacks generate scenarios/casio-siyi --component components/casio-edge
+#
+# Generated without a component, it is a plain sim stack with the bridge's
+# MAVROS. casio-siyi-realism is the same scenario with the A8's render
+# settings, for the siyi-a8-realism component.
 #
 # The environment names the level pack by id, version and digest, matching
 # packs/v1.0.0.lock.json.
@@ -33,29 +28,17 @@ runtime:
     sim_real_eval: false
     ros2_bridge: true
     qgroundcontrol: false
-    # Off on purpose. casio runs its own MAVROS (it expects /mavros/..., not
-    # the bridge's /Drone1/mavros/...), and two MAVROS instances on one flight
-    # controller fight over the offboard stream.
-    mavros: false
-  ros:
-    rmw: cyclonedds
-    dds_config: casio/cyclonedds.xml
-    localization_source: external
   images:
     # v1.0.0 publishes a settings camera's pitch as radians, so the 25 deg
     # down mount appears 7.6 deg up in TF. This build carries the fix
     # (TEVV-Airsim-ROS2-Bridge PR #82); drop the override once v1 pins it.
+    # It is the tilted camera's, not any component's.
     ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-camtilt.1
-
-includes:
-  extensions: casio/extensions.yaml
 
 vehicles:
 - id: drone_1
   name: Drone1
   runtime_name: Drone1
-  # casio's domain.
-  ros_domain_id: 42
   # NED metres from the Unreal world origin (MnSOrigin), not from the level's
   # PlayerStart. SAFTI's world origin is about 12 m below the terrain, so
   # 0/0/0 spawns the drone underground (the camera then sees only sky dome).
@@ -92,3 +75,34 @@ vehicles:
     barometer: true
     magnetometer: true
     gpu_lidar: false
+
+# Where the drone may and must not go, what it should cover. The metrics
+# service checks every run's ground-truth path against these (positions in
+# the vehicles' frame: airsim_ned metres, so z is negative up; the ground at
+# the start is z = -11.8). The square flight (square-flight.sh --center-n 15.5
+# --center-e 17 --side 36 --alt 12) flies the edges of `people-area`.
+zones:
+# Stay within 40 m of the square's centre, below 40 m.
+- id: operating-area
+  kind: keep_in
+  transform: {x: 90.8, y: -61.3, z: -20}
+  shape: {type: cylinder, radius: 40, height: 40}
+# The tree the square's east edge clips (the drone struck it at
+# (88.3, -43.4) at 12 m in the 3 Oct runs).
+- id: tree-east
+  kind: keep_out
+  transform: {x: 88.3, y: -43.4, z: -20}
+  shape: {type: box, size: [6, 6, 40]}
+# The square, where the people are: how much of it the camera saw, with a
+# 10 m footprint (12 m up, 82 degree lens pitched down 25 degrees).
+- id: people-area
+  kind: coverage
+  shape: {type: polygon, points: [[72.8, -79.3], [108.8, -79.3], [108.8, -43.3], [72.8, -43.3]],
+          z_min: -40, z_max: -14}
+  footprint_radius_m: 10
+  cell_m: 2
+# Take-off and landing pad, for the record.
+- id: home
+  kind: zone
+  transform: {x: 75.3, y: -78.3, z: -14}
+  shape: {type: cylinder, radius: 3, height: 6}

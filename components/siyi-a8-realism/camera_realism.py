@@ -2,7 +2,7 @@
 """Make the simulated A8 frames look like the real camera's before casio sees them.
 
 Subscribes /camera/image_sim + /camera/camera_info_sim (the bridge's ideal
-pinhole frames, renamed there by apply-realism.sh) and publishes
+pinhole frames, renamed there by the platform for this component) and publishes
 /camera/image_raw + /camera/camera_info the way the real A8 path would:
 
   1. lens    remaps the pinhole image onto the A8's Kalibr model (K and

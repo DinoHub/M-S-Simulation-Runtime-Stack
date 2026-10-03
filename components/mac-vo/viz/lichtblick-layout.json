@@ -1,0 +1,126 @@
+{
+  "configById": {
+    "Image!macvo-left": {
+      "imageMode": {
+        "imageTopic": "/camera/front/image_raw",
+        "calibrationTopic": "/camera/front/camera_info",
+        "synchronize": false
+      },
+      "lichtblickPanelTitle": "Left camera (input)"
+    },
+    "Image!macvo-fed": {
+      "imageMode": {
+        "imageTopic": "/macvo/img",
+        "synchronize": false
+      },
+      "lichtblickPanelTitle": "What MAC-VO sees (320x320)"
+    },
+    "3D!macvo-scene": {
+      "followTf": "base_link",
+      "followMode": "follow-position",
+      "cameraState": {
+        "distance": 30,
+        "perspective": true,
+        "phi": 55,
+        "thetaOffset": 45,
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "scene": {},
+      "transforms": {},
+      "layers": {},
+      "topics": {
+        "/ground_truth/odom": {
+          "visible": true
+        },
+        "/mns/estimate/odom": {
+          "visible": true
+        },
+        "/macvo/map": {
+          "visible": true,
+          "pointSize": 2
+        }
+      },
+      "lichtblickPanelTitle": "Estimate vs truth"
+    },
+    "Plot!macvo-xy": {
+      "paths": [
+        {
+          "value": "/mns/estimate/odom.pose.pose.position.x",
+          "enabled": true,
+          "timestampMethod": "headerStamp",
+          "label": "MAC-VO x"
+        },
+        {
+          "value": "/mns/estimate/odom.pose.pose.position.y",
+          "enabled": true,
+          "timestampMethod": "headerStamp",
+          "label": "MAC-VO y"
+        },
+        {
+          "value": "/ground_truth/odom.pose.pose.position.x",
+          "enabled": true,
+          "timestampMethod": "headerStamp",
+          "label": "truth x"
+        },
+        {
+          "value": "/ground_truth/odom.pose.pose.position.y",
+          "enabled": true,
+          "timestampMethod": "headerStamp",
+          "label": "truth y"
+        }
+      ],
+      "showLegend": true,
+      "xAxisVal": "timestamp",
+      "lichtblickPanelTitle": "Position (m); compare shapes, origins differ"
+    },
+    "RawMessages!macvo-status": {
+      "topicPath": "/mns/component/mac_vo/status",
+      "autoExpandMode": "auto",
+      "lichtblickPanelTitle": "Adaptor status"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": "Image!macvo-left",
+      "second": "Image!macvo-fed",
+      "direction": "column",
+      "splitPercentage": 50
+    },
+    "second": {
+      "first": "3D!macvo-scene",
+      "second": {
+        "first": "Plot!macvo-xy",
+        "second": "RawMessages!macvo-status",
+        "direction": "column",
+        "splitPercentage": 70
+      },
+      "direction": "column",
+      "splitPercentage": 55
+    },
+    "direction": "row",
+    "splitPercentage": 40
+  }
+}

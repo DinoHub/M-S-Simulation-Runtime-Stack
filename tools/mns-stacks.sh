@@ -112,6 +112,12 @@ if [[ -n "$KIT" ]]; then
 else
   args+=(-e "MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$CONTRACT")
 fi
+# Stack settings to take from this shell for one experiment, without editing
+# a generated stack's .env (e.g. MNS_STACKS_PASSENV=POLL_RATE_HZ POLL_RATE_HZ=12).
+# Compose reads them where the stack's .env leaves them unset.
+for name in ${MNS_STACKS_PASSENV:-}; do
+  [[ -n "${!name+x}" ]] && args+=(-e "$name=${!name}")
+done
 case "$PWD/" in "$ROOT"/*) ;; *) args+=(-v "$PWD:$PWD") ;; esac
 
 # Inputs outside the checkout, at their identical paths. --mount (not -v)
