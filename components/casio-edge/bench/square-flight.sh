@@ -51,6 +51,16 @@ ros_env=(-e HOME=/tmp -e ROS_DOMAIN_ID=$ros_domain -e RMW_IMPLEMENTATION=rmw_cyc
 # (8 times in one 5-minute run). Loosen those limits for sim runs only.
 # PX4_FS_EPH / PX4_FS_EVH override; the values used go into px4_params.txt.
 px4_param() { docker exec "$px4" /px4_workspace/PX4-Autopilot/build/px4_sitl_default/bin/px4-param "$@"; }
+# Started by the run director the moment the stack is healthy, PX4 may not
+# take commands yet: its client exits 255 without a word until the daemon is
+# up. Wait for it (PX4_WAIT_S, 180 s).
+deadline=$(( $(date +%s) + ${PX4_WAIT_S:-180} ))
+until px4_param show COM_RCL_EXCEPT >/dev/null 2>&1; do
+  if (( $(date +%s) >= deadline )); then
+    echo "PX4 in $px4 took no commands for ${PX4_WAIT_S:-180} s" >&2; exit 1
+  fi
+  sleep 2
+done
 px4_param set COM_RCL_EXCEPT 4 >/dev/null
 px4_param set COM_POS_FS_EPH "${PX4_FS_EPH:-20}" >/dev/null
 px4_param set COM_VEL_FS_EVH "${PX4_FS_EVH:-5}" >/dev/null
