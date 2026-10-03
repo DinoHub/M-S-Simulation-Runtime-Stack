@@ -75,3 +75,34 @@ vehicles:
     barometer: true
     magnetometer: true
     gpu_lidar: false
+
+# Where the drone may and must not go, what it should cover. The metrics
+# service checks every run's ground-truth path against these (positions in
+# the vehicles' frame: airsim_ned metres, so z is negative up; the ground at
+# the start is z = -11.8). The square flight (square-flight.sh --center-n 15.5
+# --center-e 17 --side 36 --alt 12) flies the edges of `people-area`.
+zones:
+# Stay within 40 m of the square's centre, below 40 m.
+- id: operating-area
+  kind: keep_in
+  transform: {x: 90.8, y: -61.3, z: -20}
+  shape: {type: cylinder, radius: 40, height: 40}
+# The tree the square's east edge clips (the drone struck it at
+# (88.3, -43.4) at 12 m in the 3 Oct runs).
+- id: tree-east
+  kind: keep_out
+  transform: {x: 88.3, y: -43.4, z: -20}
+  shape: {type: box, size: [6, 6, 40]}
+# The square, where the people are: how much of it the camera saw, with a
+# 10 m footprint (12 m up, 82 degree lens pitched down 25 degrees).
+- id: people-area
+  kind: coverage
+  shape: {type: polygon, points: [[72.8, -79.3], [108.8, -79.3], [108.8, -43.3], [72.8, -43.3]],
+          z_min: -40, z_max: -14}
+  footprint_radius_m: 10
+  cell_m: 2
+# Take-off and landing pad, for the record.
+- id: home
+  kind: zone
+  transform: {x: 75.3, y: -78.3, z: -14}
+  shape: {type: cylinder, radius: 3, height: 6}

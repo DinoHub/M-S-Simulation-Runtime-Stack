@@ -56,7 +56,13 @@ scoring:
   checks:
     camera_fps: {min: 10.0}
     gps_err_median_m: {max: 5.0}
+    detection_latency_p95_ms: {max: 250}
   timeout_s: 900
+  # Measured by the platform from the bag: a detection carries its camera
+  # frame's stamp, a target fix its detection's.
+  latency:
+  - {name: detection, label: Detection, input: /camera/camera_info, output: /detections}
+  - {name: target, label: Target report, input: /camera/camera_info, output: /target/gps}
 # The detector publishes every frame (publish_empty), once its TensorRT
 # engine exists: the first start on a GPU builds it, which takes minutes.
 ready: {topics: [/detections], timeout_s: 900}

@@ -18,7 +18,9 @@ label=${1:?usage: square-flight.sh <label> [square_flight.py options]}
 shift
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
-stack=$(cd "$repo/${STACK:?set STACK=generated/<stack> (the folder make fly printed)}" && pwd)
+: "${STACK:?set STACK=generated/<stack> (the folder make fly printed)}"
+# Relative to the repository, or absolute (the run director's {stack}).
+case "$STACK" in /*) stack=$(cd "$STACK" && pwd) ;; *) stack=$(cd "$repo/$STACK" && pwd) ;; esac
 # The stack's own record of what it runs: its name (container prefix), and
 # from its contract the network and ROS domain casio is on; whether the
 # siyi-a8-realism component is attached.

@@ -266,20 +266,21 @@ images:
 
   metrics_service:
     repo: dhdevspace/auto_mns
-    tag: "tevv-jsonl-ingest-v0.3.0-g89ca441"
-    digest: sha256:c0e43118cca07c62f76ffc815f74fd273c3c4f3c8c7300f29003739c2d131aa1
+    tag: "tevv-jsonl-ingest-v0.4.0-ga68bfdd"
+    digest: sha256:855286ad5a25197b942e03662a9aaf7fe37d5c95648284acb46c61cb033eb774
     channel: pinned
     source:
       repo: DinoHub/TEVV-Metrics
     purpose: >-
-      The product metrics service (TEVV-Metrics jsonl_ingestor 0.3.0, branch
-      feat/component-scoring 89ca441): `watch` scores each finished run under
+      The product metrics service (TEVV-Metrics jsonl_ingestor 0.4.0, branch
+      feat/component-scoring a68bfdd): `watch` scores each finished run under
       generated/**/outputs/metrics (any run folder, campaign stacks too) into
       runs/<stack>/<run_id>/metrics/ against the stack's own
       config/metrics/evaluation.yaml, judges component results, and serves
       them read-only on :8770. Spawn settling and touch-downs are ground
       contacts, never collisions; the ground under a parked or landing
-      vehicle is not an obstacle-clearance violation. A new version re-scores
+      vehicle is not an obstacle-clearance violation. Geofences, zones and
+      coverage areas come from the stack's zones.json. A new version re-scores
       every run on disk. See docs/metrics.md.
 
 consumers:
