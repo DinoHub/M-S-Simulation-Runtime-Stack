@@ -46,6 +46,13 @@ scoring:
     min_clearance_m: {min: 0.3}
     replan_interval_max_s: {max: 2.0}
 
+# MIGHTY's message types (its trajectory, the plan its replan metrics read),
+# for the stack's recorder and viewer; they live in the planner workspace.
+interfaces:
+- image: mighty
+  packages: [dynus_interfaces]
+  setup: [/workspace/generated/mighty/.planner_ws/ros_ws/install/setup.bash]
+
 requires:
   # The adaptor's ArduPilot policy: setpoints only while it plans, so the
   # pilot's GUIDED take-off is not overridden (PX4 needs an OFFBOARD
