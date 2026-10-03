@@ -271,12 +271,18 @@ services:
     restart: unless-stopped
 
   # Scores every finished simulation run. The sim's MetricsEmitter writes
-  # generated/<stack>/outputs/metrics/run_<id>/events.jsonl; once a run has
+  # generated/<stack>/outputs/metrics/<run id>/events.jsonl (campaign stacks:
+  # generated/campaigns/<campaign>/<run key>/stack/...); once a run has
   # ended (run.ended, a finalize manifest.json, or no new events for
   # METRICS_IDLE_SECONDS) this service runs the TEVV-Metrics ingestor on it
-  # once and writes runs/<stack>/<run_id>/metrics/{metrics,evaluated,
-  # run_summary}.json. It serves the results read-only on :8770 (bound to
-  # localhost) for the dashboard's Run metrics panel. See docs/metrics.md.
+  # and writes runs/<stack>/<run_id>/metrics/{metrics,evaluated,
+  # run_summary}.json, judged against the stack's own
+  # config/metrics/evaluation.yaml (the dashboard's Metrics step writes it;
+  # /config/evaluation.yaml below is the fallback) and including the
+  # components' scores (outputs/metrics/<run>/components/*.json), which
+  # re-score the run when they land. It serves the results read-only on :8770
+  # (bound to localhost) for the dashboard's Run metrics panel. See
+  # docs/metrics.md.
   metrics-service:
     image: ${METRICS_SERVICE_IMAGE:-dhdevspace/auto_mns:tevv-jsonl-ingest-latest}
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
