@@ -26,6 +26,14 @@ produces:
 # estimate is published.
 ready: {topics: [/mns/estimate/odom], timeout_s: 300}
 
+# Scored after every recorded run against sim truth, the way a campaign's
+# vio-stress evaluation aligns it (ATE, RPE, drift, availability).
+scoring:
+  builtin: estimate
+  checks:
+    ate_rmse_m: {max: 2.0}
+    availability: {min: 0.9}
+
 requires:
   gpu: {min_vram_gb: 6}
   autopilot: [px4, ardupilot]
