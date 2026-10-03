@@ -34,10 +34,12 @@ ready: {after_takeoff: [/planner_state], timeout_s: 180}
 # efficiency, clearance in the run's own registered-cloud map, jerk.
 scoring:
   builtin: planner
-  options: {tolerance_m: 1.0}
+  # SUPER publishes its planner result after every replan cycle.
+  options: {tolerance_m: 1.0, plan_topic: /planner_result}
   checks:
     goal_success_rate: {min: 1.0}
     min_clearance_m: {min: 0.3}
+    replan_interval_max_s: {max: 2.0}
 
 requires:
   autopilot: [ardupilot]
