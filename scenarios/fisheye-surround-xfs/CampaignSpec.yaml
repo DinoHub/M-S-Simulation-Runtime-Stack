@@ -1,0 +1,33 @@
+schema: mns.campaign.v1
+id: fisheye-surround-xfs
+name: Four shared-cubemap fisheyes over the XFS yard, the yard-box route
+
+# One flight of the yard-box route with the four fisheyes recording, to check
+# the rig end to end: the stack comes up on shared memory, the four streams
+# stay steady through the flight, and the run's map is drawn on the
+# simulator's top-down capture taken at stop.
+scenario: ./ScenarioSpec.yaml
+
+variants:
+  - id: calm
+    name: No wind
+
+repeats: 1
+
+recording:
+  keep: first
+  topics:
+    - /fisheye_front/image_raw
+    - /fisheye_right/image_raw
+    - /fisheye_back/image_raw
+    - /fisheye_left/image_raw
+    - /fisheye_front/camera_info
+    - /ground_truth/odom
+    - /imu/data
+    - /clock
+
+mission:
+  source: external
+  trajectory: ./routes/yard-box.yaml
+  done: timeout
+  timeout_s: 10

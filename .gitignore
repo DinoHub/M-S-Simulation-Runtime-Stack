@@ -41,4 +41,8 @@ generated/
 !/scenarios/stereo-xfs/
 # The local-planner course: planners attach to it as components.
 !/scenarios/planner-xfs-ardupilot/
+# Four fisheyes on one shared cubemap, the rig the dashboard's camera rig editor makes.
+!/scenarios/fisheye-surround-xfs/
+/scenarios/fisheye-surround-xfs/phase-state.json
+/scenarios/fisheye-surround-xfs/ScenarioSpec.baseline.yaml
 !/scenarios/vio-reference/**
