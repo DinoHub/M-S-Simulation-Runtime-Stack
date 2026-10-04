@@ -1,0 +1,44 @@
+# Written by the dashboard's Campaign step; the form is kept under
+# extensions."mns.editor" so the step can open this file again.
+schema: mns.campaign.v1
+id: openvins-calm
+name: OpenVINS calm
+scenario: ./ScenarioSpec.yaml
+variants:
+- id: base
+  name: As authored
+repeats: 1
+recording:
+  keep: first
+mission:
+  source: external
+  trajectory: ./routes/yard-box.yaml
+  done: timeout
+  timeout_s: 10.0
+extensions:
+  mns.components:
+  - openvins
+  mns.editor:
+    version: 1
+    form:
+      id: openvins-calm
+      name: OpenVINS calm
+      components:
+      - openvins
+      mission:
+        kind: trajectory
+        autopilot: ''
+        route: yard-box.yaml
+      start:
+        wait_steady: true
+      end:
+        kind: mission
+        timeout_s: 10
+        on_timeout: fail
+      repeats: 1
+      seeds: []
+      axes: []
+      evaluation: {}
+      recording:
+        keep: first
+        topics: []
