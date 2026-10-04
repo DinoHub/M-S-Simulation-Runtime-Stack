@@ -156,11 +156,11 @@ images:
   # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
   v1_runtime_host:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-v1.0.0-zones.1"
-    digest: sha256:fc491d50fb3017e2c3d8c83c8d068e89abdd8f61166b2c217b555d40df94792d
+    tag: "tevv-runtime-host-v1.0.0-zones.2"
+    digest: sha256:5c28b9f7ae02c4935c16dd0e3e0f5ea996aa922638e4bcd4b04e228e89cf7df5
     channel: pinned
     purpose: >-
-      MnS 1.0 generic TEVVRuntimeHost: tevv-runtime-host-v1.0.0-rc (TEVV-Airsim release/v1.0.0-next 131d7183fb98, sha256:ba371894...) with only its game binary swapped for one built from 131d7183fb98 + feat/pack-level-zones 786ea83f103c, so the MetricsEmitter emits zone and geofence events for the stack's zones file (MNS_ZONES_FILE) on pack levels. Cooked content, shaders, host contract and host_compatibility_id are the base image's (ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2), so level packs stay valid. The content-pack SDK plugin compiled in is a local copy matching rc5's strings, not the release asset (unreachable from the build machine); rebuild from the release once TEVV-Airsim#225 merges. Shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc5; its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing.
+      MnS 1.0 generic TEVVRuntimeHost: tevv-runtime-host-v1.0.0-rc (TEVV-Airsim release/v1.0.0-next 131d7183fb98, sha256:ba371894...) with only its game binary swapped for one built from 131d7183fb98 + feat/pack-level-zones da0d4eac9, so the MetricsEmitter emits zone and geofence events for the stack's zones file (MNS_ZONES_FILE) on pack levels, and Env.ExportOverview takes an explicit window and writes an opaque base-colour top-down picture (the run's map background, captured at stop). Cooked content, shaders, host contract and host_compatibility_id are the base image's (ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2), so level packs stay valid. The content-pack SDK plugin compiled in is a local copy matching rc5's strings, not the release asset (unreachable from the build machine); rebuild from the release once TEVV-Airsim#225 merges. Shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc5; its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing.
 
   v1_authoring:
     repo: dhdevspace/auto_mns
@@ -266,14 +266,14 @@ images:
 
   metrics_service:
     repo: dhdevspace/auto_mns
-    tag: "tevv-jsonl-ingest-v0.4.1-g303e7c5"
-    digest: sha256:fc44dab13e67cc5544e5bd998ea96b6502236701c4a4674282217ee0e131ccb9
+    tag: "tevv-jsonl-ingest-v0.4.5-gfc88f57"
+    digest: sha256:7d34a9fb817095071586d739eddcab7c193d6b58e544d00911927137fe74976b
     channel: pinned
     source:
       repo: DinoHub/TEVV-Metrics
     purpose: >-
-      The product metrics service (TEVV-Metrics jsonl_ingestor 0.4.1, branch
-      feat/component-scoring 303e7c5): `watch` scores each finished run under
+      The product metrics service (TEVV-Metrics jsonl_ingestor 0.4.5, branch
+      feat/component-scoring fc88f57): `watch` scores each finished run under
       generated/**/outputs/metrics (any run folder, campaign stacks too) into
       runs/<stack>/<run_id>/metrics/ against the stack's own
       config/metrics/evaluation.yaml, judges component results, and serves
@@ -282,7 +282,9 @@ images:
       vehicle is not an obstacle-clearance violation. Geofences, zones and
       coverage areas come from the stack's zones.json; the simulator's own
       zone events for them confirm, not add. A new version re-scores
-      every run on disk. See docs/metrics.md.
+      every run on disk. Each run also gets map.svg (path, collisions,
+      goals, zones; on the simulator's top-down capture when the run has
+      one), served at /runs/<stack>/<run>/map.svg. See docs/metrics.md.
 
 consumers:
   # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env
