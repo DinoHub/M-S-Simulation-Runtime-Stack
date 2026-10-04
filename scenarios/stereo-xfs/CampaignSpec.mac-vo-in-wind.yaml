@@ -1,0 +1,58 @@
+# Written by the dashboard's Campaign step; the form is kept under
+# extensions."mns.editor" so the step can open this file again.
+schema: mns.campaign.v1
+id: mac-vo-in-wind
+name: MAC-VO in wind
+scenario: ./ScenarioSpec.yaml
+variants:
+- id: wind0
+  name: Wind speed (physics) 0 m/s
+  overrides:
+    environment:
+      weather:
+        wind_mps: 0
+- id: wind6
+  name: Wind speed (physics) 6 m/s
+  overrides:
+    environment:
+      weather:
+        wind_mps: 6
+repeats: 1
+recording:
+  keep: first
+mission:
+  source: external
+  trajectory: ./routes/yard-box.yaml
+  done: timeout
+  timeout_s: 10.0
+extensions:
+  mns.components:
+  - mac-vo
+  mns.editor:
+    version: 1
+    form:
+      id: mac-vo-in-wind
+      name: MAC-VO in wind
+      components:
+      - mac-vo
+      mission:
+        kind: trajectory
+        autopilot: ''
+        route: yard-box.yaml
+      start:
+        wait_steady: true
+      end:
+        kind: mission
+        timeout_s: 10
+        on_timeout: fail
+      repeats: 1
+      seeds: []
+      axes:
+      - axis: wind_mps
+        values:
+        - 0
+        - 6
+      evaluation: {}
+      recording:
+        keep: first
+        topics: []

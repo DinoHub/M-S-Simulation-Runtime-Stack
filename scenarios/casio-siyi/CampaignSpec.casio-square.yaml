@@ -1,0 +1,49 @@
+# Written by the dashboard's Campaign step; the form is kept under
+# extensions."mns.editor" so the step can open this file again.
+schema: mns.campaign.v1
+id: casio-square
+name: casio-edge over SAFTI, square survey
+scenario: ./ScenarioSpec.yaml
+variants:
+- id: base
+  name: As authored
+repeats: 2
+recording:
+  keep: first
+mission:
+  source: external
+  start_cmd: cd "$MNS_WORKSPACE_ROOT" && STACK={stack} components/casio-edge/bench/square-flight.sh
+    eval --center-n 15.5 --center-e 17 --side 36 --alt 12 --hover-at-end
+  autopilot: px4
+  start:
+    delay_s: 20.0
+  done: timeout
+  timeout_s: 10.0
+extensions:
+  mns.components:
+  - casio-edge
+  mns.editor:
+    version: 1
+    form:
+      id: casio-square
+      name: casio-edge over SAFTI, square survey
+      components:
+      - casio-edge
+      mission:
+        kind: command
+        command: cd "$MNS_WORKSPACE_ROOT" && STACK={stack} components/casio-edge/bench/square-flight.sh
+          eval --center-n 15.5 --center-e 17 --side 36 --alt 12 --hover-at-end
+        autopilot: px4
+      start:
+        wait_steady: true
+        delay_s: 20
+      end:
+        kind: mission
+        timeout_s: 10
+      repeats: 2
+      seeds: []
+      axes: []
+      evaluation: {}
+      recording:
+        keep: first
+        topics: []
