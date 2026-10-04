@@ -86,7 +86,12 @@ docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
 
 ```
  ScenarioLab ──export──▶ ScenarioSpec ──generate──▶ Stack ──launch──▶ Simulation ──record──▶ rosbag
- (Unreal editor)          (YAML files)              (docker compose)   (sim + SITL + ROS 2)     (runs/)
+ (Unreal editor)          (YAML files)       ▲      (docker compose)   (sim + SITL + ROS 2     (runs/)
+                               │             │                          + components)
+                               │      components/<id>                        │ stop: metrics,
+                               │      (--component)                          ▼ component scores
+                               └──▶ CampaignSpec ──▶ N runs ──────▶ metrics service ──▶ verdict per run
+                                    (Campaign step)  (one stack each)  (localhost:8770)    (runs/)
          ▲                                                                   ▲
          └───────────────── all driven from the dashboard (localhost:3001) ──┘
 ```
@@ -289,7 +294,14 @@ Open **Scenario Configuration**. A stepper runs across the top:
 
 ```
 0 Content → 1a Author → 1b Generate → 1c ROS 2 → 1d Metrics → 2 Launch → 3 Runtime → 4 Analysis
+                                                    └→ 1e Campaign (optional: many runs, each judged)
 ```
+
+Newer dashboard builds (branch `feat/live-stack-viewer`) add **1e Campaign**
+beside Launch and fold Launch and Runtime into one **2 Run** step:
+`… → 1d Metrics → 1e Campaign → 2 Run → 3 Analysis`. The steps below follow the
+pinned dashboard; [Repeatable test campaigns](#repeatable-test-campaigns) covers
+campaigns.
 
 Each step unlocks when the previous one is done and then shows a check mark.
 The whole loop takes about 15 minutes the first time.
