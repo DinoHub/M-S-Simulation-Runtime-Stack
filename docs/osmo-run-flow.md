@@ -9,10 +9,11 @@ For commands and troubleshooting, see [osmo-runbook.md](osmo-runbook.md). For
 the Kubernetes and OSMO ideas underneath, see
 [osmo-kubernetes-concepts.md](osmo-kubernetes-concepts.md). Pictures:
 - `docs/diagrams/osmo-end-to-end.png` covers onboarding through to the
-  scorecard.
-- `docs/diagrams/campaign-to-metrics.png` covers the spec through to what is
-  stored and shown, marking what is built, what exists elsewhere, and what is
-  still target.
+  scorecard, the run registry and the logs.
+- `docs/diagrams/campaign-to-metrics.png` covers the spec through to a verdict
+  per run, stored and shown, on local compose and on OSMO, marking what is
+  built, what exists elsewhere, and what is still target.
+- `docs/architecture/as-built-system.png` is the whole system as built.
 
 ```
 CampaignSpec + ScenarioSpec + image catalog          (git)

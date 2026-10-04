@@ -5,15 +5,19 @@ dashboard, from `make fly` / `mns-stacks run`, or as part of a campaign:
 
 ```mermaid
 flowchart LR
-  A["Observers in the sim<br/>(MetricsEmitter)"] -->|events.jsonl| B["generated/&lt;stack&gt;/outputs/metrics/run_&lt;id&gt;/"]
+  A["Observers in the sim<br/>(MetricsEmitter)"] -->|events.jsonl| B["generated/&lt;stack&gt;/outputs/metrics/&lt;run&gt;/"]
+  C2["Attached components<br/>(component.yaml scoring)"] -->|"stop: score each one"| B2["outputs/metrics/&lt;run&gt;/<br/>components/&lt;id&gt;.json"]
   B -->|stop: run.ended + manifest.json| C["metrics-service<br/>(TEVV-Metrics ingestor)"]
-  C --> D["runs/&lt;stack&gt;/&lt;run_id&gt;/metrics/"]
-  D --> E["Dashboard: Monitor → Run metrics<br/>API: localhost:8770"]
+  B2 --> C
+  T["the stack's config/metrics/<br/>evaluation.yaml + zones.json"] -.-> C
+  C --> D["runs/&lt;stack&gt;/&lt;run_id&gt;/metrics/<br/>verdict: PASS or FAIL"]
+  D --> E["Dashboard: Monitor → Run metrics,<br/>Campaign progress rows<br/>API: localhost:8770"]
 ```
-
 1. **Observers** inside the simulator record what happens.
-2. **Stopping** the stack closes the run and writes its manifest.
-3. The **metrics service** scores each finished run once.
+2. **Stopping** the stack closes the run, writes its manifest, and scores each
+   attached component package (`components/<id>.json`).
+3. The **metrics service** judges each finished run once, campaign runs too,
+   against the stack's own thresholds and zones and with the component results.
 4. You read the results in the **dashboard**, the **API**, or the **files**.
 
 ## 1. Observers: what the simulator records

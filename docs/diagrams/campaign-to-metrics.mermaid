@@ -1,100 +1,86 @@
-%% TEVV: from a CampaignSpec, through OSMO, to evaluation, to metrics stored and shown.
-%% State as of 25 Sept 2026 (run registry, Loki and Alloy built). Three states, by style:
-%%   built       green, solid  - runs today in the OSMO flow (PR #91)
-%%   exists      amber, solid  - built and running elsewhere, not connected to OSMO runs
-%%   target      grey, dashed  - designed (autonomy-tevv-architecture), not built
-%% Render: npx -y @mermaid-js/mermaid-cli -i campaign-to-metrics.mermaid -o campaign-to-metrics.png -w 2400 -b white
-%%   (add -p with {"args":["--no-sandbox"]} if Chromium reports no usable sandbox)
+%% TEVV: from a CampaignSpec to a verdict per run, stored and shown.
+%% State as of 4 Oct 2026. Three states, by style:
+%%   built       green, solid  - runs today (compose: make campaign or the dashboard; OSMO: osmo/campaign.py)
+%%   exists      amber, solid  - built and running elsewhere, not connected to campaign runs
+%%   target      grey, dashed  - designed (docs/platform-architecture), not built
+%% Sources: mns_stacks/campaign.py, director.py, scoring.py, lifecycle.py (MnS-Integration-Platform
+%% platform/stacks, branch feat/components), docker-compose-dashboard.yml (metrics-service),
+%% TEVV-Web-Dashboard Campaign step (branch feat/live-stack-viewer), osmo/campaign.py.
+%% Render (from this folder):
+%%   docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/data" minlag/mermaid-cli \
+%%     -p /puppeteer-config.json -i /data/campaign-to-metrics.mermaid -o /data/campaign-to-metrics.png -s 2
 flowchart TB
-  subgraph SPEC["1. Spec, in git"]
+  subgraph SPEC["1. The spec"]
     direction LR
-    CS["CampaignSpec<br/>variants, repeats, route,<br/>gates, extensions.mns.omega"]
-    SS["ScenarioSpec<br/>level, rig, weather,<br/>estimator"]
-    CAT["images/catalog.yaml<br/>digest-pinned images"]
+    CS["CampaignSpec<br/>variants, seeds, repeats, mission,<br/>mission.start, end_on_timeout,<br/>extensions.mns.components"]
+    DASHC["dashboard Campaign step<br/>authors the CampaignSpec, Run campaign"]
+    SS["ScenarioSpec<br/>level, vehicle, rig, weather"]
+    COMP["components/id/component.yaml<br/>attached outside the ScenarioSpec"]
+    DASHC -->|"writes"| CS
+    CS -->|"scenario:"| SS
   end
 
-  subgraph COMPILE["2. Compile and submit, on the host: osmo/campaign.py"]
+  subgraph RUNNER["2. mns-stacks campaign run (make campaign, or the dashboard backend)"]
     direction LR
-    PLAN["campaign plan<br/>merged spec per run"]
-    GEN["runtime --no-run<br/>stack per run"]
-    IMG["image check<br/>vs GPU node"]
-    SUB["osmo workflow submit<br/>one per run"]
-    PLAN --> GEN --> IMG --> SUB
+    VAL["validate + preflight<br/>schema, route, start and end,<br/>disk, ports, images"]
+    LOCK["campaign.lock<br/>one campaign at a time"]
+    VAL --> LOCK
   end
 
-  subgraph RUNG["3. OSMO: one gang per run, scheduled by KAI"]
+  subgraph PERRUN["3. Per run"]
     direction LR
-    SIM["sim<br/>UE 5.8 + AirSim<br/>MetricsEmitter :9700"]
-    STACK["autopilot, bridge,<br/>OpenVINS, pilot"]
-    REC["recorder<br/>MCAP bag, mission.json"]
-    FOXT["foxglove<br/>optional"]
-    SIM --> STACK --> REC
+    MAT["materialize<br/>one ScenarioSpec<br/>for the variant"]
+    GEN["generate<br/>stack + components<br/>and their adaptors"]
+    DIR["run director<br/>WAIT_HEALTHY, WAIT_READY,<br/>warm-up, start delay,<br/>mission, end condition"]
+    STOP["stop<br/>finalize_metrics,<br/>compose down"]
+    SCORE["score each component<br/>built-in or own image<br/>components/id.json"]
+    MAT --> GEN --> DIR --> STOP --> SCORE
   end
 
-  subgraph EVALG["4. Evaluate and judge, next OSMO groups"]
+  subgraph JUDGE["4. Judged"]
     direction LR
-    VE["vio-eval<br/>flight window, ATE, RPE"]
-    SE["spawn-eval"]
-    VA["validate<br/>recording gates"]
-    VD["verdict<br/>CampaignSpec gates,<br/>verdict.json"]
-    VE --> VD
-    SE --> VD
-    VA --> VD
+    MS["metrics service :8770<br/>events.jsonl + component results<br/>vs the stack's evaluation.yaml, zones.json"]
+    EVAL["campaign evaluator<br/>after the matrix<br/>reports/run.json"]
+    MAN["campaign_manifest.json<br/>progress.jsonl"]
   end
 
-  subgraph STORE["5. Stored"]
+  subgraph SHOW["5. Shown"]
     direction LR
-    S3["OSMO object storage<br/>task outputs"]
-    BUN["runs/run on the host<br/>bag, eval JSON, run.json"]
-    REP["vio-stress<br/>reports/run"]
-    MAN["campaign_manifest.json"]
-    KAF["Kafka topics<br/>robotics.state, events,<br/>scenario.events"]
-    CH["ClickHouse<br/>events, metric_results"]
-    REG["Postgres run registry (CNPG)<br/>attempts, status, gate results,<br/>metrics summary, artifacts"]
-    PROM["Prometheus<br/>run-labelled metrics"]
-    LOKI["Loki + Alloy<br/>every task and the control plane,<br/>by workflow, 30 days"]
-    S3 --> BUN --> REP --> MAN
-    KAF --> CH
-  end
-
-  subgraph SHOW["6. Shown"]
-    direction LR
+    PROG["dashboard Campaign step<br/>progress table, verdict per run"]
+    RM["dashboard Monitor<br/>Run metrics"]
     STAT["campaign status<br/>scorecard, CLI"]
-    FOXV["Foxglove<br/>live, node:30765; MCAP replay"]
-    DASH["TEVV web dashboard<br/>campaign pages"]
-    GRAF["Grafana :3000<br/>campaign progress, gates, ATE,<br/>run logs; ClickHouse panels"]
-    PRF["PR feedback<br/>status + verdict comment"]
   end
 
-  CS --> PLAN
-  SS --> PLAN
-  CAT --> IMG
-  SUB --> SIM
-  REC --> VE
-  REC --> SE
-  REC --> VA
-  REC --> S3
-  VD --> S3
-  MAN --> STAT
-  FOXT --> FOXV
+  subgraph OSMO["The same CampaignSpec on OSMO: osmo/campaign.py"]
+    direction LR
+    OPLAN["campaign plan + generate<br/>in the mns-stacks image"]
+    OWF["one workflow per run<br/>run, evaluate, aggregate (verdict)"]
+    OREG["run registry (Postgres)<br/>Loki + Alloy logs, Grafana"]
+    OGAP["component packages and<br/>the metrics service under OSMO"]
+    OPLAN --> OWF --> OREG
+  end
 
-  SIM -.->|"no consumer under OSMO"| KAF
-  CH --> GRAF
-  CH --> DASH
-  MAN -.->|"dashboard reads another folder"| DASH
-  SUB -->|"status as it flies"| REG
-  VD -->|"verdict.json"| REG
-  REG --> GRAF
-  REG -.-> PRF
-  STACK -.->|exporters| PROM
-  PROM -.-> GRAF
-  RUNG -->|"container logs"| LOKI
-  EVALG -->|"container logs"| LOKI
-  LOKI --> GRAF
+  KAF["Kafka, ClickHouse, Grafana<br/>metrics_kafka_bridge, outside the product,<br/>not part of the campaign flow"]
+
+  CS --> VAL
+  COMP -->|"--component"| GEN
+  LOCK --> MAT
+  SCORE --> MS
+  STOP -->|"events.jsonl"| MS
+  STOP -->|"bag + ground truth"| EVAL
+  GEN -.->|"run.generated, run.flying"| MAN
+  EVAL --> MAN
+  MS --> PROG
+  MS --> RM
+  MAN --> PROG
+  MAN --> STAT
+  CS -.-> OPLAN
+  OWF -->|"evidence pulled back"| MAN
+  OWF -.-> OGAP
 
   classDef built fill:#DCEFE2,stroke:#2E7D4F,color:#14213D
   classDef exists fill:#FBEBD2,stroke:#B4501E,color:#14213D
   classDef target fill:#F1F1EE,stroke:#8A8F99,color:#4A5160,stroke-dasharray:6 4
-  class CS,SS,CAT,PLAN,GEN,IMG,SUB,SIM,STACK,REC,FOXT,VE,SE,VA,VD,S3,BUN,REP,MAN,STAT,FOXV,REG,GRAF,LOKI built
-  class KAF,CH,DASH exists
-  class PROM,PRF target
+  class CS,DASHC,SS,COMP,VAL,LOCK,MAT,GEN,DIR,STOP,SCORE,MS,EVAL,MAN,PROG,RM,STAT,OPLAN,OWF,OREG built
+  class KAF exists
+  class OGAP target
