@@ -44,10 +44,15 @@ mission:
   # the flight the frozen calibration in ./openvins was characterised on --
   # mirrored to the west of the container-yard spawn, where it is open.
   trajectory: ./routes/yard-box.yaml
-  done: timeout
-  # A cap, not the length of the recording: the recorder stops when the pilot
-  # reports the mission done. Sized to boot, the pilot's readiness gate (up to
-  # two minutes of EKF settling), a 60 s route and the landing.
+  # `mission`: the run ends when the pilot command returns, which it does once
+  # the vehicle is down, so the recording stops at the landing. With `timeout`
+  # the compose runner reads timeout_s as a tail AFTER the pilot returns, and
+  # the estimator was scored sitting on the floor for the whole of it (calm-r1,
+  # 4 Oct: OpenVINS tracked the route, then drifted 3 km on the ground, ATE 900 m).
+  done: mission
+  # A cap on the pilot command, not the length of the recording. Sized to the
+  # pilot's readiness gate (up to two minutes of EKF settling), a 60 s route
+  # and the landing.
   timeout_s: 420
 
 # One difference at a time. Wind is a declared environment condition, so it
@@ -88,6 +93,12 @@ recording:
   topics:
   - /ov_msckf/odomimu
   - /ground_truth/odom
+  # The recording validator's imu_gravity gate needs the IMU, and its
+  # intrinsics check the camera_info; without them a clean flight is
+  # handed off as RECORDING INVALID. Both are small; the images are not.
+  - /imu/data
+  - /camera/front/camera_info
+  - /camera/front_right/camera_info
   - /clock
   - /tf
   - /tf_static
