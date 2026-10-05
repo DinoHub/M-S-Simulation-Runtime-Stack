@@ -442,21 +442,24 @@ On **Bag capture**:
 
 ### Step 1d: Test plan
 
-One page holds everything about how the scenario is tested, in four numbered
+One page holds everything about how the scenario is tested, in three numbered
 sections:
 
-1. **Measure**: which detectors the simulator runs (presets: Safety only,
-   Trajectory, Everything). They log to the run's `events.jsonl`.
-2. **Judge**: which checks each run is judged on and their thresholds, for
-   example collisions at most 0, or path length at most 100 m. A check needs
-   its detector, so judging a metric keeps its detector on.
-3. **Fly**: the mission (a route from the scenario's `routes/`, or a shared
+1. **Checks**: what each run is judged on, one row per check with its
+   threshold (collisions at most 0, path length at most 100 m, ...), under
+   **Mission** and **Component under test**. A check turns on the simulator
+   detector it needs; that detector's tuning (collision debounce, near-miss
+   radius, clearance probe) folds out under the check, and the ground-truth
+   pose sampler's tuning folds out once, naming the checks that use it.
+   **Also record (not judged)** holds detectors no check uses, live
+   streaming, and **Measure nothing in this scenario**.
+2. **Fly**: the mission (a route from the scenario's `routes/`, or a shared
    route such as `box-10m.yaml`, a goal course, or a custom command), and when
    a run starts (once ground truth and the cameras are steady) and ends.
-4. **Repeat**: repeats, seeds and sweeps (wind, weather, any ScenarioSpec
+3. **Repeat**: repeats, seeds and sweeps (wind, weather, any ScenarioSpec
    field), and what each run's bag keeps.
 
-**Save plan** saves Measure and Judge into the scenario's `ScenarioSpec.yaml`
+**Save plan** saves Checks into the scenario's `ScenarioSpec.yaml`
 (`extensions."mns.metrics"`, written through ScenarioLab) and regenerates the
 stack, then saves Fly and Repeat as `CampaignSpec.<plan>.yaml` next to it.
 Because measuring and judging live in the scenario, every way of flying it,
@@ -466,9 +469,21 @@ the same way. Components come from **Generate**; the plan lists them.
 ### Step 2: Run
 
 **Run** runs the saved plan: each run brings up a stack of its own, flies the
-mission, records, and is judged. Each row shows the run's status (*flying*
-with a **Watch live** link to Monitor while it is in the air), then its
-verdict, why it failed if it did, component scores and a map of the flight.
+mission, records, and is judged. The plan panel lists every run up front:
+
+- **Now**: the run in the air ("Run 3 of 4: physics wind 4 m/s, seed 1") and
+  its phase: bringing up, waiting for the streams, recording and flying the
+  mission, stopping, scoring. **Watch this run** opens it on Monitor.
+- **Queued**: the runs still to fly, in order, with their sweep values.
+- **Done**: each finished run's verdict, why it failed if it did, component
+  scores and a map of the flight.
+
+**Watch on Monitor** opens Monitor following the plan: a banner across the
+top names the plan, the run in the air, its values and phase, with the queue
+and the results in a fold. Monitor moves to each run as it starts (between
+runs it says which run comes next). Pick a run in the banner, or **Pinned**,
+to stay on one run; a finished run shows its run events and run metrics.
+
 Reopening the step shows the plan's last results. **Cancel after this run**
 stops a long plan between runs.
 
