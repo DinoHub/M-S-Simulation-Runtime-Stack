@@ -235,12 +235,12 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-live.18"
-    digest: sha256:8308f7816f7ee5c118ca26cb100b97b61baddad82c0bf0d32486dfd0222230ac
+    tag: "tevv-web-dashboard-backend-v1.0.0-live.20"
+    digest: sha256:e2daa340d3141a50b6368f3e2c4683801597483a7dc421003e419a79ea3bda52
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: 2efd143
+      commit: 418384f
     # No `bakes:`. From TEVV-Web-Dashboard#122 on the backend bakes no image
     # pins: it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and MNS_AUTHORING_IMAGE
     # from images/v1.0.0.generated.env through docker-compose-dashboard.yml,
@@ -252,19 +252,19 @@ images:
       armed and climbed; WASD re-enters OFFBOARD after Hold; STOP holds via the
       autopilot; one REST flight command per vehicle. Every stack lifecycle,
       recording, campaign and topic call goes through mns-stacks and pack status
-      through mns-packs as sibling containers; it bakes no image pins. Now TEVV-Web-Dashboard feat/live-stack-viewer 289866e (#129): Campaign step, ScenarioLab-written specs, run maps, and Monitor showing a flying campaign run. The Campaign step lists a run while it is in the air (with Watch live), loads what runs are judged on, shows a rerun's current attempt, reads FAIL for a run that failed, and shows a reopened campaign's last results. The Content step counts ScenarioLab's runtime-only plugins as openable (XFS, Safti).
+      through mns-packs as sibling containers; it bakes no image pins. Now TEVV-Web-Dashboard feat/live-stack-viewer 289866e (#129): Campaign step, ScenarioLab-written specs, run maps, and Monitor showing a flying campaign run. The Campaign step lists a run while it is in the air (with Watch live), loads what runs are judged on, shows a rerun's current attempt, reads FAIL for a run that failed, and shows a reopened campaign's last results. The Content step counts ScenarioLab's runtime-only plugins as openable. The wizard is Content, Author, Generate, ROS 2, Test plan, Run, Analysis: the Test plan step (required) holds measuring, judging, the mission and the runs in one place, with measuring and judging in the scenario's ScenarioSpec (extensions."mns.metrics", written through ScenarioLab) so single, plan and OSMO runs read one source; Run runs the plan with Watch live and verdicts, and keeps manual flying as a secondary option.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-live.18"
-    digest: sha256:dc460f1cc84f7f35529c2b819fd08d87a8c875e044b70c3d5cdfa183e25bb1f3
+    tag: "tevv-web-dashboard-frontend-v1.0.0-live.20"
+    digest: sha256:7a1a713897a2f37bffc5e925df56201c5555039973469159eebc780b7de91589
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: 2efd143
+      commit: 418384f
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
-      3ceef32), built with the backend above; it bakes no pins. Now feat/live-stack-viewer 2efd143, built with the backend above.
+      3ceef32), built with the backend above; it bakes no pins. Now feat/live-stack-viewer 418384f, built with the backend above.
 
   metrics_service:
     repo: dhdevspace/auto_mns
