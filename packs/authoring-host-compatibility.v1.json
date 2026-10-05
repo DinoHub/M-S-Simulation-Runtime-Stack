@@ -98,6 +98,28 @@
       "version": "engine"
     }
   ],
+  "runtime_only_plugins": [
+    {
+      "id": "AirSim",
+      "version": "2.0.0"
+    },
+    {
+      "id": "AirSimFCTeleporter",
+      "version": "0.1.0"
+    },
+    {
+      "id": "MetricsEmitter",
+      "version": "0.1.0"
+    },
+    {
+      "id": "MetricsVehicleTelemetry",
+      "version": "0.1.0"
+    },
+    {
+      "id": "ScenarioDegradation",
+      "version": "0.1.0"
+    }
+  ],
   "runtime_capabilities": [
     "tevv.environment-definition.v1",
     "tevv.whole-world-level-pack.v1",

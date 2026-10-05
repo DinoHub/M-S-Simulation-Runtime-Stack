@@ -47,7 +47,11 @@ plan=$(SELECTION="${SELECTION[*]}" INSTALLED="$installed" LIST_ONLY="$LIST_ONLY"
 import json, os, sys
 lock = json.load(open(os.environ["MNS_DEMO_PACK_LOCK"]))
 contract = os.environ.get("MNS_AUTHORING_HOST_CONTRACT")
-editor = {p["id"] for p in json.load(open(contract))["plugins"]} if contract else None
+# What ScenarioLab opens: plugins its contract provides, plus the ones it
+# declares runtime-only (the simulator: a level needing it opens without it).
+doc = json.load(open(contract)) if contract else None
+editor = ({p["id"] for p in doc["plugins"]} | {p["id"] for p in doc.get("runtime_only_plugins", [])}
+          if doc else None)
 installed = set(os.environ["INSTALLED"].split())
 packs = lock["packs"]
 known = {p["selection"] for p in packs}

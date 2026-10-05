@@ -186,15 +186,20 @@ images:
 
   v1_packs:
     repo: dhdevspace/auto_mns
-    tag: "mns-packs-v1.0.0-rc"
-    digest: sha256:d0584e11f2e1665a2c1a7e16b25c32813013f3f181c8b7afd8cfa78a5323fcfe
+    tag: "mns-packs-v1.0.0-rc.runtimeonly.1"
+    digest: sha256:a8cf2a88c96703ae8f74cfe88ccbc34c16e4a0149284d91ec44409b8c535e500
     channel: pinned
     purpose: >-
       mns-packs (TEVV-Content-Pack-SDK docker/Dockerfile, ENTRYPOINT
       mns-packs): verify, install, list, status and stage-authoring --lock for
       the product's pack tools (tools/install_demo_packs.py,
       tools/stage-authoring-packs.sh, tools/build_pack_lock.py), so the
-      product needs no host copy of the SDK.
+      product needs no host copy of the SDK. Local overlay: the rc image
+      (sha256:d0584e11...) with the content-pack SDK patched (patches handed
+      to TEVV-Content-Pack-SDK, which this machine cannot reach): asset pack
+      pictures (assets[].thumbnail), and authoring hosts' runtime_only_plugins,
+      so stage-authoring opens a level that needs only the runtime host's
+      simulator and metrics plugins (XFS, Safti) instead of skipping it.
 
   v1_runtime_host_kit:
     repo: dhdevspace/auto_mns
@@ -235,12 +240,12 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-live.17"
-    digest: sha256:1a53a92bbcecb2df379110fbd15785c21a302bb05b2478222cb38c5a24dba2d4
+    tag: "tevv-web-dashboard-backend-v1.0.0-live.18"
+    digest: sha256:8308f7816f7ee5c118ca26cb100b97b61baddad82c0bf0d32486dfd0222230ac
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: 289866e
+      commit: 2efd143
     # No `bakes:`. From TEVV-Web-Dashboard#122 on the backend bakes no image
     # pins: it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and MNS_AUTHORING_IMAGE
     # from images/v1.0.0.generated.env through docker-compose-dashboard.yml,
@@ -252,19 +257,19 @@ images:
       armed and climbed; WASD re-enters OFFBOARD after Hold; STOP holds via the
       autopilot; one REST flight command per vehicle. Every stack lifecycle,
       recording, campaign and topic call goes through mns-stacks and pack status
-      through mns-packs as sibling containers; it bakes no image pins. Now TEVV-Web-Dashboard feat/live-stack-viewer 289866e (#129): Campaign step, ScenarioLab-written specs, run maps, and Monitor showing a flying campaign run. The Campaign step lists a run while it is in the air (with Watch live), loads what runs are judged on, shows a rerun's current attempt, reads FAIL for a run that failed, and shows a reopened campaign's last results.
+      through mns-packs as sibling containers; it bakes no image pins. Now TEVV-Web-Dashboard feat/live-stack-viewer 289866e (#129): Campaign step, ScenarioLab-written specs, run maps, and Monitor showing a flying campaign run. The Campaign step lists a run while it is in the air (with Watch live), loads what runs are judged on, shows a rerun's current attempt, reads FAIL for a run that failed, and shows a reopened campaign's last results. The Content step counts ScenarioLab's runtime-only plugins as openable (XFS, Safti).
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-live.17"
-    digest: sha256:f31b817239a9f10c94ff259634fdb968854ed46f2d855607c1a4e0654883a30d
+    tag: "tevv-web-dashboard-frontend-v1.0.0-live.18"
+    digest: sha256:dc460f1cc84f7f35529c2b819fd08d87a8c875e044b70c3d5cdfa183e25bb1f3
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: 289866e
+      commit: 2efd143
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
-      3ceef32), built with the backend above; it bakes no pins. Now feat/live-stack-viewer 289866e, built with the backend above.
+      3ceef32), built with the backend above; it bakes no pins. Now feat/live-stack-viewer 2efd143, built with the backend above.
 
   metrics_service:
     repo: dhdevspace/auto_mns
