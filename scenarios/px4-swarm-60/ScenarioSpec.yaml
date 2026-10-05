@@ -1,0 +1,1211 @@
+schema: mns.scenario.v1
+id: px4-swarm-60
+name: px4-swarm-60
+environment:
+  id: blocks
+  version: 1.0.2
+  artifact_digest: sha256:12c4531246ba27ed107370f250108f100355a6ac78d7cf35e436a16ab18fcc28
+  time_of_day:
+    enabled: false
+    start: '2026-07-13 09:00:00'
+    latitude: 1.352
+    longitude: 103.82
+  weather:
+    enabled: false
+    preset: Clear_Skies
+coordinate_frame:
+  convention: ros2_flu
+  unit: meter
+  origin:
+    frame: unreal_world
+    unit: centimeter
+    position:
+      x: 0.0
+      y: 0.0
+      z: 92.0
+    rotation:
+      pitch: 0.0
+      roll: -0.0
+      yaw: 0.0
+  unreal_axes: +X forward, +Y right, +Z up
+  ros2_axes: +X forward, +Y left, +Z up
+  vehicle_start_semantics: ros2_flu_relative_to_origin
+  object_transform_semantics: ros2_flu_relative_to_origin
+runtime:
+  profile: airsim_unreal_px4_docker
+  autopilot:
+    type: px4
+    managed: true
+    endpoint: docker
+    hostname_prefix: px4-drone
+  features:
+    qgroundcontrol: false
+    ros2_bridge: true
+    mavros: true
+object_clutter:
+  seed: 42
+  density: none
+  placement: scenario_spec
+asset_packs:
+- id: fishermans-cabin-props
+  version: 1.0.0
+  artifact_digest: sha256:c2e517b7d3e5d6d755b584d219d954e1db6985ed63b7d7f9f3ad18e694ba64ee
+- id: mns_vehicle_models
+  version: 1.0.4
+  artifact_digest: sha256:317a6dd71df24e58b8e34fd0ea2d46a3f24a9eb3e1312eacf5eac621a1512f63
+sensor_profiles:
+  default_multirotor:
+    sensors:
+      defaults: true
+      barometer: true
+      gps: true
+      imu: true
+      magnetometer: true
+objects: []
+random_spawns: []
+extensions:
+  mns.authoring_app:
+    mode: packaged_exe
+    overlay: ScenarioBundle/authored_overlay.json
+    validation_report: ScenarioBundle/validation_report.json
+vehicles:
+- id: drone_1
+  name: drone_1
+  runtime_name: Copter1
+  vehicle_type: quadrotor_small
+  ros_domain_id: 1
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 0.0
+    y: 0.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_2
+  name: drone_2
+  runtime_name: Copter2
+  vehicle_type: quadrotor_small
+  ros_domain_id: 2
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 0.0
+    y: -4.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_3
+  name: drone_3
+  runtime_name: Copter3
+  vehicle_type: quadrotor_small
+  ros_domain_id: 3
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 0.0
+    y: -8.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_4
+  name: drone_4
+  runtime_name: Copter4
+  vehicle_type: quadrotor_small
+  ros_domain_id: 4
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 0.0
+    y: -12.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_5
+  name: drone_5
+  runtime_name: Copter5
+  vehicle_type: quadrotor_small
+  ros_domain_id: 5
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 0.0
+    y: -16.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_6
+  name: drone_6
+  runtime_name: Copter6
+  vehicle_type: quadrotor_small
+  ros_domain_id: 6
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 0.0
+    y: -20.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_7
+  name: drone_7
+  runtime_name: Copter7
+  vehicle_type: quadrotor_small
+  ros_domain_id: 7
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 0.0
+    y: -24.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_8
+  name: drone_8
+  runtime_name: Copter8
+  vehicle_type: quadrotor_small
+  ros_domain_id: 8
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 0.0
+    y: -28.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_9
+  name: drone_9
+  runtime_name: Copter9
+  vehicle_type: quadrotor_small
+  ros_domain_id: 9
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 4.0
+    y: 0.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_10
+  name: drone_10
+  runtime_name: Copter10
+  vehicle_type: quadrotor_small
+  ros_domain_id: 10
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 4.0
+    y: -4.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_11
+  name: drone_11
+  runtime_name: Copter11
+  vehicle_type: quadrotor_small
+  ros_domain_id: 11
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 4.0
+    y: -8.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_12
+  name: drone_12
+  runtime_name: Copter12
+  vehicle_type: quadrotor_small
+  ros_domain_id: 12
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 4.0
+    y: -12.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_13
+  name: drone_13
+  runtime_name: Copter13
+  vehicle_type: quadrotor_small
+  ros_domain_id: 13
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 4.0
+    y: -16.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_14
+  name: drone_14
+  runtime_name: Copter14
+  vehicle_type: quadrotor_small
+  ros_domain_id: 14
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 4.0
+    y: -20.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_15
+  name: drone_15
+  runtime_name: Copter15
+  vehicle_type: quadrotor_small
+  ros_domain_id: 15
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 4.0
+    y: -24.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_16
+  name: drone_16
+  runtime_name: Copter16
+  vehicle_type: quadrotor_small
+  ros_domain_id: 16
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 4.0
+    y: -28.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_17
+  name: drone_17
+  runtime_name: Copter17
+  vehicle_type: quadrotor_small
+  ros_domain_id: 17
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 8.0
+    y: 0.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_18
+  name: drone_18
+  runtime_name: Copter18
+  vehicle_type: quadrotor_small
+  ros_domain_id: 18
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 8.0
+    y: -4.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_19
+  name: drone_19
+  runtime_name: Copter19
+  vehicle_type: quadrotor_small
+  ros_domain_id: 19
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 8.0
+    y: -8.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_20
+  name: drone_20
+  runtime_name: Copter20
+  vehicle_type: quadrotor_small
+  ros_domain_id: 20
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 8.0
+    y: -12.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_21
+  name: drone_21
+  runtime_name: Copter21
+  vehicle_type: quadrotor_small
+  ros_domain_id: 21
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 8.0
+    y: -16.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_22
+  name: drone_22
+  runtime_name: Copter22
+  vehicle_type: quadrotor_small
+  ros_domain_id: 22
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 8.0
+    y: -20.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_23
+  name: drone_23
+  runtime_name: Copter23
+  vehicle_type: quadrotor_small
+  ros_domain_id: 23
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 8.0
+    y: -24.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_24
+  name: drone_24
+  runtime_name: Copter24
+  vehicle_type: quadrotor_small
+  ros_domain_id: 24
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 8.0
+    y: -28.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_25
+  name: drone_25
+  runtime_name: Copter25
+  vehicle_type: quadrotor_small
+  ros_domain_id: 25
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 12.0
+    y: 0.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_26
+  name: drone_26
+  runtime_name: Copter26
+  vehicle_type: quadrotor_small
+  ros_domain_id: 26
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 12.0
+    y: -4.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_27
+  name: drone_27
+  runtime_name: Copter27
+  vehicle_type: quadrotor_small
+  ros_domain_id: 27
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 12.0
+    y: -8.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_28
+  name: drone_28
+  runtime_name: Copter28
+  vehicle_type: quadrotor_small
+  ros_domain_id: 28
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 12.0
+    y: -12.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_29
+  name: drone_29
+  runtime_name: Copter29
+  vehicle_type: quadrotor_small
+  ros_domain_id: 29
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 12.0
+    y: -16.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_30
+  name: drone_30
+  runtime_name: Copter30
+  vehicle_type: quadrotor_small
+  ros_domain_id: 30
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 12.0
+    y: -20.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_31
+  name: drone_31
+  runtime_name: Copter31
+  vehicle_type: quadrotor_small
+  ros_domain_id: 31
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 12.0
+    y: -24.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_32
+  name: drone_32
+  runtime_name: Copter32
+  vehicle_type: quadrotor_small
+  ros_domain_id: 32
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 12.0
+    y: -28.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_33
+  name: drone_33
+  runtime_name: Copter33
+  vehicle_type: quadrotor_small
+  ros_domain_id: 33
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 16.0
+    y: 0.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_34
+  name: drone_34
+  runtime_name: Copter34
+  vehicle_type: quadrotor_small
+  ros_domain_id: 34
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 16.0
+    y: -4.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_35
+  name: drone_35
+  runtime_name: Copter35
+  vehicle_type: quadrotor_small
+  ros_domain_id: 35
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 16.0
+    y: -8.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_36
+  name: drone_36
+  runtime_name: Copter36
+  vehicle_type: quadrotor_small
+  ros_domain_id: 36
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 16.0
+    y: -12.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_37
+  name: drone_37
+  runtime_name: Copter37
+  vehicle_type: quadrotor_small
+  ros_domain_id: 37
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 16.0
+    y: -16.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_38
+  name: drone_38
+  runtime_name: Copter38
+  vehicle_type: quadrotor_small
+  ros_domain_id: 38
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 16.0
+    y: -20.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_39
+  name: drone_39
+  runtime_name: Copter39
+  vehicle_type: quadrotor_small
+  ros_domain_id: 39
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 16.0
+    y: -24.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_40
+  name: drone_40
+  runtime_name: Copter40
+  vehicle_type: quadrotor_small
+  ros_domain_id: 40
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 16.0
+    y: -28.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_41
+  name: drone_41
+  runtime_name: Copter41
+  vehicle_type: quadrotor_small
+  ros_domain_id: 41
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 20.0
+    y: 0.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_42
+  name: drone_42
+  runtime_name: Copter42
+  vehicle_type: quadrotor_small
+  ros_domain_id: 42
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 20.0
+    y: -4.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_43
+  name: drone_43
+  runtime_name: Copter43
+  vehicle_type: quadrotor_small
+  ros_domain_id: 43
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 20.0
+    y: -8.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_44
+  name: drone_44
+  runtime_name: Copter44
+  vehicle_type: quadrotor_small
+  ros_domain_id: 44
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 20.0
+    y: -12.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_45
+  name: drone_45
+  runtime_name: Copter45
+  vehicle_type: quadrotor_small
+  ros_domain_id: 45
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 20.0
+    y: -16.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_46
+  name: drone_46
+  runtime_name: Copter46
+  vehicle_type: quadrotor_small
+  ros_domain_id: 46
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 20.0
+    y: -20.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_47
+  name: drone_47
+  runtime_name: Copter47
+  vehicle_type: quadrotor_small
+  ros_domain_id: 47
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 20.0
+    y: -24.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_48
+  name: drone_48
+  runtime_name: Copter48
+  vehicle_type: quadrotor_small
+  ros_domain_id: 48
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 20.0
+    y: -28.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_49
+  name: drone_49
+  runtime_name: Copter49
+  vehicle_type: quadrotor_small
+  ros_domain_id: 49
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 24.0
+    y: 0.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_50
+  name: drone_50
+  runtime_name: Copter50
+  vehicle_type: quadrotor_small
+  ros_domain_id: 50
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 24.0
+    y: -4.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_51
+  name: drone_51
+  runtime_name: Copter51
+  vehicle_type: quadrotor_small
+  ros_domain_id: 51
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 24.0
+    y: -8.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_52
+  name: drone_52
+  runtime_name: Copter52
+  vehicle_type: quadrotor_small
+  ros_domain_id: 52
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 24.0
+    y: -12.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_53
+  name: drone_53
+  runtime_name: Copter53
+  vehicle_type: quadrotor_small
+  ros_domain_id: 53
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 24.0
+    y: -16.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_54
+  name: drone_54
+  runtime_name: Copter54
+  vehicle_type: quadrotor_small
+  ros_domain_id: 54
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 24.0
+    y: -20.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_55
+  name: drone_55
+  runtime_name: Copter55
+  vehicle_type: quadrotor_small
+  ros_domain_id: 55
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 24.0
+    y: -24.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_56
+  name: drone_56
+  runtime_name: Copter56
+  vehicle_type: quadrotor_small
+  ros_domain_id: 56
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 24.0
+    y: -28.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_57
+  name: drone_57
+  runtime_name: Copter57
+  vehicle_type: quadrotor_small
+  ros_domain_id: 57
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 28.0
+    y: 0.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_58
+  name: drone_58
+  runtime_name: Copter58
+  vehicle_type: quadrotor_small
+  ros_domain_id: 58
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 28.0
+    y: -4.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_59
+  name: drone_59
+  runtime_name: Copter59
+  vehicle_type: quadrotor_small
+  ros_domain_id: 59
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 28.0
+    y: -8.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
+- id: drone_60
+  name: drone_60
+  runtime_name: Copter60
+  vehicle_type: quadrotor_small
+  ros_domain_id: 60
+  sensor_profile: default_multirotor
+  start:
+    frame: ros2_flu
+    x: 28.0
+    y: -12.0
+    z: -0.716
+    yaw: 0.0
+  components:
+    mns.vehicle:
+      type: quadrotor_small
+    mns.unreal_authoring:
+      spawn_source: packaged_authoring_app
+      spawn_frame: ros2_flu
+      spawn_frame_actor: PlayerStart
