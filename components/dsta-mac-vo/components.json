@@ -80,7 +80,8 @@
           "axes": "FRD"
         },
         "world": "first_pose",
-        "stamp": "restore_sec"
+        "stamp": "restore_sec",
+        "qos": "reliable"
       }
     ],
     "config": [
