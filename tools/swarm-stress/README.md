@@ -14,6 +14,8 @@ The test runs entirely through the dashboard:
 | `stress.py` | Runs the test itself:<br>1. Waits for every vehicle to report ready.<br>2. Measures the sim's speed (sim seconds per wall second, from `/clock`), CPU, memory and GPU.<br>3. Takes every vehicle off at once.<br>4. Polls each one through the hover.<br>5. Lands them all.<br>The last line it prints is a JSON summary.<br>`POST_READY_CMD` runs once every vehicle is ready, before anything is measured; `{project}` is the stack's compose project. |
 | `mavros_px4_slim.yaml`, `slim_mavros.py` | A MAVROS config that denies every plugin and allows only the twelve a flight stack uses, and a script that mounts it into every bridge of a generated stack. |
 | `trim_streams.sh` | Lowers every PX4's onboard MAVLink stream rates at runtime (a swarm profile). |
+| `formation.py` | Flies a launched PX4 or ArduPilot swarm in formation and brings it home, over MAVLink only. Every vehicle flies the same route as north,east offsets from its own start, so the spawn grid moves as one block; RETURN_TO_LAUNCH then lands each one at its start. All vehicles start at one shared instant. The last line it prints is a JSON summary. |
+| `formation_agent.py` | One vehicle's part of `formation.py`, run inside its autopilot container (pymavlink ships there): mission upload, synchronized arm and start, follow to the landing. |
 
 ```bash
 python3 tools/swarm-stress/make_spec.py scenarios/demo-blocks/ScenarioSpec.yaml 60 --autopilot px4 --no-mavros
@@ -68,6 +70,30 @@ The slim plugin list covers what flying needs:
 - the four setpoint plugins.
 
 Anything that uses another plugin needs it added to the allowlist: missions (`waypoint`), parameters (`param`), RC override, the wind estimate and so on. The PX4 rates last until the PX4 container restarts. A permanent version would be a rate profile the generator writes into the PX4 startup script.
+
+## Formation flight on XFS, 6 October 2026
+
+`formation.py` flies the swarm as a block and brings it home, without the dashboard's flight controls (over MAVLink they offer only take off, hold, land and teleop):
+
+```bash
+tools/swarm-stress/formation.py px4-swarm-60-xfs-lean                                    # PX4
+tools/swarm-stress/formation.py ardu-swarm-60-xfs-lean --url tcp:127.0.0.1:5760 --lead 30  # ArduPilot
+```
+
+- **Route.** By default: climb to 25 m, then 60 m west, 40 m north and 60 m east at 4 m/s, then RETURN_TO_LAUNCH. `--route "n,e;n,e;..."`, `--alt` and `--speed` change it.
+- **How each vehicle is reached.** PX4 uses its router's MAVROS endpoint (UDP 14555), which a stack without MAVROS leaves free; the dashboard's flight controls keep the Control endpoint (14560). ArduPilot uses the SITL's TCP 5760 port, which MAVROS holds when it is on.
+- **Arming.** PX4 arms in AUTO.MISSION. ArduPilot Copter will not arm in AUTO, so it arms in GUIDED, switches to AUTO and then gets MISSION_START.
+
+The specs are `scenarios/px4-swarm-60-xfs-lean` and `scenarios/ardu-swarm-60-xfs-lean`. They were made from `stereo-xfs` with `make_spec.py --no-mavros`, with the cameras removed and the lock's `xfs-level` 1.0.2 pinned. The grid is 8 by 8 with 4 m spacing, starting at the container yard (423, -906, z -21) and running north and west.
+
+| Vehicles | Autopilot | Home after the route | Flight time per vehicle |
+|---|---|---|---|
+| 60 | ArduPilot | 60 | 97 to 107 s |
+| 60 | PX4 | 58 flew; 2 never got a position within 30 s and stayed on the ground | not measured (the run was stopped) |
+
+The two PX4 failures led to a change: each vehicle now asks for GLOBAL_POSITION_INT (SET_MESSAGE_INTERVAL) and keeps asking for up to 2 minutes. The PX4 run has not been repeated since that change.
+
+**Before flying elsewhere, check the start height.** The XFS start height (z -21, 2.3 m above the ground) was measured at the first vehicle's spot only, so check it before moving the grid onto uneven ground.
 
 ## Where the CPU goes
 
