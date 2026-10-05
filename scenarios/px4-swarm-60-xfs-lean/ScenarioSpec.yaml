@@ -24,9 +24,9 @@ vehicles:
   runtime_name: Copter1
   ros_domain_id: 1
   start:
-    x: 423.0
-    y: -906.0
-    z: -21.0
+    x: 422.0
+    y: -1086.0
+    z: -16.27
     yaw: 0
   sensors:
     imu:
@@ -44,9 +44,9 @@ vehicles:
   runtime_name: Copter2
   ros_domain_id: 2
   start:
-    x: 423.0
-    y: -910.0
-    z: -21.0
+    x: 422.0
+    y: -1094.0
+    z: -16.24
     yaw: 0
   sensors:
     imu:
@@ -64,9 +64,9 @@ vehicles:
   runtime_name: Copter3
   ros_domain_id: 3
   start:
-    x: 423.0
-    y: -914.0
-    z: -21.0
+    x: 422.0
+    y: -1102.0
+    z: -16.26
     yaw: 0
   sensors:
     imu:
@@ -84,9 +84,9 @@ vehicles:
   runtime_name: Copter4
   ros_domain_id: 4
   start:
-    x: 423.0
-    y: -918.0
-    z: -21.0
+    x: 422.0
+    y: -1110.0
+    z: -16.31
     yaw: 0
   sensors:
     imu:
@@ -104,9 +104,9 @@ vehicles:
   runtime_name: Copter5
   ros_domain_id: 5
   start:
-    x: 423.0
-    y: -922.0
-    z: -21.0
+    x: 422.0
+    y: -1118.0
+    z: -16.38
     yaw: 0
   sensors:
     imu:
@@ -124,9 +124,9 @@ vehicles:
   runtime_name: Copter6
   ros_domain_id: 6
   start:
-    x: 423.0
-    y: -926.0
-    z: -21.0
+    x: 422.0
+    y: -1126.0
+    z: -16.44
     yaw: 0
   sensors:
     imu:
@@ -144,9 +144,9 @@ vehicles:
   runtime_name: Copter7
   ros_domain_id: 7
   start:
-    x: 423.0
-    y: -930.0
-    z: -21.0
+    x: 422.0
+    y: -1134.0
+    z: -16.48
     yaw: 0
   sensors:
     imu:
@@ -164,9 +164,9 @@ vehicles:
   runtime_name: Copter8
   ros_domain_id: 8
   start:
-    x: 423.0
-    y: -934.0
-    z: -21.0
+    x: 422.0
+    y: -1142.0
+    z: -16.46
     yaw: 0
   sensors:
     imu:
@@ -184,9 +184,9 @@ vehicles:
   runtime_name: Copter9
   ros_domain_id: 9
   start:
-    x: 427.0
-    y: -906.0
-    z: -21.0
+    x: 430.0
+    y: -1086.0
+    z: -16.42
     yaw: 0
   sensors:
     imu:
@@ -204,9 +204,9 @@ vehicles:
   runtime_name: Copter10
   ros_domain_id: 10
   start:
-    x: 427.0
-    y: -910.0
-    z: -21.0
+    x: 430.0
+    y: -1094.0
+    z: -16.38
     yaw: 0
   sensors:
     imu:
@@ -224,9 +224,9 @@ vehicles:
   runtime_name: Copter11
   ros_domain_id: 11
   start:
-    x: 427.0
-    y: -914.0
-    z: -21.0
+    x: 430.0
+    y: -1102.0
+    z: -16.4
     yaw: 0
   sensors:
     imu:
@@ -244,9 +244,9 @@ vehicles:
   runtime_name: Copter12
   ros_domain_id: 12
   start:
-    x: 427.0
-    y: -918.0
-    z: -21.0
+    x: 430.0
+    y: -1110.0
+    z: -16.44
     yaw: 0
   sensors:
     imu:
@@ -264,9 +264,9 @@ vehicles:
   runtime_name: Copter13
   ros_domain_id: 13
   start:
-    x: 427.0
-    y: -922.0
-    z: -21.0
+    x: 430.0
+    y: -1118.0
+    z: -16.5
     yaw: 0
   sensors:
     imu:
@@ -284,9 +284,9 @@ vehicles:
   runtime_name: Copter14
   ros_domain_id: 14
   start:
-    x: 427.0
-    y: -926.0
-    z: -21.0
+    x: 430.0
+    y: -1126.0
+    z: -16.55
     yaw: 0
   sensors:
     imu:
@@ -304,9 +304,9 @@ vehicles:
   runtime_name: Copter15
   ros_domain_id: 15
   start:
-    x: 427.0
-    y: -930.0
-    z: -21.0
+    x: 430.0
+    y: -1134.0
+    z: -16.58
     yaw: 0
   sensors:
     imu:
@@ -324,9 +324,9 @@ vehicles:
   runtime_name: Copter16
   ros_domain_id: 16
   start:
-    x: 427.0
-    y: -934.0
-    z: -21.0
+    x: 430.0
+    y: -1142.0
+    z: -16.56
     yaw: 0
   sensors:
     imu:
@@ -344,9 +344,9 @@ vehicles:
   runtime_name: Copter17
   ros_domain_id: 17
   start:
-    x: 431.0
-    y: -906.0
-    z: -21.0
+    x: 438.0
+    y: -1086.0
+    z: -16.59
     yaw: 0
   sensors:
     imu:
@@ -364,9 +364,9 @@ vehicles:
   runtime_name: Copter18
   ros_domain_id: 18
   start:
-    x: 431.0
-    y: -910.0
-    z: -21.0
+    x: 438.0
+    y: -1094.0
+    z: -16.55
     yaw: 0
   sensors:
     imu:
@@ -384,9 +384,9 @@ vehicles:
   runtime_name: Copter19
   ros_domain_id: 19
   start:
-    x: 431.0
-    y: -914.0
-    z: -21.0
+    x: 438.0
+    y: -1102.0
+    z: -16.55
     yaw: 0
   sensors:
     imu:
@@ -404,9 +404,9 @@ vehicles:
   runtime_name: Copter20
   ros_domain_id: 20
   start:
-    x: 431.0
-    y: -918.0
-    z: -21.0
+    x: 438.0
+    y: -1110.0
+    z: -16.58
     yaw: 0
   sensors:
     imu:
@@ -424,9 +424,9 @@ vehicles:
   runtime_name: Copter21
   ros_domain_id: 21
   start:
-    x: 431.0
-    y: -922.0
-    z: -21.0
+    x: 438.0
+    y: -1118.0
+    z: -16.63
     yaw: 0
   sensors:
     imu:
@@ -444,9 +444,9 @@ vehicles:
   runtime_name: Copter22
   ros_domain_id: 22
   start:
-    x: 431.0
-    y: -926.0
-    z: -21.0
+    x: 438.0
+    y: -1126.0
+    z: -16.67
     yaw: 0
   sensors:
     imu:
@@ -464,9 +464,9 @@ vehicles:
   runtime_name: Copter23
   ros_domain_id: 23
   start:
-    x: 431.0
-    y: -930.0
-    z: -21.0
+    x: 438.0
+    y: -1134.0
+    z: -16.69
     yaw: 0
   sensors:
     imu:
@@ -484,9 +484,9 @@ vehicles:
   runtime_name: Copter24
   ros_domain_id: 24
   start:
-    x: 431.0
-    y: -934.0
-    z: -21.0
+    x: 438.0
+    y: -1142.0
+    z: -16.66
     yaw: 0
   sensors:
     imu:
@@ -504,9 +504,9 @@ vehicles:
   runtime_name: Copter25
   ros_domain_id: 25
   start:
-    x: 435.0
-    y: -906.0
-    z: -21.0
+    x: 446.0
+    y: -1086.0
+    z: -16.76
     yaw: 0
   sensors:
     imu:
@@ -524,9 +524,9 @@ vehicles:
   runtime_name: Copter26
   ros_domain_id: 26
   start:
-    x: 435.0
-    y: -910.0
-    z: -21.0
+    x: 446.0
+    y: -1094.0
+    z: -16.71
     yaw: 0
   sensors:
     imu:
@@ -544,9 +544,9 @@ vehicles:
   runtime_name: Copter27
   ros_domain_id: 27
   start:
-    x: 435.0
-    y: -914.0
-    z: -21.0
+    x: 446.0
+    y: -1102.0
+    z: -16.7
     yaw: 0
   sensors:
     imu:
@@ -564,9 +564,9 @@ vehicles:
   runtime_name: Copter28
   ros_domain_id: 28
   start:
-    x: 435.0
-    y: -918.0
-    z: -21.0
+    x: 446.0
+    y: -1110.0
+    z: -16.72
     yaw: 0
   sensors:
     imu:
@@ -584,9 +584,9 @@ vehicles:
   runtime_name: Copter29
   ros_domain_id: 29
   start:
-    x: 435.0
-    y: -922.0
-    z: -21.0
+    x: 446.0
+    y: -1118.0
+    z: -16.76
     yaw: 0
   sensors:
     imu:
@@ -604,9 +604,9 @@ vehicles:
   runtime_name: Copter30
   ros_domain_id: 30
   start:
-    x: 435.0
-    y: -926.0
-    z: -21.0
+    x: 446.0
+    y: -1126.0
+    z: -16.79
     yaw: 0
   sensors:
     imu:
@@ -624,9 +624,9 @@ vehicles:
   runtime_name: Copter31
   ros_domain_id: 31
   start:
-    x: 435.0
-    y: -930.0
-    z: -21.0
+    x: 446.0
+    y: -1134.0
+    z: -16.79
     yaw: 0
   sensors:
     imu:
@@ -644,9 +644,9 @@ vehicles:
   runtime_name: Copter32
   ros_domain_id: 32
   start:
-    x: 435.0
-    y: -934.0
-    z: -21.0
+    x: 446.0
+    y: -1142.0
+    z: -16.76
     yaw: 0
   sensors:
     imu:
@@ -664,9 +664,9 @@ vehicles:
   runtime_name: Copter33
   ros_domain_id: 33
   start:
-    x: 439.0
-    y: -906.0
-    z: -21.0
+    x: 454.0
+    y: -1086.0
+    z: -16.91
     yaw: 0
   sensors:
     imu:
@@ -684,9 +684,9 @@ vehicles:
   runtime_name: Copter34
   ros_domain_id: 34
   start:
-    x: 439.0
-    y: -910.0
-    z: -21.0
+    x: 454.0
+    y: -1094.0
+    z: -16.85
     yaw: 0
   sensors:
     imu:
@@ -704,9 +704,9 @@ vehicles:
   runtime_name: Copter35
   ros_domain_id: 35
   start:
-    x: 439.0
-    y: -914.0
-    z: -21.0
+    x: 454.0
+    y: -1102.0
+    z: -16.84
     yaw: 0
   sensors:
     imu:
@@ -724,9 +724,9 @@ vehicles:
   runtime_name: Copter36
   ros_domain_id: 36
   start:
-    x: 439.0
-    y: -918.0
-    z: -21.0
+    x: 454.0
+    y: -1110.0
+    z: -16.85
     yaw: 0
   sensors:
     imu:
@@ -744,9 +744,9 @@ vehicles:
   runtime_name: Copter37
   ros_domain_id: 37
   start:
-    x: 439.0
-    y: -922.0
-    z: -21.0
+    x: 454.0
+    y: -1118.0
+    z: -16.87
     yaw: 0
   sensors:
     imu:
@@ -764,9 +764,9 @@ vehicles:
   runtime_name: Copter38
   ros_domain_id: 38
   start:
-    x: 439.0
-    y: -926.0
-    z: -21.0
+    x: 454.0
+    y: -1126.0
+    z: -16.88
     yaw: 0
   sensors:
     imu:
@@ -784,9 +784,9 @@ vehicles:
   runtime_name: Copter39
   ros_domain_id: 39
   start:
-    x: 439.0
-    y: -930.0
-    z: -21.0
+    x: 454.0
+    y: -1134.0
+    z: -16.88
     yaw: 0
   sensors:
     imu:
@@ -804,9 +804,9 @@ vehicles:
   runtime_name: Copter40
   ros_domain_id: 40
   start:
-    x: 439.0
-    y: -934.0
-    z: -21.0
+    x: 454.0
+    y: -1142.0
+    z: -16.84
     yaw: 0
   sensors:
     imu:
@@ -824,9 +824,9 @@ vehicles:
   runtime_name: Copter41
   ros_domain_id: 41
   start:
-    x: 443.0
-    y: -906.0
-    z: -21.0
+    x: 462.0
+    y: -1086.0
+    z: -17.03
     yaw: 0
   sensors:
     imu:
@@ -844,9 +844,9 @@ vehicles:
   runtime_name: Copter42
   ros_domain_id: 42
   start:
-    x: 443.0
-    y: -910.0
-    z: -21.0
+    x: 462.0
+    y: -1094.0
+    z: -16.97
     yaw: 0
   sensors:
     imu:
@@ -864,9 +864,9 @@ vehicles:
   runtime_name: Copter43
   ros_domain_id: 43
   start:
-    x: 443.0
-    y: -914.0
-    z: -21.0
+    x: 462.0
+    y: -1102.0
+    z: -16.95
     yaw: 0
   sensors:
     imu:
@@ -884,9 +884,9 @@ vehicles:
   runtime_name: Copter44
   ros_domain_id: 44
   start:
-    x: 443.0
-    y: -918.0
-    z: -21.0
+    x: 462.0
+    y: -1110.0
+    z: -16.94
     yaw: 0
   sensors:
     imu:
@@ -904,9 +904,9 @@ vehicles:
   runtime_name: Copter45
   ros_domain_id: 45
   start:
-    x: 443.0
-    y: -922.0
-    z: -21.0
+    x: 462.0
+    y: -1118.0
+    z: -16.95
     yaw: 0
   sensors:
     imu:
@@ -924,9 +924,9 @@ vehicles:
   runtime_name: Copter46
   ros_domain_id: 46
   start:
-    x: 443.0
-    y: -926.0
-    z: -21.0
+    x: 462.0
+    y: -1126.0
+    z: -16.96
     yaw: 0
   sensors:
     imu:
@@ -944,9 +944,9 @@ vehicles:
   runtime_name: Copter47
   ros_domain_id: 47
   start:
-    x: 443.0
-    y: -930.0
-    z: -21.0
+    x: 462.0
+    y: -1134.0
+    z: -16.94
     yaw: 0
   sensors:
     imu:
@@ -964,9 +964,9 @@ vehicles:
   runtime_name: Copter48
   ros_domain_id: 48
   start:
-    x: 443.0
-    y: -934.0
-    z: -21.0
+    x: 462.0
+    y: -1142.0
+    z: -16.9
     yaw: 0
   sensors:
     imu:
@@ -984,9 +984,9 @@ vehicles:
   runtime_name: Copter49
   ros_domain_id: 49
   start:
-    x: 447.0
-    y: -906.0
-    z: -21.0
+    x: 470.0
+    y: -1086.0
+    z: -17.12
     yaw: 0
   sensors:
     imu:
@@ -1004,9 +1004,9 @@ vehicles:
   runtime_name: Copter50
   ros_domain_id: 50
   start:
-    x: 447.0
-    y: -910.0
-    z: -21.0
+    x: 470.0
+    y: -1094.0
+    z: -17.05
     yaw: 0
   sensors:
     imu:
@@ -1024,9 +1024,9 @@ vehicles:
   runtime_name: Copter51
   ros_domain_id: 51
   start:
-    x: 447.0
-    y: -914.0
-    z: -21.0
+    x: 470.0
+    y: -1102.0
+    z: -17.02
     yaw: 0
   sensors:
     imu:
@@ -1044,9 +1044,9 @@ vehicles:
   runtime_name: Copter52
   ros_domain_id: 52
   start:
-    x: 447.0
-    y: -918.0
-    z: -21.0
+    x: 470.0
+    y: -1110.0
+    z: -17.01
     yaw: 0
   sensors:
     imu:
@@ -1064,9 +1064,9 @@ vehicles:
   runtime_name: Copter53
   ros_domain_id: 53
   start:
-    x: 447.0
-    y: -922.0
-    z: -21.0
+    x: 470.0
+    y: -1118.0
+    z: -17.01
     yaw: 0
   sensors:
     imu:
@@ -1084,9 +1084,9 @@ vehicles:
   runtime_name: Copter54
   ros_domain_id: 54
   start:
-    x: 447.0
-    y: -926.0
-    z: -21.0
+    x: 470.0
+    y: -1126.0
+    z: -17.0
     yaw: 0
   sensors:
     imu:
@@ -1104,9 +1104,9 @@ vehicles:
   runtime_name: Copter55
   ros_domain_id: 55
   start:
-    x: 447.0
-    y: -930.0
-    z: -21.0
+    x: 470.0
+    y: -1134.0
+    z: -16.98
     yaw: 0
   sensors:
     imu:
@@ -1124,9 +1124,9 @@ vehicles:
   runtime_name: Copter56
   ros_domain_id: 56
   start:
-    x: 447.0
-    y: -934.0
-    z: -21.0
+    x: 470.0
+    y: -1142.0
+    z: -16.92
     yaw: 0
   sensors:
     imu:
@@ -1144,9 +1144,9 @@ vehicles:
   runtime_name: Copter57
   ros_domain_id: 57
   start:
-    x: 451.0
-    y: -906.0
-    z: -21.0
+    x: 478.0
+    y: -1086.0
+    z: -17.17
     yaw: 0
   sensors:
     imu:
@@ -1164,9 +1164,9 @@ vehicles:
   runtime_name: Copter58
   ros_domain_id: 58
   start:
-    x: 451.0
-    y: -910.0
-    z: -21.0
+    x: 478.0
+    y: -1094.0
+    z: -17.1
     yaw: 0
   sensors:
     imu:
@@ -1184,9 +1184,9 @@ vehicles:
   runtime_name: Copter59
   ros_domain_id: 59
   start:
-    x: 451.0
-    y: -914.0
-    z: -21.0
+    x: 478.0
+    y: -1102.0
+    z: -17.06
     yaw: 0
   sensors:
     imu:
@@ -1204,9 +1204,9 @@ vehicles:
   runtime_name: Copter60
   ros_domain_id: 60
   start:
-    x: 451.0
-    y: -918.0
-    z: -21.0
+    x: 478.0
+    y: -1110.0
+    z: -17.04
     yaw: 0
   sensors:
     imu:

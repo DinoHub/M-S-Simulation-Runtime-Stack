@@ -76,7 +76,7 @@ Anything that uses another plugin needs it added to the allowlist: missions (`wa
 `formation.py` flies the swarm as a block and brings it home, without the dashboard's flight controls (over MAVLink they offer only take off, hold, land and teleop):
 
 ```bash
-tools/swarm-stress/formation.py px4-swarm-60-xfs-lean                                    # PX4
+tools/swarm-stress/formation.py px4-swarm-60-xfs-lean --route "0,60;40,60;40,0" --lead 45  # PX4
 tools/swarm-stress/formation.py ardu-swarm-60-xfs-lean --route "0,60;40,60;40,0" --lead 45  # ArduPilot
 ```
 
@@ -99,7 +99,7 @@ What the first grid got wrong, from the simulator's events:
 
 What fixed it:
 - **Altitude by row.** `formation.py` flies each grid row 3 m higher (`--row-step`) and every other column 1.5 m higher (`--col-step`).
-- **A clear grid.** The 60-vehicle ArduPilot spec now sits on an 8 m grid about 180 m west (x 422, y -1086). That site was found by scanning the level with AirSim's `simTestLineOfSightBetweenPoints`: every spot has 2 m of clearance, and every climb and leg was checked at its own altitude.
+- **A clear grid.** Both 60-vehicle specs (ArduPilot and PX4) now sit on an 8 m grid about 180 m west (x 422, y -1086). That site was found by scanning the level with AirSim's `simTestLineOfSightBetweenPoints`: every spot has 2 m of clearance, and every climb and leg was checked at its own altitude.
 - **Spawn height per spot.** Each drone spawns 1.5 m above the ground measured under it.
 - **The route for this grid** is `--route "0,60;40,60;40,0"` (east first).
 
