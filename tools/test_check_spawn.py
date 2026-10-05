@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_spawn  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-XFS_ENV = {"id": "xfs-level", "version": "1.0.1"}
+XFS_ENV = {"id": "xfs-level", "version": "1.0.2"}
 
 
 def spec(start: dict, env: dict | None = None, **extra) -> dict:
@@ -95,7 +95,7 @@ class Files(unittest.TestCase):
               vehicles: Vehicles/
             """)
         self.write("s/Environment.yaml", """\
-            environment: {id: xfs-level, version: 1.0.1}
+            environment: {id: xfs-level, version: 1.0.2}
             coordinate_frame: {convention: ros2_flu}
             """)
         self.write("s/Vehicles/DroneA.yaml", "id: DroneA\nstart: {frame: ros2_flu, x: 0, y: 0, z: 0.3}\n")
@@ -106,7 +106,7 @@ class Files(unittest.TestCase):
     def test_a_campaign_checks_its_base_scenario(self):
         self.write("c/ScenarioSpec.yaml", """\
             schema: mns.scenario.v1
-            environment: {id: xfs-level, version: 1.0.1}
+            environment: {id: xfs-level, version: 1.0.2}
             vehicles: [{id: d1, start: {x: 0, y: 0, z: 0}}]
             """)
         campaign = self.write("c/CampaignSpec.yaml", "id: c\nscenario: ./ScenarioSpec.yaml\n")
@@ -126,7 +126,7 @@ class Files(unittest.TestCase):
             variants:
               - id: calm
               - id: outdoors
-                overrides: {environment: {id: xfs-level, version: 1.0.1}}
+                overrides: {environment: {id: xfs-level, version: 1.0.2}}
             """)
         rc, err = self.run_main("campaign", "validate", str(self.dir / "v"))
         self.assertIn("variant outdoors", err)

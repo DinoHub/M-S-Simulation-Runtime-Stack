@@ -18,6 +18,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "packs" / "v1.0.0.lock.json"
+SPAWN_HINTS = ROOT / "packs" / "level-spawn-hints.json"
 PINNED_DIRS = ("scenarios", "osmo")
 ARTIFACT_DIGEST_RE = re.compile(r"artifact_digest[\"']?\s*:\s*[\"']?(sha256:[0-9a-f]{64})")
 
@@ -77,6 +78,16 @@ class ScenarioPackPins(unittest.TestCase):
             for digest in ARTIFACT_DIGEST_RE.findall(path.read_text(encoding="utf-8")):
                 with self.subTest(path=path.relative_to(ROOT).as_posix()):
                     self.assertIn(digest, locked)
+
+    def test_every_spawn_hint_names_the_locked_version(self):
+        # tools/check_spawn.py stays silent for a version a hint does not list,
+        # so a hint left on a version the lock dropped stops warning unnoticed.
+        hints = json.loads(SPAWN_HINTS.read_text(encoding="utf-8"))["levels"]
+        for level_id, hint in sorted(hints.items()):
+            with self.subTest(level=level_id):
+                self.assertIn(level_id, self.lock, f"{level_id} is not in the lock")
+                self.assertIn(self.lock[level_id]["version"], hint.get("versions") or [],
+                              f"{level_id}: the hint does not list the locked version")
 
 
 if __name__ == "__main__":
