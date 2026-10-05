@@ -9,11 +9,11 @@ image_sets:
     pull_policy: missing
     images:
       simulators:
-        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-rc
+        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-m062b990
       autopilots:
         ardupilot: dhdevspace/auto_mns:ardupilot-v1.0.0
         px4: dhdevspace/auto_mns:px4-airsim-px4-v1.0.0
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-rc
+      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-mc4086d7
       qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
       sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-v1.0.0-rc
       vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123

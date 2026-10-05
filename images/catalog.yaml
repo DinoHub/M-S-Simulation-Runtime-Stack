@@ -156,8 +156,8 @@ images:
   # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
   v1_runtime_host:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-v1.0.0-rc"
-    digest: sha256:ba3718941266bee651676adf49e8a1a7736c5d60e3a3389e0a33bb202d16a870
+    tag: "tevv-runtime-host-v1.0.0-m062b990"
+    digest: sha256:b90c88761ca0840d68b8e644c95b57c638feaa52185249c601ad92999f1fd491
     channel: pinned
     purpose: >-
       MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim release/v1.0.0-next 131d7183fb98, dirty=false): the shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc5; carries its host contract (label tevv.host.contract); its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
@@ -172,8 +172,8 @@ images:
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.0.0-rc"
-    digest: sha256:6c2a47e3117501aba749a6eafa4df238a564f8351d938c8fbc247f46456a38bc
+    tag: "mns-stacks-v1.0.0-m5b74d92"
+    digest: sha256:418c6c55eb0d72ead0bac104f64ee741bb8561b9cd21335cc5bcc5f622595080
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -198,8 +198,8 @@ images:
 
   v1_runtime_host_kit:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-kit-v1.0.0-rc"
-    digest: sha256:e9acd116b85565b723c1c9da55d2b05dd8b551793a8c2cd20c7a020ce347dbcc
+    tag: "tevv-runtime-host-kit-v1.0.0-m062b990"
+    digest: sha256:5263c2cd56b4d2880bbd8c54b32b587f197233326e501beabcdacd566e316b94
     channel: pinned
     pull: false
     purpose: >-
@@ -211,8 +211,8 @@ images:
 
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns
-    tag: "tevv-airsim-ros2-bridge-humble-v1.0.0-rc"
-    digest: sha256:68af89693de7d70e3903719a139ece6bde0013b12132ba8a3c56b4f91cb7e0bf
+    tag: "tevv-airsim-ros2-bridge-humble-v1.0.0-mc4086d7"
+    digest: sha256:0736b2949dc748f7ed92d4821c7ec382f8daa06a61e11e7d810b99fc6f9c6efc
     channel: pinned
     purpose: >-
       MnS 1.0 AirSim<->ROS 2 bridge (TEVV-Airsim-ROS2-Bridge release/v1.0.0-next 61b2b8a66553): the v1.0.0 build (459952e) plus the image-capture dedupe fix and image publisher history depth 5, so recordings pass fresh_frames and stereo_skew; built like v1.0.0 (docker/Dockerfile, ROS_DISTRO=humble, same base); 158 colcon tests green.
@@ -235,8 +235,8 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-gbe02173"
-    digest: sha256:b8c4cc7eeb5e34ad031b7cdc13565774b136ac5a005e3246887edece64c3eec7
+    tag: "tevv-web-dashboard-backend-v1.0.0-g3ffd351"
+    digest: sha256:d01ffed817e8cf657dee0f6bef81979c721d6faa70287c4011f4b166e129f35a
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
@@ -255,8 +255,8 @@ images:
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-gbe02173"
-    digest: sha256:b8da578f1e42b9f02ee4018f4c928e096f62e74e133c4cb02c13aeb479f83ee5
+    tag: "tevv-web-dashboard-frontend-v1.0.0-g3ffd351"
+    digest: sha256:1e103cc7e50c46c26ac95199bc3d76c10e1f7c6536e0bb323d62ffd19295b4cf
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
