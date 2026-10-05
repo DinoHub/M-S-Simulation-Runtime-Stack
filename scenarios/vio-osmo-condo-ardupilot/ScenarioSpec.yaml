@@ -90,6 +90,21 @@ vehicles:
     magnetometer: true
     gpu_lidar: false
 
+# Where the drone must stay. The metrics service checks every run's
+# ground-truth path against it (positions in the vehicles' frame: airsim_ned
+# metres, z negative up). The drone spawns at z -2.0 and settles 1.23 m lower,
+# so the bedroom floor is at z ~ -0.77 and the walls' tops at ~ -2.97.
+# routes/bedroom-loop.yaml spans N -0.5..1.0, E -20.0..-19.2 at 1.2 m up
+# (its +y is N, its +x is E). The cylinder is centred on that box with
+# 0.65 m of margin around it, and its top is 2.0 m above the floor, under the
+# 2.2 m walls: the failure the route was rewritten for -- climbing over a wall
+# and flying into the rest of the apartment -- is a violation.
+zones:
+- id: bedroom
+  kind: keep_in
+  transform: {x: 0.25, y: -19.6, z: -1.52}
+  shape: {type: cylinder, radius: 1.5, height: 2.5}
+
 extensions:
   mns.vio_estimator:
     enabled: true
