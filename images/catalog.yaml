@@ -172,8 +172,8 @@ images:
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.0.0-rc.services.33"
-    digest: sha256:76d64158d63f4ffa8aa0d8bbe0f979b3db9c1d7f5136f966ce397406d3c6850b
+    tag: "mns-stacks-v1.0.0-rc.services.34"
+    digest: sha256:70185e294471e05d295a54cccc8eafe69690165bf79197b93bc656bcc428ddd6
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -182,7 +182,7 @@ images:
       compatibility check. The dashboard, make fly/stop/campaign/stacks,
       tools/images.sh drift and osmo/campaign.py all run it as a sibling
       container with host paths. Replaces mns-product-shell and
-      mns-stack-generator, which are retired and no longer pinned. Local overlay: the rc image with platform/stacks from MnS-Integration-Platform feat/components 8936bfc (components and adaptors, the campaign runner with autopilot from the stack contract, start/end conditions, top-down capture at stop, and the PX4 pilot keeping OFFBOARD alive while arming). Campaign missions fly the vehicle under its runtime name, where MAVROS runs, and PX4 stacks run AirSim in lockstep on the SteppableClock: with lockstep off, PX4's periodic timers stopped at arming, battery_status went stale and every PX4 flight raised a 'Battery unhealthy' failsafe. A campaign lists its runs up front (campaign.started runs) and each run's director reports its phase (run.phase), so the dashboard shows the queue, the run in the air and its phase. Bring-your-own containers: components.json, `component init --container` and `component check`, and the generic component adaptor (mns-component-adaptor-0.1.1) configured by components.json. Every vehicle's agent_internal network gets an explicit subnet (10.200-10.249, per stack), so the vehicle count no longer depends on docker's default address pools (20 vehicles exhausted them); vehicle viewers skip the platform's ports 8764, 8767 (Replay) and 8770 (metrics service). Stress-tested to 30 PX4 vehicles from one dashboard-authored spec.
+      mns-stack-generator, which are retired and no longer pinned. Local overlay: the rc image with platform/stacks from MnS-Integration-Platform feat/components 0725358 (components and adaptors, the campaign runner with autopilot from the stack contract, start/end conditions, top-down capture at stop, and the PX4 pilot keeping OFFBOARD alive while arming). Campaign missions fly the vehicle under its runtime name, where MAVROS runs, and PX4 stacks run AirSim in lockstep on the SteppableClock: with lockstep off, PX4's periodic timers stopped at arming, battery_status went stale and every PX4 flight raised a 'Battery unhealthy' failsafe. A campaign lists its runs up front (campaign.started runs) and each run's director reports its phase (run.phase), so the dashboard shows the queue, the run in the air and its phase. Bring-your-own containers: components.json, `component init --container` and `component check`, and the generic component adaptor (mns-component-adaptor-0.1.1) configured by components.json. Every vehicle's agent_internal network gets an explicit subnet (10.200-10.249, per stack), so the vehicle count no longer depends on docker's default address pools (20 vehicles exhausted them); vehicle viewers skip the platform's ports 8764, 8767 (Replay) and 8770 (metrics service); the sim's static address sits outside the sim network's dynamic range (60 ArduPilot SITLs took it). Stress-tested to 30 PX4 vehicles from one dashboard-authored spec.
 
   v1_packs:
     repo: dhdevspace/auto_mns
