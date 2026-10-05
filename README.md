@@ -50,6 +50,7 @@ See [Headless](docs/stacks.md).
 | connect my own autonomy stack to a running simulation | [User Guide: connecting your autonomy stack](docs/USER_GUIDE.md#connecting-your-autonomy-stack) |
 | know which ROS 2 topics a stack will publish | [What will this stack publish?](docs/topics.md) |
 | fly, author or run a campaign from a terminal, without the browser | [Headless: `make fly`, `make author`, `make campaign`](docs/stacks.md) |
+| choose a fisheye rig (tiled or shared cubemap) and set it up for VIO | [Fisheye rig performance](docs/fisheye-rig-performance.md) |
 | fly a scored run matrix to characterise an estimator | [Campaigns](docs/campaigns.md), then [the reference campaign](scenarios/vio-reference/README.md) |
 | fly the same campaign on a GPU cluster (NVIDIA OSMO) | [Campaigns: OSMO](docs/campaigns.md#the-same-campaign-on-a-cluster-osmo), then the [OSMO runbook](docs/osmo-runbook.md) |
 | fix something that went wrong | [User Guide: troubleshooting](docs/USER_GUIDE.md#9-troubleshooting) |

@@ -612,6 +612,28 @@ def route_blob(campaign_file: Path, campaign: dict[str, Any]) -> str:
     return base64.b64encode(json.dumps(plan).encode()).decode()
 
 
+def camera_info_topics(stack_dir: Path) -> list[str]:
+    """Every CameraInfo topic the stack's bridge will publish, by the bridge
+    image's own naming rules (tools/preview_topics.py reads settings.json,
+    topic_names.yaml and the launch arguments). The recorder subscribes to
+    these by name: a plain discovery-server client sees only the endpoints it
+    matches, so it cannot find them by listing the graph. Empty, with a
+    warning, if the preview fails; the recorder then falls back to discovery."""
+    proc = subprocess.run([sys.executable, str(ROOT / "tools" / "preview_topics.py"),
+                           str(stack_dir), "--json"], capture_output=True, text=True)
+    try:
+        bridges = json.loads(proc.stdout) if proc.returncode == 0 else None
+    except json.JSONDecodeError:
+        bridges = None
+    if not isinstance(bridges, list):
+        err = (proc.stderr or proc.stdout).strip().splitlines()
+        print(f"[campaign] camera_info topics not derived from {stack_dir}"
+              f" ({err[-1] if err else f'exit {proc.returncode}'}); the recorder falls back to discovery")
+        return []
+    return sorted({t["topic"] for b in bridges for t in b.get("topics") or []
+                   if str(t.get("topic", "")).endswith("/camera_info")})
+
+
 def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
            campaign_file: Path, images: dict[str, str], viz: bool = False,
            viz_hold_sec: int = 0) -> str:
@@ -639,6 +661,9 @@ def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
         "viz_hold_sec": str(int(viz_hold_sec)),
         "gates_json": json.dumps(run_gates),
         "route_b64": route_blob(campaign_file, campaign),
+        # Recorded by name: one CameraInfo per delivered frame gives each
+        # camera's real rate without the images.
+        "camera_info_topics": ",".join(camera_info_topics(stack_dir)),
         # The workflow names no image of its own; each comes from the catalog.
         **images,
     }

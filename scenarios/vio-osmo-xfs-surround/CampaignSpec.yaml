@@ -1,0 +1,137 @@
+schema: mns.campaign.v1
+id: vio-osmo-xfs-surround
+name: Fisheye surround rig render cost under OSMO -- tiled vs shared cubemap
+
+# What does a four-camera 190-degree fisheye surround rig cost the flight it
+# rides on, and how much of that does the shared cubemap buy back?
+#
+#   baseline  the stereo VIO rig only (vio-osmo-xfs-ardupilot as-is)
+#   tiled     + 4 fisheye, each rendered on its own (AirLib's default tiled
+#             path: 4 off-axis tiles per camera, round-robin one camera per
+#             frame, FisheyeMaxCamerasPerFrame=1)
+#   shared    + the same 4 fisheye from ONE 6-face cube rig (group "surround":
+#             6 face renders per burst instead of 16 tiles). AirLib then
+#             implies FisheyeSyncCaptureFPS=10: all four capture together at
+#             10 Hz with one timestamp.
+#
+# The two fisheye variants are each at their own defaults, so compare the
+# per-camera rates as well as the cost: the recorder writes every CameraInfo
+# topic the bridge advertises, one message per delivered frame.
+#
+# Under OSMO the bridge fetches images over RPC and requests every camera in
+# settings.json (vehicle_node_base.cpp), two simGetImages calls in flight per
+# vehicle -- so the fisheye frames share that pipe with the stereo pair the
+# estimator needs.
+#
+# `vehicles` is a list, and a variant's overrides replace lists whole, so the
+# two fisheye variants restate the vehicle. Everything but `cameras` is
+# ScenarioSpec.yaml's.
+scenario: ./ScenarioSpec.yaml
+
+extensions:
+  mns.omega:
+    tier: L1
+    verifies: [REQ-VIO-001]
+
+evaluation:
+  evaluator: vio-stress
+  inputs:
+    est_topic: /ov_msckf/odomimu
+  gates:
+    ate_rmse_m: {max: 1.0}
+
+mission:
+  source: external
+  autopilot: ardupilot
+  trajectory: ./routes/yard-box.yaml
+  done: timeout
+  timeout_s: 420
+
+variants:
+- id: baseline
+  name: Stereo VIO rig only
+
+- id: tiled
+  name: + 4x 190-deg fisheye, per-camera tiled render
+  overrides:
+    vehicles:
+    - &vehicle
+      id: drone_1
+      name: Drone1
+      runtime_name: Drone1
+      ros_domain_id: 1
+      start: {x: 423, y: -906, z: -21.0}
+      sensors:
+        imu:
+          generate_noise: true
+          angular_random_walk: 0.5833
+          velocity_random_walk: 0.2039
+          gyro_bias_stability: 0.0
+          accel_bias_stability: 0.0
+        gps: true
+        barometer: true
+        magnetometer: true
+        gpu_lidar: false
+      cameras:
+        front: &front
+          position: {x: 0.15, y: 0, z: -0.25}
+          capture_settings:
+          - {image_type: 0, width: 640, height: 480, fov_degrees: 80, exposure_compensation: -11.0}
+        front_right: &front_right
+          position: {x: 0.15, y: 0.12, z: -0.25}
+          capture_settings:
+          - {image_type: 0, width: 640, height: 480, fov_degrees: 80, exposure_compensation: -11.0}
+        fisheye_front:
+          position: {x: 0, y: 0, z: -0.15}
+          rotation: {roll: 0, pitch: 0, yaw: 0}
+          capture_settings: [&tiled {image_type: 0, width: 512, height: 512, fov_degrees: 190, fisheye_lens_type: Circular, fisheye_shared_cubemap: false}]
+        fisheye_right:
+          position: {x: 0, y: 0, z: -0.15}
+          rotation: {roll: 0, pitch: 0, yaw: 90}
+          capture_settings: [*tiled]
+        fisheye_back:
+          position: {x: 0, y: 0, z: -0.15}
+          rotation: {roll: 0, pitch: 0, yaw: 180}
+          capture_settings: [*tiled]
+        fisheye_left:
+          position: {x: 0, y: 0, z: -0.15}
+          rotation: {roll: 0, pitch: 0, yaw: 270}
+          capture_settings: [*tiled]
+
+- id: shared
+  name: + 4x 190-deg fisheye, one shared cubemap
+  overrides:
+    vehicles:
+    - <<: *vehicle
+      cameras:
+        front: *front
+        front_right: *front_right
+        fisheye_front:
+          position: {x: 0, y: 0, z: -0.15}
+          rotation: {roll: 0, pitch: 0, yaw: 0}
+          # The rig renders from its group's anchor, not each camera's pose:
+          # put it where the cameras are, 0.15 m above the body origin.
+          capture_settings: [&shared {image_type: 0, width: 512, height: 512, fov_degrees: 190, fisheye_lens_type: Circular, fisheye_shared_cubemap: true, fisheye_shared_cubemap_group: surround, fisheye_shared_cubemap_offset_z: -0.15}]
+        fisheye_right:
+          position: {x: 0, y: 0, z: -0.15}
+          rotation: {roll: 0, pitch: 0, yaw: 90}
+          capture_settings: [*shared]
+        fisheye_back:
+          position: {x: 0, y: 0, z: -0.15}
+          rotation: {roll: 0, pitch: 0, yaw: 180}
+          capture_settings: [*shared]
+        fisheye_left:
+          position: {x: 0, y: 0, z: -0.15}
+          rotation: {roll: 0, pitch: 0, yaw: 270}
+          capture_settings: [*shared]
+
+repeats: 2
+
+recording:
+  keep: all
+  topics:
+  - /ov_msckf/odomimu
+  - /ground_truth/odom
+  - /clock
+  - /tf
+  - /tf_static
