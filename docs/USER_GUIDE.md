@@ -720,6 +720,43 @@ above.
 **Visualisation.** Connect Foxglove or Lichtblick to `ws://localhost:8765`
 (vehicle 1).
 
+### Bringing your own container as a component
+
+To test your own estimator, perception node or planner, attach it to a stack as
+a component. You do not need to edit the stack's compose file, and you do not
+need to write adaptor code. Describe the container in one `components.json`,
+and the platform's generic adaptor fits it to the stack:
+- it republishes the stack's sensors under the names your container
+  subscribes to;
+- it turns your output into the platform's estimate;
+- it writes your config files from the stack's calibration.
+
+```bash
+make stacks ARGS="component init my-vo --container myorg/my-vo:1.2"      # scaffold components/my-vo
+# fill in components/my-vo/components.json (its README.md lists the steps)
+make stacks ARGS="component check components/my-vo --stack generated/stereo-xfs"
+make stacks ARGS="generate scenarios/stereo-xfs --component components/my-vo --out $PWD/generated/stereo-xfs-my-vo"
+```
+
+`component check` prints what the adaptor will do with your file: each stack
+topic and the container topic it is relayed to, with the conversions, and
+every config value it will fill in. `components/dsta-mac-vo` is a worked
+example: MAC-VO run through the generic adaptor. `components/mac-vo` is the
+same estimator with a hand-written adaptor.
+
+The full walkthrough is MnS-Integration-Platform
+[`docs/guides/bring-your-own-container.md`](https://github.com/DinoHub/MnS-Integration-Platform/blob/feat/components/docs/guides/bring-your-own-container.md).
+It covers:
+- the fields;
+- the frame conventions;
+- pacing;
+- placeholders;
+- what to do when the generic adaptor is not enough.
+
+Under `make stacks`, `component init` runs without the Docker socket. It
+therefore cannot inspect your image, and it leaves the command for you to fill
+in.
+
 ### Running stacks without the dashboard
 
 The same steps run from a terminal, for scripts, CI, or a machine where you

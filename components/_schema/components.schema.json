@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DinoHub/MnS-Integration-Platform/platform/stacks/generator/stackgen/schemas/components.schema.json",
+  "title": "MnS component (components.json, schema mns.component.v1)",
+  "description": "A bring-your-own container as a component under test. The platform runs the container unmodified, and a generic adaptor configured by the `adaptor` section fits it to the stack: it republishes the stack's roles under the names the container expects, turns the container's output into the platform's form, and renders the container's config files from the stack contract. Scaffold one with `mns-stacks component init <id> --container <image>`, check it with `mns-stacks component check <folder>`.",
+  "type": "object",
+  "required": ["schema", "id", "kind", "container"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string", "description": "Where editors find this schema."},
+    "schema": {"const": "mns.component.v1", "description": "Always mns.component.v1."},
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Lower-case id; the compose services are <id>_component, <id>_adaptor and <id>_config."
+    },
+    "name": {"type": "string", "description": "Human-readable name."},
+    "version": {"type": "string", "description": "The component's version, recorded in the stack manifest."},
+    "kind": {
+      "enum": ["estimator", "perception", "planner", "controller", "other"],
+      "description": "What the component is. An estimator usually produces `estimate`."
+    },
+    "vehicle": {"type": "integer", "minimum": 1, "description": "The vehicle it runs beside (default 1)."},
+    "container": {"$ref": "#/$defs/container"},
+    "consumes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/role"},
+      "uniqueItems": true,
+      "description": "Stack contract roles the component needs. Generation fails when the scenario does not offer one. A role with no adaptor input is read by the container straight from the stack's topic."
+    },
+    "produces": {
+      "type": "object",
+      "description": "What the component produces. `estimate` is scored by the platform: nav_msgs/Odometry, world ENU, body FLU, on /mns/estimate/odom. Any other entry names a topic, which is recorded.",
+      "properties": {
+        "estimate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "topic": {"type": "string", "description": "default (the contract's /mns/estimate/odom) or a topic."}
+          }
+        }
+      },
+      "additionalProperties": {"$ref": "#/$defs/product"}
+    },
+    "record": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/topic"},
+      "description": "Extra topics kept when a campaign narrows its recording."
+    },
+    "ready": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "When the component is up: the run director waits for these topics before it records and flies. Default: the estimate topic, for a component that produces one.",
+      "properties": {
+        "topics": {"type": "array", "items": {"$ref": "#/$defs/topic"}},
+        "timeout_s": {"type": "integer", "minimum": 1},
+        "after_takeoff": {"type": "array", "items": {"$ref": "#/$defs/topic"}}
+      }
+    },
+    "requires": {"$ref": "#/$defs/requires"},
+    "scoring": {"$ref": "#/$defs/scoring"},
+    "viz": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layout": {"type": "string", "description": "A Lichtblick layout, relative to the component folder."},
+        "streams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "url"],
+            "additionalProperties": false,
+            "properties": {"name": {"type": "string"}, "url": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "adaptor": {"$ref": "#/$defs/adaptor"}
+  },
+  "$defs": {
+    "topic": {
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9_~{}/-]*[A-Za-z0-9_}]$",
+      "description": "An absolute ROS topic name."
+    },
+    "role": {
+      "type": "string",
+      "pattern": "^(clock|ground_truth|gnss|imu|lidar|point_cloud|camera_primary|stereo_primary|autopilot|camera:[A-Za-z0-9_-]+|stereo:[A-Za-z0-9_-]+)$",
+      "description": "A stack contract role: clock, ground_truth (odometry truth), gnss, imu, lidar, point_cloud, camera_primary, camera:<name>, stereo_primary, stereo:<name>, autopilot."
+    },
+    "frame_ref": {
+      "type": "string",
+      "pattern": "^(base_link|imu|camera_primary|camera:[A-Za-z0-9_-]+|stereo_primary(\\.left|\\.right)?|stereo:[A-Za-z0-9_-]+(\\.left|\\.right)?)$",
+      "description": "The physical frame a pose is of: base_link (or imu, which sits on base_link), or a camera by role (a stereo role means its left camera unless .right is given)."
+    },
+    "axes": {
+      "enum": ["FLU", "FRD", "RDF"],
+      "description": "Axis convention: FLU (x forward, y left, z up; REP 103), FRD (x forward, y right, z down; aerospace, TartanAir's camera 'NED'), RDF (x right, y down, z forward; the camera optical frame)."
+    },
+    "container": {
+      "type": "object",
+      "required": ["image"],
+      "additionalProperties": false,
+      "description": "The component's own container, run unmodified.",
+      "properties": {
+        "image": {"type": "string", "minLength": 1, "description": "Image reference: a tag or a digest."},
+        "command": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Overrides the image's CMD (the image's ENTRYPOINT still runs). init records the image's own CMD here."
+        },
+        "entrypoint": {"type": "array", "items": {"type": "string"}, "description": "Overrides the image's ENTRYPOINT."},
+        "working_dir": {"type": "string"},
+        "environment": {
+          "type": "object",
+          "additionalProperties": {"type": ["string", "number", "boolean"]}
+        },
+        "gpu": {"type": "boolean", "description": "Give the container every GPU (compose gpus: all)."},
+        "run_as": {
+          "enum": ["image", "platform"],
+          "description": "image (default): the image's own user. platform: the host user with HOME=/tmp."
+        },
+        "config_mount": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "Where rendered config files appear in the container (default /mns/config)."
+        },
+        "compose": {
+          "type": "object",
+          "description": "Extra compose keys for odd cases (shm_size, ulimits, healthcheck, ports bound to 127.0.0.1 ...). Networks, names and depends_on stay the platform's."
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "required": ["topic"],
+      "additionalProperties": false,
+      "properties": {
+        "topic": {"$ref": "#/$defs/topic"},
+        "type": {"type": "string"},
+        "description": {"type": "string"}
+      }
+    },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the stack must be for the component. A value the scenario leaves free is applied; one it contradicts fails generation.",
+      "properties": {
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"min_vram_gb": {"type": "number", "minimum": 0}}
+        },
+        "autopilot": {"type": "array", "items": {"enum": ["px4", "ardupilot"]}},
+        "rmw": {"enum": ["any", "cyclonedds", "fastrtps"]},
+        "dds_config": {"type": "string"},
+        "localization_source": {"enum": ["any", "sim", "external"]},
+        "point_cloud_frame": {"enum": ["any", "map", "odom"]},
+        "bridge_mavros": {"enum": ["any", true, false]},
+        "ros_domain_id": {"type": ["integer", "string"]}
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How the platform scores the component after a run (as component.yaml has it).",
+      "properties": {
+        "builtin": {"enum": ["estimate", "planner"]},
+        "image": {"type": "string"},
+        "command": {"type": "array", "items": {"type": "string"}},
+        "needs": {"type": "array", "items": {"enum": ["bag", "events"]}},
+        "record": {"type": "array", "items": {"$ref": "#/$defs/topic"}},
+        "options": {"type": "object"},
+        "checks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 1,
+            "additionalProperties": false,
+            "properties": {"max": {"type": "number"}, "min": {"type": "number"}}
+          }
+        },
+        "timeout_s": {"type": "integer", "minimum": 1},
+        "latency": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "input", "output"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+              "input": {"$ref": "#/$defs/topic"},
+              "output": {"$ref": "#/$defs/topic"},
+              "label": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "adaptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How the platform's generic adaptor fits the container to the stack. Set `image` (and `command`) instead to run your own adaptor.",
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "A custom adaptor image to run instead of the generic one (inputs, outputs and pacing then do not apply; config templates still render)."
+        },
+        "command": {"type": "array", "items": {"type": "string"}},
+        "environment": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean"]}},
+        "inputs": {"type": "array", "items": {"$ref": "#/$defs/input"}},
+        "outputs": {"type": "array", "items": {"$ref": "#/$defs/output"}},
+        "config": {"type": "array", "items": {"$ref": "#/$defs/config_file"}},
+        "pacing": {"$ref": "#/$defs/pacing"}
+      }
+    },
+    "input": {
+      "type": "object",
+      "required": ["role"],
+      "additionalProperties": false,
+      "description": "Republish one consumed role under the container's names. Camera roles take image/info, stereo roles left/right (and left_info/right_info), every other role topic.",
+      "properties": {
+        "role": {"$ref": "#/$defs/role"},
+        "topic": {"$ref": "#/$defs/topic"},
+        "image": {"$ref": "#/$defs/topic"},
+        "info": {"$ref": "#/$defs/topic"},
+        "left": {"$ref": "#/$defs/topic"},
+        "right": {"$ref": "#/$defs/topic"},
+        "left_info": {"$ref": "#/$defs/topic"},
+        "right_info": {"$ref": "#/$defs/topic"},
+        "encoding": {
+          "enum": ["passthrough", "rgb8", "bgr8", "rgba8", "bgra8", "mono8"],
+          "description": "Image encoding the container gets (default passthrough). The stack's cameras are bgr8 (see the contract)."
+        },
+        "max_hz": {"type": "number", "exclusiveMinimum": 0, "description": "Rate cap, on message stamps (sim time)."},
+        "pair_tolerance_s": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Stereo only: pair left and right whose stamps differ by at most this (default 0: identical stamps, which the bridge gives)."
+        },
+        "camera_info": {
+          "enum": ["relay", "contract", "none"],
+          "description": "relay (default): republish the stack's CameraInfo. contract: build it from the contract's calibration (with the stereo baseline in the right camera's P), published with every image. none: no CameraInfo."
+        },
+        "frame_id": {"type": "string", "description": "Rewrite header.frame_id (camera and topic roles)."},
+        "left_frame_id": {"type": "string"},
+        "right_frame_id": {"type": "string"},
+        "qos": {"enum": ["reliable", "best_effort"], "description": "Subscription reliability on the stack side (default reliable)."}
+      }
+    },
+    "output": {
+      "type": "object",
+      "required": ["from", "type", "to"],
+      "additionalProperties": false,
+      "description": "Take a container output and publish it on the stack. to: estimate converts a pose to the platform's estimate; to: /topic relays it.",
+      "properties": {
+        "from": {"$ref": "#/$defs/topic"},
+        "type": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+/msg/[A-Za-z0-9_]+$",
+          "description": "The container's message type. For to: estimate one of geometry_msgs/msg/PoseStamped, geometry_msgs/msg/PoseWithCovarianceStamped, geometry_msgs/msg/TransformStamped, nav_msgs/msg/Odometry, tf2_msgs/msg/TFMessage."
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^(estimate|/.+)$",
+          "description": "estimate, or a stack topic to relay to."
+        },
+        "tf": {
+          "type": "object",
+          "required": ["parent", "child"],
+          "additionalProperties": false,
+          "description": "tf2_msgs/msg/TFMessage only: the transform to take.",
+          "properties": {"parent": {"type": "string"}, "child": {"type": "string"}}
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "What the container's pose is of, and in which axes (default base_link, FLU).",
+          "properties": {"frame": {"$ref": "#/$defs/frame_ref"}, "axes": {"$ref": "#/$defs/axes"}}
+        },
+        "world": {
+          "enum": ["ENU", "NED", "FLU", "FRD", "RDF", "first_pose"],
+          "description": "The container's world frame: ENU (default) or NED, FLU/FRD/RDF axes at the stack's world origin, or first_pose (the world is the body frame at the first output, as most odometry has it)."
+        },
+        "anchor": {
+          "enum": ["none", "first_position"],
+          "description": "first_position moves the world origin to the first estimate's position (default none; the scorer aligns anyway)."
+        },
+        "stamp": {
+          "enum": ["header", "restore_sec", "receive"],
+          "description": "header (default): the output's own stamp. restore_sec: the output keeps only the nanosecond field; take the seconds from the input it answers. receive: the sim time it arrived."
+        },
+        "frame_id": {"type": "string", "description": "Relays only: rewrite header.frame_id."}
+      }
+    },
+    "config_file": {
+      "type": "object",
+      "required": ["template"],
+      "additionalProperties": false,
+      "description": "A template in files/ rendered from the stack contract before the container starts. Placeholders are {{ name }} or {{ name | filter }}; `mns-stacks component check --stack` lists the names and their values.",
+      "properties": {
+        "template": {"type": "string", "pattern": "^files/[^ ]+$"},
+        "out": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$",
+          "description": "Path under the container's config mount (default: the template's name)."
+        }
+      }
+    },
+    "pacing": {
+      "type": "object",
+      "required": ["max_inflight", "answered_by"],
+      "additionalProperties": false,
+      "description": "Feed the container only while it has fewer than max_inflight inputs it has not answered on answered_by (an output's `from`). Keeps a slow model from dropping frames on its own.",
+      "properties": {
+        "max_inflight": {"type": "integer", "minimum": 1},
+        "answered_by": {"$ref": "#/$defs/topic"},
+        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "description": "An unanswered input expires after this (default 1.0 s)."},
+        "max_hz": {"type": "number", "exclusiveMinimum": 0, "description": "A wall-clock ceiling on paced inputs."},
+        "inputs": {"type": "array", "items": {"$ref": "#/$defs/role"}, "description": "Which inputs are paced (default every camera and stereo input)."}
+      }
+    }
+  }
+}
