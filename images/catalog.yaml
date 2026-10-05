@@ -157,7 +157,7 @@ images:
   v1_runtime_host:
     repo: dhdevspace/auto_mns
     tag: "tevv-runtime-host-v1.0.0-m062b990"
-    digest: sha256:b90c88761ca0840d68b8e644c95b57c638feaa52185249c601ad92999f1fd491
+    digest: sha256:d4bbb8b66b1bd391bf5b1353040120354ad621e8b4fb748034b51552d257c882
     channel: pinned
     purpose: >-
       MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim release/v1.0.0-next 131d7183fb98, dirty=false): the shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc5; carries its host contract (label tevv.host.contract); its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
@@ -199,7 +199,7 @@ images:
   v1_runtime_host_kit:
     repo: dhdevspace/auto_mns
     tag: "tevv-runtime-host-kit-v1.0.0-m062b990"
-    digest: sha256:5263c2cd56b4d2880bbd8c54b32b587f197233326e501beabcdacd566e316b94
+    digest: sha256:f11ca99c4763b923bf3eced99569e1ab40990aebe717211d99a08ca9fd4f4b3c
     channel: pinned
     pull: false
     purpose: >-
@@ -235,8 +235,8 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-g3ffd351"
-    digest: sha256:d01ffed817e8cf657dee0f6bef81979c721d6faa70287c4011f4b166e129f35a
+    tag: "tevv-web-dashboard-backend-v1.0.0-g665cdaf"
+    digest: sha256:75027034549a49f50d6bd92384c952d2113ee621346ffb1823fc8cd1da9fc498
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
