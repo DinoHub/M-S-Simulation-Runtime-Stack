@@ -42,6 +42,31 @@ How to read these numbers:
 - **The real-time ceiling.** With MAVROS on, it is about 20 vehicles on this machine. With MAVROS off, 60 PX4 or 60 ArduPilot vehicles stay at real time.
 - **ArduPilot's extra sim cost.** ArduPilot costs the simulator more than PX4: about 7 cores against about 4 at 60 vehicles.
 
+## Keeping MAVROS on, but slimmed (6 October 2026)
+
+60 PX4 vehicles, the same machine and test. The sim speed is the median of the hover samples.
+
+| 60 PX4 vehicles | MAVROS CPU per bridge (at 5 vehicles) | MAVLink messages/s into MAVROS | Sim speed (median, lowest) | Bridges' CPU | Load average | Memory |
+|---|---|---|---|---|---|---|
+| MAVROS as shipped | 31.6% | 672 | 0.55, 0.53 | 16.1 cores | 178 | 21.4 GB |
+| Slim plugins (`slim_mavros.py`) | 12.4% | 672 | 0.92, 0.85 | 9.4 cores | 68 | 15.4 GB |
+| Slim plugins and trimmed PX4 streams (`trim_streams.sh`) | 6.0% | 187 | 0.96, 0.95 | 9.3 cores | 69 | 15.5 GB |
+| MAVROS off | none | none | 0.99, 0.84 | 6.1 cores | 58 | 8.0 GB |
+
+All 60 vehicles were ready, took off, held and landed in every row. MAVROS still publishes state, IMU and local and global position with the slim plugins, and with trimmed streams local position arrives at 20 Hz instead of 100 Hz. The slim plugins do most of the work. Trimming PX4's streams mostly steadies the sim speed: the lowest sample went from 0.85 to 0.95. At 60 vehicles the bridges' CPU barely moves with trimming, because each bridge's remaining cost is MAVROS's fixed overhead and the bridge's own node.
+
+The slim plugin list covers what flying needs:
+- state, arming and modes (`sys_status`);
+- `sys_time`;
+- `command`;
+- `imu`;
+- local and global position;
+- home position;
+- altitude;
+- the four setpoint plugins.
+
+Anything that uses another plugin needs it added to the allowlist: missions (`waypoint`), parameters (`param`), RC override, the wind estimate and so on. The PX4 rates last until the PX4 container restarts. A permanent version would be a rate profile the generator writes into the PX4 startup script.
+
 ## Where the CPU goes
 
 Per vehicle, measured on the 5-vehicle PX4 stack:
