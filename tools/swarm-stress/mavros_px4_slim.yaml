@@ -1,0 +1,80 @@
+# MAVROS configuration for PX4 SITL with AirSim
+# Disables plugins that commonly conflict with AirSim ROS2 nodes or stale DDS metadata.
+#
+# DDS Topic Type Collision Fix:
+# MAVROS plugins create topics like /{namespace}/mavros/send and /{namespace}/mavros/status
+# which can conflict with leftover DDS discovery metadata from previous runs.
+#
+# Before launching, it can still help to run:
+#   pkill -9 mavros_node; ros2 daemon stop && ros2 daemon start; rm -rf /tmp/fastdds_*
+
+/**:
+  ros__parameters:
+    # ==========================================================================
+    # PLUGIN DENYLIST - Prevent DDS type collision crashes / unnecessary plugins
+    # ==========================================================================
+    # Swarm profile: deny every plugin, then allow only what flying needs:
+    # state/arming/modes, timesync, commands, IMU, local and global
+    # position, home, altitude and the setpoint plugins an offboard
+    # controller uses. Everything else (about 40 more plugins) stays off.
+    plugin_denylist:
+      - '*'
+    plugin_allowlist:
+      - sys_status
+      - sys_time
+      - command
+      - imu
+      - local_position
+      - global_position
+      - home_position
+      - altitude
+      - setpoint_raw
+      - setpoint_position
+      - setpoint_velocity
+      - setpoint_attitude
+
+    # ==========================================================================
+    # CONNECTION PARAMETERS
+    # ==========================================================================
+    conn:
+      timeout: 30.0
+
+    # ==========================================================================
+    # STARTUP PARAMETERS
+    # ==========================================================================
+    startup_px4_usb_quirk: false
+
+    # ==========================================================================
+    # SETPOINT PLUGIN CONFIGURATION
+    # ==========================================================================
+    # PX4 commonly uses OFFBOARD with setpoint topics, so keep these initialized.
+    setpoint_velocity:
+      mav_frame: LOCAL_NED
+
+    setpoint_raw:
+      mav_frame: LOCAL_NED
+
+    setpoint_position:
+      tf:
+        listen: false
+      mav_frame: LOCAL_NED
+
+    setpoint_attitude:
+      reverse_thrust: false
+      use_quaternion: true
+# ==============================================================================
+# PER-PLUGIN NODE SECTIONS
+# ==============================================================================
+# Each mavros plugin is its OWN parameter node (/{vehicle}/mavros/<plugin>).
+# Params for a plugin must live in a /**/<plugin> section like these — nesting
+# them under the /** blob above (e.g. `setpoint_raw: {thrust_scaling: ...}`)
+# is silently ignored (same trap as the TF frame params; see
+# mavros_bringup.launch.py::_write_frame_params_file).
+/**/setpoint_raw:
+  ros__parameters:
+    # Default is nan -> ignore_thrust=true: mavros DROPS the thrust field of
+    # every AttitudeTarget ("Received thrust, but ignore_thrust is true ...
+    # Actuation will be ignored") and attitude offboard control silently does
+    # nothing — the drone lands as soon as an attitude controller takes over.
+    # 1.0 = pass the normalized [0..1] thrust through unchanged (PX4 native).
+    thrust_scaling: 1.0
