@@ -173,7 +173,7 @@ images:
   v1_stacks:
     repo: dhdevspace/auto_mns
     tag: "mns-stacks-v1.0.0-i4ded7cf"
-    digest: sha256:8f35dc06869e5770eb25825d161ce7eaa1dae658bd55664b342c4161bc6e1189
+    digest: sha256:3466200a88ed679b22389bf3fbaa543564f2adfb2b96a9537048c738f297004b
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
