@@ -44,16 +44,21 @@ run the same script again; it skips whatever is already done.
 4. Back in the dashboard, click your scenario under **Authored scenarios**.
 5. **Generate**: **Generate stack**.
 6. **ROS 2** → **Bag capture**: tick `/ground_truth/odom`, `/imu/data` and
-   `/gps/fix` → **Save & continue to metrics**. Then **Metrics** → **Save &
-   apply**.
-7. **Launch**: pick your stack → **Launch**. Wait for *Visualization ready* →
-   **Go to Monitor**.
-8. **Monitor**: the **Bag recording** panel shows **REC mm:ss**; that's your bag
-   recording. Fly with **Teleop (WASD)** or **Quick Mission Launch**. *PX4 needs
-   1–2 minutes after spawn before it will arm.*
-9. **Launch** → **Stop**. This finalizes the bag.
-10. Your bag is in `runs/<scenario>_<timestamp>/bag/`. **Replay → Bags**
-    lists and plays it; with ROS 2 on the host, `ros2 bag info` reads it too.
+   `/gps/fix` → **Save & continue to the test plan**.
+7. **Test plan**: keep **Measure** and **Judge** as they are, pick **Route**
+   `box-10m.yaml` under **Fly**, keep 1 run under **Repeat** → **Save plan**.
+8. **Run** → **Run**. The run's row says *flying*; **Watch live** opens it on
+   Monitor. It takes off, flies the route, lands and stops by itself.
+9. When the row says *done* it shows the verdict (PASS or FAIL, and why) and a
+   map of the flight.
+10. Your bag is in `generated/campaigns/<plan>/runs/<run>/bag/`. **Replay →
+    Bags** lists and plays it; with ROS 2 on the host, `ros2 bag info` reads it
+    too.
+
+To fly by hand instead, open **Run → Open the stack for manual flying**:
+**Launch**, fly on **Monitor**, then **Stop** (which finalizes the bag into
+`runs/<scenario>_<timestamp>/bag/`). *PX4 needs 1–2 minutes after spawn
+before it will arm.*
 
 Starting again from scratch on a machine that has run MnS before? Stop what
 is running first:
@@ -91,7 +96,7 @@ docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
                                │      components/<id>                        │ stop: metrics,
                                │      (--component)                          ▼ component scores
                                └──▶ CampaignSpec ──▶ N runs ──────▶ metrics service ──▶ verdict per run
-                                    (Campaign step)  (one stack each)  (localhost:8770)    (runs/)
+                                    (Test plan step) (one stack each)  (localhost:8770)    (runs/)
          ▲                                                                   ▲
          └───────────────── all driven from the dashboard (localhost:3001) ──┘
 ```
@@ -293,15 +298,11 @@ docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
 Open **Scenario Configuration**. A stepper runs across the top:
 
 ```
-0 Content → 1a Author → 1b Generate → 1c ROS 2 → 1d Metrics → 2 Launch → 3 Runtime → 4 Analysis
-                                                    └→ 1e Campaign (optional: many runs, each judged)
+0 Content → 1a Author → 1b Generate → 1c ROS 2 → 1d Test plan → 2 Run → 3 Analysis
 ```
 
-Newer dashboard builds (branch `feat/live-stack-viewer`) add **1e Campaign**
-beside Launch and fold Launch and Runtime into one **2 Run** step:
-`… → 1d Metrics → 1e Campaign → 2 Run → 3 Analysis`. The steps below follow the
-pinned dashboard; [Repeatable test campaigns](#repeatable-test-campaigns) covers
-campaigns.
+Every step is required: a scenario is tested by its test plan, and Run runs
+that plan. Flying by hand is still there, as an option inside Run.
 
 Each step unlocks when the previous one is done and then shows a check mark.
 The whole loop takes about 15 minutes the first time.
@@ -437,15 +438,47 @@ On **Bag capture**:
      ros2-tools*.
    - If you tick nothing, **everything** is recorded, which with cameras is
      gigabytes per minute.
-3. Click **Save & continue to metrics**.
+3. Click **Save & continue to the test plan**.
 
-### Step 1d: Metrics
+### Step 1d: Test plan
 
-Optionally tick **Measure this run** and choose a preset. Event detectors then
-log to `generated/<name>/outputs/metrics/<run>/events.jsonl`. Click **Save &
-apply**.
+One page holds everything about how the scenario is tested, in four numbered
+sections:
 
-### Step 2: Launch
+1. **Measure**: which detectors the simulator runs (presets: Safety only,
+   Trajectory, Everything). They log to the run's `events.jsonl`.
+2. **Judge**: which checks each run is judged on and their thresholds, for
+   example collisions at most 0, or path length at most 100 m. A check needs
+   its detector, so judging a metric keeps its detector on.
+3. **Fly**: the mission (a route from the scenario's `routes/`, or a shared
+   route such as `box-10m.yaml`, a goal course, or a custom command), and when
+   a run starts (once ground truth and the cameras are steady) and ends.
+4. **Repeat**: repeats, seeds and sweeps (wind, weather, any ScenarioSpec
+   field), and what each run's bag keeps.
+
+**Save plan** saves Measure and Judge into the scenario's `ScenarioSpec.yaml`
+(`extensions."mns.metrics"`, written through ScenarioLab) and regenerates the
+stack, then saves Fly and Repeat as `CampaignSpec.<plan>.yaml` next to it.
+Because measuring and judging live in the scenario, every way of flying it,
+the plan's runs, a manual flight or a campaign on OSMO, is measured and judged
+the same way. Components come from **Generate**; the plan lists them.
+
+### Step 2: Run
+
+**Run** runs the saved plan: each run brings up a stack of its own, flies the
+mission, records, and is judged. Each row shows the run's status (*flying*
+with a **Watch live** link to Monitor while it is in the air), then its
+verdict, why it failed if it did, component scores and a map of the flight.
+Reopening the step shows the plan's last results. **Cancel after this run**
+stops a long plan between runs.
+
+While a plan run flies, its stack carries the scenario's stack name, so
+**Launch** and **Stop** below wait until the plan ends.
+
+#### Flying by hand
+
+Open **Open the stack for manual flying** to bring the scenario's stack up
+yourself:
 
 1. Under **Generated stack**, select your stack and click **Launch**. Use
    **Refresh stacks** if it isn't listed.
@@ -467,7 +500,8 @@ desktop.
 The **Monitor** page has these areas:
 
 - **Viewers → Lichtblick**: live 3D view, camera images and plots. **Viewers →
-  Sim** shows the simulator view.
+  Sim** shows the simulator view where the runtime host streams it (the v1
+  host does not).
 - **Mission Control** (right-hand panel):
   - pick a vehicle
   - **Quick Mission Launch** and **Flight patterns** for scripted flights
@@ -487,7 +521,8 @@ You can also fly from your own autonomy stack; see
 
 ### Step 4: Stop, which finalizes the bag
 
-Go back to **Launch** and click **Stop**. The dashboard stops the recorder
+A plan run stops by itself. For a stack you launched by hand, go back to
+**Run → Open the stack for manual flying** and click **Stop**. The dashboard stops the recorder
 cleanly, writing the bag's `metadata.yaml`, and then shuts the stack down
 (`mns-stacks stop`, which finalizes the run's metrics first). **Analysis** then
 unlocks.
@@ -498,7 +533,10 @@ Always stop through the dashboard. A bag killed mid-write has no
 ### Step 5: Get your rosbag
 
 Everything a run produces is inside the folder you cloned
-(`M-S-Simulation-Runtime-Stack/`). Each run gets its own folder in `runs/`,
+(`M-S-Simulation-Runtime-Stack/`). A test plan's runs are under
+`generated/campaigns/<plan>/runs/<run>/` (`bag/`, `validation.json`,
+`metrics/`), with the plan's `campaign_manifest.json` beside them. A stack
+flown by hand gets its own folder in `runs/`,
 named after the scenario and the time the stack started, in **UTC**. The
 newest run is the last one listed:
 
