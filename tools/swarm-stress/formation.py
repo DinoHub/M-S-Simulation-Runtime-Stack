@@ -59,8 +59,15 @@ def main() -> int:
     ap.add_argument("--lead", type=float, default=20.0,
                     help="seconds from now to the shared start, for every upload to land first")
     ap.add_argument("--timeout", type=float, default=900.0)
-    ap.add_argument("--url", help="MAVLink URL inside each autopilot container (default: PX4's free "
-                                  "MAVROS endpoint, udpout:127.0.0.1:14555)")
+    ap.add_argument("--columns", type=int, default=8, help="the spawn grid's columns (make_spec.py --columns)")
+    ap.add_argument("--row-step", type=float, default=3.0,
+                    help="metres of altitude between grid rows: vehicles of one column fly the "
+                         "north/south legs single file, and a late one is caught from behind")
+    ap.add_argument("--col-step", type=float, default=1.5,
+                    help="extra metres for every other column, for the same reason on east/west legs")
+    ap.add_argument("--url", help="MAVLink URL(s), comma-separated and tried in order, inside each "
+                                  "autopilot container (default: PX4 udpout:127.0.0.1:14555, its free "
+                                  "MAVROS endpoint; ArduPilot tcp:127.0.0.1:5760 then udpin:127.0.0.1:14552)")
     a = ap.parse_args()
 
     autopilot, names = containers(a.scenario)
@@ -68,14 +75,24 @@ def main() -> int:
         print(f"no PX4 containers for {a.scenario}; is the stack up?", file=sys.stderr)
         return 2
     start_at = time.time() + a.lead
-    args = ["--autopilot", autopilot] + (["--url", a.url] if a.url else []) + ["--alt", str(a.alt), "--speed", str(a.speed), "--route", a.route,
-            "--start-at", str(start_at), "--timeout", str(a.timeout)]
-    print(f"{len(names)} {autopilot} vehicles; route {a.route} at {a.alt:g} m, {a.speed:g} m/s; "
-          f"start in {a.lead:g}s", file=sys.stderr, flush=True)
+    url = a.url or ("tcp:127.0.0.1:5760,udpin:127.0.0.1:14552" if autopilot == "ardupilot" else "")
+    base = ["--autopilot", autopilot] + (["--url", url] if url else []) + ["--speed", str(a.speed),
+            "--route", a.route, "--start-at", str(start_at), "--timeout", str(a.timeout)]
+    # PX4 containers count from 1, ArduPilot's from 0; the grid index is the vehicle's.
+    first = min(int(n.rsplit("-", 1)[1]) for n in names)
+
+    def alt(name: str) -> float:
+        i = int(name.rsplit("-", 1)[1]) - first
+        return a.alt + a.row_step * (i // a.columns) + a.col_step * ((i % a.columns) % 2)
+
+    top = max(alt(n) for n in names)
+    print(f"{len(names)} {autopilot} vehicles; route {a.route}, {a.alt:g} to {top:g} m by row, "
+          f"{a.speed:g} m/s; start in {a.lead:g}s", file=sys.stderr, flush=True)
     t0 = time.time()
     results: dict[str, dict] = {}
     with cf.ThreadPoolExecutor(len(names)) as ex:
-        futures = {ex.submit(fly, n, args, a.lead + a.timeout + 120): n for n in names}
+        futures = {ex.submit(fly, n, base + ["--alt", str(alt(n))], a.lead + a.timeout + 120): n
+                   for n in names}
         for fut in cf.as_completed(futures):
             name = futures[fut]
             try:
