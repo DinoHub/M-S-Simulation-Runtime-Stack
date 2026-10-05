@@ -11,7 +11,9 @@ The test runs entirely through the dashboard:
 |---|---|
 | `make_spec.py` | Writes `scenarios/<name>/ScenarioSpec.yaml` with N copies of a scenario's first vehicle on a grid, for PX4 or ArduPilot, with MAVROS on or off (`--no-mavros`). |
 | `run_level.sh` | One level of the test: generates the scenario's stack, launches it, runs `stress.py` and stops the stack. |
-| `stress.py` | Runs the test itself:<br>1. Waits for every vehicle to report ready.<br>2. Measures the sim's speed (sim seconds per wall second, from `/clock`), CPU, memory and GPU.<br>3. Takes every vehicle off at once.<br>4. Polls each one through the hover.<br>5. Lands them all.<br>The last line it prints is a JSON summary. |
+| `stress.py` | Runs the test itself:<br>1. Waits for every vehicle to report ready.<br>2. Measures the sim's speed (sim seconds per wall second, from `/clock`), CPU, memory and GPU.<br>3. Takes every vehicle off at once.<br>4. Polls each one through the hover.<br>5. Lands them all.<br>The last line it prints is a JSON summary.<br>`POST_READY_CMD` runs once every vehicle is ready, before anything is measured; `{project}` is the stack's compose project. |
+| `mavros_px4_slim.yaml`, `slim_mavros.py` | A MAVROS config that denies every plugin and allows only the twelve a flight stack uses, and a script that mounts it into every bridge of a generated stack. |
+| `trim_streams.sh` | Lowers every PX4's onboard MAVLink stream rates at runtime (a swarm profile). |
 
 ```bash
 python3 tools/swarm-stress/make_spec.py scenarios/demo-blocks/ScenarioSpec.yaml 60 --autopilot px4 --no-mavros
