@@ -311,7 +311,7 @@ ifeq ($(strip $(SCENARIO)),)
 $(error usage: make fly SCENARIO=<name under scenarios/> [RECORD=1] [KEEP=1] [ARGS=...])
 endif
 endif
-fly: ensure-demo-packs  ## Generate and fly SCENARIO for FLY_SECONDS unless ARGS names --done (RECORD=1 records a bag; COMPONENTS="mac-vo components/x ..." attaches packages, by id or folder)
+fly: ensure-demo-packs  ## Generate and fly SCENARIO for FLY_SECONDS unless ARGS names --done (RECORD=1 records a bag; COMPONENTS="openvins components/x ..." attaches packages, by id or folder)
 	@$(MNS_STACKS_ENV); COMPONENTS="$(COMPONENTS)" ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
 
 evaluate: ensure-demo-packs  ## Fly SCENARIO end to end and print its verdict: record what scorers read, MISSION="<cmd>" ({stack} = the stack), score, report (COMPONENTS= as for fly)

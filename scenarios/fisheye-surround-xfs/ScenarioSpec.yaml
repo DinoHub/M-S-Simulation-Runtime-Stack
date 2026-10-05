@@ -14,8 +14,8 @@ name: fisheye-surround-xfs
 stack_name: fisheye-surround-xfs
 environment:
   id: xfs-level
-  version: 1.0.1
-  artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+  version: 1.0.2
+  artifact_digest: sha256:7eeb41a5ad04d3d2f4bd8c5d876703793b7485d93d59d07172d12c174c100871
 runtime:
   profile: airsim_unreal_px4_docker
   features:
