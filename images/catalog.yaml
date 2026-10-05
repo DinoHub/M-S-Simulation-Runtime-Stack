@@ -156,24 +156,24 @@ images:
   # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
   v1_runtime_host:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-v1.0.0-zones.2"
-    digest: sha256:5c28b9f7ae02c4935c16dd0e3e0f5ea996aa922638e4bcd4b04e228e89cf7df5
+    tag: "tevv-runtime-host-v1.0.0-zones.3"
+    digest: sha256:0fc576dd9da1029fcd70166934ad3de961842ed07c6ef451acdba1408db6f4a7
     channel: pinned
     purpose: >-
-      MnS 1.0 generic TEVVRuntimeHost: tevv-runtime-host-v1.0.0-rc (TEVV-Airsim release/v1.0.0-next 131d7183fb98, sha256:ba371894...) with only its game binary swapped for one built from 131d7183fb98 + feat/pack-level-zones da0d4eac9, so the MetricsEmitter emits zone and geofence events for the stack's zones file (MNS_ZONES_FILE) on pack levels, and Env.ExportOverview takes an explicit window and writes an opaque base-colour top-down picture (the run's map background, captured at stop). Cooked content, shaders, host contract and host_compatibility_id are the base image's (ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2), so level packs stay valid. The content-pack SDK plugin compiled in is a local copy matching rc5's strings, not the release asset (unreachable from the build machine); rebuild from the release once TEVV-Airsim#225 merges. Shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc5; its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing.
+      MnS 1.0 generic TEVVRuntimeHost: tevv-runtime-host-v1.0.0-rc (TEVV-Airsim release/v1.0.0-next 131d7183fb98, sha256:ba371894...) with only its game binary swapped for one built from 131d7183fb98 + feat/pack-level-zones da0d4eac9 + fix/scenario-plugin-origin-and-streaming 390326805 (TEVV-Airsim#226: ScenarioPlugin objects use the stack origin and, on World Partition levels, wait for their cells to stream in before random spawns trace for the floor), so the MetricsEmitter emits zone and geofence events for the stack's zones file (MNS_ZONES_FILE) on pack levels, and Env.ExportOverview takes an explicit window and writes an opaque base-colour top-down picture (the run's map background, captured at stop). Cooked content, shaders, host contract and host_compatibility_id are the base image's (ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2), so level packs stay valid. The content-pack SDK plugin compiled in is a local copy matching rc5's strings, not the release asset (unreachable from the build machine); rebuild from the release once TEVV-Airsim#225 merges. Shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc5; its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing.
 
   v1_authoring:
     repo: dhdevspace/auto_mns
-    tag: "mns-authoring-v1.0.0-rc.spec.3"
-    digest: sha256:35c6f49ff8b3b6dfbcc14d86df0339ec46e4b31a3b663355747a569054e38bde
+    tag: "mns-authoring-v1.0.0-rc.spec.4"
+    digest: sha256:867211bb9dcd06d6b5ae8f802f53631036b9bae1ff22c88511ddeea0fcff9923
     channel: pinned
     purpose: >-
-      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0-next 65bfc622c96f), built kit-only with --kit <v1_runtime_host_kit> --strict and no waivers (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins, UDS and the preview content come from that kit (TEVV-Airsim 131d7183fb98); SDK 1.0.0rc5; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore. The ScenarioLab binary is swapped for one built from 65bfc622c96f + feat/spec-source-of-truth + feat/asset-thumbnails 962b23e762d7 (TEVV-Authoring#35, #36): ScenarioLab is the ScenarioSpec writer of record (reads specs whole with their comments, writes one ScenarioSpec.yaml, applies dashboard edits headless with -MnSApplyScenarioRequest), the sensor profile form lists cameras with rig presets, the Spawns tab previews random spawns with the runtime's sampling, and the asset pickers show a picture of each asset (rendered by ScenarioLab, cached under the authoring data root's Thumbnails/). Cooked content and labels are the rc image's (c376cc8d...).
+      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0-next 65bfc622c96f), built kit-only with --kit <v1_runtime_host_kit> --strict and no waivers (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins, UDS and the preview content come from that kit (TEVV-Airsim 131d7183fb98); SDK 1.0.0rc5; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore. The ScenarioLab binary is swapped for one built from 65bfc622c96f + feat/spec-source-of-truth + feat/asset-thumbnails e41ab65402bc (TEVV-Authoring#35, #36): ScenarioLab is the ScenarioSpec writer of record (reads specs whole with their comments, writes one ScenarioSpec.yaml, applies dashboard edits headless with -MnSApplyScenarioRequest), the sensor profile form lists cameras with rig presets, the Spawns tab previews random spawns with the runtime's sampling, and the asset pickers show a picture of each asset (rendered by ScenarioLab, cached under the authoring data root's Thumbnails/). Cooked content and labels are the rc image's (c376cc8d...). It opens hand-written specs faithfully (world origin when a spec gives none, frame-less starts as AirSim NED, no added autopilot block) and previews Blueprint spawn assets as themselves; asset pickers use a picture the pack ships (assets[].thumbnail) when there is one.
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.0.0-rc"
-    digest: sha256:6c2a47e3117501aba749a6eafa4df238a564f8351d938c8fbc247f46456a38bc
+    tag: "mns-stacks-v1.0.0-rc.services.26"
+    digest: sha256:173df698df40c1f5d989a0fc4d97bce735f3f0d368b20f639ed826711424a02f
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -182,7 +182,7 @@ images:
       compatibility check. The dashboard, make fly/stop/campaign/stacks,
       tools/images.sh drift and osmo/campaign.py all run it as a sibling
       container with host paths. Replaces mns-product-shell and
-      mns-stack-generator, which are retired and no longer pinned.
+      mns-stack-generator, which are retired and no longer pinned. Local overlay: the rc image with platform/stacks from MnS-Integration-Platform feat/components 7414b56 (components and adaptors, the campaign runner with autopilot from the stack contract, start/end conditions, top-down capture at stop, and the PX4 pilot keeping OFFBOARD alive while arming).
 
   v1_packs:
     repo: dhdevspace/auto_mns
@@ -235,11 +235,12 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-gbe02173"
-    digest: sha256:b8c4cc7eeb5e34ad031b7cdc13565774b136ac5a005e3246887edece64c3eec7
+    tag: "tevv-web-dashboard-backend-v1.0.0-live.14"
+    digest: sha256:f01e460484d722bb221227464f404668d882d7621c063277820f1949de0f75e1
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
+      commit: d3a8b2c
     # No `bakes:`. From TEVV-Web-Dashboard#122 on the backend bakes no image
     # pins: it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and MNS_AUTHORING_IMAGE
     # from images/v1.0.0.generated.env through docker-compose-dashboard.yml,
@@ -251,18 +252,19 @@ images:
       armed and climbed; WASD re-enters OFFBOARD after Hold; STOP holds via the
       autopilot; one REST flight command per vehicle. Every stack lifecycle,
       recording, campaign and topic call goes through mns-stacks and pack status
-      through mns-packs as sibling containers; it bakes no image pins.
+      through mns-packs as sibling containers; it bakes no image pins. Now TEVV-Web-Dashboard feat/live-stack-viewer d3a8b2c (#129): Campaign step, ScenarioLab-written specs, run maps, and Monitor showing a flying campaign run.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-gbe02173"
-    digest: sha256:b8da578f1e42b9f02ee4018f4c928e096f62e74e133c4cb02c13aeb479f83ee5
+    tag: "tevv-web-dashboard-frontend-v1.0.0-live.14"
+    digest: sha256:bf10bf5dabef9a6ccd8d24504e03b9794eb7dd8b894a2f16f81de2de86ef7b27
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
+      commit: d3a8b2c
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
-      3ceef32), built with the backend above; it bakes no pins.
+      3ceef32), built with the backend above; it bakes no pins. Now feat/live-stack-viewer d3a8b2c, built with the backend above.
 
   metrics_service:
     repo: dhdevspace/auto_mns

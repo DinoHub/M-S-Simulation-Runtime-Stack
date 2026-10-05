@@ -9,7 +9,7 @@ image_sets:
     pull_policy: missing
     images:
       simulators:
-        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-zones.2@sha256:5c28b9f7ae02c4935c16dd0e3e0f5ea996aa922638e4bcd4b04e228e89cf7df5
+        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-zones.3@sha256:0fc576dd9da1029fcd70166934ad3de961842ed07c6ef451acdba1408db6f4a7
       autopilots:
         ardupilot: dhdevspace/auto_mns:ardupilot-v1.0.0@sha256:93b9e50b7b44e91aafd38b9a223100d7c67f971ebd9c246bce3582ed9ef015c1
         px4: dhdevspace/auto_mns:px4-airsim-px4-v1.0.0@sha256:0f03b74335e92450efba7421782d7ca2986edef2c4b900c3350729c8a2e7deea
