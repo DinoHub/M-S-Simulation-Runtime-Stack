@@ -358,4 +358,5 @@ consumers:
     dashboard:
       DASHBOARD_LICHTBLICK_IMAGE: dashboard_lichtblick
       DASHBOARD_TIMESCALEDB_IMAGE: dashboard_timescaledb
+      METRICS_SERVICE_IMAGE: metrics_service
 
