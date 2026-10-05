@@ -164,11 +164,11 @@ images:
 
   v1_authoring:
     repo: dhdevspace/auto_mns
-    tag: "mns-authoring-v1.0.0-rc"
-    digest: sha256:c376cc8d7c9a009e64d80335a13127e918bc1c1e5997adec6e60f114e008c1f7
+    tag: "mns-authoring-v1.0.0-rc.spec.2"
+    digest: sha256:3ba44e3b11260be0c65e71e93924d502a0f742214683b43bdaa289aeb8850102
     channel: pinned
     purpose: >-
-      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0-next 65bfc622c96f), built kit-only with --kit <v1_runtime_host_kit> --strict and no waivers (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins, UDS and the preview content come from that kit (TEVV-Airsim 131d7183fb98); SDK 1.0.0rc5; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
+      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0-next 65bfc622c96f), built kit-only with --kit <v1_runtime_host_kit> --strict and no waivers (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins, UDS and the preview content come from that kit (TEVV-Airsim 131d7183fb98); SDK 1.0.0rc5; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore. The ScenarioLab binary is swapped for one built from 65bfc622c96f + feat/spec-source-of-truth 7243e5f56ff3 (TEVV-Authoring#35): ScenarioLab is the ScenarioSpec writer of record (reads specs whole with their comments, writes one ScenarioSpec.yaml, applies dashboard edits headless with -MnSApplyScenarioRequest), the sensor profile form lists cameras with rig presets, and the Spawns tab previews random spawns with the runtime's sampling. Cooked content and labels are the rc image's (c376cc8d...).
 
   v1_stacks:
     repo: dhdevspace/auto_mns

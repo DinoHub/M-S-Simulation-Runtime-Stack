@@ -9,7 +9,7 @@
   "required_images": {
     "packs": "dhdevspace/auto_mns:mns-packs-v1.0.0-rc@sha256:d0584e11f2e1665a2c1a7e16b25c32813013f3f181c8b7afd8cfa78a5323fcfe",
     "stacks": "dhdevspace/auto_mns:mns-stacks-v1.0.0-rc@sha256:6c2a47e3117501aba749a6eafa4df238a564f8351d938c8fbc247f46456a38bc",
-    "authoring": "dhdevspace/auto_mns:mns-authoring-v1.0.0-rc@sha256:c376cc8d7c9a009e64d80335a13127e918bc1c1e5997adec6e60f114e008c1f7",
+    "authoring": "dhdevspace/auto_mns:mns-authoring-v1.0.0-rc.spec.2@sha256:3ba44e3b11260be0c65e71e93924d502a0f742214683b43bdaa289aeb8850102",
     "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-zones.2@sha256:5c28b9f7ae02c4935c16dd0e3e0f5ea996aa922638e4bcd4b04e228e89cf7df5",
     "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-rc@sha256:68af89693de7d70e3903719a139ece6bde0013b12132ba8a3c56b4f91cb7e0bf"
   },
