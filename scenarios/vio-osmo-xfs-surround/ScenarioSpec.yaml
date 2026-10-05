@@ -33,11 +33,11 @@ stack_name: vio-osmo-xfs-surround
 
 environment:
   # The v1 channel's XFS, as packs/v1.0.0.lock.json pins it: `xfs-level`
-  # 1.0.1 at sha256:08fb1485..., the level vio-osmo-xfs-ardupilot and
+  # 1.0.2 at sha256:7eeb41a5..., the level vio-osmo-xfs-ardupilot and
   # scenarios/vio-reference fly.
   id: xfs-level
-  version: 1.0.1
-  artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+  version: 1.0.2
+  artifact_digest: sha256:7eeb41a5ad04d3d2f4bd8c5d876703793b7485d93d59d07172d12c174c100871
 
 # r.Fisheye.LensRainWeatherScale 0: stopgap for runtime hosts without the UDW
 # effective-rain fix (TEVV-Airsim fix/udw-effective-rain). The XFS level ships its

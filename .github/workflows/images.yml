@@ -29,6 +29,7 @@ on:
       - "tools/check_spawn.py"
       - "tools/test_check_spawn.py"
       - "tools/test_effective_image_set.py"
+      - "tools/test_scenario_pack_pins.py"
       - "Makefile"
       - "scenarios/**"
       - "osmo/**"
@@ -113,6 +114,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_images_host_pin.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_check_spawn.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_effective_image_set.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_scenario_pack_pins.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s osmo -p 'test_campaign.py'
 
       - name: dry-run smoke (no registry, no Docker daemon)
