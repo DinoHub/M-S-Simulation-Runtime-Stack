@@ -328,7 +328,21 @@ the free space and how much the selection needs.
 1. Check the header reads **environment ready**. If it doesn't, the failing
    checks are listed; see [Troubleshooting](#9-troubleshooting).
 2. Click **Launch editor**. ScenarioLab opens in its own window after 30–90
-   seconds.
+   seconds, on its start screen: **New scenario** starts an empty one, and
+   **Open a scenario** lists every scenario in `scenarios/` with an **Open**
+   button (or type the path of any spec folder). **Refresh** picks up a
+   folder you have just copied in. Opening an authored scenario from the
+   list on this step skips the start screen.
+
+**Bringing in a ScenarioSpec you already have.** Under **Import a
+ScenarioSpec**, choose one `ScenarioSpec.yaml`, a spec folder (the split layout
+with its includes), or a `.zip` of either, and check the name it will get.
+ScenarioLab reads and rewrites the spec as it does every spec; if it refuses
+it, the errors are listed and nothing is added. On success the step lists the
+level and asset packs the spec needs, calling out any that are not installed
+(install them in **Content**), then offers **Open in ScenarioLab** and **Use
+this scenario**. An existing scenario of the same name is only replaced when
+you ask, and never while its stack or test plan is running.
 
 **Moving around the viewport**
 
@@ -417,6 +431,12 @@ The badge (*working: authored*, *modified from authored*, …) shows whether the
 spec still matches your export. **Restore authored** returns to the export, and
 **Save as new…** forks the spec under a new name.
 
+**This stack carries ...** reports the components under test the stack was
+generated with. The dashboard does not pick components: attach yours outside it
+with `mns-stacks generate --component <path>` (or your own compose), and the
+dashboard keeps them when it regenerates the stack. Cameras are placed in
+ScenarioLab.
+
 ### Step 1c: ROS 2 settings and what to record
 
 | Sub-step | What you set |
@@ -464,7 +484,8 @@ sections:
 stack, then saves Fly and Repeat as `CampaignSpec.<plan>.yaml` next to it.
 Because measuring and judging live in the scenario, every way of flying it,
 the plan's runs, a manual flight or a campaign on OSMO, is measured and judged
-the same way. Components come from **Generate**; the plan lists them.
+the same way. The plan lists the stack's components under test (read only;
+see [Generate](#step-1b-generate-the-stack)).
 
 ### Step 2: Run
 
@@ -478,11 +499,18 @@ mission, records, and is judged. The plan panel lists every run up front:
 - **Done**: each finished run's verdict, why it failed if it did, component
   scores and a map of the flight.
 
+Click any run, queued, flying or done, to open its details beside the list:
+its sweep values, the spec overrides it applies and its seed; where it is in
+the queue; its phase while it flies; and once done its verdict, key metrics,
+map, run events, **Replay** of its bag and **Open in Analysis**. Opening a run
+never moves the live view: **Now** and Monitor stay on the run in the air.
+
 **Watch on Monitor** opens Monitor following the plan: a banner across the
 top names the plan, the run in the air, its values and phase, with the queue
 and the results in a fold. Monitor moves to each run as it starts (between
 runs it says which run comes next). Pick a run in the banner, or **Pinned**,
-to stay on one run; a finished run shows its run events and run metrics.
+to stay on one run. The banner's run list opens the same details in a drawer
+while the viewer keeps following the plan.
 
 Reopening the step shows the plan's last results. **Cancel after this run**
 stops a long plan between runs.
@@ -541,6 +569,16 @@ A plan run stops by itself. For a stack you launched by hand, go back to
 cleanly, writing the bag's `metadata.yaml`, and then shuts the stack down
 (`mns-stacks stop`, which finalizes the run's metrics first). **Analysis** then
 unlocks.
+
+### Analysis
+
+**Analysis** lists every run of the scenario in one table: the latest test
+plan's runs and the runs flown by hand, with the same rows and details as
+**Run**, and a pass count per sweep value above it. Pick a run (the newest
+finished one is picked to start with); the run metrics, **Replay**, the
+hand-off bundle and the comparison with a real flight below all act on it.
+The hand-off bundle and the real-flight comparison work on runs flown by hand;
+for a plan run Analysis shows where its bag is kept.
 
 Always stop through the dashboard. A bag killed mid-write has no
 `metadata.yaml`, so it cannot be replayed or analysed.
