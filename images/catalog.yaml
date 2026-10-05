@@ -235,8 +235,8 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-gcb987ce"
-    digest: sha256:7835b882e00837831d0bd2a5cc37d67836d9df69d789269d1bcd86c4e9a4c540
+    tag: "tevv-web-dashboard-backend-v1.0.0-g1f393f9"
+    digest: sha256:2aea58e33b010778b10f85c2a7cdc1aca51ef8af8a294d590074c2c27541bbc1
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
@@ -256,8 +256,8 @@ images:
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-gcb987ce"
-    digest: sha256:0fa627b186782d48546e4f300d882c943a171d67f584a2a4e2158c3eee4054f3
+    tag: "tevv-web-dashboard-frontend-v1.0.0-g1f393f9"
+    digest: sha256:3101e8c3a6bf27bbf4381dd3341834c0f5f3213f6b8144f4c147d2e9714cdf60
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
