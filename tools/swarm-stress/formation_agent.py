@@ -49,6 +49,28 @@ def heartbeats(link, stop: threading.Event) -> None:
         stop.wait(1.0)
 
 
+def connect(urls: list[str], stop: threading.Event, wait_s: float = 15.0):
+    """The first URL the autopilot answers on. ArduPilot SITL's TCP serial
+    can stop answering after a client went away (one of 60 kept a dead
+    connection in CLOSE_WAIT and never served the next), so a second link is
+    tried rather than failing the vehicle."""
+    for url in urls:
+        link = mavutil.mavlink_connection(url, source_system=245, source_component=190)
+        alive = threading.Event()
+        threading.Thread(target=heartbeats, args=(link, alive), daemon=True).start()
+        hb = autopilot_heartbeat(link, wait_s)
+        if hb is not None:
+            link.target_system, link.target_component = hb.get_srcSystem(), hb.get_srcComponent()
+            threading.Thread(target=lambda: (stop.wait(), alive.set()), daemon=True).start()
+            say(f"connected on {url}")
+            link.url_used = url
+            return link
+        alive.set()
+        link.close()
+        say(f"no heartbeat on {url}")
+    raise RuntimeError(f"no heartbeat on {', '.join(urls)}")
+
+
 def offset(lat: float, lon: float, north: float, east: float) -> tuple[int, int]:
     dlat = north / EARTH_R
     dlon = east / (EARTH_R * math.cos(math.radians(lat)))
@@ -61,6 +83,42 @@ def command(link, cmd: int, *params: float, timeout: float = 10.0) -> int:
     ack = link.recv_match(type="COMMAND_ACK", blocking=True, timeout=timeout,
                           condition=f"COMMAND_ACK.command=={cmd}")
     return ack.result if ack else -1
+
+
+def autopilot_heartbeat(link, timeout: float):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        hb = link.recv_match(type="HEARTBEAT", blocking=True, timeout=1)
+        if hb is not None and hb.type != M.MAV_TYPE_GCS:
+            return hb
+    return None
+
+
+def set_mode(link, custom_mode: int, sub_mode: int = 0, wait_s: float = 20.0) -> None:
+    """Switch mode and confirm it from the autopilot's own heartbeat. Under
+    load a COMMAND_ACK can be late or lost while the switch itself happened
+    (60 ArduPilots: one 'refused' AUTO that its heartbeat then showed), so
+    the heartbeat decides, and the command is re-sent until it agrees."""
+    deadline = time.time() + wait_s
+    while time.time() < deadline:
+        command(link, M.MAV_CMD_DO_SET_MODE, M.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, custom_mode, sub_mode, timeout=3)
+        hb = autopilot_heartbeat(link, 3)
+        if hb is None:
+            continue
+        current = hb.custom_mode if not sub_mode else ((hb.custom_mode >> 16) & 0xFF, hb.custom_mode >> 24)
+        if current == (custom_mode if not sub_mode else (custom_mode, sub_mode)):
+            return
+    raise RuntimeError(f"mode {custom_mode}/{sub_mode} not confirmed in {wait_s:g}s")
+
+
+def arm(link, wait_s: float = 20.0) -> None:
+    deadline = time.time() + wait_s
+    while time.time() < deadline:
+        command(link, M.MAV_CMD_COMPONENT_ARM_DISARM, 1, timeout=3)
+        hb = autopilot_heartbeat(link, 3)
+        if hb is not None and hb.base_mode & M.MAV_MODE_FLAG_SAFETY_ARMED:
+            return
+    raise RuntimeError(f"not armed after {wait_s:g}s")
 
 
 def stream(link, msg_id: int, hz: float) -> None:
@@ -116,10 +174,8 @@ def main() -> int:
     result = {"ok": False, "stage": "connect"}
     stop = threading.Event()
     try:
-        link = mavutil.mavlink_connection(a.url, source_system=245, source_component=190)
-        threading.Thread(target=heartbeats, args=(link, stop), daemon=True).start()
-        if not link.wait_heartbeat(timeout=30):
-            raise RuntimeError("no heartbeat from the autopilot")
+        link = connect(a.url.split(","), stop)
+        result["url"] = link.url_used
         result["stage"] = "position"
         pos = position(link)
         stream(link, EXTENDED_SYS_STATE, 2)
@@ -156,22 +212,15 @@ def main() -> int:
 
         result["stage"] = "arm"
         t0 = time.time()
-        flag = M.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
         if ardu:
             # Copter arms in GUIDED, not AUTO; switched to AUTO on the ground it
             # waits for MISSION_START (there is no throttle stick to raise).
-            if command(link, M.MAV_CMD_DO_SET_MODE, flag, COPTER_GUIDED) != 0:
-                raise RuntimeError("GUIDED refused")
-        elif command(link, M.MAV_CMD_DO_SET_MODE, flag, PX4_AUTO, PX4_AUTO_MISSION) != 0:
-            raise RuntimeError("AUTO.MISSION refused")
-        for _ in range(10):
-            if command(link, M.MAV_CMD_COMPONENT_ARM_DISARM, 1) == 0:
-                break
-            time.sleep(1)
+            set_mode(link, COPTER_GUIDED)
         else:
-            raise RuntimeError("arming refused")
-        if ardu and command(link, M.MAV_CMD_DO_SET_MODE, flag, COPTER_AUTO) != 0:
-            raise RuntimeError("AUTO refused")
+            set_mode(link, PX4_AUTO, PX4_AUTO_MISSION)
+        arm(link)
+        if ardu:
+            set_mode(link, COPTER_AUTO)
         if command(link, M.MAV_CMD_MISSION_START, 1 if ardu else 0, last) not in (0, -1):
             raise RuntimeError("MISSION_START refused")
 
@@ -195,7 +244,10 @@ def main() -> int:
             elif kind == "HEARTBEAT" and msg.type != M.MAV_TYPE_GCS:
                 # Both autopilots disarm on their own once landed.
                 down = not (msg.base_mode & M.MAV_MODE_FLAG_SAFETY_ARMED)
-            if flown and down:
+            # Landed only counts once the route is flown: one of 60 ArduPilots
+            # read as down 2.5 s after the start while the simulator showed it
+            # flying the whole route.
+            if flown and down and reached >= last - 1:
                 result.update(ok=True, stage="landed", reached=reached, flight_s=round(time.time() - t0, 1))
                 break
         else:

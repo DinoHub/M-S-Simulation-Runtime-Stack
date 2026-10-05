@@ -77,7 +77,7 @@ Anything that uses another plugin needs it added to the allowlist: missions (`wa
 
 ```bash
 tools/swarm-stress/formation.py px4-swarm-60-xfs-lean                                    # PX4
-tools/swarm-stress/formation.py ardu-swarm-60-xfs-lean --url tcp:127.0.0.1:5760 --lead 30  # ArduPilot
+tools/swarm-stress/formation.py ardu-swarm-60-xfs-lean --route "0,60;40,60;40,0" --lead 45  # ArduPilot
 ```
 
 - **Route.** By default: climb to 25 m, then 60 m west, 40 m north and 60 m east at 4 m/s, then RETURN_TO_LAUNCH. `--route "n,e;n,e;..."`, `--alt` and `--speed` change it.
@@ -86,12 +86,27 @@ tools/swarm-stress/formation.py ardu-swarm-60-xfs-lean --url tcp:127.0.0.1:5760 
 
 The specs are `scenarios/px4-swarm-60-xfs-lean` and `scenarios/ardu-swarm-60-xfs-lean`. They were made from `stereo-xfs` with `make_spec.py --no-mavros`, with the cameras removed and the lock's `xfs-level` 1.0.2 pinned. The grid is 8 by 8 with 4 m spacing, starting at the container yard (423, -906, z -21) and running north and west.
 
-| Vehicles | Autopilot | Home after the route | Flight time per vehicle |
-|---|---|---|---|
-| 60 | ArduPilot | 60 | 97 to 107 s |
-| 60 | PX4 | 58 flew; 2 never got a position within 30 s and stayed on the ground | not measured (the run was stopped) |
+| Run | Vehicles | Autopilot | Home after the route | Flight time per vehicle |
+|---|---|---|---|---|
+| 4 m grid by the containers, all at 25 m | 60 | ArduPilot | 60, but see below | 97 to 107 s |
+| same | 60 | PX4 | 58; drones 47 and 55 spawned inside a container | not measured |
+| 8 m grid in the clear, altitudes layered | 60 | ArduPilot | 60; no vehicle-vehicle or obstacle contact in the sim's events | 106 to 120 s |
 
-The two PX4 failures led to a change: each vehicle now asks for GLOBAL_POSITION_INT (SET_MESSAGE_INTERVAL) and keeps asking for up to 2 minutes. The PX4 run has not been repeated since that change.
+What the first grid got wrong, from the simulator's events:
+- **Spawned inside containers.** The 4 m grid at the container yard put drones 39, 47 and 55 inside a container stack. They collided with it from the first second.
+- **Mid-air collisions.** Same-column pairs collided on the north/south legs: 1 and 9, 20 and 28, 7 and 15, 52 and 60, 37 and 45. Those pairs fly single file 4 m apart, and the drones started a second or more apart.
+- **A drone through the ground.** After its mid-air collision, Copter1 landed without the sim registering ground contact. It kept descending at ArduPilot's 0.5 m/s landing speed through the terrain.
+
+What fixed it:
+- **Altitude by row.** `formation.py` flies each grid row 3 m higher (`--row-step`) and every other column 1.5 m higher (`--col-step`).
+- **A clear grid.** The 60-vehicle ArduPilot spec now sits on an 8 m grid about 180 m west (x 422, y -1086). That site was found by scanning the level with AirSim's `simTestLineOfSightBetweenPoints`: every spot has 2 m of clearance, and every climb and leg was checked at its own altitude.
+- **Spawn height per spot.** Each drone spawns 1.5 m above the ground measured under it.
+- **The route for this grid** is `--route "0,60;40,60;40,0"` (east first).
+
+The link and mode fixes:
+- **ArduPilot TCP fallback.** ArduPilot SITL's TCP 5760 can keep a dead client in CLOSE_WAIT and stop serving. The agent then falls back to UDP 14552.
+- **Modes and arming from the heartbeat.** Modes and arming are confirmed from the autopilot's heartbeat, not the COMMAND_ACK.
+- **Landing.** A landing only counts after the route's last waypoint.
 
 **Before flying elsewhere, check the start height.** The XFS start height (z -21, 2.3 m above the ground) was measured at the first vehicle's spot only, so check it before moving the grid onto uneven ground.
 
