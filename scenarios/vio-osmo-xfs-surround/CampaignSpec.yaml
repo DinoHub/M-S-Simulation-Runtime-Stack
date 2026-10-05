@@ -132,6 +132,7 @@ recording:
   topics:
   - /ov_msckf/odomimu
   - /ground_truth/odom
+  - /imu/data             # validate_recording's imu_gravity / imu_flu gates
   - /clock
   - /tf
   - /tf_static
