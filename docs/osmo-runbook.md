@@ -91,6 +91,24 @@ it causes. `osmo config show <TYPE> > f.json`, edit, `osmo config update <TYPE>
 | `WORKFLOW` | `credential_config.disable_registry_validation: ["docker.io", "registry-1.docker.io"]` | *Unable to authenticate for pulling image …* at submit, for an image the run never pulls |
 | `POD_TEMPLATE default_compute` | `imagePullPolicy: IfNotPresent` on both containers | every task `FAILED_IMAGE_PULL` despite the image being in the node |
 
+### A fourth: evaluation on the service node
+
+```bash
+osmo/cpu-platform.sh      # setup-local-osmo.sh runs it after a dev login
+```
+
+It gives pool `default` a second platform, `cpu`, on `osmo-worker`, and loads
+the bridge and sim_real_eval images there. The workflow's `eval` and
+`eval-light` resources name that platform, so the evaluate and aggregate
+groups run there and the flight stays on the GPU node.
+
+Without it, a submit is refused: the platform does not exist. `campaign.py
+images` and `campaign.py run` check that `osmo resource list --pool default
+--platform cpu` lists a node, and stop with "run osmo/cpu-platform.sh" if it
+does not. The script is idempotent. [osmo-evaluation.md](osmo-evaluation.md) explains why the
+platform needs its own user template: OSMO's shared one requests
+`nvidia.com/gpu: "0"`, and KAI then gives the pod the `nvidia` runtime.
+
 ## Per run
 
 ```bash
@@ -752,7 +770,7 @@ CampaignSpec mission / evaluation --osmo/campaign.py submit--> --set / --set-str
 | `vehicles[0].cameras`, `sensors`, `dynamics` | `settings.json`, `topic_names.yaml` | sim and bridge |
 | `extensions.mns.vio_estimator.config_dir` | `vio/estimator_config.yaml`, the kalibr chains | vio |
 | `seed` (set per run by `seeds`) | `scenario/scenario_runtime.json`, `object_clutter.yaml` | sim |
-| `runtime.features.foxglove_bridge` | -- (read by `osmo/campaign.py`) | whether the run gets the live Foxglove task. **Off when absent** under OSMO, although the compose generator defaults it on; `--viz` / `--no-viz` override it. Set it in a variant's `overrides` to watch only some runs |
+| `runtime.features.foxglove_bridge` | -- (read by `osmo/campaign.py`) | whether the run gets the live Foxglove task. **Off when absent** under OSMO, although the compose generator defaults it on; the four committed OSMO scenarios, `vio-osmo-condo`, `vio-osmo-condo-ardupilot`, `vio-osmo-xfs` and `vio-osmo-xfs-ardupilot`, set it `true`. `--viz` / `--no-viz` override it; use `--no-viz` for a measurement run. Set it in a variant's `overrides` to watch only some runs |
 
 What a ScenarioSpec says and OSMO does **not** honour, each a silent no-op
 rather than an error:
