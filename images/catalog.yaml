@@ -156,24 +156,24 @@ images:
   # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
   v1_runtime_host:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-v1.0.0-rc"
-    digest: sha256:ba3718941266bee651676adf49e8a1a7736c5d60e3a3389e0a33bb202d16a870
+    tag: "tevv-runtime-host-v1.0.0-idea4290"
+    digest: sha256:f540c4fb26bf63f80536c84bed632c3cea71cacf294cddd27a4da19c5e61363d
     channel: pinned
     purpose: >-
-      MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim release/v1.0.0-next 131d7183fb98, dirty=false): the shared Scenario* plugins single copy (shared_set_id a2473476), SDK 1.0.0rc5; carries its host contract (label tevv.host.contract); its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
+      MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim integration/v1.0.0 dea429015355, dirty=false; v1.0.0 candidate: #228 packs, #226 authored origin, exec launcher): the shared Scenario* plugins single copy (shared_set_id 8ef1c3b7), SDK 1.0.0rc5; carries its host contract (label tevv.host.contract); its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
 
   v1_authoring:
     repo: dhdevspace/auto_mns
-    tag: "mns-authoring-v1.0.0-rc"
-    digest: sha256:c376cc8d7c9a009e64d80335a13127e918bc1c1e5997adec6e60f114e008c1f7
+    tag: "mns-authoring-v1.0.0-ie821a2f"
+    digest: sha256:8037f5b00f7bebf6244ab30f919f7488e9290b77dd66367390137362e9ba0991
     channel: pinned
     purpose: >-
-      MnS 1.0 ScenarioLab (TEVV-Authoring release/v1.0.0-next 65bfc622c96f), built kit-only with --kit <v1_runtime_host_kit> --strict and no waivers (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins, UDS and the preview content come from that kit (TEVV-Airsim 131d7183fb98); SDK 1.0.0rc5; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
+      MnS 1.0 ScenarioLab (TEVV-Authoring integration/v1.0.0 e821a2f074fc; v1.0.0 candidate: #25 spawn clearance, CableComponent), built kit-only with --kit <v1_runtime_host_kit> --strict and no waivers (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins, UDS and the preview content come from that kit (TEVV-Airsim dea429015355); SDK 1.0.0rc5; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.0.0-rc"
-    digest: sha256:6c2a47e3117501aba749a6eafa4df238a564f8351d938c8fbc247f46456a38bc
+    tag: "mns-stacks-v1.0.0-i4ded7cf"
+    digest: sha256:8f35dc06869e5770eb25825d161ce7eaa1dae658bd55664b342c4161bc6e1189
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -198,8 +198,8 @@ images:
 
   v1_runtime_host_kit:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-kit-v1.0.0-rc"
-    digest: sha256:e9acd116b85565b723c1c9da55d2b05dd8b551793a8c2cd20c7a020ce347dbcc
+    tag: "tevv-runtime-host-kit-v1.0.0-idea4290"
+    digest: sha256:184e9f96207b67ba10837007e8683196a89a6aaa5adc1cb1d5db4ceef7e6c4aa
     channel: pinned
     pull: false
     purpose: >-
@@ -211,11 +211,11 @@ images:
 
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns
-    tag: "tevv-airsim-ros2-bridge-humble-v1.0.0-rc"
-    digest: sha256:68af89693de7d70e3903719a139ece6bde0013b12132ba8a3c56b4f91cb7e0bf
+    tag: "tevv-airsim-ros2-bridge-humble-v1.0.0-mc4086d7"
+    digest: sha256:0736b2949dc748f7ed92d4821c7ec382f8daa06a61e11e7d810b99fc6f9c6efc
     channel: pinned
     purpose: >-
-      MnS 1.0 AirSim<->ROS 2 bridge (TEVV-Airsim-ROS2-Bridge release/v1.0.0-next 61b2b8a66553): the v1.0.0 build (459952e) plus the image-capture dedupe fix and image publisher history depth 5, so recordings pass fresh_frames and stereo_skew; built like v1.0.0 (docker/Dockerfile, ROS_DISTRO=humble, same base); 158 colcon tests green.
+      MnS 1.0 AirSim<->ROS 2 bridge (TEVV-Airsim-ROS2-Bridge release/v1.0.0-next c4086d7ca859): the v1.0.0 build (459952e) plus the image-capture dedupe fix and image publisher history depth 5, so recordings pass fresh_frames and stereo_skew; built like v1.0.0 (docker/Dockerfile, ROS_DISTRO=humble, same base); 158 colcon tests green.
 
   v1_px4:
     repo: dhdevspace/auto_mns
@@ -235,8 +235,8 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-gbe02173"
-    digest: sha256:b8c4cc7eeb5e34ad031b7cdc13565774b136ac5a005e3246887edece64c3eec7
+    tag: "tevv-web-dashboard-backend-v1.0.0-gb36d1a9"
+    digest: sha256:d4027194bf3a15a2dc533d0ba9eb80ec0d33845b311bede2b0dd1246f16c1d0b
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
@@ -246,8 +246,9 @@ images:
     # so rebuilding mns-stacks, mns-packs or the authoring image is a repin
     # here, never a dashboard rebuild.
     purpose: >-
-      MnS 1.0 dashboard backend (TEVV-Web-Dashboard release/v1.0.0-next 3ceef32),
-      pilot from integration 28030f8: REST takeoff reports success only once
+      MnS 1.0 dashboard backend (TEVV-Web-Dashboard integration/v1.0.0 b36d1a9,
+      v1.0.0 candidate: #127, .env quoting, counts via mns-packs),
+      pilot from integration integration/v1.0.0 4ded7cf: REST takeoff reports success only once
       armed and climbed; WASD re-enters OFFBOARD after Hold; STOP holds via the
       autopilot; one REST flight command per vehicle. Every stack lifecycle,
       recording, campaign and topic call goes through mns-stacks and pack status
@@ -255,14 +256,14 @@ images:
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-gbe02173"
-    digest: sha256:b8da578f1e42b9f02ee4018f4c928e096f62e74e133c4cb02c13aeb479f83ee5
+    tag: "tevv-web-dashboard-frontend-v1.0.0-gb36d1a9"
+    digest: sha256:3558431b7102891044e00a5e3931e819342a54c30e84f5d49edb2f03020d4188
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
     purpose: >-
-      MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
-      3ceef32), built with the backend above; it bakes no pins.
+      MnS 1.0 dashboard frontend (TEVV-Web-Dashboard integration/v1.0.0
+      b36d1a9), built with the backend above; it bakes no pins.
 
 consumers:
   # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env
