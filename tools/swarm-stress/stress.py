@@ -134,6 +134,13 @@ summary["not_ready"] = {n: (s or {}).get("ready_message") for n, s in st.items()
 summary["ready_wait_s"] = round(time.time() - t0)
 log(f"ready {len(ready)}/{N} after {summary['ready_wait_s']}s")
 
+# POST_READY_CMD runs once every vehicle is ready, before anything is
+# measured; {project} is the stack's compose project (e.g. trim_streams.sh).
+hook = os.environ.get("POST_READY_CMD")
+if hook:
+    subprocess.run(hook.replace("{project}", PROJ or ""), shell=True)
+    summary["post_ready_cmd"] = hook
+    time.sleep(10)
 summary["rtf_idle"] = rtf()
 summary["res_idle"] = resources()
 log(f"idle rtf={summary['rtf_idle']} {summary['res_idle']}")
