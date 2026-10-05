@@ -90,6 +90,10 @@ case "$1" in
   run|stop|status|restart|logs|record|check) needs_socket=true ;;
   campaign)
     case "${2:-}" in run|preflight|status|watch|cancel) needs_socket=true ;; esac ;;
+  # init reads the container image (docker image inspect) to prefill the
+  # command; check only reads files.
+  component)
+    case "${2:-}" in init) needs_socket=true ;; esac ;;
 esac
 
 args=(--rm --pull "${MNS_IMAGE_PULL_POLICY:-missing}"
