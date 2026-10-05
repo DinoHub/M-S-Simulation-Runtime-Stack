@@ -299,6 +299,11 @@ consumers:
         host: v1_runtime_host
         kit: v1_runtime_host_kit
         authoring: v1_authoring
+      # The runtime host's contract, which mns-stacks generate reads without a
+      # Docker socket. tools/images.sh sync copies it from the host image's
+      # /opt/tevv/host-contract/; verify fails when the copy differs. Never
+      # hand-edit it.
+      host_contract: packs/runtime-host-compatibility.v1.json
 
   # A pack release lock (packs/*.lock.json) restates a few image pins because
   # tools/install_demo_packs.py has to run mns-packs before anything in this

@@ -119,7 +119,7 @@ shared, not whether anything still needs the pack. For the same reason
 | File | What it is |
 |---|---|
 | `v1.0.0.lock.json` | Every pack published on `DinoHub/TEVV-Airsim` for the v1 host id. Six level packs (Warehouse, Office Environment, Condo, XFS, Safti, Fisherman's Cabin), four object packs, and `mns_vehicle_models` 1.0.4 (release `pack-asset-mns_vehicle_models-1.0.4-iostore-v2`), the version the authoring image bakes. ScenarioLab opens Warehouse and Office Environment; the other four levels are runtime only (AirSim / CableComponent plugins); the release's multi-pack E2E flew all six. |
-| `runtime-host-compatibility.v1.json` | The frozen host capability contract baked into the runtime host image at `/app/TEVVRuntimeHost/TEVVRuntimeHost/Content/TEVVHost/host-compatibility.json`. Its `id` is the lock's `capability_id`; `mns-stacks generate` validates every resolved pack against it. |
+| `runtime-host-compatibility.v1.json` | The runtime host's capability contract, copied from the pinned host image's `/opt/tevv/host-contract/runtime-host-compatibility.json` by `tools/images.sh sync` (never hand-edited; `tools/images.sh verify` fails when it differs from the image). Its `id` is the lock's `capability_id`; `mns-stacks generate` validates every resolved pack against it. |
 | `authoring-host-compatibility.v1.json` | ScenarioLab's own contract. Same id, but its plugin set is ScenarioLab's: `mns-packs stage-authoring --host` validates packs against it (`MNS_AUTHORING_HOST_CONTRACT`), and the Content phase compares each pack's required plugins to it. A pack the runtime host provides plugins for but ScenarioLab does not is **runtime only**: generated stacks fly it, the editor cannot open it, staging skips it. |
 | `channels.json` | The channel list for the dashboard; `tools/test_channels.py` asserts it matches the Makefile. |
 
@@ -214,10 +214,10 @@ a variant for the channel's host id is skipped and named on stderr.
 ## Refreshing a contract after a runtime-host bump
 
 ```bash
-. images/v1.0.0.generated.env
-docker run --rm --entrypoint cat "$MNS_RUNTIME_HOST_IMAGE" \
-  /app/TEVVRuntimeHost/TEVVRuntimeHost/Content/TEVVHost/host-compatibility.json \
-  > packs/runtime-host-compatibility.v1.json
+tools/images.sh bump --only v1_runtime_host   # or edit the pin
+tools/images.sh sync && . images/v1.0.0.generated.env
+docker pull "$MNS_RUNTIME_HOST_IMAGE"
+tools/images.sh sync      # now copies the host image's contract into packs/
 ```
 
 A pack version is immutable: packs built for a new host id need new versions

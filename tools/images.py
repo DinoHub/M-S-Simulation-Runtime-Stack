@@ -61,6 +61,16 @@ failure), run by `verify` and `status`:
                         host_check_waived on it warn. `verify` reads local
                         images only (no registry); `status` also asks the
                         registry. `verify --release` fails on these warnings.
+
+One copy taken from an image, never hand-edited:
+
+  host contract         a release channel's `host_contract` file (the runtime
+                        host's compatibility contract, which mns-stacks
+                        generate reads without a Docker socket) is copied by
+                        `sync` from the pinned host image's
+                        /opt/tevv/host-contract/. `verify` fails when it
+                        differs from that image; it is a NOTE when the host
+                        image is not in the local image store.
 """
 from __future__ import annotations
 
@@ -283,6 +293,12 @@ def _validate_catalog(data: Any) -> None:
                         raise CatalogError(
                             f"consumers.release_channels.{name}.host_pin.{role} references "
                             f"unknown image key {image_key!r}")
+            contract = spec.get("host_contract")
+            if contract is not None and (not isinstance(contract, str) or not contract
+                                         or not (host_pin or {}).get("host")):
+                raise CatalogError(
+                    f"consumers.release_channels.{name}.host_contract: a repo path, and the "
+                    f"channel needs a host_pin.host to copy it from")
     # Optional: only a catalog that ships pack release locks declares these.
     locks = consumers.get("pack_locks")
     if locks is not None:
@@ -817,7 +833,73 @@ def cmd_sync(_args: argparse.Namespace) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         print(f"wrote {path.relative_to(ROOT)}")
+    for path, ref, content, why in host_contract_copies(catalog):
+        rel = path.relative_to(ROOT)
+        if content is None:
+            print(f"NOTE: kept {rel}: cannot read {HOST_CONTRACT_IN_IMAGE} from {ref} ({why}); "
+                  f"pull the host image and run sync again", file=sys.stderr)
+        elif not path.is_file() or path.read_bytes() != content:
+            path.write_bytes(content)
+            print(f"wrote {rel} (copied from {ref})")
     return 0
+
+
+HOST_CONTRACT_IN_IMAGE = "/opt/tevv/host-contract/runtime-host-compatibility.json"
+
+
+def image_file(ref: str, path: str) -> tuple[bytes | None, str]:
+    """(content, "") of one file inside a LOCAL image, or (None, why not).
+    Never pulls and never starts the image: docker create + docker cp."""
+    try:
+        if subprocess.run(["docker", "image", "inspect", ref], capture_output=True,
+                          timeout=30).returncode != 0:
+            return None, "not in the local image store"
+        made = subprocess.run(["docker", "create", ref, "true"], capture_output=True,
+                              text=True, timeout=60)
+        if made.returncode != 0:
+            return None, (made.stderr or "docker create failed").strip().splitlines()[0]
+        container = made.stdout.strip()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / Path(path).name
+                copied = subprocess.run(["docker", "cp", f"{container}:{path}", str(out)],
+                                        capture_output=True, text=True, timeout=60)
+                if copied.returncode != 0:
+                    return None, f"{path} is not in the image"
+                return out.read_bytes(), ""
+        finally:
+            subprocess.run(["docker", "rm", container], capture_output=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"docker unavailable ({exc.__class__.__name__})"
+
+
+def host_contract_copies(catalog: dict[str, Any], read: Any = None
+                         ) -> list[tuple[Path, str, bytes | None, str]]:
+    """[(repo path, host ref, the image's contract or None, why not)] for each
+    release channel that declares a host_contract."""
+    read = read or (lambda ref: image_file(ref, HOST_CONTRACT_IN_IMAGE))
+    out = []
+    for _name, spec in sorted((catalog["consumers"].get("release_channels") or {}).items()):
+        if not spec.get("host_contract"):
+            continue
+        ref = image_ref(catalog["images"], spec["host_pin"]["host"])
+        content, why = read(ref)
+        out.append((ROOT / spec["host_contract"], ref, content, why))
+    return out
+
+
+def host_contract_findings(catalog: dict[str, Any], read: Any = None
+                           ) -> list[tuple[str, str]]:
+    """[(DRIFT|NOTE, message)]: DRIFT when the copy differs from the pinned host
+    image's contract; NOTE when the image is not local, so nothing was compared."""
+    out = []
+    for path, ref, content, why in host_contract_copies(catalog, read):
+        rel = path.relative_to(ROOT)
+        if content is None:
+            out.append(("NOTE", f"{rel} not compared with {ref}: {why}"))
+        elif not path.is_file() or path.read_bytes() != content:
+            out.append(("DRIFT", f"{rel} differs from {HOST_CONTRACT_IN_IMAGE} in {ref}"))
+    return out
 
 
 def pack_lock_drift(catalog: dict[str, Any]) -> list[str]:
@@ -1136,9 +1218,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         if current != content:
             drifted.append(path)
-    if drifted:
+    contract_findings = host_contract_findings(catalog)
+    for level, message in contract_findings:
+        if level == "NOTE":
+            print(f"NOTE: {message}", file=sys.stderr)
+    contract_drift = [m for level, m in contract_findings if level == "DRIFT"]
+    if drifted or contract_drift:
         for path in drifted:
             print(f"DRIFT: {path.relative_to(ROOT)} does not match images/catalog.yaml", file=sys.stderr)
+        for message in contract_drift:
+            print(f"DRIFT: {message}", file=sys.stderr)
         print("run: tools/images.sh sync", file=sys.stderr)
         return 1
     names = sorted(str(p.relative_to(ROOT)) for p in artifacts)
@@ -1431,6 +1520,24 @@ def _selftest_pending_and_host_pin() -> None:
     # authoring is checked against the catalog kit even when the host is not local
     found = warnings(None, {**good_auth, LABEL_AUTHORING_KIT_IMAGE: f"r/i@{two}"})
     assert len(found) == 1 and "built against kit" in found[0], f"selftest FAILED: {found}"
+
+    # host contract copy: equal is silent, different is DRIFT, not local is a NOTE
+    catalog["consumers"]["release_channels"]["v1"]["host_contract"] = "images/catalog.yaml"
+    _validate_catalog(catalog)
+    same = (ROOT / "images" / "catalog.yaml").read_bytes()
+    assert host_contract_findings(catalog, read=lambda ref: (same, "")) == []
+    found = host_contract_findings(catalog, read=lambda ref: (b"{}", ""))
+    assert [level for level, _ in found] == ["DRIFT"], f"selftest FAILED: {found}"
+    found = host_contract_findings(catalog, read=lambda ref: (None, "absent"))
+    assert [level for level, _ in found] == ["NOTE"], f"selftest FAILED: {found}"
+    no_host = copy.deepcopy(catalog)
+    del no_host["consumers"]["release_channels"]["v1"]["host_pin"]
+    try:
+        _validate_catalog(no_host)
+    except CatalogError:
+        pass
+    else:
+        raise AssertionError("selftest FAILED: host_contract accepted without a host_pin.host")
 
     # the release guard's -rc detector
     for tag, rc in (("mns-stacks-v1.0.0-rc", True), ("mns-stacks-v1.0.0-rc.2", True),
