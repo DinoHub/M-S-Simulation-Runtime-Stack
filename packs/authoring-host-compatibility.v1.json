@@ -96,6 +96,22 @@
     {
       "id": "DatasmithContent",
       "version": "engine"
+    },
+    {
+      "id": "CableComponent",
+      "version": "engine"
+    },
+    {
+      "id": "ChaosVehiclesPlugin",
+      "version": "engine"
+    },
+    {
+      "id": "GeoReferencing",
+      "version": "engine"
+    },
+    {
+      "id": "SunPosition",
+      "version": "engine"
     }
   ],
   "runtime_only_plugins": [
