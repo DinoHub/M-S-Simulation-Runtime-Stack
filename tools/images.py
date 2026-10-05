@@ -1036,6 +1036,29 @@ def host_pin_findings(catalog: dict[str, Any], *, remote: bool,
 
 RELEASE_BASE_REFS = ("release/v1.0.0", "main")
 _RC_TAG_RE = re.compile(r"-rc(?:[.\-]?\d+)?(?:$|-)")
+# What a release may pin, as an allowlist: `<name>-vX.Y.Z`, and for the rows
+# built with traced tags (the dashboard: tools/traced-tags.sh in its repo)
+# `<name>-vX.Y.Z-g<sha>`. Anything else (`-rc.services.N`, `-live.N`, `-zones.N`,
+# a branch build such as `...-v0.4.5-g<sha>` of a row that is not traced, a
+# test tag) is not a release, however it is spelled.
+_RELEASE_TAG_RE = re.compile(r"-v\d+\.\d+\.\d+$")
+_TRACED_RELEASE_TAG_RE = re.compile(r"-v\d+\.\d+\.\d+-g[0-9a-f]{7,40}$")
+TRACED_TAG_ROWS = frozenset({"v1_dashboard_backend", "v1_dashboard_frontend"})
+
+
+def release_tag_problem(key: str, var: str, tag: str) -> str | None:
+    """Why `tag` cannot be a release pin for catalog row `key`, or None."""
+    if _RC_TAG_RE.search(tag):
+        return (f"images.{key} ({var}) is on the release-candidate tag {tag!r}: retag the "
+                f"accepted rc and pin it (tools/images.sh bump --only {key} --tag <release tag>)")
+    if _RELEASE_TAG_RE.search(tag):
+        return None
+    if key in TRACED_TAG_ROWS and _TRACED_RELEASE_TAG_RE.search(tag):
+        return None
+    shape = "<name>-vX.Y.Z" + (" or <name>-vX.Y.Z-g<sha>" if key in TRACED_TAG_ROWS else "")
+    return (f"images.{key} ({var}) is on {tag!r}, which is not a release tag ({shape}): "
+            f"build it from the merged commit, push a release tag and pin it "
+            f"(tools/images.sh bump --only {key} --tag <release tag>)")
 
 
 def release_problems(catalog: dict[str, Any]) -> list[str]:
@@ -1043,9 +1066,9 @@ def release_problems(catalog: dict[str, Any]) -> list[str]:
 
     Lenient everywhere else, strict here: a release pins every image by an
     immutable tag AND its digest. Pending rows, release-candidate tags and
-    tag-only refs are fine on release/v1.0.0-next while the rc images are
-    being filled in, and must all be gone before the merge into
-    release/v1.0.0 or main.
+    tag-only refs are fine on a development branch while images are being
+    filled in, and must all be gone before the merge into main. Tags are
+    checked against an allowlist of release shapes (release_tag_problem).
     """
     images = catalog["images"]
     problems: list[str] = []
@@ -1058,10 +1081,9 @@ def release_problems(catalog: dict[str, Any]) -> list[str]:
             if key in channel_keys_seen:
                 continue
             channel_keys_seen.add(key)
-            if _RC_TAG_RE.search(str(images[key]["tag"])):
-                problems.append(f"images.{key} ({var}) is on the release-candidate tag "
-                                f"{images[key]['tag']!r}: retag the accepted rc and pin it "
-                                f"(tools/images.sh bump --only {key} --tag <release tag>)")
+            problem = release_tag_problem(key, var, str(images[key]["tag"]))
+            if problem:
+                problems.append(problem)
         emitted = ROOT / spec["emits"]
         if emitted.is_file():
             for line in emitted.read_text(encoding="utf-8").splitlines():
@@ -1416,6 +1438,18 @@ def _selftest_pending_and_host_pin() -> None:
                     ("tevv-web-dashboard-backend-v1.0.0-gee99b9d", False),
                     ("sim-real-eval-worker-latest", False)):
         assert bool(_RC_TAG_RE.search(tag)) is rc, f"selftest FAILED: -rc detection on {tag!r}"
+    # ...and its allowlist of release tags
+    for key, tag, ok in (("v1_stacks", "mns-stacks-v1.0.0", True),
+                         ("v1_dashboard_backend", "tevv-web-dashboard-backend-v1.0.0-g3ffd351", True),
+                         ("v1_stacks", "mns-stacks-v1.0.0-rc.services.28", False),
+                         ("v1_dashboard_backend", "tevv-web-dashboard-backend-v1.0.0-live.22", False),
+                         ("v1_runtime_host", "tevv-runtime-host-v1.0.0-zones.3", False),
+                         ("v1_authoring", "mns-authoring-v1.0.0-rc.pkg.1", False),
+                         ("v1_stacks", "tevv-jsonl-ingest-v0.4.5-gfc88f57", False),
+                         ("v1_stacks", "mns-stacks-v1.0.0-m5b74d92", False),
+                         ("v1_packs", "mns-packs-latest", False)):
+        assert (release_tag_problem(key, "X", tag) is None) is ok, \
+            f"selftest FAILED: release tag allowlist on {key}={tag!r}"
 
 
 def cmd_selftest(_args: argparse.Namespace) -> int:
