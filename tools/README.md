@@ -21,4 +21,5 @@ and the headless `make` targets (`fly`, `stop`, `author`, `campaign`, `stacks`,
 | `check_spawn.py` | Warns before `make fly` / `make campaign` when a vehicle starts at the world origin of a level with no floor there (XFS, Condo), with the measured start from `packs/level-spawn-hints.json`. Never blocks. |
 | `preview_topics.py` | The ROS 2 topics a generated stack will publish (`make topics STACK=generated/<name>`). |
 | `check_docker.sh`, `compose_retry.sh` | Docker / X11 / port preflights and a retrying `docker compose` wrapper. |
+| `swarm-stress/` | How many PX4 or ArduPilot vehicles one machine flies stably, through the dashboard: a spec maker, one-level runner and the stress script, with the 5 October 2026 results. See [swarm-stress/README.md](swarm-stress/README.md). |
 | `test_install_demo_packs.py`, `test_channels.py`, `test_check_spawn.py` | Offline tests: `python3 -m unittest discover -s tools`. |

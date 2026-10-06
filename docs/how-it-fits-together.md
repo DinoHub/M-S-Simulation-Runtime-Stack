@@ -10,6 +10,12 @@ Nothing here runs from source: every box is an image pinned in
 `images/catalog.yaml`, and every pack a version pinned in
 `packs/v1.0.0.lock.json`.
 
+Two pictures sit beside this page. [`architecture/as-built-system.png`](architecture/as-built-system.png)
+is the system as it is built today, every box checked against code, each
+marked built, prototype or target only. [`platform-architecture/`](platform-architecture/README.md)
+is a vendored snapshot of the upstream **target** design; it says where the
+system is going, not what runs.
+
 ## The actors
 
 | Actor | What it is | Started by |
@@ -20,26 +26,29 @@ Nothing here runs from source: every box is an image pinned in
 | **mns-stacks** | `MNS_STACKS_IMAGE` (MnS-Integration-Platform `platform/stacks`): `generate` a stack from a ScenarioSpec (no Docker socket), then `run`/`stop`/`status`/`logs`, `record start/stop`, `campaign ...` (with the socket). One command per call; it exits. | the backend, or `make fly`/`stop`/`campaign`/`stacks` through `tools/mns-stacks.sh` |
 | **mns-packs** | `MNS_PACKS_IMAGE` (TEVV-Content-Pack-SDK): `install` a pack into the store, `stage-authoring --lock` it for ScenarioLab, `verify`, `status` | `tools/install-demo-packs.sh`, `tools/stage-authoring-packs.sh` (behind `./download-packs.sh`, `make dashboard` and the Content phase) |
 | **ScenarioLab** | the Unreal editor, `MNS_AUTHORING_IMAGE`, on your X display | the backend's Author phase, or `make author` (the same `docker run`) |
-| **a generated stack** | runtime host (Unreal + AirSim), ROS 2 bridge, autopilot SITL, optional VIO estimator and sim-real-eval worker -- `generated/<name>/` | `mns-stacks run` |
+| **a generated stack** | runtime host (Unreal + Cosys-AirSim + MetricsEmitter), ROS 2 bridge with MAVROS, autopilot SITL, the services of each attached component package (`components/<id>/component.yaml`) and their adaptors, optional sim-real-eval worker -- `generated/<name>/` | `mns-stacks run` |
+| **metrics-service** | `mns-metrics-service` (TEVV-Metrics jsonl ingestor), `http://localhost:8770`, read-only. Judges every finished run, campaign runs too, against the stack's `config/metrics/evaluation.yaml` and `zones.json`, with the component results | `make dashboard` |
 | **ros2-tools** | one container from the bridge image, outside any compose project. Foxglove websocket for Lichtblick, and bag replay. | the backend, when the bridge image changes |
 
 ```mermaid
 flowchart LR
   YOU["you<br/>browser :3001 / terminal"]
   subgraph DASH["make dashboard"]
-    FE["dashboard-frontend"]
+    FE["dashboard-frontend<br/>wizard incl. Campaign step"]
     BE["dashboard-backend :8001<br/>docker.sock · ~/.docker · this repo at its own path"]
     LB["lichtblick"]
+    MS["metrics-service :8770<br/>judges every finished run"]
   end
-  MK["make fly · stop · author · campaign<br/>(tools/mns-stacks.sh, tools/author.sh)"]
-  STK["mns-stacks<br/>generate · run · stop · record · campaign"]
+  MK["make fly · evaluate · stop · author · campaign<br/>(tools/fly.sh, evaluate.sh, mns-stacks.sh, author.sh)"]
+  CP["components/&lt;id&gt;/component.yaml<br/>attached with --component, not in the ScenarioSpec"]
+  STK["mns-stacks<br/>generate · run · stop · record · score · campaign"]
   PK["mns-packs<br/>install · stage-authoring --lock"]
   SL["ScenarioLab<br/>X display"]
   subgraph STACK["generated/&lt;name&gt;/"]
-    RH["runtime host"]
-    BR["ros2 bridge<br/>(records the bag)"]
-    AP["autopilot"]
-    VIO["vio estimator"]
+    RH["runtime host<br/>MetricsEmitter"]
+    BR["ros2 bridge + MAVROS<br/>(records the bag)"]
+    AP["autopilot SITL"]
+    CS["component services<br/>+ adaptors"]
   end
   RT["ros2-tools<br/>foxglove ws · replay"]
   YOU --> FE --> BE
@@ -49,9 +58,13 @@ flowchart LR
   BE -- "docker run editor" --> SL
   MK -- "docker run" --> STK
   MK -- "docker run editor" --> SL
+  CP -. "--component" .-> STK
   STK -- "compose up / down" --> STACK
   BE -- "docker run" --> RT
   BR -- "published topics" --> RT --> LB
+  RH -- "events.jsonl" --> MS
+  STK -- "components/&lt;id&gt;.json" --> MS
+  BE -- "/api/metrics" --> MS
 ```
 
 The backend's four mounts are the whole contract between the dashboard and
@@ -62,7 +75,7 @@ this repository:
 | `/var/run/docker.sock` | it drives docker: runs mns-stacks, mns-packs and ScenarioLab, creates `ros2-tools` |
 | `${DOCKER_CONFIG:-$HOME/.docker}` at `/root/.docker`, read-only | a pull uses **this container's** credentials, not your shell's ([details](dashboard-images.md#6-credentials-the-socket-alone-is-not-enough)) |
 | `${MSRS_ROOT:-$PWD}` at the **identical** host path | every path the backend hands mns-stacks is a host path, valid for Compose on the host, unchanged |
-| `${TEVV_RUNS_DIR:-./runs}` (in this checkout) at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports. Its host path also arrives as `TEVV_RUNS_DIR` (the same expression as the mount source), which the backend hands to mns-stacks |
+| `${TEVV_RUNS_DIR:-./runs}` (in this checkout) at `/data/runs` | bags, `run.json`, validation reports, sim-real-eval reports, per-run metrics. Its host path also arrives as `TEVV_RUNS_DIR` (the same expression as the mount source), which the backend hands to mns-stacks |
 
 The headless targets follow the same rule: `tools/mns-stacks.sh` mounts this
 checkout and the runs directory at their host paths, and the Docker socket
@@ -90,6 +103,10 @@ phases without redoing them: phase completion is computed from what exists.
 | `<runs>/<run id>/bag/`, `<runs>/<run id>/run.json` | `mns-stacks record` / `run --record` (the bridge container records) | Analysis, replay, sim-real-eval, the integration bundle |
 | `<runs>/<name>/validation.json` | `validate_recording` (a campaign step) | the integration bundle, `mns-stacks campaign status` |
 | `<runs>/_reports/*.json` | `sim-real-eval` | the Analysis phase, `mns-stacks campaign status` |
+| `generated/<name>/outputs/metrics/run_<id>/events.jsonl`, `manifest.json` | the runtime host's MetricsEmitter; `manifest.json` by finalize in `mns-stacks stop` | Monitor → Run events, the metrics service |
+| `components/<id>/component.yaml` | you, one package per component under test (mac-vo, openvins, mighty, super, casio-edge, siyi-a8-realism) | `mns-stacks generate --component`, `make fly`/`evaluate COMPONENTS=`, `CampaignSpec` `extensions."mns.components"`. Never part of the ScenarioSpec |
+| `generated/<name>/outputs/metrics/<run>/components/<id>.json` | `mns-stacks stop`: each attached component is scored once its run is over | the metrics service |
+| `<runs>/<name>/<run_id>/metrics/{metrics,evaluated,run_summary}.json` | `metrics-service` (TEVV-Metrics ingestor), once per finished run | Monitor → Run metrics, `http://localhost:8770/runs` ([Metrics](metrics.md)) |
 | `<campaigns>/<id>/campaign_manifest.json`, `progress.jsonl`, `campaign.lock` | `mns-stacks campaign run` | `campaign status|watch|cancel`, `/api/campaign/jobs/*` |
 
 ## The phases, one at a time
@@ -103,11 +120,16 @@ you do, what appears on disk, which actor does the work.
 | **1a Author** | open ScenarioLab, build the world, export | `scenarios/<name>/ScenarioSpec.yaml` | ScenarioLab on your display |
 | **1b Generate** | sensors, cameras, vehicle in the form; Generate | `ScenarioSpec.baseline.yaml`; the merged spec; `generated/<name>/` | the backend writes the spec, runs `mns-stacks generate` once |
 | **1c ROS 2** | domain id, namespace, which topics a bag records, autostart | `scenarios/<name>/phase-state.json` | backend |
-| **1d Metrics** | what the sim logs | same file | backend |
+| **1d Metrics** | what the sim logs, and what runs are judged on | same file; the stack's `config/metrics/evaluation.yaml` | backend |
+| **1e Campaign** | components under test, mission, start and end conditions, sweeps, repeats; Run campaign | `scenarios/<name>/CampaignSpec.yaml`; a progress row per run with its verdict | backend runs `mns-stacks campaign run --json`; the metrics service judges each run |
 | **2 Launch** | Up | the stack's containers; a bag under `<runs>/` if autostart | `mns-stacks run` (it verifies the stack's resolved packs first), then `mns-stacks record start` |
 | **3 Runtime** | arm, take off, hover; tune sensors live; teleop; watch topics | `settings.json` edits for hot sensor tuning; `/run_state` published | backend to the autopilot and AirSim; Lichtblick from `ros2-tools` |
 | **4 Analysis** | run a Sim2Real evaluation; read VIO results; export telemetry; download the integration bundle | `<runs>/_reports/`; CSV/Parquet exports | backend shells out to `sim-real-eval`; reads `metric_results` |
 | **Down** | Down | the stack's final metrics under `<runs>/` | `mns-stacks stop` (always `finalize_metrics` first) |
+
+The Campaign step is in dashboard builds from the `feat/live-stack-viewer`
+branch on (local `-live.8` images and later), where Launch and Runtime are also
+one **Run** step. The pinned dashboard shows the rows above without it.
 
 Two rules make the table work:
 
@@ -128,14 +150,15 @@ sequenceDiagram
   participant MS as mns-stacks (sibling)
   participant ST as generated stack
   participant RT as ros2-tools
+  participant MX as metrics-service
   You->>FE: Generate (sensors, cameras, vehicle)
   FE->>BE: POST /api/scenario/generate
   BE->>BE: scenarios/n/ScenarioSpec.baseline.yaml, merged ScenarioSpec.yaml
-  BE->>MS: generate scenarios/n --out generated/n (no socket, --network=none)
+  BE->>MS: generate scenarios/n --out generated/n [--component id] (no socket, --network=none)
   MS-->>BE: {stack_dir, services, resolved_packs}
   You->>FE: ROS 2 / Metrics
-  FE->>BE: prerun block
-  BE->>BE: scenarios/n/phase-state.json
+  FE->>BE: prerun block, what runs are judged on
+  BE->>BE: phase-state.json, generated/n/config/metrics/evaluation.yaml
   You->>FE: Launch
   BE->>MS: run --stack generated/n (socket)
   MS->>ST: verify resolved packs, compose up
@@ -145,7 +168,11 @@ sequenceDiagram
   RT-->>You: Lichtblick (foxglove ws)
   You->>FE: Down
   BE->>MS: stop --stack generated/n
-  MS->>ST: finalize_metrics, compose down
+  MS->>ST: graceful stop, finalize_metrics, compose down
+  MS->>MS: score each attached component -> outputs/metrics/<run>/components/<id>.json
+  MX->>ST: watch outputs/metrics/<run>/events.jsonl
+  MX-->>BE: verdict, checks (/runs on :8770)
+  BE-->>You: Monitor -> Run metrics
 ```
 
 ## Without the browser: the same loop from a terminal
@@ -154,6 +181,7 @@ sequenceDiagram
 make doctor                                   # Docker, Compose, every pinned image present?
 make author                                   # ScenarioLab, as the dashboard opens it
 make fly SCENARIO=<name> RECORD=1             # generate, fly FLY_SECONDS (300), stop; bag in runs/
+make evaluate SCENARIO=<name> COMPONENTS=mac-vo MISSION="..."   # attach, fly, score, print the verdict
 make stop                                     # if a fly was interrupted
 make stacks ARGS="status --stack generated/<name> --json"
 ```
@@ -169,7 +197,9 @@ A campaign is the experiment *over* a scenario: the same stack flown once per
 variant and repeat with one thing different each time, every flight recorded,
 gated and scored. `mns-stacks generate` never sees a CampaignSpec -- each run
 is materialised into a complete ScenarioSpec first, so any single run
-reproduces on its own.
+reproduces on its own. The components under test ride along outside it: the
+CampaignSpec's `extensions."mns.components"` (or `--component`) attaches them
+to every run's stack.
 
 ```
 scenarios/vio-reference/
@@ -193,14 +223,19 @@ which scaffolds from the reference.
 
 ```mermaid
 flowchart TD
-  A["CampaignSpec.yaml"] --> B["validate<br/>schema · route · calibration vs rig"]
+  A["CampaignSpec.yaml<br/>by hand, or the dashboard's Campaign step<br/>extensions.mns.components · mission.start · end_on_timeout"] --> B["validate<br/>schema · route · calibration vs rig · start and end"]
   B --> C["preflight<br/>disk · ports · images"]
-  C --> D["one ScenarioSpec per run"]
-  D --> E["mns-stacks generate -> run --record --until-done"]
-  E --> F["validate_recording<br/>runs/&lt;key&gt;/validation.json"]
-  F --> G["sim-real-eval<br/>reports/&lt;key&gt;.json"]
-  G --> H["status<br/>manifest + validation + report, one row per flight"]
-  E -. "progress.jsonl · campaign.lock" .-> H
+  C --> D["per run: materialize one ScenarioSpec"]
+  D --> E["mns-stacks generate --component ...<br/>the components attach outside the ScenarioSpec"]
+  E --> F["run --until-done --record<br/>WAIT_HEALTHY · WAIT_READY · warm-up · start delay<br/>mission · end condition"]
+  F --> H["validate_recording, in the director's hand-off<br/>runs/&lt;key&gt;/validation.json"]
+  H --> G["stop<br/>finalize_metrics · score each component"]
+  G --> M["metrics-service<br/>a verdict per run"]
+  G --> I["after the matrix: the campaign's evaluator<br/>reports/&lt;key&gt;.json"]
+  I --> J["status<br/>manifest + validation + report, one row per flight"]
+  M --> K["dashboard Campaign step<br/>progress row per run, with its verdict"]
+  F -. "progress.jsonl · campaign.lock" .-> K
+  F -. "progress.jsonl" .-> J
 ```
 
 The dashboard's `/api/campaign/*` endpoints run the same `mns-stacks
@@ -221,6 +256,9 @@ bundle written.
 | channels, the pack store, locks, installing and removing packs | [packs/README.md](../packs/README.md) |
 | which topics a generated stack publishes | [What will this stack publish?](topics.md) |
 | running campaigns | [Campaigns](campaigns.md) |
+| what is measured, how runs are scored, the runs folder | [Metrics: where everything is](metrics.md) |
 | the reference campaign itself | [`scenarios/vio-reference/README.md`](../scenarios/vio-reference/README.md) |
-| the v1.0.0 architecture across repositories: who owns what | MnS-Integration-Platform `docs/v1.0.0-architecture.md` |
+| the system as built, one picture | [`architecture/as-built-system.png`](architecture/as-built-system.png) (draw.io inside; source `architecture/src/as_built_system.py`) |
+| the target design it is being mapped onto | [`platform-architecture/`](platform-architecture/README.md), a vendored snapshot: edit upstream |
+| the v1.0.0 architecture across repositories: who owns what | MnS-Integration-Platform [`docs/architecture/README.md`](https://github.com/DinoHub/MnS-Integration-Platform/blob/release/v1.0.0-next/docs/architecture/README.md) |
 | the compose file's own statement of the mounts and precedence | the header comment of `docker-compose-dashboard.yml` |

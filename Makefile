@@ -108,7 +108,7 @@ else
 $(error IMAGE_MODE must be development or production)
 endif
 
-.PHONY: help ps topics fly stop author author-stop stacks campaign campaign-status doctor verify-images pull-images ensure-images ensure-demo-packs pack-status pack-lock stage-authoring-packs dashboard dashboard-down print-channel-env
+.PHONY: help ps topics fly evaluate stop author author-stop stacks campaign campaign-status doctor verify-images pull-images ensure-images ensure-demo-packs pack-status pack-lock stage-authoring-packs dashboard dashboard-down print-channel-env
 
 ensure-images:  ## Use local image tags; pull only those that are missing
 	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
@@ -311,8 +311,11 @@ ifeq ($(strip $(SCENARIO)),)
 $(error usage: make fly SCENARIO=<name under scenarios/> [RECORD=1] [KEEP=1] [ARGS=...])
 endif
 endif
-fly: ensure-demo-packs  ## Generate and fly SCENARIO for FLY_SECONDS unless ARGS names --done (RECORD=1 records a bag)
-	@$(MNS_STACKS_ENV); ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
+fly: ensure-demo-packs  ## Generate and fly SCENARIO for FLY_SECONDS unless ARGS names --done (RECORD=1 records a bag; COMPONENTS="openvins components/x ..." attaches packages, by id or folder)
+	@$(MNS_STACKS_ENV); COMPONENTS="$(COMPONENTS)" ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
+
+evaluate: ensure-demo-packs  ## Fly SCENARIO end to end and print its verdict: record what scorers read, MISSION="<cmd>" ({stack} = the stack), score, report (COMPONENTS= as for fly)
+	@$(MNS_STACKS_ENV); COMPONENTS="$(COMPONENTS)" ./tools/evaluate.sh "$(SCENARIO)" $(if $(MISSION),--mission "$(MISSION)",) -- $(ARGS)
 
 stop:  ## Stop a flown stack (finalize_metrics, then compose down)
 	@last=$$(cut -f1 .mns/last-stack 2>/dev/null); last_project=$$(cut -s -f2 .mns/last-stack 2>/dev/null); \

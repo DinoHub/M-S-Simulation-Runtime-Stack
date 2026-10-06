@@ -61,8 +61,16 @@ kit=()
 [[ -n "${MNS_CAPABILITY_KIT:-}" ]] && kit=(--kit "$(cd "$MNS_CAPABILITY_KIT" && pwd)")
 # --no-topics: generate runs without the Docker socket, so its topic preview
 # (which needs the bridge image) could only report "unavailable".
+# COMPONENTS: component packages to attach, space-separated: a folder
+# (components/mac-vo) or a bare id (mac-vo, the workspace's
+# components/<id>); the ScenarioSpec itself never names them.
+components=()
+for c in ${COMPONENTS:-}; do
+  if [[ -d "$c" ]]; then components+=(--component "$(cd "$c" && pwd)")
+  else components+=(--component "$c"); fi
+done
 "$ROOT/tools/mns-stacks.sh" generate "$(dirname "$spec")" --profile docker --no-topics \
-  --out "$stack" "${kit[@]}"
+  --out "$stack" "${kit[@]}" "${components[@]}"
 # Remembered for `make stop`: the stack, and its Compose project when the run
 # was given one (--project NAME in the extra flags), tab-separated.
 project=""

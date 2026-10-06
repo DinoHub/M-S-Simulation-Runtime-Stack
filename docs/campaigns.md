@@ -29,7 +29,38 @@ make campaign CAMPAIGN=my-test                # fly yours
 A campaign is hours long and holds the GPU, the simulator ports and the X display, so only
 one runs at a time; a second is refused and told which one holds the machine. `make campaign
 ARGS="cancel <name>"` stops one cleanly — the flight in the air is finished and bundled,
-nothing further starts.
+nothing further starts. `cancel <name> --now` stops the flight in the air as well: its
+recording is stopped, its stack taken down, and it is marked cancelled, not failed. Cancelling
+a campaign whose process has died clears its lock.
+
+A run records only the topics it is scored on, unless the CampaignSpec lists its own
+`recording.topics`: `/clock`, `/tf`, `/tf_static`, the stack's ground truth, IMU and
+estimates, the topics the attached components read and publish, the autopilot's status
+text and local position, and `/goal` for a goal mission. Cameras and raw sensors stay out
+unless a component reads them, so a planner run's bag is megabytes, not tens of GB.
+`recording.everything: true` (the dashboard's **Record every topic**) records every topic
+again, for replay.
+
+The components a plan flies are its `extensions."mns.components"` list, which is the whole
+list: the stack's own components are not added. A plan without the key flies the stack's.
+
+Campaign runs render the simulator off-screen. A campaign is unattended, and an
+unattended desktop puts its monitor to sleep: a windowed simulator then stalls its cameras
+for about half a second at each display switch, which fails the recording's image-gap check.
+Drawing the window also costs GPU time (on XFS it holds the stereo cameras near 10 Hz). To
+watch the runs anyway, keep the display awake and either pass `--window`
+(`make campaign ARGS="run my-test --window"`) or set it in the CampaignSpec, which is what
+the dashboard's **Show the simulator window during runs** writes:
+
+```yaml
+extensions:
+  mns.render:
+    offscreen: false
+```
+
+`--window` and `--offscreen` win over the file; the file wins over a
+`conditions.render.offscreen` in the ScenarioSpec. `campaign validate` and `campaign plan`
+say which applies.
 
 Each flight is generated, flown and recorded exactly as `make fly SCENARIO=... RECORD=1`
 flies one scenario (see [Headless](stacks.md)): the bag lands in the campaign's

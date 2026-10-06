@@ -1,0 +1,30 @@
+# A 10 m box at 3 m, flown from wherever the vehicle starts. The shared route
+# for a scenario that has none of its own: the dashboard's Campaign step
+# offers every file in this folder, and copies the one a campaign uses into
+# the scenario's routes/ so the CampaignSpec stays self-contained.
+#
+#   t  0- 4   stationary on the ground      a still window before the climb
+#   t  4- 8   climb to 3 m
+#   t  8-18   east 10 m, heading east
+#   t 18-28   north 10 m
+#   t 28-38   west 10 m
+#   t 38-48   south 10 m, back over the start
+#   t 48-52   hold, then land
+#
+# Local ENU relative to the takeoff point: +x east, +y north, yaw ENU (0 east).
+# Needs 10 m clear to the east and north of the start.
+name: box_10m_v1
+frame_id: map
+relative_to_start: true
+rate_hz: 20
+prestream_seconds: 2
+finish_hold_seconds: 3
+waypoints:
+  - {t: 0, position: [0, 0, 0], yaw: 0.0}
+  - {t: 4, position: [0, 0, 0], yaw: 0.0}
+  - {t: 8, position: [0, 0, 3], yaw: 0.0}
+  - {t: 18, position: [10, 0, 3], yaw: 0.0}
+  - {t: 28, position: [10, 10, 3], yaw: 0.0}
+  - {t: 38, position: [0, 10, 3], yaw: 0.0}
+  - {t: 48, position: [0, 0, 3], yaw: 0.0}
+  - {t: 52, position: [0, 0, 3], yaw: 0.0}

@@ -1,0 +1,59 @@
+# OpenVINS (https://github.com/rpng/open_vins), stereo visual-inertial
+# odometry, as a bring-your-own component: the same estimator and frozen
+# calibration the reference rig's built-in slot runs (calibration-campaign-v1,
+# stereo variant), attached from outside the scenario so it flies exactly what
+# any other estimator flies:
+#
+#   mns-stacks generate scenarios/stereo-xfs --component components/openvins
+#
+# config/ is the vendored calibration of the reference stereo rig (front +
+# front_right, 640 x 480, 80 deg, 0.12 m baseline, /imu/data). check.py
+# refuses a stack it does not describe instead of letting OpenVINS diverge.
+schema: mns.component.v1
+id: openvins
+name: OpenVINS stereo VIO
+version: 0.1.0
+kind: estimator
+
+images:
+  openvins: dhdevspace/auto_mns:vio-estimator-openvins-69488123
+
+consumes: [stereo_primary, imu, clock]
+produces:
+  # OpenVINS's own odometry (the IMU's pose in its world frame); the
+  # evaluator aligns it to ground truth as it always has.
+  estimate: {topic: /ov_msckf/odomimu}
+# Ready once it tracks features: OpenVINS publishes its track image from the
+# first stereo frames, but its odometry only after the drone starts moving
+# (static initialisation waits for the take-off jerk), so the estimate
+# cannot be the ready signal for a flight that waits on it.
+ready: {topics: [/ov_msckf/trackhist], timeout_s: 180}
+
+# Scored after every recorded run against sim truth, the way a campaign's
+# vio-stress evaluation aligns it (ATE, RPE, drift, availability).
+scoring:
+  builtin: estimate
+  checks:
+    ate_rmse_m: {max: 2.0}
+    availability: {min: 0.9}
+
+requires:
+  autopilot: [px4, ardupilot]
+
+files:
+  config: config
+  check: check.py
+
+services:
+  check:
+    role: adaptor
+    image: openvins
+    lifecycle: oneshot
+    command: [python3, /cfg/component/check]
+  ov_msckf:
+    role: component
+    image: openvins
+    after: [check]
+    command: [ros2, launch, ov_msckf, subscribe.launch.py,
+              "config_path:=/cfg/component/config/estimator_config.yaml",
+              "use_stereo:=true", "max_cameras:=2"]

@@ -117,8 +117,8 @@ images:
 
   vio_estimator_openvins:
     repo: dhdevspace/auto_mns
-    tag: vio-estimator-openvins-69488123
-    digest: sha256:ac48f34984863b159c0bf805e4f8ea2daecff4c23539aac00afd89c4d3a48078
+    tag: "vio-estimator-openvins-69488123-qos"
+    digest: sha256:f0a14f5e3ce4ebb6ab8b253a1346b6d870465e9410b05d713487a23904169690
     channel: pinned
     purpose: >-
       OpenVINS (ov_msckf) on ROS 2 Humble, the published vio_estimator role --
@@ -156,24 +156,24 @@ images:
   # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
   v1_runtime_host:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-v1.0.0"
-    digest: sha256:f540c4fb26bf63f80536c84bed632c3cea71cacf294cddd27a4da19c5e61363d
+    tag: "tevv-runtime-host-v1.1.0-dev-3d71c1c"
+    digest: sha256:4790c5979b5b2037d5bfcf4695bccb1002bbbcf9320fd3d8cdfd53f8d47ae0ef
     channel: pinned
     purpose: >-
       MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim integration/v1.0.0 dea429015355, dirty=false; v1.0.0 candidate: #228 packs, #226 authored origin, exec launcher): the shared Scenario* plugins single copy (shared_set_id 8ef1c3b7), SDK 1.0.0rc5; carries its host contract (label tevv.host.contract); its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
 
   v1_authoring:
     repo: dhdevspace/auto_mns
-    tag: "mns-authoring-v1.0.0"
-    digest: sha256:8037f5b00f7bebf6244ab30f919f7488e9290b77dd66367390137362e9ba0991
+    tag: "mns-authoring-v1.1.0-dev-61a7b4c"
+    digest: sha256:66b11b18a48caa6418fff896df800d2558e4329b2cd26cc2e7816fe7ba6c8c65
     channel: pinned
     purpose: >-
       MnS 1.0 ScenarioLab (TEVV-Authoring integration/v1.0.0 e821a2f074fc; v1.0.0 candidate: #25 spawn clearance, CableComponent), built kit-only with --kit <v1_runtime_host_kit> --strict and no waivers (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins, UDS and the preview content come from that kit (TEVV-Airsim dea429015355); SDK 1.0.0rc5; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.0.0"
-    digest: sha256:4acf9e87a80ca10827446f09c18514fc6e52b9a31d60dede2a5628891a0a8c3c
+    tag: "mns-stacks-v1.1.0-dev-dbcd10e"
+    digest: sha256:cf3a107a6e891e832d3ac252873bcf869a81f5fa6069aba2374c80cb3baa00a2
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -182,12 +182,28 @@ images:
       compatibility check. The dashboard, make fly/stop/campaign/stacks,
       tools/images.sh drift and osmo/campaign.py all run it as a sibling
       container with host paths. Replaces mns-product-shell and
-      mns-stack-generator, which are retired and no longer pinned.
+      mns-stack-generator, which are retired and no longer pinned. v1.1
+      development build of MnS-Integration-Platform 50d843b
+      (integration/v1.1 0832fda plus fix/v1.1-plan-stop-now, #141): a plan can
+      show the simulator window (--window, extensions."mns.render"),
+      `campaign cancel --now` stops the run in flight, and a dead campaign's
+      lock goes stale. SDK from TEVV-Content-Pack-SDK c2e9510 (override),
+      run_bundle from TEVV-Airsim integration/v1.1 b9e4ef2. Rebuilt from
+      integration/v1.1 579e330 (#142): `component init` writes component.yaml
+      with a field reference and the checks for its kind; a component.yaml with
+      a container compiles like components.json. Rebuilt from integration/v1.1
+      dd614ef (#143): component.yaml takes `interfaces`, so a component's own
+      message types (MIGHTY's dynus_interfaces trajectory) are recorded. Rebuilt from
+      integration/v1.1 29d4745 (#144): fc_nominal no longer fails ArduPilot's
+      routine estimator start-up messages, and names the most severe one. Rebuilt from
+      integration/v1.1 b879028 (#145): the run director writes mission.json, the
+      pilot's goals and whether it reached them, for the metrics service to
+      judge goal reached from.
 
   v1_packs:
     repo: dhdevspace/auto_mns
-    tag: "mns-packs-v1.0.0"
-    digest: sha256:937c527dc5dc82217018fce244498dae4d574a5f9b2077c44a7512eeba3b3271
+    tag: "mns-packs-v1.1.0-dev-c2e9510"
+    digest: sha256:a7d5c462904dd9ab81bb6b7f4d82b082ea742310289d153286b1918f5e14284a
     channel: pinned
     purpose: >-
       mns-packs (TEVV-Content-Pack-SDK docker/Dockerfile, ENTRYPOINT
@@ -198,8 +214,8 @@ images:
 
   v1_runtime_host_kit:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-kit-v1.0.0"
-    digest: sha256:184e9f96207b67ba10837007e8683196a89a6aaa5adc1cb1d5db4ceef7e6c4aa
+    tag: "tevv-runtime-host-kit-v1.1.0-dev-3d71c1c"
+    digest: sha256:cf64aac837dfb58da35a0fcb29f4b7ed8c64b2a1d8dd373a7c5ec2f8313a3b8a
     channel: pinned
     pull: false
     purpose: >-
@@ -211,7 +227,7 @@ images:
 
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns
-    tag: "tevv-airsim-ros2-bridge-humble-v1.0.0"
+    tag: "tevv-airsim-ros2-bridge-humble-v1.0.0-mc4086d7"
     digest: sha256:0736b2949dc748f7ed92d4821c7ec382f8daa06a61e11e7d810b99fc6f9c6efc
     channel: pinned
     purpose: >-
@@ -235,11 +251,12 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-gb36d1a9"
-    digest: sha256:d4027194bf3a15a2dc533d0ba9eb80ec0d33845b311bede2b0dd1246f16c1d0b
+    tag: "tevv-web-dashboard-backend-v1.1.0-dev-3e8ffc9"
+    digest: sha256:5426a53732726a5fb59d62bdeb67e184b43158008047417b91e072a7516768d2
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
+      commit: cabceca
     # No `bakes:`. From TEVV-Web-Dashboard#122 on the backend bakes no image
     # pins: it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and MNS_AUTHORING_IMAGE
     # from images/v1.0.0.generated.env through docker-compose-dashboard.yml,
@@ -252,18 +269,57 @@ images:
       armed and climbed; WASD re-enters OFFBOARD after Hold; STOP holds via the
       autopilot; one REST flight command per vehicle. Every stack lifecycle,
       recording, campaign and topic call goes through mns-stacks and pack status
-      through mns-packs as sibling containers; it bakes no image pins.
+      through mns-packs as sibling containers; it bakes no image pins. v1.1
+      development build of TEVV-Web-Dashboard b2a6b65 (integration/v1.1
+      7f164ee plus fix/v1.1-plan-stop-content, #133), pilot and sim_real_eval
+      from MnS-Integration-Platform 50d843b: Test plan can show the simulator
+      window; Run stops a plan after the run in the air or now, by the plan
+      (a plan from a terminal or from before a restart, and a dead one);
+      Content lists level and object packs in two tabs with metadata as pills. Rebuilt from
+      integration/v1.1 bc08ff2 (#134, #135, #136): Monitor offers the way back to
+      Scenario Configuration when a run ends, on the scenario that ran; Monitor no
+      longer shows one plan's verdict on another's run; Fly explains the picked
+      route or goal course; ending on landing is offered only with a MAVLink
+      endpoint; the test plan's Id box keeps hyphens. Rebuilt from cabceca (#137): a
+      run's map and JSON open in a dialog over the page, not a new tab.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-gb36d1a9"
-    digest: sha256:3558431b7102891044e00a5e3931e819342a54c30e84f5d49edb2f03020d4188
+    tag: "tevv-web-dashboard-frontend-v1.1.0-dev-3e8ffc9"
+    digest: sha256:b49d45eadc9152f09cbd8e7db4f22766f607d66eec4628632e40f55d12561a70
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
+      commit: cabceca
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard integration/v1.0.0
-      b36d1a9), built with the backend above; it bakes no pins.
+      b36d1a9), built with the backend above; it bakes no pins. v1.1
+      development build of TEVV-Web-Dashboard cabceca, with the backend above.
+
+  metrics_service:
+    repo: dhdevspace/auto_mns
+    tag: "tevv-jsonl-ingest-v0.4.6-g27a720c"
+    digest: sha256:c99307ca4b0c00920b071911a3717f4a6d9034d0d751c7596886a60b0790a7aa
+    channel: pinned
+    source:
+      repo: DinoHub/TEVV-Metrics
+    purpose: >-
+      The product metrics service (TEVV-Metrics jsonl_ingestor 0.4.0, branch
+      feat/component-scoring a68bfdd): `watch` scores each finished run under
+      generated/**/outputs/metrics (any run folder, campaign stacks too) into
+      runs/<stack>/<run_id>/metrics/ against the stack's own
+      config/metrics/evaluation.yaml, judges component results, and serves
+      them read-only on :8770. Spawn settling and touch-downs are ground
+      contacts, never collisions; the ground under a parked or landing
+      vehicle is not an obstacle-clearance violation. Geofences, zones and
+      coverage areas come from the stack's zones.json. A new version re-scores
+      every run on disk. See docs/metrics.md.
+      Now TEVV-Metrics jsonl_ingestor 0.4.6 (feat/component-scoring 27a720c,
+      #18 + #19): component results and maps (map.svg, which the dashboard's
+      map preview shows); a collision in flight is 0 m obstacle clearance and
+      fails, and nothing inside a probe narrower than the limit is not judged;
+      a goal reached before take-off no longer counts, and mission.json
+      decides goal reached when present.
 
 consumers:
   # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env
@@ -339,4 +395,5 @@ consumers:
     dashboard:
       DASHBOARD_LICHTBLICK_IMAGE: dashboard_lichtblick
       DASHBOARD_TIMESCALEDB_IMAGE: dashboard_timescaledb
+      METRICS_SERVICE_IMAGE: metrics_service
 
