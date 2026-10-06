@@ -1,0 +1,17 @@
+# TEVV v1.1: OpenVINS on a TEVV-flown path. TEVV takes off, flies to the
+# path's first waypoint, waits for OpenVINS's first estimate, flies the path
+# at speed_mps; the run ends at the path's end or after timeout_s.
+schema: mns.campaign.v1
+id: tevv-openvins-path
+name: OpenVINS on the yard box (TEVV flies)
+scenario: ./ScenarioSpec.yaml
+recording:
+  keep: first
+mission:
+  control: internal
+  path: yard-box
+  speed_mps: 1.5
+  timeout_s: 240
+extensions:
+  mns.components:
+  - openvins-demo
