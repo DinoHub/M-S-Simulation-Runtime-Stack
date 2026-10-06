@@ -236,11 +236,11 @@ images:
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
     tag: "tevv-web-dashboard-backend-v1.0.0-live.25"
-    digest: sha256:6ea23c4462692b8c952bb3d16472b8631f5d91ce9521e3ca413fa5cdf1642362
+    digest: sha256:9f02a0331386acbcff02900e032c2ada4806c68cf1f7760f5b2c822ceb212e06
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: defb41f
+      commit: 1541d42
     # No `bakes:`. From TEVV-Web-Dashboard#122 on the backend bakes no image
     # pins: it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and MNS_AUTHORING_IMAGE
     # from images/v1.0.0.generated.env through docker-compose-dashboard.yml,
@@ -257,11 +257,11 @@ images:
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
     tag: "tevv-web-dashboard-frontend-v1.0.0-live.25"
-    digest: sha256:0f43c176a4276fab5286785192889e5f2188cff5f5c14d02e2b877f7a3e65772
+    digest: sha256:6500a49a2cda380f1fe5008ad8f16e4d0f9dfd12ae5a34d47d5f12215a80adfe
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: defb41f
+      commit: 1541d42
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
       3ceef32), built with the backend above; it bakes no pins. Now feat/live-stack-viewer 3be3124, built with the backend above.
