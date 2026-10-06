@@ -227,8 +227,8 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-gb36d1a9"
-    digest: sha256:d4027194bf3a15a2dc533d0ba9eb80ec0d33845b311bede2b0dd1246f16c1d0b
+    tag: "tevv-web-dashboard-backend-v1.0.0-g44d7dc0"
+    digest: sha256:3eac964c0896f38a8fbc09e6033ffe5672b957548d939a7b111228621cda6b24
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
@@ -238,24 +238,27 @@ images:
     # so rebuilding mns-stacks, mns-packs or the authoring image is a repin
     # here, never a dashboard rebuild.
     purpose: >-
-      MnS 1.0 dashboard backend (TEVV-Web-Dashboard integration/v1.0.0 b36d1a9,
-      v1.0.0 candidate: #127, .env quoting, counts via mns-packs),
-      pilot from integration integration/v1.0.0 4ded7cf: REST takeoff reports success only once
-      armed and climbed; WASD re-enters OFFBOARD after Hold; STOP holds via the
-      autopilot; one REST flight command per vehicle. Every stack lifecycle,
+      MnS 1.0 dashboard backend (TEVV-Web-Dashboard release/v1.0.0-next 44d7dc0:
+      #127, .env quoting, counts via mns-packs; a campaign cancel reports
+      cancelled only when the runner took it, 409 otherwise; no virtualenv in
+      the image), pilot and sim_real_eval from MnS-Integration-Platform
+      release/v1.0.0-next 761f5e9 (pilot unchanged since 4ded7cf): REST takeoff
+      reports success only once armed and climbed; WASD re-enters OFFBOARD
+      after Hold; STOP holds via the autopilot; one REST flight command per vehicle. Every stack lifecycle,
       recording, campaign and topic call goes through mns-stacks and pack status
       through mns-packs as sibling containers; it bakes no image pins.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-gb36d1a9"
-    digest: sha256:3558431b7102891044e00a5e3931e819342a54c30e84f5d49edb2f03020d4188
+    tag: "tevv-web-dashboard-frontend-v1.0.0-g44d7dc0"
+    digest: sha256:a5c925020da238caad70f345ea9afb83cfbbbfdd1e18b8d4ffc8397182d7db14
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
     purpose: >-
-      MnS 1.0 dashboard frontend (TEVV-Web-Dashboard integration/v1.0.0
-      b36d1a9), built with the backend above; it bakes no pins.
+      MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
+      44d7dc0, NEXT_PUBLIC_* at the compose defaults), built with the backend
+      above; it bakes no pins.
 
 consumers:
   # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env
