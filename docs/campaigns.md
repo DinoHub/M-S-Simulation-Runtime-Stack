@@ -29,7 +29,9 @@ make campaign CAMPAIGN=my-test                # fly yours
 A campaign is hours long and holds the GPU, the simulator ports and the X display, so only
 one runs at a time; a second is refused and told which one holds the machine. `make campaign
 ARGS="cancel <name>"` stops one cleanly — the flight in the air is finished and bundled,
-nothing further starts.
+nothing further starts. `cancel <name> --now` stops the flight in the air as well: its
+recording is stopped, its stack taken down, and it is marked cancelled, not failed. Cancelling
+a campaign whose process has died clears its lock.
 
 Campaign runs render the simulator off-screen. A campaign is unattended, and an
 unattended desktop puts its monitor to sleep: a windowed simulator then stalls its cameras
