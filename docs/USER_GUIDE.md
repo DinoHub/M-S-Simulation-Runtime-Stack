@@ -515,6 +515,9 @@ and the results in a fold. Monitor moves to each run as it starts (between
 runs it says which run comes next). Pick a run in the banner, or **Pinned**,
 to stay on one run. The banner's run list opens the same details in a drawer
 while the viewer keeps following the plan.
+When the plan ends, the banner offers **See results in Analysis** and **Back
+to Run**; when a stack you were flying by hand stops, a strip offers **Back to
+Scenario Configuration**. Both open the scenario that ran.
 
 Reopening the step shows the plan's last results. **Stop after this run**
 lets the run in the air finish and starts nothing further. **Stop now** (it
