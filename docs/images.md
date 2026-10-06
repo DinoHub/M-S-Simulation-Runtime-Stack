@@ -26,13 +26,11 @@ network: no registry calls, no network flakiness, runnable on every PR.
 being filled in, or labels that disagree, is recoverable):
 
 - **Pending digests.** A `channel: pinned` row may carry `pending: "<why>"`
-  and `digest: null`: it names its tag (an rc image the release owner has not
-  pushed or pinned yet) and renders tag-only until the digest is known. v1.0.0
-  starts with `v1_packs`, `v1_stacks` and `v1_runtime_host_kit` pending (their
-  `-v1.0.0-rc` images are built in phase 4). Once an image is pushed,
-  `tools/images.sh bump --only KEY` resolves the pinned tag's digest, writes
-  it, and deletes the `pending:` line; `status` lists pending rows under
-  NEEDS YOU until then.
+  and `digest: null`: it names its tag (an image the release owner has not
+  pushed or pinned yet) and renders tag-only until the digest is known. Once
+  the image is pushed, `tools/images.sh bump --only KEY` resolves the pinned
+  tag's digest, writes it, and deletes the `pending:` line; `status` lists
+  pending rows under NEEDS YOU until then. No row is pending in v1.0.0.
 - **One host pin, one kit.** The runtime host's kit is the source of truth,
   so `verify` compares the labels of the images
   `consumers.release_channels.v1.host_pin` names:
@@ -56,34 +54,41 @@ being filled in, or labels that disagree, is recoverable):
 
 ## Releasing: what `verify --release` requires
 
-On `release/v1.0.0-next` a pin may be *pending* (an rc tag, no digest yet).
-What merges into `release/v1.0.0` or `main` may not: `tools/images.sh verify
---release` fails on any `pending:` row, any `-rc` tag in a release channel,
-and any tag-only ref in `images/v1.0.0.generated.env` or
-`packs/v1.0.0.lock.json`. CI turns it on for every pull request into those two
-branches (`GITHUB_BASE_REF`), and runs it as its own step so a red run names
-the rule.
+On a development branch a pin may be *pending* (no digest yet) or on a
+candidate tag. What merges into `release/v1.0.0` or `main` may not:
+`tools/images.sh verify --release` fails on
 
-Phase 4 (rc images pushed): pin each rc's digest; the tag stays the rc tag.
+- any `pending:` row;
+- any tag in a release channel that is not a release tag. Tags are checked
+  against an allowlist, not an `-rc` pattern: a row must be pinned on
+  `<name>-vX.Y.Z`, or `<name>-vX.Y.Z-g<sha>` for the rows built with traced
+  tags (the dashboard's `v1_dashboard_backend` and `v1_dashboard_frontend`).
+  `-rc.N`, `-rc.services.N`, `-live.N`, `-zones.N`, `-latest`, branch builds
+  and test tags all fail;
+- any tag-only ref in `images/v1.0.0.generated.env` or
+  `packs/v1.0.0.lock.json`.
+
+CI turns it on for every pull request into those two branches
+(`GITHUB_BASE_REF`), and runs it as its own step so a red run names the rule.
+
+The tag rule covers the rows a release channel names
+(`consumers.release_channels.*.vars`), not the rows that appear only in an
+image set (`consumers.image_sets`, rendered to
+`images/image-set.generated.yaml`, the images generated stacks run). In v1.0.0
+two of those are not on release tags: `qgroundcontrol`
+(`airsim-qgc-x11-latest`) and `sim_real_eval`
+(`sim-real-eval-worker-v1.0.0-rc`). Both are pinned by digest, so the bits are
+fixed; each row's `follow_up:` says how it moves to a `-v1.0.0` tag.
+(`vio_estimator_openvins` is on `vio-estimator-openvins-<upstream commit>` by
+design: its tag names the OpenVINS commit it was built from.)
+
+Moving a row to its release tag (once that tag is in the registry): `bump`
+refuses an ordinary pinned row, so this is the one explicit retag it does,
+one row at a time:
 
 ```bash
-tools/images.sh bump --only v1_stacks            # resolves mns-stacks-v1.0.0-rc, drops pending:
-tools/images.sh bump --only v1_packs
-tools/images.sh bump --only v1_runtime_host_kit
-tools/images.sh sync && make pack-lock           # the lock restates packs/stacks
-tools/images.sh verify
-```
-
-Phase 6 (the accepted rcs retagged `-v1.0.0` in the registry): move each row
-to its release tag and that tag's digest. `bump` refuses an ordinary pinned
-row, so this is the one explicit retag it does, one row at a time:
-
-```bash
-tools/images.sh bump --only v1_stacks --tag mns-stacks-v1.0.0
-tools/images.sh bump --only v1_packs  --tag mns-packs-v1.0.0
-tools/images.sh bump --only v1_runtime_host_kit --tag tevv-runtime-host-kit-v1.0.0
-# rows still on a moving -latest tag: set channel: pinned by hand first, then
 tools/images.sh bump --only sim_real_eval  --tag sim-real-eval-worker-v1.0.0
+# a row on a moving -latest tag (qgroundcontrol): set channel: pinned by hand first, then
 tools/images.sh bump --only qgroundcontrol --tag airsim-qgc-x11-v1.0.0
 tools/images.sh sync && make pack-lock
 tools/images.sh verify --release                 # must pass before the release PR
