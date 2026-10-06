@@ -168,7 +168,7 @@ def discover_release_tags(repo: str, host_id: str, cache: Path) -> list[str]:
 
 
 def build_entry(repo: str, tag: str, cache: Path, packs_image: str, host_id: str) -> dict[str, Any]:
-    release = gh_json("release", "view", tag, "-R", repo, "--json", "assets,createdAt")
+    release = gh_json("release", "view", tag, "-R", repo, "--json", "assets,publishedAt")
     assets = {asset["name"]: asset for asset in release["assets"]}
     bundle_name = next((n for n in assets if n.endswith((".mnslevelpack", ".mnsassetpack"))), None)
     # publish_pack.py splits a bundle over 1900 MB into <bundle>.part-NNN and
@@ -248,7 +248,9 @@ def build_entry(repo: str, tag: str, cache: Path, packs_image: str, host_id: str
         "map_path": str((manifest.get("unreal") or {}).get("entry_map") or ""),
         "required_plugins": plugins,
         "release": {"repository": repo, "tag": tag},
-        "published_at": release.get("createdAt", ""),
+        # When the release was published, not createdAt: that is the tagged
+        # commit's date, and a pack rebuilt later keeps the older tag date.
+        "published_at": release.get("publishedAt", ""),
     }
 
 

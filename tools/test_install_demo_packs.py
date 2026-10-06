@@ -7,6 +7,7 @@ store. Nothing here touches the network or docker.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -17,6 +18,7 @@ from unittest.mock import patch
 
 from unittest import mock
 
+import build_pack_lock
 import install_demo_packs as installer
 
 HOST = "ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2"
@@ -615,6 +617,37 @@ class MnsPacksCalls(unittest.TestCase):
                 self.assertIn("overrides the catalog pin", err.getvalue())
                 os.environ["MNS_PACKS_IMAGE"] = "shell/packs:env"
                 self.assertEqual(installer.packs_image(lock), "shell/packs:env")
+
+
+class BuildEntry(unittest.TestCase):
+    """build_pack_lock.build_entry against a faked release (no gh, no docker)."""
+
+    def test_published_at_is_the_release_publish_time_not_the_tag_date(self):
+        bundle = "xfs_level-1_0_2.mnslevelpack"
+        payload = b"pack bytes"
+        sha = hashlib.sha256(payload).hexdigest()
+        files = {
+            "artifact.json": json.dumps({"pack": {"id": "xfs-level", "version": "1.0.2"},
+                                         "variants": [{"host_compatibility_id": HOST,
+                                                       "payload_digest": D2}]}),
+            "mns_level_pack.json": json.dumps({"level_pack": {"display_name": "XFS"}}),
+            f"{bundle}.sha256": f"{sha}  {bundle}\n",
+        }
+        release = {"createdAt": "2026-09-29T14:47:17Z", "publishedAt": "2026-10-05T06:53:38Z",
+                   "assets": [{"name": n, "size": len(payload)} for n in [bundle, *files]]}
+
+        def download(repo, tag, name, dest):
+            (dest / name).write_bytes(payload if name == bundle else files[name].encode())
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(build_pack_lock, "gh_json", lambda *a: release), \
+                patch.object(build_pack_lock, "gh_download", download), \
+                patch.object(build_pack_lock, "packs_verify", lambda *a: {
+                    "id": "xfs-level", "version": "1.0.2", "kind": "level", "digest": D1}), \
+                contextlib.redirect_stdout(io.StringIO()):
+            entry = build_pack_lock.build_entry("o/r", "pack-level-xfs-level-1.0.2", Path(tmp),
+                                                "local/packs:1", HOST)
+        self.assertEqual(entry["published_at"], "2026-10-05T06:53:38Z")
 
 
 if __name__ == "__main__":
