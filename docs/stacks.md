@@ -66,8 +66,12 @@ container exactly as the dashboard's Record button records it, so
 `sim_real_eval` and the dashboard's replay read it the same way.
 
 If a run is interrupted, `make stop` stops the last stack `make fly` started
-(`make stop STACK=generated/<name>` names another). It always runs
-`finalize_metrics` first; `docker compose down` still runs if that fails.
+(`make stop STACK=generated/<name>` names another). It stops the simulator
+first and gives it `MNS_SIM_STOP_TIMEOUT` seconds (default 60) to shut down
+cleanly, so the run ends with `run.ended`; then it stops the rest of the stack,
+runs `finalize_metrics`, and takes the stack down. `docker compose down` still
+runs if `finalize_metrics` fails. A slow-closing simulator can be given longer:
+`MNS_SIM_STOP_TIMEOUT=120 make stop`.
 
 ## Author
 

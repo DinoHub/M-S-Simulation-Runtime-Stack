@@ -314,7 +314,7 @@ endif
 fly: ensure-demo-packs  ## Generate and fly SCENARIO for FLY_SECONDS unless ARGS names --done (RECORD=1 records a bag)
 	@$(MNS_STACKS_ENV); ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
 
-stop:  ## Stop a flown stack (finalize_metrics, then compose down)
+stop:  ## Stop a flown stack (simulator first, finalize_metrics, then compose down)
 	@last=$$(cut -f1 .mns/last-stack 2>/dev/null); last_project=$$(cut -s -f2 .mns/last-stack 2>/dev/null); \
 	stack="$(STACK)"; [ -n "$$stack" ] || stack="$$last"; \
 	test -n "$$stack" || { echo "usage: make stop STACK=generated/<name>  (no make fly to default to)" >&2; exit 2; }; \

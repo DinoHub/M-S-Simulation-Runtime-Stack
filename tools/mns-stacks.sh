@@ -29,6 +29,9 @@
 #                                            host's contract (the override; warns)
 #   TEVV_RUNS_DIR                            runs directory (default ./runs, or .env)
 #   MNS_IMAGE_PULL_POLICY                    missing (default) | always | never
+#   MNS_SIM_STOP_TIMEOUT                     seconds the simulator gets to shut down
+#                                            on stop (mns-stacks default 60); passed
+#                                            through only when set
 #   MNS_STACKS_DOCKER_ARGS                   extra `docker run` flags (word-split)
 set -euo pipefail
 
@@ -104,6 +107,7 @@ args+=(
   -e "MNS_PACK_STORE_ROOT=$PACK_STORE"
   -e "MNS_HOST_UID=$HOST_UID" -e "MNS_HOST_GID=$HOST_GID"
 )
+[[ -n "${MNS_SIM_STOP_TIMEOUT:-}" ]] && args+=(-e "MNS_SIM_STOP_TIMEOUT=$MNS_SIM_STOP_TIMEOUT")
 if [[ -n "$KIT" ]]; then
   # The escape hatch for a kit that is not in an image yet: its contract
   # replaces the pinned host's, so the contract variable is not set at all.
