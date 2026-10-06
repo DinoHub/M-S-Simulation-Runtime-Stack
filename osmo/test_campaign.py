@@ -232,7 +232,7 @@ class WorkspaceHost(unittest.TestCase):
             self.assertEqual(campaign.workspace_host()[0], campaign.ROOT)
 
     def test_an_unusable_workspace_is_a_message_not_a_traceback(self):
-        with mock.patch.object(campaign, "WORKSPACE_HOST", Path("/home/mnsuser/M-S-Simulation-Runtime-Stack")), \
+        with mock.patch.object(campaign, "WORKSPACE_HOST", self.dir / "M-S-Simulation-Runtime-Stack"), \
                 mock.patch.object(campaign, "WORKSPACE_SOURCE", "test"), \
                 contextlib.redirect_stderr(io.StringIO()) as err, \
                 self.assertRaises(SystemExit) as exit_:
