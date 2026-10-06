@@ -172,8 +172,8 @@ images:
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.1.0-dev-29d4745"
-    digest: sha256:b340fc374ef24665eb01c604069668ddd72382d19c37fc674b853ccc8bf2ec9b
+    tag: "mns-stacks-v1.1.0-dev-b879028"
+    digest: sha256:44710e8fbbf63b21092883ab7f94784684fa0ce74d0b1c7b0fe4329682809f34
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -195,7 +195,10 @@ images:
       dd614ef (#143): component.yaml takes `interfaces`, so a component's own
       message types (MIGHTY's dynus_interfaces trajectory) are recorded. Rebuilt from
       integration/v1.1 29d4745 (#144): fc_nominal no longer fails ArduPilot's
-      routine estimator start-up messages, and names the most severe one.
+      routine estimator start-up messages, and names the most severe one. Rebuilt from
+      integration/v1.1 b879028 (#145): the run director writes mission.json, the
+      pilot's goals and whether it reached them, for the metrics service to
+      judge goal reached from.
 
   v1_packs:
     repo: dhdevspace/auto_mns
@@ -295,8 +298,8 @@ images:
 
   metrics_service:
     repo: dhdevspace/auto_mns
-    tag: "tevv-jsonl-ingest-v0.4.0-ga68bfdd"
-    digest: sha256:855286ad5a25197b942e03662a9aaf7fe37d5c95648284acb46c61cb033eb774
+    tag: "tevv-jsonl-ingest-v0.4.6-g27a720c"
+    digest: sha256:c99307ca4b0c00920b071911a3717f4a6d9034d0d751c7596886a60b0790a7aa
     channel: pinned
     source:
       repo: DinoHub/TEVV-Metrics
@@ -311,6 +314,12 @@ images:
       vehicle is not an obstacle-clearance violation. Geofences, zones and
       coverage areas come from the stack's zones.json. A new version re-scores
       every run on disk. See docs/metrics.md.
+      Now TEVV-Metrics jsonl_ingestor 0.4.6 (feat/component-scoring 27a720c,
+      #18 + #19): component results and maps (map.svg, which the dashboard's
+      map preview shows); a collision in flight is 0 m obstacle clearance and
+      fails, and nothing inside a probe narrower than the limit is not judged;
+      a goal reached before take-off no longer counts, and mission.json
+      decides goal reached when present.
 
 consumers:
   # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env
