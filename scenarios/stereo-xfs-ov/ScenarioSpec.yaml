@@ -1,0 +1,96 @@
+schema: mns.scenario.v1
+id: stereo-xfs-ov
+name: Stereo rig over XFS, OpenVINS demo
+stack_name: stereo-xfs-ov
+
+# A stereo pair on a quadrotor over the XFS level, and nothing else: no
+# estimator, no autonomy. It is the vio-reference rig with the built-in
+# estimator taken out, so that a component under test attaches to it from
+# outside (`--component`, or a CampaignSpec's extensions."mns.components").
+#
+# The stack's interface contract (config/stack/contract.json) offers the
+# pair as stereo_primary: front (left) and front_right, 0.12 m baseline,
+# 640x480, FOV 80 (fx = fy = 381.36), same-stamp captures.
+#
+#   mns-stacks generate scenarios/stereo-xfs --component components/mac-vo
+
+environment:
+  id: xfs-level
+  version: 1.0.1
+  artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+
+runtime:
+  profile: airsim_unreal_px4_docker
+  features:
+    sim_real_eval: true
+    ros2_bridge: true
+    qgroundcontrol: false
+    # Required, not optional. The flight goes through MAVROS inside the bridge
+    # container, because a generated stack's flight controller streams to its
+    # own loopback and publishes no host port. With this false the bridge starts
+    # without MAVROS and the pilot waits out its timeout on a flight controller
+    # that was never connected.
+    mavros: true
+
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  ros_domain_id: 1
+  # The container yard on XFS, 2.3 m above the ground. Not the origin:
+  # XFS has no floor under its world origin (its terrain sits tens of metres
+  # above it), so a (0, 0, 0) spawn falls through the world at ~8 m/s and PX4
+  # refuses to arm ("vertical velocity unstable"). The level pack carries no
+  # PlayerStart pose the generator could use, so this was measured: held
+  # 160 m up for the terrain to stream in and dropped, the vehicle came to rest
+  # at NED z = -18.70 here. AirSim NED metres, +z DOWN: -21.0 is above it.
+  # A container stack stands 4 m east, so routes/yard-box.yaml flies the
+  # reference box mirrored to the open west. Same pose as vio-osmo-xfs.
+  start:
+    x: 423
+    y: -906
+    z: -21.0
+    yaw: 0
+  # Stereo pair, 0.12 m baseline. Camera Z is 0.25 m above the IMU: at zero the
+  # camera sits inside the airframe and the rotor arms fill about a third of
+  # every frame.
+  cameras:
+    front:
+      position:
+        x: 0.15
+        y: 0
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+    front_right:
+      position:
+        x: 0.15
+        y: 0.12
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+extensions:
+  mns.metrics:
+    evaluation:
+      metrics:
+        travel_time: true
+        data_integrity: true

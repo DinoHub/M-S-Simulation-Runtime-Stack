@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../_schema/components.schema.json
+# openvins-demo: a bring-your-own container under test (mns.component.v1).
+# Replace every "<fill in: ...>" (README.md says what each field means), then:
+#   mns-stacks component check components/openvins-demo
+
+schema: mns.component.v1
+id: openvins-demo
+name: OpenVINS stereo VIO (demo)
+version: 0.1.0
+kind: estimator
+container:
+  image: dhdevspace/auto_mns:vio-estimator-openvins-69488123
+  command:
+  - ros2
+  - launch
+  - ov_msckf
+  - subscribe.launch.py
+  - config_path:=/mns/config/estimator_config.yaml
+  - use_stereo:=true
+  - max_cameras:=2
+  gpu: false
+  run_as: image
+  environment: {}
+consumes:
+- stereo_primary
+- imu
+- clock
+produces:
+  estimate:
+    topic: default
+ready:
+  topics:
+  - /ov_msckf/trackhist
+  timeout_s: 180
+scoring:
+  builtin: estimate
+  checks:
+    ate_rmse_m:
+      max: 2.0
+    availability:
+      min: 0.9
+adaptor:
+  inputs: []
+  outputs:
+  - from: /ov_msckf/odomimu
+    type: nav_msgs/msg/Odometry
+    to: estimate
+    body:
+      frame: base_link
+      axes: FLU
+    world: first_pose
+    stamp: header
+  config:
+  - template: files/estimator_config.yaml
+    out: estimator_config.yaml
+  - template: files/kalibr_imucam_chain.yaml
+    out: kalibr_imucam_chain.yaml
+  - template: files/kalibr_imu_chain.yaml
+    out: kalibr_imu_chain.yaml
+record:
+- /ov_msckf/odomimu

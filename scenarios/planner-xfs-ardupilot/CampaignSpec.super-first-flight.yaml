@@ -1,0 +1,41 @@
+# Written by the dashboard's Test plan step; the form is kept under
+# extensions."mns.editor" so the step can open this file again.
+schema: mns.campaign.v1
+id: super-first-flight
+name: SUPER first flight
+scenario: ./ScenarioSpec.yaml
+variants:
+- id: base
+  name: As authored
+repeats: 1
+recording:
+  keep: first
+mission:
+  source: external
+  goals: ./courses/yard-detour.yaml
+  done: timeout
+  timeout_s: 10.0
+extensions:
+  mns.components:
+  - super-demo
+  mns.editor:
+    version: 1
+    form:
+      id: super-first-flight
+      name: SUPER first flight
+      mission:
+        kind: goals
+        autopilot: ''
+        course: yard-detour.yaml
+      start:
+        wait_steady: true
+      end:
+        kind: mission
+        timeout_s: 10
+        on_timeout: fail
+      repeats: 1
+      seeds: []
+      axes: []
+      recording:
+        keep: first
+        topics: []

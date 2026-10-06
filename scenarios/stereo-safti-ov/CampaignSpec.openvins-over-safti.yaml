@@ -1,0 +1,41 @@
+# Written by the dashboard's Test plan step; the form is kept under
+# extensions."mns.editor" so the step can open this file again.
+schema: mns.campaign.v1
+id: openvins-over-safti
+name: OpenVINS over SAFTI
+scenario: ./ScenarioSpec.yaml
+variants:
+- id: base
+  name: As authored
+repeats: 1
+recording:
+  keep: first
+mission:
+  source: external
+  trajectory: ./routes/reference-flight-safti.yaml
+  done: timeout
+  timeout_s: 1.0
+extensions:
+  mns.components:
+  - openvins-demo
+  mns.editor:
+    version: 1
+    form:
+      id: openvins-over-safti
+      name: OpenVINS over SAFTI
+      mission:
+        kind: trajectory
+        autopilot: ''
+        route: reference-flight-safti.yaml
+      start:
+        wait_steady: true
+      end:
+        kind: mission
+        timeout_s: 1
+        on_timeout: fail
+      repeats: 1
+      seeds: []
+      axes: []
+      recording:
+        keep: first
+        topics: []

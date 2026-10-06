@@ -1,0 +1,93 @@
+# A stereo pair on a quadrotor over the SAFTI city, for an estimator attached
+# from outside (--component). The stereo rig of stereo-xfs-ov; SAFTI 1.0.4 at
+# its origin, spawned where ScenarioLab places the vehicle on the ground.
+# Virtual shadow maps on: without them SAFTI renders a shadow atlas per
+# camera view and the cameras drop to about 2 Hz.
+schema: mns.scenario.v1
+id: stereo-safti-ov
+name: Stereo rig over SAFTI, OpenVINS demo
+stack_name: stereo-safti-ov
+environment:
+  id: safti-level
+  version: 1.0.4
+  artifact_digest: sha256:e33f9697f7dbe0f14e0860588ed2c43c103f4450b6cebc6bef3048cc427f8cc4
+coordinate_frame:
+  convention: ros2_flu
+  unit: meter
+  origin:
+    frame: unreal_world
+    unit: centimeter
+    position:
+      x: 7530.0
+      y: -7830.0
+      z: 1290.0
+    rotation:
+      pitch: 0.0
+      roll: -0.0
+      yaw: 0.0
+  unreal_axes: +X forward, +Y right, +Z up
+  ros2_axes: +X forward, +Y left, +Z up
+  vehicle_start_semantics: ros2_flu_relative_to_origin
+  object_transform_semantics: ros2_flu_relative_to_origin
+conditions:
+  render:
+    system_settings:
+      r.Shadow.Virtual.Enable: 1
+runtime:
+  profile: airsim_unreal_px4_docker
+  features:
+    sim_real_eval: true
+    ros2_bridge: true
+    qgroundcontrol: false
+    mavros: true
+vehicles:
+- id: drone_1
+  name: Drone1
+  runtime_name: Drone1
+  ros_domain_id: 1
+  start:
+    frame: ros2_flu
+    x: 0.0
+    y: 0.0
+    z: -0.994
+    yaw: 0.0
+  cameras:
+    front:
+      position:
+        x: 0.15
+        y: 0
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+    front_right:
+      position:
+        x: 0.15
+        y: 0.12
+        z: -0.25
+      capture_settings:
+      - image_type: 0
+        width: 640
+        height: 480
+        fov_degrees: 80
+        exposure_compensation: -11.0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+extensions:
+  mns.metrics:
+    evaluation:
+      metrics:
+        travel_time: true
+        data_integrity: true
