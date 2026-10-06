@@ -211,11 +211,11 @@ images:
 
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns
-    tag: "tevv-airsim-ros2-bridge-humble-v1.0.0-rc"
-    digest: sha256:68af89693de7d70e3903719a139ece6bde0013b12132ba8a3c56b4f91cb7e0bf
+    tag: "tevv-airsim-ros2-bridge-humble-v1.0.0-mc4086d7"
+    digest: sha256:0736b2949dc748f7ed92d4821c7ec382f8daa06a61e11e7d810b99fc6f9c6efc
     channel: pinned
     purpose: >-
-      MnS 1.0 AirSim<->ROS 2 bridge (TEVV-Airsim-ROS2-Bridge release/v1.0.0-next 61b2b8a66553): the v1.0.0 build (459952e) plus the image-capture dedupe fix and image publisher history depth 5, so recordings pass fresh_frames and stereo_skew; built like v1.0.0 (docker/Dockerfile, ROS_DISTRO=humble, same base); 158 colcon tests green.
+      MnS 1.0 AirSim<->ROS 2 bridge, as on integration/v1.1 (TEVV-Airsim-ROS2-Bridge c4086d7ca859): everything in the -rc build (61b2b8a) plus 43 commits, among them #82, which reads a settings camera's rotation in degrees (the -rc build tilted a camera set to pitch -25 to 7.6 up), the image-capture dedupe fix and image publisher history depth 5.
 
   v1_px4:
     repo: dhdevspace/auto_mns
