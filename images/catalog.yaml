@@ -172,8 +172,8 @@ images:
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.1.0-dev-579e330"
-    digest: sha256:34f3faf9f4c7ef7dd00e29e873773a1f46f2aee5b4970e7b294bc3804aae646d
+    tag: "mns-stacks-v1.1.0-dev-dd614ef"
+    digest: sha256:2484c6380c76b1fe62db8dfaf8170034fc488957bd060d542005a68ce3f2acae
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -191,7 +191,9 @@ images:
       run_bundle from TEVV-Airsim integration/v1.1 b9e4ef2. Rebuilt from
       integration/v1.1 579e330 (#142): `component init` writes component.yaml
       with a field reference and the checks for its kind; a component.yaml with
-      a container compiles like components.json.
+      a container compiles like components.json. Rebuilt from integration/v1.1
+      dd614ef (#143): component.yaml takes `interfaces`, so a component's own
+      message types (MIGHTY's dynus_interfaces trajectory) are recorded.
 
   v1_packs:
     repo: dhdevspace/auto_mns
