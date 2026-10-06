@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# TEVV: the one command. Everything else in this repository is how it works.
+#
+#   ./tevv up | down                       the dashboard (browser entry point)
+#   ./tevv component init <id> --container <image> --kind <kind>
+#   ./tevv component check components/<id>
+#   ./tevv run <test plan>                 fly a test (one run, or a sweep)
+#   ./tevv results <test> [--format csv|md] one row per run: ended, verdict, metrics
+#   ./tevv stop <test>                     stop a running test now
+set -euo pipefail
+cd "$(dirname "$0")"
+usage() { sed -n '3,9p' "$0" | sed 's/^# \{0,1\}//'; }
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  up)        exec make dashboard "$@" ;;
+  down)      exec make dashboard-down ;;
+  component) exec make stacks ARGS="component $*" ;;
+  run)       exec make campaign ARGS="run $*" ;;
+  results)   exec make --no-print-directory stacks ARGS="campaign status $*" ;;
+  stop)      exec make stacks ARGS="campaign cancel --now $*" ;;
+  ""|-h|--help|help) usage ;;
+  *) echo "tevv: unknown command '$cmd'" >&2; usage >&2; exit 2 ;;
+esac
