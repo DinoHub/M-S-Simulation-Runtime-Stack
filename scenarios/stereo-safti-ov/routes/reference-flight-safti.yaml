@@ -1,0 +1,87 @@
+# testing/trajectories/reference_flight.yaml rotated +1.5708 rad about the start by rotate_trajectory.py.
+# SAFTI: the unrotated route runs into a building 1.7 m north of ENU (10, 6) at 2-4 m; route_survey.py sweep 2026-09-11 found headings +90/180/-90 deg clear (results/diag/surveys/safti-yaw-scan.txt).
+name: reference_flight_v1
+frame_id: map
+relative_to_start: true
+rate_hz: 20
+prestream_seconds: 2
+finish_hold_seconds: 3
+waypoints:
+- t: 0
+  position:
+  - -0.0
+  - 0.0
+  - 0
+  yaw: 1.5708
+- t: 8
+  position:
+  - -0.0
+  - 0.0
+  - 0
+  yaw: 1.5708
+- t: 11
+  position:
+  - -0.0
+  - 0.0
+  - 2
+  yaw: 1.5708
+- t: 15
+  position:
+  - -0.0
+  - 0.0
+  - 2
+  yaw: 1.5708
+- t: 25
+  position:
+  - -0.0
+  - 10.0
+  - 2
+  yaw: 1.5708
+- t: 31
+  position:
+  - -6.0
+  - 10.0
+  - 2
+  yaw: 1.5708
+- t: 34
+  position:
+  - -6.0
+  - 10.0
+  - 4
+  yaw: 1.5708
+- t: 37
+  position:
+  - -6.0
+  - 10.0
+  - 4
+  yaw: 3.1416
+- t: 43
+  position:
+  - -12.0
+  - 10.0
+  - 4
+  yaw: 3.1416
+- t: 46
+  position:
+  - -12.0
+  - 10.0
+  - 4
+  yaw: 4.7124
+- t: 56
+  position:
+  - -12.0
+  - -0.0
+  - 4
+  yaw: 4.7124
+- t: 68
+  position:
+  - -0.0
+  - 0.0
+  - 2
+  yaw: 4.7124
+- t: 72
+  position:
+  - -0.0
+  - 0.0
+  - 2
+  yaw: 4.7124

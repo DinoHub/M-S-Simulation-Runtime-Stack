@@ -1,0 +1,23 @@
+%YAML:1.0
+# Camera-IMU calibration, filled in from the stack's own stereo pair when the
+# stack starts: intrinsics, resolution, extrinsics and topic names.
+cam0:
+  T_imu_cam: {{ stereo_primary.left.T_imu_cam }}
+  cam_overlaps: [1]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]   # the stack's cameras are rectified pinhole
+  distortion_model: radtan
+  intrinsics: [{{ stereo_primary.left.fx }}, {{ stereo_primary.left.fy }}, {{ stereo_primary.left.cx }}, {{ stereo_primary.left.cy }}]
+  resolution: [{{ stereo_primary.left.width }}, {{ stereo_primary.left.height }}]
+  rostopic: {{ stereo_primary.left.topic }}
+  timeshift_cam_imu: 0.0
+cam1:
+  T_imu_cam: {{ stereo_primary.right.T_imu_cam }}
+  cam_overlaps: [0]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: radtan
+  intrinsics: [{{ stereo_primary.right.fx }}, {{ stereo_primary.right.fy }}, {{ stereo_primary.right.cx }}, {{ stereo_primary.right.cy }}]
+  resolution: [{{ stereo_primary.right.width }}, {{ stereo_primary.right.height }}]
+  rostopic: {{ stereo_primary.right.topic }}
+  timeshift_cam_imu: 0.0
