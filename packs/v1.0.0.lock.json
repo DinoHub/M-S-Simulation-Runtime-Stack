@@ -8,7 +8,7 @@
   "host_contract": "packs/runtime-host-compatibility.v1.json",
   "required_images": {
     "packs": "dhdevspace/auto_mns:mns-packs-v1.0.0-rc.6@sha256:8b848145049ca969f009070b56df9273dc70a02cf52a3611f33f43c959ab7a4a",
-    "stacks": "dhdevspace/auto_mns:mns-stacks-v1.0.0-rc.services.35@sha256:d43171285330021e76c2a429cd87f049fad265a6ee1cbca6db088161ee8eb5f0",
+    "stacks": "dhdevspace/auto_mns:mns-stacks-v1.0.0-rc.services.36@sha256:d30a7ddaa41d29700be5694f6e2f73078d8499389d047a8408290ff97e45c3bb",
     "authoring": "dhdevspace/auto_mns:mns-authoring-v1.0.0-rc.pkg.2@sha256:1faf6e44f0b2e2071d6447a0a73b8472460c20c8f7a6007a7809ada5a6bf4139",
     "runtime_host": "dhdevspace/auto_mns:tevv-runtime-host-v1.0.0-zones.3@sha256:0fc576dd9da1029fcd70166934ad3de961842ed07c6ef451acdba1408db6f4a7",
     "ros2_bridge": "dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0-rc@sha256:68af89693de7d70e3903719a139ece6bde0013b12132ba8a3c56b4f91cb7e0bf"

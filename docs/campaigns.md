@@ -31,6 +31,24 @@ one runs at a time; a second is refused and told which one holds the machine. `m
 ARGS="cancel <name>"` stops one cleanly — the flight in the air is finished and bundled,
 nothing further starts.
 
+Campaign runs render the simulator off-screen. A campaign is unattended, and an
+unattended desktop puts its monitor to sleep: a windowed simulator then stalls its cameras
+for about half a second at each display switch, which fails the recording's image-gap check.
+Drawing the window also costs GPU time (on XFS it holds the stereo cameras near 10 Hz). To
+watch the runs anyway, keep the display awake and either pass `--window`
+(`make campaign ARGS="run my-test --window"`) or set it in the CampaignSpec, which is what
+the dashboard's **Show the simulator window during runs** writes:
+
+```yaml
+extensions:
+  mns.render:
+    offscreen: false
+```
+
+`--window` and `--offscreen` win over the file; the file wins over a
+`conditions.render.offscreen` in the ScenarioSpec. `campaign validate` and `campaign plan`
+say which applies.
+
 Each flight is generated, flown and recorded exactly as `make fly SCENARIO=... RECORD=1`
 flies one scenario (see [Headless](stacks.md)): the bag lands in the campaign's
 `runs/<run_key>/bag`, recorded by the bridge container, in the layout the dashboard's

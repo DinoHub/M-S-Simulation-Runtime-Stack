@@ -476,6 +476,10 @@ sections:
 2. **Fly**: the mission (a route from the scenario's `routes/`, or a shared
    route such as `box-10m.yaml`, a goal course, or a custom command), and when
    a run starts (once ground truth and the cameras are steady) and ends.
+   Runs render off-screen; tick **Show the simulator window during runs** to
+   watch them on the desktop. A window costs GPU time and drops camera rates
+   on heavy levels such as XFS, and a monitor that goes to sleep stalls the
+   cameras and fails the recording check, so keep the display awake.
 3. **Repeat**: repeats, seeds and sweeps (wind, weather, any ScenarioSpec
    field), and what each run's bag keeps.
 
