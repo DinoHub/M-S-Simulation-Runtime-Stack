@@ -172,8 +172,8 @@ images:
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.1.0-dev-50d843b"
-    digest: sha256:de76c7e6cbd52035b57e3b7ab645123b41257a7a04e05127d155002e8cafb901
+    tag: "mns-stacks-v1.1.0-dev-579e330"
+    digest: sha256:34f3faf9f4c7ef7dd00e29e873773a1f46f2aee5b4970e7b294bc3804aae646d
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -188,7 +188,10 @@ images:
       show the simulator window (--window, extensions."mns.render"),
       `campaign cancel --now` stops the run in flight, and a dead campaign's
       lock goes stale. SDK from TEVV-Content-Pack-SDK c2e9510 (override),
-      run_bundle from TEVV-Airsim integration/v1.1 b9e4ef2.
+      run_bundle from TEVV-Airsim integration/v1.1 b9e4ef2. Rebuilt from
+      integration/v1.1 579e330 (#142): `component init` writes component.yaml
+      with a field reference and the checks for its kind; a component.yaml with
+      a container compiles like components.json.
 
   v1_packs:
     repo: dhdevspace/auto_mns
@@ -241,12 +244,12 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.1.0-dev-b2a6b65"
-    digest: sha256:320ad12fb493eaf564ea7a1e831bb8f4a4dbf72cfc3322cf56f11cdf823ab00e
+    tag: "tevv-web-dashboard-backend-v1.1.0-dev-bc08ff2"
+    digest: sha256:97552de1490c8c04fa228771758dc0b5232163dc5ede90d62856dae205cd713a
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: b2a6b65
+      commit: bc08ff2
     # No `bakes:`. From TEVV-Web-Dashboard#122 on the backend bakes no image
     # pins: it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and MNS_AUTHORING_IMAGE
     # from images/v1.0.0.generated.env through docker-compose-dashboard.yml,
@@ -265,20 +268,25 @@ images:
       from MnS-Integration-Platform 50d843b: Test plan can show the simulator
       window; Run stops a plan after the run in the air or now, by the plan
       (a plan from a terminal or from before a restart, and a dead one);
-      Content lists level and object packs in two tabs with metadata as pills.
+      Content lists level and object packs in two tabs with metadata as pills. Rebuilt from
+      integration/v1.1 bc08ff2 (#134, #135, #136): Monitor offers the way back to
+      Scenario Configuration when a run ends, on the scenario that ran; Monitor no
+      longer shows one plan's verdict on another's run; Fly explains the picked
+      route or goal course; ending on landing is offered only with a MAVLink
+      endpoint; the test plan's Id box keeps hyphens.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.1.0-dev-b2a6b65"
-    digest: sha256:7060971170f3fbd6cd0aa5e68da856e43b45d1668df004857559e0068f443da3
+    tag: "tevv-web-dashboard-frontend-v1.1.0-dev-bc08ff2"
+    digest: sha256:95efcff3070fc9b07eacb53d0abc874c2f9b7d5523415505860312f7b1348240
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: b2a6b65
+      commit: bc08ff2
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard integration/v1.0.0
       b36d1a9), built with the backend above; it bakes no pins. v1.1
-      development build of TEVV-Web-Dashboard b2a6b65, with the backend above.
+      development build of TEVV-Web-Dashboard bc08ff2, with the backend above.
 
   metrics_service:
     repo: dhdevspace/auto_mns
