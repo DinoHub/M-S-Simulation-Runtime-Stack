@@ -435,9 +435,9 @@ spec still matches your export. **Restore authored** returns to the export, and
 **Save as new…** forks the spec under a new name.
 
 **This stack carries ...** reports the components under test the stack was
-generated with. The dashboard does not pick components: attach yours outside it
-with `mns-stacks generate --component <path>` (or your own compose), and the
-dashboard keeps them when it regenerates the stack. Cameras are placed in
+generated with (`mns-stacks generate --component <path>`, or your own compose).
+The dashboard keeps them when it regenerates the stack. A test plan picks its
+own components (see [Step 1d](#step-1d-test-plan)). Cameras are placed in
 ScenarioLab.
 
 ### Step 1c: ROS 2 settings and what to record
@@ -481,15 +481,22 @@ sections:
    on heavy levels such as XFS, and a monitor that goes to sleep stalls the
    cameras and fails the recording check, so keep the display awake.
 4. **Repeat**: repeats, seeds and sweeps (wind, weather, any ScenarioSpec
-   field), and what each run's bag keeps.
+   field), and what each run's bag keeps. A run records only the topics it is
+   scored on: clock, transforms, ground truth, IMU, estimates, what the
+   components read and publish, and the autopilot's status. Tick **Record
+   every topic** to keep the cameras and raw sensors too, for replay; a stereo
+   run then writes several GB.
 
 **Save plan** saves Measure and Judge into the scenario's `ScenarioSpec.yaml`
 (`extensions."mns.metrics"`, written through ScenarioLab) and regenerates the
 stack, then saves Fly and Repeat as `CampaignSpec.<plan>.yaml` next to it.
 Because measuring and judging live in the scenario, every way of flying it,
 the plan's runs, a manual flight or a campaign on OSMO, is measured and judged
-the same way. The plan lists the stack's components under test (read only;
-see [Generate](#step-1b-generate-the-stack)).
+the same way. **Components** above the plan picks the components under test
+its runs fly, one tick box per package in `components/`. A new plan starts with
+the ones the stack carries. The plan's list is the whole list, so a plan that
+picks SUPER flies SUPER alone, even on a stack generated with MIGHTY. The
+Component under test checks follow the list.
 
 ### Step 2: Run
 
