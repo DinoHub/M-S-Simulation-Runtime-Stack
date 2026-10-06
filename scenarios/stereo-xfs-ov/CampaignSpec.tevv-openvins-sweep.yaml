@@ -1,0 +1,17 @@
+# TEVV v1.1: OpenVINS on the yard box, swept over path speed and wind.
+schema: mns.campaign.v1
+id: tevv-openvins-sweep
+name: OpenVINS on the yard box, speed x wind
+scenario: ./ScenarioSpec.yaml
+recording:
+  keep: first
+mission:
+  control: internal
+  path: yard-box
+  timeout_s: 240
+sweep:
+  speed_mps: [1, 2]
+  wind_mps: {from: 0, to: 6, step: 6}
+extensions:
+  mns.components:
+  - openvins-demo
