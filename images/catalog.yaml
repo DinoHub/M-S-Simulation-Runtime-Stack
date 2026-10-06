@@ -172,8 +172,8 @@ images:
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.1.0-dev-d66cb9e"
-    digest: sha256:2a67422fd370f2174252911fcd291225c41083817d3e83d547d72e30c2a8d4b6
+    tag: "mns-stacks-v1.1.0-dev-50d843b"
+    digest: sha256:de76c7e6cbd52035b57e3b7ab645123b41257a7a04e05127d155002e8cafb901
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -182,7 +182,13 @@ images:
       compatibility check. The dashboard, make fly/stop/campaign/stacks,
       tools/images.sh drift and osmo/campaign.py all run it as a sibling
       container with host paths. Replaces mns-product-shell and
-      mns-stack-generator, which are retired and no longer pinned.
+      mns-stack-generator, which are retired and no longer pinned. v1.1
+      development build of MnS-Integration-Platform 50d843b
+      (integration/v1.1 0832fda plus fix/v1.1-plan-stop-now, #141): a plan can
+      show the simulator window (--window, extensions."mns.render"),
+      `campaign cancel --now` stops the run in flight, and a dead campaign's
+      lock goes stale. SDK from TEVV-Content-Pack-SDK c2e9510 (override),
+      run_bundle from TEVV-Airsim integration/v1.1 b9e4ef2.
 
   v1_packs:
     repo: dhdevspace/auto_mns
@@ -235,11 +241,12 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-g1f393f9"
-    digest: sha256:2aea58e33b010778b10f85c2a7cdc1aca51ef8af8a294d590074c2c27541bbc1
+    tag: "tevv-web-dashboard-backend-v1.1.0-dev-b2a6b65"
+    digest: sha256:320ad12fb493eaf564ea7a1e831bb8f4a4dbf72cfc3322cf56f11cdf823ab00e
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
+      commit: b2a6b65
     # No `bakes:`. From TEVV-Web-Dashboard#122 on the backend bakes no image
     # pins: it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and MNS_AUTHORING_IMAGE
     # from images/v1.0.0.generated.env through docker-compose-dashboard.yml,
@@ -252,18 +259,26 @@ images:
       armed and climbed; WASD re-enters OFFBOARD after Hold; STOP holds via the
       autopilot; one REST flight command per vehicle. Every stack lifecycle,
       recording, campaign and topic call goes through mns-stacks and pack status
-      through mns-packs as sibling containers; it bakes no image pins.
+      through mns-packs as sibling containers; it bakes no image pins. v1.1
+      development build of TEVV-Web-Dashboard b2a6b65 (integration/v1.1
+      7f164ee plus fix/v1.1-plan-stop-content, #133), pilot and sim_real_eval
+      from MnS-Integration-Platform 50d843b: Test plan can show the simulator
+      window; Run stops a plan after the run in the air or now, by the plan
+      (a plan from a terminal or from before a restart, and a dead one);
+      Content lists level and object packs in two tabs with metadata as pills.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.0.0-g1f393f9"
-    digest: sha256:3101e8c3a6bf27bbf4381dd3341834c0f5f3213f6b8144f4c147d2e9714cdf60
+    tag: "tevv-web-dashboard-frontend-v1.1.0-dev-b2a6b65"
+    digest: sha256:7060971170f3fbd6cd0aa5e68da856e43b45d1668df004857559e0068f443da3
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
+      commit: b2a6b65
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard integration/v1.0.0
-      b36d1a9), built with the backend above; it bakes no pins.
+      b36d1a9), built with the backend above; it bakes no pins. v1.1
+      development build of TEVV-Web-Dashboard b2a6b65, with the backend above.
 
   metrics_service:
     repo: dhdevspace/auto_mns
