@@ -1,0 +1,17 @@
+# A harder local-planner course over the XFS yard: three goals, in metres
+# relative to the take-off spot, in the planner's odometry frame (x east,
+# y north, z above the ground). Laid out on the lidar map of the 6 Oct runs:
+# a row of stacked containers, 4 to 4.5 m tall, runs from about (-27, -12)
+# to (-5, -23) across the straight line south-west of the spawn.
+#   1. round the row's west end, in the open (35 m)
+#   2. behind the row, the yard-detour goal (19 m)
+#   3. along the row's far side, south-east (19 m)
+name: yard-slalom
+altitude: 3.0
+tolerance_m: 1.0
+goal_timeout_s: 120
+hold_s: 2
+goals:
+  - [-34, -6, 3]
+  - [-30, -25, 3]
+  - [-12, -33, 3]

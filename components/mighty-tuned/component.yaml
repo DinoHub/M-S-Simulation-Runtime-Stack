@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../_schema/components.schema.json
+# mighty-tuned: a bring-your-own container under test (mns.component.v1).
+# Replace every "<fill in: ...>" (README.md says what each field means), then:
+#   mns-stacks component check components/mighty-tuned
+
+schema: mns.component.v1
+id: mighty-tuned
+name: MIGHTY local planner (tuned for the XFS yard)
+version: 0.1.0
+kind: planner
+container:
+  image: dhdevspace/auto_mns:mighty_algo_only
+  command:
+  - bash
+  - -lc
+  - source /opt/ros/humble/setup.bash && python3 /cfg/component/files/wait_airborne.py && source /workspace/generated/mighty/.planner_ws/decomp_ws/install/setup.bash
+    && source /workspace/generated/mighty/.planner_ws/ros_ws/install/setup.bash && export AMENT_PREFIX_PATH=/workspace/generated/mighty/adaptor_ws/install/mighty_adaptor:$AMENT_PREFIX_PATH
+    && export PYTHONPATH=/workspace/generated/mighty/adaptor_ws/install/mighty_adaptor/lib/python3.10/site-packages:$PYTHONPATH
+    && exec ros2 launch mighty_adaptor mighty_adaptor.launch.py namespace:=NX01 autopilot:=ardupilot odom_external_topic:=/ground_truth/odom
+    term_goal_external_topic:=/goal vehicle_output_topic:=/$MNS_VEHICLE/mavros/setpoint_raw/local runtime_params_file:=/cfg/component/files/mighty.yaml
+    use_rviz:=false
+  gpu: false
+  run_as: image
+  environment: {}
+consumes:
+- point_cloud
+- ground_truth
+- clock
+- autopilot
+produces:
+  path:
+    topic: /NX01/trajectory
+requires:
+  autopilot:
+  - ardupilot
+  point_cloud_frame: odom
+  bridge_mavros: true
+scoring:
+  builtin: planner
+  options:
+    tolerance_m: 1.0
+    plan_topic: /NX01/trajectory
+  checks:
+    goal_success_rate:
+      min: 1.0
+    min_clearance_m:
+      min: 0.3
+    replan_interval_max_s:
+      max: 2.0
+adaptor:
+  inputs:
+  - role: point_cloud
+    topic: /Copter1/registered_point_cloud
+  outputs: []
+  config: []
+ready:
+  after_takeoff:
+  - /NX01/point_current_state
+  timeout_s: 180
+record:
+- /Drone1/mavros/setpoint_raw/local
+interfaces:
+- packages:
+  - dynus_interfaces
+  setup:
+  - /workspace/generated/mighty/.planner_ws/ros_ws/install/setup.bash
