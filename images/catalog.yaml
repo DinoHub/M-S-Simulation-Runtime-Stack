@@ -172,8 +172,8 @@ images:
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.0.0-rc.services.36"
-    digest: sha256:d30a7ddaa41d29700be5694f6e2f73078d8499389d047a8408290ff97e45c3bb
+    tag: "mns-stacks-v1.0.0-rc.services.37"
+    digest: sha256:d42126aedd28fe30ba114c494d3eb15ea9242535c07b1b3f9c1c46df6fc7bd29
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -182,7 +182,7 @@ images:
       compatibility check. The dashboard, make fly/stop/campaign/stacks,
       tools/images.sh drift and osmo/campaign.py all run it as a sibling
       container with host paths. Replaces mns-product-shell and
-      mns-stack-generator, which are retired and no longer pinned. Local overlay: the rc image with platform/stacks from MnS-Integration-Platform feat/components 088264d and the ScenarioSpec contract at eb0a9e4 (a plan can show the simulator window: extensions."mns.render".offscreen or --window, off-screen by default; `done: mission`, ending a campaign run when its route returns and the sim reports the vehicle landed; imu_flu judging only the axes the flight rotated about; components and adaptors, the campaign runner with autopilot from the stack contract, start/end conditions, top-down capture at stop, and the PX4 pilot keeping OFFBOARD alive while arming). Campaign missions fly the vehicle under its runtime name, where MAVROS runs, and PX4 stacks run AirSim in lockstep on the SteppableClock: with lockstep off, PX4's periodic timers stopped at arming, battery_status went stale and every PX4 flight raised a 'Battery unhealthy' failsafe. A campaign lists its runs up front (campaign.started runs) and each run's director reports its phase (run.phase), so the dashboard shows the queue, the run in the air and its phase. Bring-your-own containers: components.json, `component init --container` and `component check`, and the generic component adaptor (mns-component-adaptor-0.1.1) configured by components.json. Every vehicle's agent_internal network gets an explicit subnet (10.200-10.249, per stack), so the vehicle count no longer depends on docker's default address pools (20 vehicles exhausted them); vehicle viewers skip the platform's ports 8764, 8767 (Replay) and 8770 (metrics service); the sim's static address sits outside the sim network's dynamic range (60 ArduPilot SITLs took it). Stress-tested to 30 PX4 vehicles from one dashboard-authored spec.
+      mns-stack-generator, which are retired and no longer pinned. Local overlay: the rc image with platform/stacks from MnS-Integration-Platform feat/components 0a7d0cd and the ScenarioSpec contract at eb0a9e4 (`campaign cancel --now` stops the run in flight too and marks it cancelled; a dead campaign's lock goes stale, since the lock records the container id rather than the host network's hostname, and cancelling it ends its progress stream; a plan can show the simulator window: extensions."mns.render".offscreen or --window, off-screen by default; `done: mission`, ending a campaign run when its route returns and the sim reports the vehicle landed; imu_flu judging only the axes the flight rotated about; components and adaptors, the campaign runner with autopilot from the stack contract, start/end conditions, top-down capture at stop, and the PX4 pilot keeping OFFBOARD alive while arming). Campaign missions fly the vehicle under its runtime name, where MAVROS runs, and PX4 stacks run AirSim in lockstep on the SteppableClock: with lockstep off, PX4's periodic timers stopped at arming, battery_status went stale and every PX4 flight raised a 'Battery unhealthy' failsafe. A campaign lists its runs up front (campaign.started runs) and each run's director reports its phase (run.phase), so the dashboard shows the queue, the run in the air and its phase. Bring-your-own containers: components.json, `component init --container` and `component check`, and the generic component adaptor (mns-component-adaptor-0.1.1) configured by components.json. Every vehicle's agent_internal network gets an explicit subnet (10.200-10.249, per stack), so the vehicle count no longer depends on docker's default address pools (20 vehicles exhausted them); vehicle viewers skip the platform's ports 8764, 8767 (Replay) and 8770 (metrics service); the sim's static address sits outside the sim network's dynamic range (60 ArduPilot SITLs took it). Stress-tested to 30 PX4 vehicles from one dashboard-authored spec.
 
   v1_packs:
     repo: dhdevspace/auto_mns
@@ -236,11 +236,11 @@ images:
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
     tag: "tevv-web-dashboard-backend-v1.0.0-live.25"
-    digest: sha256:d98516e7643c7e1ec283275a8bbca6abfda6e376f8fc9beb5a19a2cd8924ec16
+    digest: sha256:6ea23c4462692b8c952bb3d16472b8631f5d91ce9521e3ca413fa5cdf1642362
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: ca59001
+      commit: defb41f
     # No `bakes:`. From TEVV-Web-Dashboard#122 on the backend bakes no image
     # pins: it reads MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and MNS_AUTHORING_IMAGE
     # from images/v1.0.0.generated.env through docker-compose-dashboard.yml,
@@ -252,16 +252,16 @@ images:
       armed and climbed; WASD re-enters OFFBOARD after Hold; STOP holds via the
       autopilot; one REST flight command per vehicle. Every stack lifecycle,
       recording, campaign and topic call goes through mns-stacks and pack status
-      through mns-packs as sibling containers; it bakes no image pins. Now TEVV-Web-Dashboard feat/live-stack-viewer 289866e (#129): Campaign step, ScenarioLab-written specs, run maps, and Monitor showing a flying campaign run. The Campaign step lists a run while it is in the air (with Watch live), loads what runs are judged on, shows a rerun's current attempt, reads FAIL for a run that failed, and shows a reopened campaign's last results. The Content step counts ScenarioLab's runtime-only plugins as openable. The wizard is Content, Author, Generate, ROS 2, Test plan, Run, Analysis: the Test plan step (required) holds measuring, judging, the mission and the runs in one place, with measuring and judging in the scenario's ScenarioSpec (extensions."mns.metrics", written through ScenarioLab) so single, plan and OSMO runs read one source; Run runs the plan with Watch live and verdicts, and keeps manual flying as a secondary option. Test plan's first section is one list of checks, detector tuning folded under the check it serves; Run shows the plan run by run (the run in the air with its phase, the queue, each finished run's verdict and map), and Monitor follows the plan from run to run with a banner, or stays pinned to a picked run. Test plan's Fly section can show the simulator window during runs (off-screen by default), and Run says which.
+      through mns-packs as sibling containers; it bakes no image pins. Now TEVV-Web-Dashboard feat/live-stack-viewer 289866e (#129): Campaign step, ScenarioLab-written specs, run maps, and Monitor showing a flying campaign run. The Campaign step lists a run while it is in the air (with Watch live), loads what runs are judged on, shows a rerun's current attempt, reads FAIL for a run that failed, and shows a reopened campaign's last results. The Content step counts ScenarioLab's runtime-only plugins as openable. The wizard is Content, Author, Generate, ROS 2, Test plan, Run, Analysis: the Test plan step (required) holds measuring, judging, the mission and the runs in one place, with measuring and judging in the scenario's ScenarioSpec (extensions."mns.metrics", written through ScenarioLab) so single, plan and OSMO runs read one source; Run runs the plan with Watch live and verdicts, and keeps manual flying as a secondary option. Test plan's first section is one list of checks, detector tuning folded under the check it serves; Run shows the plan run by run (the run in the air with its phase, the queue, each finished run's verdict and map), and Monitor follows the plan from run to run with a banner, or stays pinned to a picked run. Test plan's Fly section can show the simulator window during runs (off-screen by default), and Run says which. Run can stop a plan after the run in the air or now (by the plan, so a plan from the terminal or from before a backend restart can be stopped, and a dead one cleared). Content lists level and object packs in two tabs, metadata as pills, with an add toggle only on packs that need downloading or staging.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
     tag: "tevv-web-dashboard-frontend-v1.0.0-live.25"
-    digest: sha256:6fb544e2b90ab72d6238cb19b1004b84532f36bc658a9532b6d46a93274de174
+    digest: sha256:0f43c176a4276fab5286785192889e5f2188cff5f5c14d02e2b877f7a3e65772
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
-      commit: ca59001
+      commit: defb41f
     purpose: >-
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard release/v1.0.0-next
       3ceef32), built with the backend above; it bakes no pins. Now feat/live-stack-viewer 3be3124, built with the backend above.

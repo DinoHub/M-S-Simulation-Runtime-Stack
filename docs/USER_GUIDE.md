@@ -516,8 +516,12 @@ runs it says which run comes next). Pick a run in the banner, or **Pinned**,
 to stay on one run. The banner's run list opens the same details in a drawer
 while the viewer keeps following the plan.
 
-Reopening the step shows the plan's last results. **Cancel after this run**
-stops a long plan between runs.
+Reopening the step shows the plan's last results. **Stop after this run**
+lets the run in the air finish and starts nothing further. **Stop now** (it
+asks once more) also stops the run in the air: its recording stops, its stack
+is taken down and it is marked cancelled rather than failed. Both work on a
+plan started from a terminal, or before the dashboard restarted, and clear a
+plan whose process has died.
 
 While a plan run flies, its stack carries the scenario's stack name, so
 **Launch** and **Stop** below wait until the plan ends.
