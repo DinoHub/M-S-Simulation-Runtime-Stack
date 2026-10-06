@@ -172,8 +172,8 @@ images:
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.1.0-dev-b879028"
-    digest: sha256:44710e8fbbf63b21092883ab7f94784684fa0ce74d0b1c7b0fe4329682809f34
+    tag: "mns-stacks-v1.1.0-dev-dbcd10e"
+    digest: sha256:cf3a107a6e891e832d3ac252873bcf869a81f5fa6069aba2374c80cb3baa00a2
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -251,8 +251,8 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.1.0-dev-cabceca"
-    digest: sha256:257e90fcae4d252b6237c4beeb2e41ae713cb9c036e684f118f7c460e768ca6a
+    tag: "tevv-web-dashboard-backend-v1.1.0-dev-3e8ffc9"
+    digest: sha256:5426a53732726a5fb59d62bdeb67e184b43158008047417b91e072a7516768d2
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
@@ -285,8 +285,8 @@ images:
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.1.0-dev-cabceca"
-    digest: sha256:b13003d69fa43bd2526da94362b82f3341de795a751b5ef1b84f41eb81bbf966
+    tag: "tevv-web-dashboard-frontend-v1.1.0-dev-3e8ffc9"
+    digest: sha256:b49d45eadc9152f09cbd8e7db4f22766f607d66eec4628632e40f55d12561a70
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
