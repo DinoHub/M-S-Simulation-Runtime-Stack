@@ -59,44 +59,45 @@ candidate tag. What merges into `release/v1.0.0` or `main` may not:
 `tools/images.sh verify --release` fails on
 
 - any `pending:` row;
-- any tag in a release channel that is not a release tag. Tags are checked
+- any row the release ships that is not on a release tag. Tags are checked
   against an allowlist, not an `-rc` pattern: a row must be pinned on
   `<name>-vX.Y.Z`, or `<name>-vX.Y.Z-g<sha>` for the rows built with traced
   tags (the dashboard's `v1_dashboard_backend` and `v1_dashboard_frontend`).
   `-rc.N`, `-rc.services.N`, `-live.N`, `-zones.N`, `-latest`, branch builds
   and test tags all fail;
-- any tag-only ref in `images/v1.0.0.generated.env` or
-  `packs/v1.0.0.lock.json`.
+- any row the release ships with no digest, and any tag-only ref in
+  `images/v1.0.0.generated.env` or `packs/v1.0.0.lock.json`.
 
 CI turns it on for every pull request into those two branches
 (`GITHUB_BASE_REF`), and runs it as its own step so a red run names the rule.
 
-The tag rule covers the rows a release channel names
-(`consumers.release_channels.*.vars`), not the rows that appear only in an
-image set (`consumers.image_sets`, rendered to
-`images/image-set.generated.yaml`, the images generated stacks run). In v1.0.0
-two of those are not on release tags: `qgroundcontrol`
-(`airsim-qgc-x11-latest`) and `sim_real_eval`
-(`sim-real-eval-worker-v1.0.0-rc`). Both are pinned by digest, so the bits are
-fixed; each row's `follow_up:` says how it moves to a `-v1.0.0` tag.
-(`vio_estimator_openvins` is on `vio-estimator-openvins-<upstream commit>` by
-design: its tag names the OpenVINS commit it was built from.)
+"The rows the release ships" (`release_rows` in `tools/images.py`) are every
+row named by a release channel's variables
+(`consumers.release_channels.*.vars`), a pack lock
+(`consumers.pack_locks`), any image set (`consumers.image_sets`, rendered to
+`images/image-set.generated.yaml`: the images generated stacks run, such as
+`qgroundcontrol` and `sim_real_eval`), and the dashboard compose file's inline
+images (`consumers.compose_env`, and `consumers.product_env`, empty in
+v1.0.0). Two exceptions to the tag shape, neither to the digest: a
+`channel: upstream` row in those two keeps its upstream's own version tag (Lichtblick, TimescaleDB), and `vio_estimator_openvins` is on
+`vio-estimator-openvins-<upstream commit>` by design, its tag naming the
+OpenVINS commit it was built from.
 
 Moving a row to its release tag (once that tag is in the registry): `bump`
 refuses an ordinary pinned row, so this is the one explicit retag it does,
 one row at a time:
 
 ```bash
-tools/images.sh bump --only sim_real_eval  --tag sim-real-eval-worker-v1.0.0
-# a row on a moving -latest tag (qgroundcontrol): set channel: pinned by hand first, then
-tools/images.sh bump --only qgroundcontrol --tag airsim-qgc-x11-v1.0.0
+tools/images.sh bump --only KEY --tag <name>-vX.Y.Z
+# a row on a moving -latest tag: set channel: pinned by hand first, then bump
 tools/images.sh sync && make pack-lock
 tools/images.sh verify --release                 # must pass before the release PR
 ```
 
 `--tag` resolves the new tag's index digest (a tag that does not resolve is
 skipped, nothing is written), rewrites `tag:` and `digest:`, and drops a
-`pending:` note. Delete the rows' `follow_up:` notes in the same commit.
+`pending:` note. Delete the row's `follow_up:` note, if it has one, in the
+same commit.
 
 ## Start here
 

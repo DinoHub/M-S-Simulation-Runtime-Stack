@@ -26,6 +26,7 @@ on:
       - "tools/pull-packs.sh"
       - "tools/test_channels.py"
       - "tools/test_images_host_pin.py"
+      - "tools/test_images_release.py"
       - "tools/check_spawn.py"
       - "tools/test_check_spawn.py"
       - "tools/test_effective_image_set.py"
@@ -112,6 +113,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_install_demo_packs.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_channels.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_images_host_pin.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_images_release.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_check_spawn.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_effective_image_set.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_scenario_pack_pins.py'

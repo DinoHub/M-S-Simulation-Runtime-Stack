@@ -1126,6 +1126,11 @@ _RC_TAG_RE = re.compile(r"-rc(?:[.\-]?\d+)?(?:$|-)")
 _RELEASE_TAG_RE = re.compile(r"-v\d+\.\d+\.\d+$")
 _TRACED_RELEASE_TAG_RE = re.compile(r"-v\d+\.\d+\.\d+-g[0-9a-f]{7,40}$")
 TRACED_TAG_ROWS = frozenset({"v1_dashboard_backend", "v1_dashboard_frontend"})
+# Rows whose tag names the upstream commit they were built from instead of a
+# version, `<name>-<commit>` (8 to 40 hex): the estimator's numbers are only
+# meaningful with the upstream ref, so a rebuild at another ref is a new tag.
+UPSTREAM_COMMIT_TAG_ROWS = frozenset({"vio_estimator_openvins"})
+_UPSTREAM_COMMIT_TAG_RE = re.compile(r"-[0-9a-f]{8,40}$")
 
 
 def release_tag_problem(key: str, var: str, tag: str) -> str | None:
@@ -1137,10 +1142,64 @@ def release_tag_problem(key: str, var: str, tag: str) -> str | None:
         return None
     if key in TRACED_TAG_ROWS and _TRACED_RELEASE_TAG_RE.search(tag):
         return None
-    shape = "<name>-vX.Y.Z" + (" or <name>-vX.Y.Z-g<sha>" if key in TRACED_TAG_ROWS else "")
+    if key in UPSTREAM_COMMIT_TAG_ROWS and _UPSTREAM_COMMIT_TAG_RE.search(tag):
+        return None
+    shape = ("<name>-vX.Y.Z"
+             + (" or <name>-vX.Y.Z-g<sha>" if key in TRACED_TAG_ROWS else "")
+             + (" or <name>-<upstream commit>" if key in UPSTREAM_COMMIT_TAG_ROWS else ""))
     return (f"images.{key} ({var}) is on {tag!r}, which is not a release tag ({shape}): "
             f"build it from the merged commit, push a release tag and pin it "
             f"(tools/images.sh bump --only {key} --tag <release tag>)")
+
+
+def _leaf_paths(node: Any, prefix: str) -> list[tuple[str, str]]:
+    """(dotted role path, catalog key) for every leaf of an image_sets tree."""
+    if isinstance(node, dict):
+        out: list[tuple[str, str]] = []
+        for name, child in node.items():
+            out += _leaf_paths(child, f"{prefix}.{name}")
+        return out
+    return [(prefix, node)] if isinstance(node, str) else []
+
+
+def release_rows(catalog: dict[str, Any]) -> list[tuple[str, str, bool]]:
+    """(catalog key, where it is referenced, tag rule applies) for every row a
+    release ships, each key once (its first reference wins):
+
+    - the release channels' variables (images/<release>.generated.env);
+    - the pack locks' restated pins (packs/*.lock.json);
+    - every image set, `inherits` applied (images/image-set.generated.yaml:
+      what generated stacks run, so as much a part of the release as the
+      channel's own images);
+    - compose_env and product_env (the dashboard compose file's inline images).
+      Their `channel: upstream` rows are someone else's images on that
+      project's own version tags, so the tag rule does not apply to them; the
+      digest rule still does.
+    """
+    consumers = catalog["consumers"]
+    images = catalog["images"]
+    found: dict[str, tuple[str, bool]] = {}
+
+    def add(key: str, where: str, tag_rule: bool = True) -> None:
+        if key not in found:
+            found[key] = (where, tag_rule)
+
+    for _name, spec in sorted((consumers.get("release_channels") or {}).items()):
+        for var, key in spec["vars"].items():
+            add(key, var)
+    for lock_path, mapping in sorted((consumers.get("pack_locks") or {}).items()):
+        for lock_key, key in mapping.items():
+            add(key, f"{lock_path} required_images.{lock_key}")
+    for set_name in consumers.get("image_sets") or {}:
+        for where, key in _leaf_paths(resolved_image_set_keys(catalog, set_name),
+                                      f"image_sets.{set_name}"):
+            add(key, where)
+    for group_name in ("compose_env", "product_env"):
+        for group, mapping in sorted((consumers.get(group_name) or {}).items()):
+            for var, key in mapping.items():
+                add(key, f"{group_name}.{group}.{var}",
+                    images.get(key, {}).get("channel") != "upstream")
+    return [(key, where, tag_rule) for key, (where, tag_rule) in found.items()]
 
 
 def release_problems(catalog: dict[str, Any]) -> list[str]:
@@ -1150,22 +1209,26 @@ def release_problems(catalog: dict[str, Any]) -> list[str]:
     immutable tag AND its digest. Pending rows, release-candidate tags and
     tag-only refs are fine on a development branch while images are being
     filled in, and must all be gone before the merge into main. Tags are
-    checked against an allowlist of release shapes (release_tag_problem).
+    checked against an allowlist of release shapes (release_tag_problem), for
+    every row the release ships (release_rows), not only the channel's own.
     """
     images = catalog["images"]
     problems: list[str] = []
-    for key, _note in pending_rows(catalog):
+    pending = {key for key, _note in pending_rows(catalog)}
+    for key in sorted(pending):
         problems.append(f"images.{key} is still pending (no digest): pin it with "
                         f"tools/images.sh bump --only {key} [--tag <release tag>]")
-    channel_keys_seen: set[str] = set()
-    for name, spec in sorted((catalog["consumers"].get("release_channels") or {}).items()):
-        for var, key in spec["vars"].items():
-            if key in channel_keys_seen:
-                continue
-            channel_keys_seen.add(key)
-            problem = release_tag_problem(key, var, str(images[key]["tag"]))
+    for key, where, tag_rule in release_rows(catalog):
+        row = images[key]
+        if tag_rule:
+            problem = release_tag_problem(key, where, str(row["tag"]))
             if problem:
                 problems.append(problem)
+        if not row.get("digest") and key not in pending:
+            problems.append(f"images.{key} ({where}) has no digest (channel "
+                            f"{row['channel']}): a release pins every image it ships "
+                            f"by digest")
+    for name, spec in sorted((catalog["consumers"].get("release_channels") or {}).items()):
         emitted = ROOT / spec["emits"]
         if emitted.is_file():
             for line in emitted.read_text(encoding="utf-8").splitlines():
@@ -1554,7 +1617,10 @@ def _selftest_pending_and_host_pin() -> None:
                          ("v1_authoring", "mns-authoring-v1.0.0-rc.pkg.1", False),
                          ("v1_stacks", "tevv-jsonl-ingest-v0.4.5-gfc88f57", False),
                          ("v1_stacks", "mns-stacks-v1.0.0-m5b74d92", False),
-                         ("v1_packs", "mns-packs-latest", False)):
+                         ("v1_packs", "mns-packs-latest", False),
+                         ("vio_estimator_openvins", "vio-estimator-openvins-69488123", True),
+                         ("vio_estimator_openvins", "vio-estimator-openvins-latest", False),
+                         ("v1_stacks", "mns-stacks-69488123", False)):
         assert (release_tag_problem(key, "X", tag) is None) is ok, \
             f"selftest FAILED: release tag allowlist on {key}={tag!r}"
 
