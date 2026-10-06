@@ -33,6 +33,17 @@ nothing further starts. `cancel <name> --now` stops the flight in the air as wel
 recording is stopped, its stack taken down, and it is marked cancelled, not failed. Cancelling
 a campaign whose process has died clears its lock.
 
+A run records only the topics it is scored on, unless the CampaignSpec lists its own
+`recording.topics`: `/clock`, `/tf`, `/tf_static`, the stack's ground truth, IMU and
+estimates, the topics the attached components read and publish, the autopilot's status
+text and local position, and `/goal` for a goal mission. Cameras and raw sensors stay out
+unless a component reads them, so a planner run's bag is megabytes, not tens of GB.
+`recording.everything: true` (the dashboard's **Record every topic**) records every topic
+again, for replay.
+
+The components a plan flies are its `extensions."mns.components"` list, which is the whole
+list: the stack's own components are not added. A plan without the key flies the stack's.
+
 Campaign runs render the simulator off-screen. A campaign is unattended, and an
 unattended desktop puts its monitor to sleep: a windowed simulator then stalls its cameras
 for about half a second at each display switch, which fails the recording's image-gap check.
