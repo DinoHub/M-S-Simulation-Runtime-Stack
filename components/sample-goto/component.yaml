@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../_schema/components.schema.json
+# sample-goto: a bring-your-own container under test (mns.component.v1).
+# Replace every "<fill in: ...>" (README.md says what each field means), then:
+#   mns-stacks component check components/sample-goto
+
+schema: mns.component.v1
+id: sample-goto
+name: sample-goto
+version: 0.1.0
+kind: planner
+container:
+  image: dhdevspace/auto_mns:sample-goto-0.1.0
+  command:
+  - bash
+  - -lc
+  - source /opt/ros/humble/setup.bash && exec python3 /opt/goto.py
+  gpu: false
+  run_as: image
+  environment: {}
+consumes:
+- ground_truth
+- goal
+- clock
+scoring:
+  builtin: planner
+adaptor:
+  inputs:
+  - role: ground_truth
+    topic: /odom
+  - role: goal
+    topic: /goal_pose
+  outputs:
+  - from: /cmd_vel
+    type: geometry_msgs/msg/Twist
+    to: command
+  config: []

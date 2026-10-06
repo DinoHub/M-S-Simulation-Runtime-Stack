@@ -1,0 +1,17 @@
+# TEVV v1.1: a component flies. TEVV takes off and hovers, hands the
+# sample-goto planner its goals one by one, and passes its velocity commands
+# to the autopilot; the run ends when every goal is reached (or the planner
+# says it is done), or after timeout_s; then TEVV takes back and lands.
+schema: mns.campaign.v1
+id: tevv-goto-course
+name: sample-goto on the yard square (component flies)
+scenario: ./ScenarioSpec.yaml
+recording:
+  keep: first
+mission:
+  control: external
+  goals: yard-square
+  timeout_s: 180
+extensions:
+  mns.components:
+  - sample-goto
