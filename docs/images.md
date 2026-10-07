@@ -79,7 +79,9 @@ row named by a release channel's variables
 `qgroundcontrol` and `sim_real_eval`), and the dashboard compose file's inline
 images (`consumers.compose_env`, and `consumers.product_env`, empty in
 v1.0.0). Two exceptions to the tag shape, neither to the digest: a
-`channel: upstream` row in those two keeps its upstream's own version tag (Lichtblick, TimescaleDB), and `vio_estimator_openvins` is on
+`channel: upstream` row in those two keeps its upstream's own tag (TimescaleDB's
+`2.17.2-pg16`; Lichtblick publishes no version tag we use, so its row is on
+`latest`, pinned by digest like every row), and `vio_estimator_openvins` is on
 `vio-estimator-openvins-<upstream commit>` by design, its tag naming the
 OpenVINS commit it was built from.
 

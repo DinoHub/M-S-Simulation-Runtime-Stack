@@ -39,8 +39,9 @@ python3 osmo/campaign.py run vio-osmo-condo --only calm-r1 --no-viz
 
 - `MNS_IMAGE_SET_FILE` picks the image set: the main checkout's, which pins
   runtime host 303a5c.
-- `MNS_SIM_REAL_EVAL_IMAGE` is a scorer that has `vio-stress`. The catalog's
-  `-latest` worker predates it.
+- `MNS_SIM_REAL_EVAL_IMAGE` is a scorer that has `vio-stress`. At the time the
+  catalog pinned a `-latest` worker that predated it; the catalog's
+  `sim-real-eval-worker-v1.0.0` has it, so the variable is no longer needed.
 - `--no-viz` leaves the live Foxglove task out.
 
 ## Timeline of run 62

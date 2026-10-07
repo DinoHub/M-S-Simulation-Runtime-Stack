@@ -447,7 +447,7 @@ with the chart gap that omits `addressing_style` from
 | a campaign asked for two runs planned one | the platform's `campaign plan --only` is `nargs="+"` too, so `--only a --only b` plans b alone | one flag, every key. Any `nargs="+"` option in these CLIs takes its values together, never repeated |
 | verdict rc=0 with no estimate in the bag | the gate named `ate_rmse_m` (the scorecard's vocabulary), the trajectory report spells it `ate_trans_m.rmse`, and a metric found nowhere was a WARN | aliases for the platform's names; a gate no report measured is a FAIL |
 | pilot: `position estimate available at z=-3.36 m`, then `arming refused` for three minutes | PX4 EKF height not settled at boot (`Preflight Fail: height estimate not stable`), pilot proceeded after a fixed 5 s; run 24 read 0.04 m and armed at once | pilot gate waits for six seconds of local height within a metre of zero and spanning under 15 cm; one retry on a refused arming |
-| `campaign status` empty; `sim-real-eval: invalid choice: 'vio-stress'` | the `-latest` worker image on Docker Hub is from 2026-08-09, before the scorer existed; the platform runs it from source inside its own process | build the worker from `MnS-Integration-Platform/tools/sim_real_eval` and point `MNS_SIM_REAL_EVAL_IMAGE` at it; `campaign.py evaluate <id>` re-scores a manifest |
+| `campaign status` empty; `sim-real-eval: invalid choice: 'vio-stress'` | the `-latest` worker image the catalog pinned then was from 2026-08-09, before the scorer existed; the platform runs it from source inside its own process | the catalog now pins `sim-real-eval-worker-v1.0.0`, which has `vio-stress`; for another worker, point `MNS_SIM_REAL_EVAL_IMAGE` at it; `campaign.py evaluate <id>` re-scores a manifest |
 
 And one the task table cannot show: a pilot exits 0 or 1 as COMPLETED, so a
 flight that never armed looks like a flight. The recorder now writes
@@ -808,9 +808,9 @@ osmo/campaign.py images        # ok / DRIFT per image, and the --set-string for 
 ```
 
 The campaign-level scorer is the set's `sim_real_eval` unless
-`MNS_SIM_REAL_EVAL_IMAGE` names another. The published `-latest` worker
-predates `vio-stress`, so today `evaluate` stops with a message saying so
-until that variable names a worker that has it.
+`MNS_SIM_REAL_EVAL_IMAGE` names another. The pinned
+`sim-real-eval-worker-v1.0.0` has `vio-stress`; a worker without it makes
+`evaluate` stop with a message saying so.
 
 ### The whole tree
 
