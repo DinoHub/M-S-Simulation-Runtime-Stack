@@ -96,6 +96,13 @@ case "$1" in
     case "${2:-}" in init) needs_socket=true ;; esac ;;
 esac
 
+# load-images-env.sh leaves keys that ./.env sets for compose to read; this
+# container is not compose, so read the metrics image from ./.env too.
+METRICS_IMAGE="${METRICS_SERVICE_IMAGE:-}"
+if [[ -z "$METRICS_IMAGE" && -f "$ROOT/.env" ]]; then
+  METRICS_IMAGE="$(sed -n 's/^METRICS_SERVICE_IMAGE=//p' "$ROOT/.env" | tail -1)"
+fi
+
 args=(--rm --pull "${MNS_IMAGE_PULL_POLICY:-missing}"
       --user "$HOST_UID:$HOST_GID" -e HOME=/tmp)
 [[ -t 0 && -t 1 ]] && args+=(-it)
@@ -107,7 +114,7 @@ args+=(
   -e "MNS_IMAGE_SET_FILE=$IMAGE_SET_FILE"
   -e "MNS_PACK_STORE_ROOT=$PACK_STORE"
   # The metrics service image, to judge a headless run once (scoring.judge_once).
-  -e "METRICS_SERVICE_IMAGE=${METRICS_SERVICE_IMAGE:-}"
+  -e "METRICS_SERVICE_IMAGE=$METRICS_IMAGE"
   -e "MNS_HOST_UID=$HOST_UID" -e "MNS_HOST_GID=$HOST_GID"
 )
 if [[ -n "$KIT" ]]; then
