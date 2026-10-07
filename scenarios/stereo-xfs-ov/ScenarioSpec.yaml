@@ -16,8 +16,8 @@ stack_name: stereo-xfs-ov
 
 environment:
   id: xfs-level
-  version: 1.0.1
-  artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+  version: 1.0.2
+  artifact_digest: sha256:7eeb41a5ad04d3d2f4bd8c5d876703793b7485d93d59d07172d12c174c100871
 
 runtime:
   profile: airsim_unreal_px4_docker
@@ -34,8 +34,12 @@ runtime:
   # TEVV: what runs are judged on, picked from the metrics catalogue.
   metrics:
     evaluation:
-      metrics: {segment_path_length: true, estimator.ate_rmse_m: true}
-      thresholds: {segment_path_length: 60, estimator.ate_rmse_m: 1.0}
+      metrics:
+        segment_path_length: true
+        estimator.ate_rmse_m: true
+      thresholds:
+        segment_path_length: 60
+        estimator.ate_rmse_m: 1.0
 
 vehicles:
 - id: drone_1
@@ -103,8 +107,38 @@ extensions:
 # TEVV v1.1: the yard box as an authored path (x east, y north, z up, metres,
 # origin on the ground under the start). A test flies it at its own speed.
 paths:
-  - id: yard-box
-    waypoints: [[0, 0, 2], [-10, 0, 2], [-10, 6, 2], [-10, 6, 4], [-10, 12, 4], [0, 12, 4], [0, 0, 2]]
+- id: yard-box
+  waypoints:
+  - - 0
+    - 0
+    - 2
+  - - -10
+    - 0
+    - 2
+  - - -10
+    - 6
+    - 2
+  - - -10
+    - 6
+    - 4
+  - - -10
+    - 12
+    - 4
+  - - 0
+    - 12
+    - 4
+  - - 0
+    - 0
+    - 2
 goals:
-  - id: yard-square
-    goals: [[-8, 0, 3], [-8, 8, 3], [0, 8, 3]]
+- id: yard-square
+  goals:
+  - - -8
+    - 0
+    - 3
+  - - -8
+    - 8
+    - 3
+  - - 0
+    - 8
+    - 3
