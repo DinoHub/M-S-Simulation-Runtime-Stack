@@ -1,0 +1,17 @@
+# SUPER through the TEVV component interface: TEVV takes off and hovers, hands
+# over with the goals of yard-detour on /tevv/mission/goal, and flies SUPER's
+# /tevv/command until every goal is reached or the time runs out.
+schema: mns.campaign.v1
+id: tevv-super-detour
+name: SUPER on yard-detour (component flies)
+scenario: ./ScenarioSpec.yaml
+repeats: 1
+recording:
+  keep: first
+mission:
+  control: external
+  goals: yard-detour
+  timeout_s: 180
+extensions:
+  mns.components:
+  - super-planner

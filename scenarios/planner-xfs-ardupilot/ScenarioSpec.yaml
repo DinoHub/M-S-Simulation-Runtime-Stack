@@ -58,3 +58,11 @@ vehicles:
     barometer: true
     magnetometer: true
     gpu_lidar: true
+
+# TEVV v1.1: goal courses a component-flown test hands to the planner (x east,
+# y north, z up, metres, from the ground under the start).
+goals:
+  - id: yard-square
+    goals: [[-8, 0, 3], [-8, 8, 3], [0, 8, 3]]
+  - id: yard-detour
+    goals: [[-30, -25, 3]]

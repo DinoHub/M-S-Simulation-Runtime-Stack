@@ -1,0 +1,45 @@
+# SUPER (local planner) under test in TEVV: a worked example of a component
+# that ships its own adaptor in its image. SUPER's adaptor (super_planner_adaptor,
+# built from the local-planner adaptor scaffold) already takes its input and
+# output topics as launch arguments, so attaching it to TEVV is setting those
+# to TEVV's fixed topics. Nothing in TEVV knows SUPER.
+schema: tevv.component.v1
+id: super-planner
+name: SUPER local planner
+version: 0.2.0
+kind: planner
+
+component:
+  image: dhdevspace/auto_mns:super_runtime-ms.1-cyclone
+  command:
+  - bash
+  - -lc
+  - >-
+    set +u && source /opt/ros/humble/setup.bash
+    && source /workspace/generated/super_planner/.planner_ws/ros_ws/install/setup.sh
+    && source /workspace/generated/super_planner/adaptor_ws/install/setup.sh
+    && export PYTHONPATH=/workspace/generated/super_planner/adaptor_ws/src/super_planner_adaptor:$PYTHONPATH
+    && exec ros2 launch super_planner_adaptor super_planner_adaptor.launch.py
+    use_planner:=true use_rviz:=false autopilot:=ardupilot heartbeat_enabled:=false
+    runtime_params_file:=/cfg/component/files/config/click.yaml
+    odom_external_topic:=/tevv/gt/odom
+    occupancy_external_topic:=/tevv/sensors/point_cloud
+    term_goal_external_topic:=/tevv/mission/goal
+    vehicle_output_topic:=/tevv/command
+
+# What TEVV should provide: /tevv/gt/odom and /tevv/sensors/point_cloud (odom
+# frame). The goal (/tevv/mission/goal) is always there.
+consumes: [ground_truth, point_cloud]
+# What SUPER gives back: /tevv/command (mavros_msgs/PositionTarget).
+produces: [command]
+
+# TEVV hands over once SUPER's state machine is up.
+ready:
+  after_takeoff: [/planner_state]
+  timeout_s: 180
+
+scoring:
+  builtin: planner
+  checks:
+    goal_success_rate: {min: 1.0}
+    min_clearance_m: {min: 0.3}

@@ -1,0 +1,40 @@
+# OpenVINS stereo VIO under test in TEVV: a worked example of a component with
+# its own adaptor. TEVV hands every component the same fixed topics; this
+# package's adaptor (adaptor/) turns them into what OpenVINS reads, and
+# OpenVINS's output into what TEVV scores. Nothing in TEVV knows OpenVINS.
+schema: tevv.component.v1
+id: openvins-vio
+name: OpenVINS stereo VIO
+version: 0.2.0
+kind: estimator
+
+# Your component, unmodified (here with CycloneDDS added; see image/).
+component:
+  image: dhdevspace/auto_mns:vio-estimator-openvins-69488123-cyclone
+  command: [bash, -lc, "until [ -f /config/estimator_config.yaml ]; do sleep 1; done; exec /entrypoint.sh ros2 launch ov_msckf subscribe.launch.py config_path:=/config/estimator_config.yaml use_stereo:=true max_cameras:=2"]
+  volumes: ["config:/config"]
+
+# Your adaptor: writes OpenVINS's config from TEVV's sensor description, and
+# republishes OpenVINS's odometry as /tevv/estimate.
+adaptor:
+  image: dhdevspace/auto_mns:openvins-vio-adaptor-0.2.0
+  volumes: ["config:/config"]
+
+volumes:
+  config: {}
+
+# What TEVV should provide (fixed names): /tevv/sensors/<left>/image_raw,
+# /tevv/sensors/<right>/image_raw (+ camera_info) and /tevv/sensors/imu.
+consumes: [stereo_primary, imu]
+# What this component gives back: /tevv/estimate.
+produces: [estimate]
+
+# TEVV waits for OpenVINS's first estimate after take-off before the path starts.
+ready:
+  timeout_s: 240
+
+scoring:
+  builtin: estimate
+  checks:
+    ate_rmse_m: {max: 2.0}
+    availability: {min: 0.9}
