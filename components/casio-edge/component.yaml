@@ -56,6 +56,11 @@ scoring:
   checks:
     camera_fps: {min: 10.0}
     gps_err_median_m: {max: 5.0}
+    # The median alone rewards seeing less: a flight with three target fixes
+    # (or none, when the check had nothing to measure) passed. A floor on the
+    # fixes and a limit on the tail keep a run that saw little from passing.
+    target_gps_fixes: {min: 300}
+    gps_err_p90_m: {max: 9.0}
     detection_latency_p95_ms: {max: 250}
   timeout_s: 900
   # Measured by the platform from the bag: a detection carries its camera

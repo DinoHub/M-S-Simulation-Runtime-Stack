@@ -49,6 +49,18 @@ files:
   # config (not committed; see ../casio-edge/README.md).
   calibration: ../casio-edge/casio-config/deployment/configs/siyi_a8_calibration.yaml
 
+# What a test plan can set or sweep (Test plan, Components; Repeat,
+# Component parameter). The defaults are the A8 estimates camera_realism.py
+# was written with, not measurements of a real A8.
+parameters:
+  noise_read: {default: 1.5, label: Read noise, unit: DN, min: 0, max: 50,
+               help: per-pixel read noise sigma}
+  noise_gain: {default: 0.08, label: Shot noise gain, min: 0, max: 5,
+               help: shot noise variance per unit of intensity}
+  jpeg_quality: {default: 40, label: JPEG quality, min: 0, max: 100,
+                 help: stands in for the A8's H.264 artefacts; 0 turns it off}
+  lens: {default: true, label: Lens distortion, help: remap onto the A8's calibrated lens}
+
 services:
   realism:
     image: node
@@ -59,4 +71,8 @@ services:
       python3 /cfg/component/script --ros-args
       -p use_sim_time:=true
       -p calibration_file:=/cfg/component/calibration
+      -p noise_read:={param.noise_read}
+      -p noise_gain:={param.noise_gain}
+      -p jpeg_quality:={param.jpeg_quality}
+      -p lens:={param.lens}
       "

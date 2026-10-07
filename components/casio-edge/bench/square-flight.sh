@@ -10,7 +10,8 @@
 # of targets at least SNAPSHOT_MIN_H px tall (default 40), then scores it.
 # PERTURB="--fog 0.9" (any perturb.py options: --fog/--rain/--dust/--snow,
 # --time) changes the sim's weather or light before the flight and resets it
-# after; what was applied goes into perturb.json.
+# after; what was applied goes into perturb.json. Without it the bench leaves
+# the weather and the sun as the scenario set them.
 # Output: <stack>/outputs/flights/<time>-<label>/ (summary.md,
 # map.png, timeline.png, annotated.mp4, snapshots/, the CSVs, rc3/posts/).
 set -euo pipefail
@@ -70,8 +71,11 @@ perturb() {
   docker run --rm --network "$CASIO_STACK_NETWORK" --add-host host.docker.internal:host-gateway \
     -v "$here:/bench:ro" --entrypoint python3 "$bridge_image" /bench/perturb.py "$@"
 }
-perturb --reset >/dev/null
+# Without PERTURB the world stays as the stack's ScenarioSpec set it, so a
+# test plan's weather and time-of-day sweeps reach the flight. With it, the
+# flight starts from clear midday and applies the options on top.
 if [[ -n "${PERTURB:-}" ]]; then
+  perturb --reset >/dev/null
   # shellcheck disable=SC2086  # PERTURB is a list of options
   perturb $PERTURB > "$run/perturb.json"
   sleep 5   # let the new light / particles settle before recording
