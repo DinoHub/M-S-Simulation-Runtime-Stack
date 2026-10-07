@@ -42,9 +42,9 @@ runtime:
         estimator.ate_rmse_m: 1.0
 
 vehicles:
-- id: drone_1
+- id: "drone_1"
   name: Drone1
-  runtime_name: Drone1
+  runtime_name: "Drone1"
   ros_domain_id: 1
   # The container yard on XFS, 2.3 m above the ground. Not the origin:
   # XFS has no floor under its world origin (its terrain sits tens of metres
@@ -103,42 +103,71 @@ extensions:
       metrics:
         travel_time: true
         data_integrity: true
-
-# TEVV v1.1: the yard box as an authored path (x east, y north, z up, metres,
-# origin on the ground under the start). A test flies it at its own speed.
+  mns.authoring_app:
+    mode: "packaged_exe"
+    overlay: ScenarioBundle/authored_overlay.json
+    validation_report: ScenarioBundle/validation_report.json
+object_clutter:
+  seed: 42
+  density: none
+  placement: scenario_spec
+asset_packs:
+- id: "mns_vehicle_models"
+  version: "1.0.4"
+  artifact_digest: "sha256:317a6dd71df24e58b8e34fd0ea2d46a3f24a9eb3e1312eacf5eac621a1512f63"
 paths:
-- id: yard-box
+- id: "yard-box"
   waypoints:
-  - - 0
-    - 0
-    - 2
-  - - -10
-    - 0
-    - 2
-  - - -10
-    - 6
-    - 2
-  - - -10
-    - 6
-    - 4
-  - - -10
-    - 12
-    - 4
-  - - 0
-    - 12
-    - 4
-  - - 0
-    - 0
-    - 2
+  - - 0.000
+    - 0.000
+    - 2.000
+  - - -10.000
+    - 0.000
+    - 2.000
+  - - -10.000
+    - 6.000
+    - 2.000
+  - - -10.000
+    - 6.000
+    - 4.000
+  - - -10.000
+    - 12.000
+    - 4.000
+  - - 0.000
+    - 12.000
+    - 4.000
+  - - 0.000
+    - 0.000
+    - 2.000
+- id: "yard-zigzag"
+  waypoints:
+  - - 0.000
+    - 0.000
+    - 3.000
+  - - -4.000
+    - 2.000
+    - 3.000
+  - - -1.000
+    - 4.000
+    - 3.000
+  - - -6.000
+    - 6.000
+    - 3.000
+  - - -2.000
+    - 8.000
+    - 3.000
+  - - -6.000
+    - 11.000
+    - 3.000
 goals:
-- id: yard-square
+- id: "yard-square"
   goals:
-  - - -8
-    - 0
-    - 3
-  - - -8
-    - 8
-    - 3
-  - - 0
-    - 8
-    - 3
+  - - -8.000
+    - 0.000
+    - 3.000
+  - - -8.000
+    - 8.000
+    - 3.000
+  - - 0.000
+    - 8.000
+    - 3.000
