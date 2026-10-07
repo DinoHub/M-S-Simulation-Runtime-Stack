@@ -1,12 +1,12 @@
-# SUPER (local planner) under test in TEVV: a worked example of a component
-# that ships its own adaptor in its image. SUPER's adaptor (super_planner_adaptor,
-# built from the local-planner adaptor scaffold) already takes its input and
-# output topics as launch arguments, so attaching it to TEVV is setting those
-# to TEVV's fixed topics. Nothing in TEVV knows SUPER.
+# SUPER (local planner) under test in TEVV: a worked example of the TEVV
+# component interface. SUPER runs unmodified, with its own config
+# (files/config/click.yaml, which names SUPER's native topics). The adaptor
+# container (adaptor/, written for SUPER, not part of TEVV) converts TEVV's
+# fixed topics to SUPER's and SUPER's command back. Nothing in TEVV knows SUPER.
 schema: tevv.component.v1
 id: super-planner
 name: SUPER local planner
-version: 0.2.0
+version: 0.3.0
 kind: planner
 
 component:
@@ -17,15 +17,11 @@ component:
   - >-
     set +u && source /opt/ros/humble/setup.bash
     && source /workspace/generated/super_planner/.planner_ws/ros_ws/install/setup.sh
-    && source /workspace/generated/super_planner/adaptor_ws/install/setup.sh
-    && export PYTHONPATH=/workspace/generated/super_planner/adaptor_ws/src/super_planner_adaptor:$PYTHONPATH
-    && exec ros2 launch super_planner_adaptor super_planner_adaptor.launch.py
-    use_planner:=true use_rviz:=false autopilot:=ardupilot heartbeat_enabled:=false
-    runtime_params_file:=/cfg/component/files/config/click.yaml
-    odom_external_topic:=/tevv/gt/odom
-    occupancy_external_topic:=/tevv/sensors/point_cloud
-    term_goal_external_topic:=/tevv/mission/goal
-    vehicle_output_topic:=/tevv/command
+    && exec ros2 run super_planner fsm_node --ros-args
+    -p config_name:=/cfg/component/files/config/click.yaml
+
+adaptor:
+  image: dhdevspace/auto_mns:super-planner-adaptor-0.2.0
 
 # What TEVV should provide: /tevv/gt/odom and /tevv/sensors/point_cloud (odom
 # frame). The goal (/tevv/mission/goal) is always there.

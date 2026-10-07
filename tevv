@@ -4,7 +4,7 @@
 #   ./tevv up | down                       the dashboard (browser entry point)
 #   ./tevv component init <id> --container <image> --kind <kind>
 #   ./tevv component check components/<id>
-#   ./tevv run <test plan>                 fly a test (one run, or a sweep)
+#   ./tevv run <test plan>                 fly a test (its runs and repeats)
 #   ./tevv results <test> [--format csv|md] one row per run: ended, verdict, metrics
 #   ./tevv stop <test>                     stop a running test now
 set -euo pipefail
