@@ -145,31 +145,49 @@ images:
     resolver: imagetools
     purpose: Opt-in (--profile db) telemetry database for the dashboard.
 
-  # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
+  # ---- MnS 1.0 (channel v1): the v1.0.0 release ----
   v1_runtime_host:
     repo: dhdevspace/auto_mns
     tag: "tevv-runtime-host-v1.0.0"
-    digest: sha256:f540c4fb26bf63f80536c84bed632c3cea71cacf294cddd27a4da19c5e61363d
+    digest: sha256:952ee258ff77d9401edfae045b6bc091b016eeb5b3321611cddece0807ce6967
     channel: pinned
     purpose: >-
-      MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim integration/v1.0.0 dea429015355, dirty=false; v1.0.0 candidate: #228 packs, #226 authored origin, exec launcher): the shared Scenario* plugins single copy (shared_set_id 8ef1c3b7), SDK 1.0.0rc5; carries its host contract (label tevv.host.contract); its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
+      MnS 1.0 generic TEVVRuntimeHost, the v1.0.0 release build (TEVV-Airsim
+      release/v1.0.0-next 171b64e7ed71, dirty=false, dev-compressed; #228
+      packs, #226 authored origin, exec launcher), built on content-pack SDK
+      1.0.0: the shared Scenario* plugins single copy (shared_set_id 8ef1c3b7),
+      iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline
+      (host id ue-5.8.2-cl56702186-linux-development-vulkan-sm6-iostore-v2).
+      Carries its host contract (label tevv.host.contract, contract_digest
+      sha256:c5754b0a...); its companion kit is v1_runtime_host_kit (label
+      tevv.host.kit_image).
 
   v1_authoring:
     repo: dhdevspace/auto_mns
     tag: "mns-authoring-v1.0.0"
-    digest: sha256:8037f5b00f7bebf6244ab30f919f7488e9290b77dd66367390137362e9ba0991
+    digest: sha256:4bba301de7e13bca78de0761823b68d2a887160fe799dea2149d73d1466df673
     channel: pinned
     purpose: >-
-      MnS 1.0 ScenarioLab (TEVV-Authoring integration/v1.0.0 e821a2f074fc; v1.0.0 candidate: #25 spawn clearance, CableComponent), built kit-only with --kit <v1_runtime_host_kit> --strict and no waivers (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins, UDS and the preview content come from that kit (TEVV-Airsim dea429015355); SDK 1.0.0rc5; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
+      MnS 1.0 ScenarioLab, the v1.0.0 release build (TEVV-Authoring
+      release/v1.0.0-next b653a5643103; #25 spawn clearance, CableComponent;
+      reopen keeps placed pack objects), built on content-pack SDK 1.0.0,
+      kit-only with --kit <v1_runtime_host_kit> --strict and no waivers
+      (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the
+      nine shared Scenario* plugins, UDS and the preview content come from
+      that kit (TEVV-Airsim 171b64e7ed71). Bakes mns_vehicle_models 1.0.4
+      (sha256:317a6dd7...), the version the product lock pins. Level packs are
+      staged from the PackStore.
 
   v1_stacks:
     repo: dhdevspace/auto_mns
     tag: "mns-stacks-v1.0.0"
-    digest: sha256:4acf9e87a80ca10827446f09c18514fc6e52b9a31d60dede2a5628891a0a8c3c
+    digest: sha256:bc1e9187530c9c9766ae953899694d27a5913d0e782feedeb505764a5afc1f93
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
-      mns-stacks): stack generation, run/stop/status/logs, the one bag
+      mns-stacks), the v1.0.0 release build (MnS-Integration-Platform
+      release/v1.0.0-next c16e9fc61638, dirty=false, content-pack SDK 1.0.0;
+      its built-in v1 image set pins v1_runtime_host): stack generation, run/stop/status/logs, the one bag
       recorder (record, run --record --until-done), campaigns and the
       compatibility check. The dashboard, make fly/stop/campaign/stacks,
       tools/images.sh drift and osmo/campaign.py all run it as a sibling
@@ -191,13 +209,15 @@ images:
   v1_runtime_host_kit:
     repo: dhdevspace/auto_mns
     tag: "tevv-runtime-host-kit-v1.0.0"
-    digest: sha256:184e9f96207b67ba10837007e8683196a89a6aaa5adc1cb1d5db4ceef7e6c4aa
+    digest: sha256:84aa9fe204305542e0b10c239c4c7e284803044836ecc57dbdfadbdc3cbc1962
     channel: pinned
     pull: false
     purpose: >-
       The runtime host's companion kit image (FROM scratch: /kit/** and
       /kit/host-baseline.json), written by the host build's mns-packs kit
-      build. The host image's tevv.host.kit_image label names its digest, and
+      build (TEVV-Airsim release/v1.0.0-next 171b64e7ed71, content-pack SDK
+      1.0.0; the channel tag tevv-runtime-host-kit-main points at the same
+      digest). The host image's tevv.host.kit_image label names its digest, and
       tools/images.sh verify warns when that label and this pin differ.
       Packaging and authoring builds read it; the product never pulls it.
 
