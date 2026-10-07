@@ -41,8 +41,7 @@ unless a component reads them, so a planner run's bag is megabytes, not tens of 
 `recording.everything: true` (the dashboard's **Record every topic**) records every topic
 again, for replay.
 
-The components a plan flies are its `extensions."mns.components"` list, which is the whole
-list: the stack's own components are not added. A plan without the key flies the stack's.
+The components a plan flies are its `extensions."mns.components"` list. The dashboard writes the ones the scenario's stack carries, because components are the user's own and are attached outside it (`mns-stacks generate --component`). A dashboard run refuses a plan whose list differs from the stack's. A plan for `make campaign` can list any packages. A plan can also set and sweep values beyond the ScenarioSpec, under `extensions."mns.parameters"`: `{alt}`-style values in `mission.start_cmd`, and the `parameters` a component declares (see the platform's campaignspec-reference).
 
 Campaign runs render the simulator off-screen. A campaign is unattended, and an
 unattended desktop puts its monitor to sleep: a windowed simulator then stalls its cameras

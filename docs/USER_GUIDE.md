@@ -436,9 +436,9 @@ spec still matches your export. **Restore authored** returns to the export, and
 
 **This stack carries ...** reports the components under test the stack was
 generated with (`mns-stacks generate --component <path>`, or your own compose).
-The dashboard keeps them when it regenerates the stack. A test plan picks its
-own components (see [Step 1d](#step-1d-test-plan)). Cameras are placed in
-ScenarioLab.
+The dashboard keeps them when it regenerates the stack, and every test plan
+flies them: components are your own, attached outside the dashboard. Cameras
+are placed in ScenarioLab.
 
 ### Step 1c: ROS 2 settings and what to record
 
@@ -475,13 +475,25 @@ sections:
    its detector, so judging a metric keeps its detector on.
 3. **Fly**: the mission (a route from the scenario's `routes/`, or a shared
    route such as `box-10m.yaml`, a goal course, or a custom command), and when
-   a run starts (once ground truth and the cameras are steady) and ends.
+   a run starts (once ground truth and the cameras are steady) and ends. A
+   custom command can name values, such as `--alt {alt}`. Fly asks for each
+   one unless Repeat sweeps it.
    Runs render off-screen; tick **Show the simulator window during runs** to
    watch them on the desktop. A window costs GPU time and drops camera rates
    on heavy levels such as XFS, and a monitor that goes to sleep stalls the
    cameras and fails the recording check, so keep the display awake.
-4. **Repeat**: repeats, seeds and sweeps (wind, weather, any ScenarioSpec
-   field), and what each run's bag keeps. A run records only the topics it is
+4. **Repeat**: repeats, seeds and sweeps, and what each run's bag keeps.
+   A sweep can change:
+   - wind and weather;
+   - the time of day;
+   - a value of the custom command;
+   - a parameter of one of the stack's components;
+   - any ScenarioSpec field.
+
+   On the v1 runtime host, a time of day set this way renders much darker than
+   it should (10:00 came out black on SAFTI). A flight script that sets the sun
+   itself can take the time as a command value instead, for example
+   `PERTURB='--time 2026-09-30T{sun}'` with `{sun}` swept. A run records only the topics it is
    scored on: clock, transforms, ground truth, IMU, estimates, what the
    components read and publish, and the autopilot's status. Tick **Record
    every topic** to keep the cameras and raw sensors too, for replay; a stereo
@@ -492,11 +504,16 @@ sections:
 stack, then saves Fly and Repeat as `CampaignSpec.<plan>.yaml` next to it.
 Because measuring and judging live in the scenario, every way of flying it,
 the plan's runs, a manual flight or a campaign on OSMO, is measured and judged
-the same way. **Components** above the plan picks the components under test
-its runs fly, one tick box per package in `components/`. A new plan starts with
-the ones the stack carries. The plan's list is the whole list, so a plan that
-picks SUPER flies SUPER alone, even on a stack generated with MIGHTY. The
-Component under test checks follow the list.
+the same way. **Components**, above the plan, lists the components under test the stack
+carries. These are your own components and adaptors, attached with
+`mns-stacks generate --component`, and the dashboard does not pick them:
+- Every run flies them.
+- A plan that lists different ones is refused until you open and save it.
+- Each component's parameters (its component.yaml `parameters`) show under it
+  with their defaults, can be set for the plan, and can be swept in Repeat.
+
+**Run** shows the results **By sweep value**: each variant's pass count, and
+the mean and range of every check.
 
 ### Step 2: Run
 
