@@ -1,0 +1,17 @@
+# TEVV v1.1: OpenVINS on the yard box, flown three times. Judged by the
+# metrics selected for the scenario (runtime.metrics.evaluation).
+schema: mns.campaign.v1
+id: tevv-openvins-repeats
+name: OpenVINS on the yard box, three runs
+scenario: ./ScenarioSpec.yaml
+repeats: 3
+recording:
+  keep: first
+mission:
+  control: internal
+  path: yard-box
+  speed_mps: 1.5
+  timeout_s: 240
+extensions:
+  mns.components:
+  - openvins-demo

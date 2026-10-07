@@ -106,6 +106,8 @@ args+=(
   -e "MNS_IMAGE_SET=${MNS_IMAGE_SET:-v1}"
   -e "MNS_IMAGE_SET_FILE=$IMAGE_SET_FILE"
   -e "MNS_PACK_STORE_ROOT=$PACK_STORE"
+  # The metrics service image, to judge a headless run once (scoring.judge_once).
+  -e "METRICS_SERVICE_IMAGE=${METRICS_SERVICE_IMAGE:-}"
   -e "MNS_HOST_UID=$HOST_UID" -e "MNS_HOST_GID=$HOST_GID"
 )
 if [[ -n "$KIT" ]]; then

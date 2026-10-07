@@ -31,6 +31,11 @@ runtime:
     # without MAVROS and the pilot waits out its timeout on a flight controller
     # that was never connected.
     mavros: true
+  # TEVV: what runs are judged on, picked from the metrics catalogue.
+  metrics:
+    evaluation:
+      metrics: {segment_path_length: true, estimator.ate_rmse_m: true}
+      thresholds: {segment_path_length: 60, estimator.ate_rmse_m: 1.0}
 
 vehicles:
 - id: drone_1
@@ -103,9 +108,3 @@ paths:
 goals:
   - id: yard-square
     goals: [[-8, 0, 3], [-8, 8, 3], [0, 8, 3]]
-conditions:
-  weather:
-    enabled: true
-    wind_from_deg: 270
-parameters:
-  wind_mps: {default: 0, range: [0, 12], unit: m/s, binds: conditions.weather.wind_mps}
