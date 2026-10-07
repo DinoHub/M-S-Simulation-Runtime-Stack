@@ -22,6 +22,8 @@ This repository is the customer distribution. Its historical name is
 ## Quick start
 
 ```bash
+git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
+cd M-S-Simulation-Runtime-Stack
 ./setup.sh           # checks the machine, logs in to Docker Hub, pulls the images
 ./download-packs.sh  # downloads the starter levels (logs in to GitHub)
 make dashboard       # then open http://localhost:3001 in Chrome

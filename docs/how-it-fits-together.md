@@ -83,7 +83,7 @@ phases without redoing them: phase completion is computed from what exists.
 | `.mns/<channel>/authoring-data/ResolvedPacks/` | `tools/stage-authoring-packs.sh` -> `mns-packs stage-authoring --lock` | ScenarioLab |
 | `scenarios/<name>/ScenarioSpec.yaml` (+ `includes:` files) | ScenarioLab export, or the Generate form; `mns-stacks campaign init` | `mns-stacks generate`; `CampaignSpec.scenario` |
 | `scenarios/<name>/ScenarioSpec.baseline.yaml` | the backend, a snapshot of the authored spec before the form's sensor edits | the backend, to show what the form changed |
-| `scenarios/<name>/phase-state.json` | the backend: the `prerun` block (ROS 2 and Metrics phases) and the Author-skip flag | the backend's Launch |
+| `scenarios/<name>/phase-state.json` | the backend: the `prerun` block (ROS 2 and Metrics phases) and the Author-skip flag. `PUT /api/scenario/<name>/prerun` replaces the whole block: an API caller must GET it and merge first, or it drops `topic_renames` and the recorder loses `/imu/data` and `/gps/fix` (the UI does this) | the backend's Launch |
 | `scenarios/<name>/CampaignSpec.yaml`, `routes/*.yaml` | you, from `scenarios/vio-reference/` or `mns-stacks campaign init` | `mns-stacks campaign` |
 | `generated/<name>/` (compose file, `.env`, `config/`) | `mns-stacks generate`; gitignored | `mns-stacks run/stop/status` |
 | `generated/<name>/config/topic_names.yaml`, `config/sim2real/topics.yaml`, `config/vio/` | `mns-stacks generate` | the bridge, the estimator, the recorder, sim-real-eval. **The only place topic names may be read from.** |

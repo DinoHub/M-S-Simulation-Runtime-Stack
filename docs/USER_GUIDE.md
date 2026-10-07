@@ -93,7 +93,7 @@ docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
 
 | MnS term | What it is, in domain terms |
 |---|---|
-| **Level pack** | A pre-built Unreal map, the environment you fly in: Warehouse, Office Environment, Condo, XFS, Safti or Fisherman's Cabin. It is downloaded once and checksum-verified. ScenarioLab can open **Warehouse** and **Office Environment**; the other four are *runtime only* and fly from hand-written specs. |
+| **Level pack** | A pre-built Unreal map, the environment you fly in: Blocks, Warehouse, Office Environment, Condo, XFS, Safti or Fisherman's Cabin. It is downloaded once and checksum-verified. ScenarioLab opens all seven. |
 | **Object pack** | Placeable props: office, warehouse and cabin props. The drone models come as their own pack, `mns_vehicle_models`. |
 | **ScenarioLab** | An Unreal-based editor. You place vehicles, sensors and objects in a level, then **Export**. |
 | **ScenarioSpec** | The exported scenario: a folder of YAML files covering the environment, vehicles, sensor profiles, objects and runtime settings. It is the single input to everything downstream. |
@@ -340,8 +340,8 @@ this order:
    folder name `scenarios/<name>/`.
 2. **Environment**: pick a **Level Pack** and click **Apply Level Pack**. The
    level loads.
-   - For a first run, pick **Warehouse**. The list shows only levels
-     ScenarioLab can open: Warehouse and Office Environment.
+   - For a first run, pick **Warehouse**. The list shows every level pack
+     you have downloaded and staged; ScenarioLab opens all seven.
    - Do this **first**. Switching levels can restart ScenarioLab, and it
      discards everything placed so far.
    - Optional settings here: **Edit MnS Origin** (the ROS frame origin), time
@@ -752,8 +752,9 @@ targets both use it, and each prints a note that it is an override.
 | Author: *not ready*, `display` / `xauthority` | Run `make dashboard` from a desktop terminal, or see Display access in [section 3](#3-setup). |
 | Author: *not ready*, `pack_store` / `packs_staged` | In Content, click **Download & stage** or **Stage**. |
 | *editor exited immediately* | Usually the GPU or the display. **Editor log** in Author shows Unreal's own error. |
-| Generate prints *…different registry digests; proceeding without enforcing base-release compatibility* | Advisory only: the level pack was cooked against an earlier build of the same base release. Generation continues and the level loads. |
-| A downloaded level (Condo, XFS, Safti, Fisherman's Cabin) is missing from ScenarioLab's list, or shows *runtime only* in Content | Expected: ScenarioLab cannot open those four, so it doesn't list them; see [Known limitations](#10-known-limitations). Author in Warehouse or Office Environment. |
+| Generate, `make fly` or a campaign prints *Pack level/… cooked against base release … same name, different registry digests; proceeding without enforcing* | Harmless: the level pack was cooked against an earlier build of the same base release (Warehouse and Condo on v1.0.0). Generation continues and the level loads and flies. |
+| A downloaded level is missing from ScenarioLab's list | It is not staged yet. In Content, click **Stage** (or run `make dashboard` again, which stages every installed pack). On v1.0.0 every level opens in ScenarioLab. |
+| The dashboard overview lists `m-s-simulation-runtime-stack` as a running stack (source `docker_only`, no autopilot) | Cosmetic: that is the dashboard's own compose project, not a simulation stack. Leave it alone; `make dashboard-down` stops it. |
 | Scenario doesn't appear in Authored scenarios | It wasn't exported; closing ScenarioLab does not save. Check its status line for *Exported ScenarioSpec*. |
 | Export succeeded but has a default drone at the origin | No drone was placed. Export adds a default one; run **Validate** first. |
 
@@ -764,7 +765,9 @@ targets both use it, and each prints a note that it is an override.
 | Launch never reaches *Visualization ready* | The level is still loading; wait up to 3 minutes and check the `unreal-airsim` row. Make sure nothing else holds port 8765, such as another stack or Foxglove bridge. |
 | `unreal-airsim is unhealthy`, restarting in a loop | The display. Start `make dashboard` from a desktop terminal. |
 | PX4 won't arm: `ekf2 missing data` | Wait 1–2 minutes after spawn. |
-| PX4 won't arm: `vertical velocity unstable` / `height estimate error`, and `/ground_truth/odom` z keeps falling | The vehicle spawned under the level: XFS and Condo have no floor at the world origin. Use the measured start in `packs/level-spawn-hints.json` (`make fly` warns about this). |
+| PX4 won't arm: `vertical velocity unstable` / `height estimate error`, and `/ground_truth/odom` z keeps falling | The vehicle spawned under the level: XFS, Condo and Fisherman's Cabin have no floor at the world origin. Use the measured start in `packs/level-spawn-hints.json` (`make fly` warns about this). |
+| On Warehouse, PX4 arms but takeoff fails (*climb did not reach the target altitude*) | A hand-written spec without ScenarioLab's `coordinate_frame` spawns at the world origin, which is on the floor among boxes. Author the scenario in ScenarioLab, or copy an export's `coordinate_frame` (the PlayerStart, in `packs/level-spawn-hints.json`). |
+| Campaign preflight prints *WARN images.ros2_bridge: … carries no version tag … Pin it as tag@digest* | Harmless in the default `IMAGE_MODE=development`: the bridge image is the release's `-v1.0.0` tag, used without its digest. The campaign runs. |
 | Lichtblick shows *You're using an unsupported browser* | Open the dashboard in Chrome or Chromium. |
 | Lichtblick shows no topics | ROS domain mismatch. Relaunch from the dashboard, and check the hint on Monitor. |
 | Your node sees only `/rosout` and `/parameter_events` | Wrong `ROS_DOMAIN_ID`, or the bridge hasn't finished starting. Read the domain from `generated/<name>/docker-compose.yml`. |
@@ -787,14 +790,20 @@ targets both use it, and each prints a note that it is an override.
 - **ArduPilot:** the dashboard's command link carries heartbeats only, so
   takeoff altitude is not reported and the vehicle stays armed after a
   descent "land". Disarm it explicitly.
-- **Runtime-only levels.** ScenarioLab cannot open Condo, XFS, Safti or
-  Fisherman's Cabin: its editor lacks plugins those levels need. They still
-  mount and fly, but you author them by hand, starting from a Warehouse
-  export. Give the vehicle a start over the level's floor: XFS and Condo have
-  none under the world origin, so a (0, 0, 0) start falls through the level and
-  PX4 refuses to arm. The measured starts are in `packs/level-spawn-hints.json`
-  (XFS: `x: 423, y: -906, z: -21.0`; Condo: `x: 0, y: -20, z: -2.0`), and
-  `make fly` / `make campaign` warn when a vehicle starts at such an origin.
+- **Hand-written specs need a real start.** ScenarioLab opens all seven
+  levels and records each level's PlayerStart as `coordinate_frame.origin`,
+  so author in ScenarioLab where you can. A hand-written spec without that
+  block spawns at the Unreal world origin: XFS, Condo and Fisherman's Cabin
+  have no floor there (the vehicle falls and PX4 refuses to arm), and on
+  Warehouse it is on the floor among boxes (takeoff fails). The measured
+  starts are in `packs/level-spawn-hints.json` (XFS: `x: 423, y: -906,
+  z: -21.0`; Condo: `x: 0, y: -20, z: -2.0`; Warehouse PlayerStart: Unreal
+  `(-927.2, -493.2, 128.2)` cm), and `make fly` / `make campaign` warn about a
+  start at a floorless origin.
+- **Re-exporting a hand-written spec through ScenarioLab** replaces its
+  vehicle with the default DroneA at the PlayerStart, and for a PX4 spec
+  writes `autopilot.type: ardupilot` under the PX4 profile. Fix the runtime
+  block by hand after such an export (fixed in v1.1).
 - **Office Environment** has a low ceiling. PX4 takeoffs there can be slow, and
   flights fly low.
 - **Bags are sqlite3 (`.db3`).** Convert with `ros2 bag convert` if you need

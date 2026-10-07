@@ -28,10 +28,9 @@ for arg in "$@"; do
     *) echo "Unknown argument: $arg" >&2; usage >&2; exit 2 ;;
   esac
 done
-# The starter set: the smallest level ScenarioLab can open (Warehouse, the
-# one the user guide walks through); the vehicle models are added below.
-# Runtime-only levels (Condo, XFS, ...) are left out: ScenarioLab cannot open
-# them, so they never show in its level list. Big packs are opt-in; GitHub
+# The starter set: Warehouse, the level the user guide walks through; the
+# vehicle models are added below. Every v1.0.0 level opens in ScenarioLab
+# (--list says so per pack), but the others are big and opt-in: GitHub
 # releases download slowly.
 STARTER=(--warehouse)
 STARTER_USED=false
