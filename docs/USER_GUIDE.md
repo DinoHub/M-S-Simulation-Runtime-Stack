@@ -699,6 +699,7 @@ Nothing here is needed for a normal run.
 |---|---|---|
 | `TEVV_RUNS_DIR` | `runs/` in the checkout | keep runs and bags on another disk (an absolute path) |
 | `DASHBOARD_LICHTBLICK_PORT`, `FOXGLOVE_BRIDGE_PORT` | `8082`, `8764` | move a port that clashes |
+| `DASHBOARD_CONTAINER_PREFIX` | none | a prefix such as `alice-` for every dashboard container name (`alice-airsim-dashboard-api`, `alice-ros2-tools`, ...), so the dashboard never touches another set of containers on the same Docker daemon |
 | `GRAFANA_URL` | local Grafana | empty, to hide the Grafana embed |
 | `DOCKER_CONFIG` | `~/.docker` | a non-default Docker login location |
 

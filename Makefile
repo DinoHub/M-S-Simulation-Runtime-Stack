@@ -68,6 +68,16 @@ TEVV_RUNS_DIR := $(shell r="$$TEVV_RUNS_DIR"; [ -n "$$r" ] || r=$$(sed -n 's/^[[
 	[ -n "$$r" ] || r="$(CURDIR)/runs"; r=$$(printf '%s' "$$r" | sed "s|^~|$$HOME|"); \
 	case "$$r" in (/*) ;; (*) r="$(CURDIR)/$$r" ;; esac; printf '%s' "$$r")
 export TEVV_RUNS_DIR
+# Prepended to every dashboard container name (docker-compose-dashboard.yml's
+# container_name lines, the backend's ros2-tools, tools/author.sh's editor), so
+# they do not clash by name with another set on the same daemon. The shell's
+# or command line's value (even empty), else ./.env's, else none. Read here so
+# the containers `make dashboard` inspects, removes and restarts are the ones
+# compose named, never another dashboard's or a user's unprefixed ros2-tools.
+ifeq ($(origin DASHBOARD_CONTAINER_PREFIX),undefined)
+DASHBOARD_CONTAINER_PREFIX := $(shell sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}DASHBOARD_CONTAINER_PREFIX=//p' .env 2>/dev/null | tail -1 | tr -d "\"'")
+endif
+export DASHBOARD_CONTAINER_PREFIX
 ifeq ($(CHANNEL),v1)
 CHANNEL_NAME := v1
 CHANNEL_ENV := images/v1.0.0.generated.env
@@ -193,10 +203,10 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	             "$${MNS_PACKS_IMAGE:-$$(dotenv_value MNS_PACKS_IMAGE)}" \
 	             "$${MNS_AUTHORING_IMAGE:-$$(dotenv_value MNS_AUTHORING_IMAGE)}" || true; \
 	check_x11 || true; \
-	check_ports 3001:airsim-dashboard-frontend:frontend \
-	            8001:airsim-dashboard-api:backend \
-	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):dashboard-lichtblick:Lichtblick \
-	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):ros2-tools:"Foxglove websocket" || exit 1
+	check_ports 3001:$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-frontend:frontend \
+	            8001:$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api:backend \
+	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):$(DASHBOARD_CONTAINER_PREFIX)dashboard-lichtblick:Lichtblick \
+	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):$(DASHBOARD_CONTAINER_PREFIX)ros2-tools:"Foxglove websocket" || exit 1
 	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
 	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE="$$($(EFFECTIVE_IMAGE_SET))" \
@@ -208,18 +218,20 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	@# was re-run against a live stack.
 	@# Recreate it only when the selected bridge image actually changed —
 	@# RECREATE_ROS2_TOOLS=always restores the old behaviour, =never skips it.
+	@# Only this dashboard's own ros2-tools: the prefixed name that
+	@# docker-compose-dashboard.yml hands the backend (ROS2_CONTAINER_NAME).
 	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
-	desired="$${MNS_ROS2_BRIDGE_IMAGE:-}"; \
-	current=$$(docker inspect -f '{{.Config.Image}}' $(DASHBOARD_CONTAINER_PREFIX)ros2-tools 2>/dev/null || true); \
+	desired="$${MNS_ROS2_BRIDGE_IMAGE:-}"; tools="$(DASHBOARD_CONTAINER_PREFIX)ros2-tools"; \
+	current=$$(docker inspect -f '{{.Config.Image}}' "$$tools" 2>/dev/null || true); \
 	if [ "$(RECREATE_ROS2_TOOLS)" = "never" ]; then \
-	  echo "RECREATE_ROS2_TOOLS=never: leaving ros2-tools as it is."; \
+	  echo "RECREATE_ROS2_TOOLS=never: leaving $$tools as it is."; \
 	elif [ "$(RECREATE_ROS2_TOOLS)" = "always" ] || [ -z "$$current" ] || [ "$$current" != "$$desired" ]; then \
-	  [ -n "$$current" ] && [ "$$current" != "$$desired" ] && echo "ros2-tools image changed ($$current -> $$desired); recreating."; \
-	  docker rm -f $(DASHBOARD_CONTAINER_PREFIX)ros2-tools >/dev/null 2>&1 || true; \
+	  [ -n "$$current" ] && [ "$$current" != "$$desired" ] && echo "$$tools image changed ($$current -> $$desired); recreating."; \
+	  docker rm -f "$$tools" >/dev/null 2>&1 || true; \
 	else \
-	  echo "ros2-tools already running $$desired; leaving it (Foxglove :8764 stays up)."; \
+	  echo "$$tools already running $$desired; leaving it (Foxglove :$(or $(FOXGLOVE_BRIDGE_PORT),8764) stays up)."; \
 	fi; \
-	docker restart $(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api >/dev/null
+	docker restart "$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api" >/dev/null
 	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082), image mode: $(IMAGE_MODE))"
 
