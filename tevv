@@ -8,9 +8,10 @@
 #                                          fly a scenario's test (N runs)
 #   ./tevv results <test> [--format csv|md] one row per run: ended, verdict, observers
 #   ./tevv stop <test>                     stop a running test now
+#   ./tevv observers [--json]              the observer types a scenario can list
 set -euo pipefail
 cd "$(dirname "$0")"
-usage() { sed -n '3,10p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,11p' "$0" | sed 's/^# \{0,1\}//'; }
 cmd="${1:-}"; shift || true
 case "$cmd" in
   up)        exec make dashboard "$@" ;;
@@ -19,6 +20,8 @@ case "$cmd" in
   run)       exec make campaign ARGS="run $*" ;;
   results)   exec make --no-print-directory stacks ARGS="campaign status $*" ;;
   stop)      exec make stacks ARGS="campaign cancel --now $*" ;;
+  observers) image="${METRICS_SERVICE_IMAGE:-$(sed -n 's/^METRICS_SERVICE_IMAGE=//p' .env 2>/dev/null | tail -1)}"
+             exec docker run --rm --entrypoint tevv-jsonl-ingest "${image:?set METRICS_SERVICE_IMAGE}" observers "$@" ;;
   ""|-h|--help|help) usage ;;
   *) echo "tevv: unknown command '$cmd'" >&2; usage >&2; exit 2 ;;
 esac
