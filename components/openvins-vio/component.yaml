@@ -32,9 +32,3 @@ produces: [estimate]
 # TEVV waits for OpenVINS's first estimate after take-off before the path starts.
 ready:
   timeout_s: 240
-
-scoring:
-  builtin: estimate
-  checks:
-    ate_rmse_m: {max: 2.0}
-    availability: {min: 0.9}

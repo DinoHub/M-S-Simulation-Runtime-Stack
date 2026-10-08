@@ -1,12 +1,12 @@
 schema: mns.scenario.v1
-id: planner-xfs-ardupilot
-name: Local planner course over XFS, ArduPilot
-stack_name: planner-xfs-ardupilot
+id: super-yard-detour
+name: A local planner detours round the containers (component flies)
+stack_name: super-yard-detour
 
 # An ArduCopter over the XFS container yard with a 3D GPU lidar: the world a
 # local planner is tested in. Like stereo-xfs for estimators, it names no
-# planner. A planner attaches as a component (components/mighty,
-# components/super) and flies the course's goals (CampaignSpec.yaml).
+# planner. A planner attaches as a component (components/super-planner,
+# for example) and flies the test's goal course (test, below).
 #
 # Sim truth is the planner's odometry (/ground_truth/odom); the bridge's
 # registered cloud is accumulated in the map frame (LOCAL_OBS_TARGET_FRAME
@@ -59,10 +59,22 @@ vehicles:
     magnetometer: true
     gpu_lidar: true
 
-# TEVV v1.1: goal courses a component-flown test hands to the planner (x east,
-# y north, z up, metres, from the ground under the start).
-goals:
-  - id: yard-square
-    goals: [[-8, 0, 3], [-8, 8, 3], [0, 8, 3]]
-  - id: yard-detour
-    goals: [[-30, -25, 3]]
+# The test: TEVV takes off and hands the vehicle to the component under test,
+# which flies the goal course; TEVV publishes the next goal when the vehicle is
+# within the advance radius of the current one.
+test:
+  control: external
+  mission:
+    type: goal_course
+    advance_radius_m: 1.0
+    waypoints:
+      - [-30, -25, 3]
+  timeout_s: 180
+
+# What each run is judged on (TEVV's observer catalog).
+observers:
+  - {id: no-crash,  type: collisions,         check: {max: 0}}
+  - {id: goals,     type: goals_reached,      check: {min: 1.0}}
+  - {id: clearance, type: cloud_clearance,    check: {min: 0.3}}
+  - {id: path,      type: path_length}
+  - {id: to-goal,   type: time_to_goal}

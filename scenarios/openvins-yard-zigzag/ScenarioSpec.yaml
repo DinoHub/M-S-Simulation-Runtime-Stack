@@ -1,18 +1,18 @@
 schema: mns.scenario.v1
-id: stereo-xfs-ov
-name: Stereo rig over XFS, OpenVINS demo
-stack_name: stereo-xfs-ov
+id: openvins-yard-zigzag
+name: OpenVINS rides the yard zigzag (TEVV flies)
+stack_name: openvins-yard-zigzag
 
 # A stereo pair on a quadrotor over the XFS level, and nothing else: no
 # estimator, no autonomy. It is the vio-reference rig with the built-in
 # estimator taken out, so that a component under test attaches to it from
-# outside (`--component`, or a CampaignSpec's extensions."mns.components").
+# outside (`tevv run <this scenario> --component <package>`).
 #
 # The stack's interface contract (config/stack/contract.json) offers the
 # pair as stereo_primary: front (left) and front_right, 0.12 m baseline,
 # 640x480, FOV 80 (fx = fy = 381.36), same-stamp captures.
 #
-#   mns-stacks generate scenarios/stereo-xfs --component components/mac-vo
+#   ./tevv run scenarios/openvins-yard-zigzag --component components/openvins-vio
 
 environment:
   id: xfs-level
@@ -31,15 +31,6 @@ runtime:
     # without MAVROS and the pilot waits out its timeout on a flight controller
     # that was never connected.
     mavros: true
-  # TEVV: what runs are judged on, picked from the metrics catalogue.
-  metrics:
-    evaluation:
-      metrics:
-        segment_path_length: true
-        estimator.ate_rmse_m: true
-      thresholds:
-        segment_path_length: 60
-        estimator.ate_rmse_m: 1.0
 
 vehicles:
 - id: "drone_1"
@@ -98,11 +89,6 @@ vehicles:
     magnetometer: true
     gpu_lidar: false
 extensions:
-  mns.metrics:
-    evaluation:
-      metrics:
-        travel_time: true
-        data_integrity: true
   mns.authoring_app:
     mode: "packaged_exe"
     overlay: ScenarioBundle/authored_overlay.json
@@ -115,59 +101,26 @@ asset_packs:
 - id: "mns_vehicle_models"
   version: "1.0.4"
   artifact_digest: "sha256:317a6dd71df24e58b8e34fd0ea2d46a3f24a9eb3e1312eacf5eac621a1512f63"
-paths:
-- id: "yard-box"
-  waypoints:
-  - - 0.000
-    - 0.000
-    - 2.000
-  - - -10.000
-    - 0.000
-    - 2.000
-  - - -10.000
-    - 6.000
-    - 2.000
-  - - -10.000
-    - 6.000
-    - 4.000
-  - - -10.000
-    - 12.000
-    - 4.000
-  - - 0.000
-    - 12.000
-    - 4.000
-  - - 0.000
-    - 0.000
-    - 2.000
-- id: "yard-zigzag"
-  waypoints:
-  - - 0.000
-    - 0.000
-    - 3.000
-  - - -4.000
-    - 2.000
-    - 3.000
-  - - -1.000
-    - 4.000
-    - 3.000
-  - - -6.000
-    - 6.000
-    - 3.000
-  - - -2.000
-    - 8.000
-    - 3.000
-  - - -6.000
-    - 11.000
-    - 3.000
-goals:
-- id: "yard-square"
-  goals:
-  - - -8.000
-    - 0.000
-    - 3.000
-  - - -8.000
-    - 8.000
-    - 3.000
-  - - 0.000
-    - 8.000
-    - 3.000
+
+# The test: TEVV flies the path; the component under test rides along.
+test:
+  control: internal
+  mission:
+    type: path
+    speed_mps: 1.5
+    waypoints:
+      - [0, 0, 3]
+      - [-4, 2, 3]
+      - [-1, 4, 3]
+      - [-6, 6, 3]
+      - [-2, 8, 3]
+      - [-6, 11, 3]
+  timeout_s: 240
+
+# What each run is judged on (TEVV's observer catalog).
+observers:
+  - {id: no-crash,   type: collisions,            check: {max: 0}}
+  - {id: path,       type: path_length,           check: {max: 60}}
+  - {id: ate,        type: estimate_ate,          check: {max: 1.0}}
+  - {id: available,  type: estimate_availability, check: {min: 0.9}}
+  - {id: rpe,        type: estimate_rpe}

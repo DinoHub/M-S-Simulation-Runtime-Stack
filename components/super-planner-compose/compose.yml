@@ -1,0 +1,31 @@
+# SUPER and its TEVV adaptor, on the network and ROS domain TEVV gives
+# start.sh. $TEVV_CONFIG holds this package's files/ and TEVV's interface.json.
+services:
+  super:
+    image: dhdevspace/auto_mns:super_runtime-ms.1-cyclone
+    command:
+      - bash
+      - -lc
+      - >-
+        set +u && source /opt/ros/humble/setup.bash
+        && source /workspace/generated/super_planner/.planner_ws/ros_ws/install/setup.sh
+        && exec ros2 run super_planner fsm_node --ros-args
+        -p config_name:=/cfg/component/files/config/click.yaml
+    environment: &ros
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID}"
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      TEVV_INTERFACE: /cfg/component/interface.json
+    volumes: ["${TEVV_CONFIG}:/cfg/component:ro"]
+    networks: [tevv]
+    ipc: private
+  adaptor:
+    image: dhdevspace/auto_mns:super-planner-adaptor-0.2.0
+    environment: *ros
+    volumes: ["${TEVV_CONFIG}:/cfg/component:ro"]
+    networks: [tevv]
+    ipc: private
+
+networks:
+  tevv:
+    external: true
+    name: "${TEVV_NETWORK}"

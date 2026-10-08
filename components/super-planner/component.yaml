@@ -33,9 +33,3 @@ produces: [command]
 ready:
   after_takeoff: [/planner_state]
   timeout_s: 180
-
-scoring:
-  builtin: planner
-  checks:
-    goal_success_rate: {min: 1.0}
-    min_clearance_m: {min: 0.3}
