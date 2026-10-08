@@ -22,8 +22,9 @@ XAUTHORITY := $(shell f="$$XAUTHORITY"; [ -f "$$f" ] && { echo "$$f"; exit; }; \
 	[ -f "$$c" ] && { echo "$$c"; exit; }; done)
 export XAUTHORITY
 
-# Which refs of the catalog's pins run. development: the pinned tags alone,
-# so a local build under the same tag wins and a missing tag is pulled;
+# Which refs of the catalog's pins run. development: the pinned tags alone;
+# ensure-images points each at its pinned digest (pulling it only when it is
+# not local; MNS_KEEP_LOCAL_TAGS=1 keeps a local build under the tag);
 # production: tag@digest, exactly what images/catalog.yaml pins.
 IMAGE_MODE ?= development
 # The release channel the dashboard runs (images/catalog.yaml
@@ -265,9 +266,9 @@ help:
 	@echo "  topics           ROS 2 topics a generated stack will publish [STACK=generated/name]"
 	@echo "  ps               running containers (name/status/image)"
 	@echo "Images and packs:"
-	@echo "  doctor           is this machine ready: Docker, Compose, every pinned image present"
-	@echo "  ensure-images    use local tags and pull only missing images [IMAGE_MODE=development|production]"
-	@echo "  pull-images      explicitly refresh every exact published remote image pin"
+	@echo "  doctor           is this machine ready: Docker, Compose, every pinned image present (and tagged, in development mode)"
+	@echo "  ensure-images    use local tags, point stale ones at their pins, pull only missing images [IMAGE_MODE=development|production]"
+	@echo "  pull-images      explicitly refresh every exact published remote image pin, and point its tag at it"
 	@echo "  verify-images    CI gate: images/catalog.yaml matches generated artifacts"
 	@echo "  pack-status      what is locked, installed, and published since"
 	@echo "  pack-lock        rebuild the channel's pack lock from published releases"
@@ -366,7 +367,7 @@ campaign-status:  ## One row per flight of a campaign (CAMPAIGN=<name>)
 	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh campaign status $(CAMPAIGN)
 
 doctor:  ## Docker, Compose, and every pinned image present (changes nothing)
-	@./tools/doctor.sh --channel $(CHANNEL_NAME)
+	@./tools/doctor.sh $(ENSURE_IMAGES_FLAG)
 
 # CI gate for the image catalog (images/catalog.yaml): regenerates
 # product-images.env / images/*.generated.* into a temp location and diffs

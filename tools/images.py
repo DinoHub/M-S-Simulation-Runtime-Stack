@@ -36,6 +36,9 @@ docs/adr/0002-one-image-catalog.md (why this exists). Subcommands:
 
   refs [--all-catalog] [--development] print exact production refs or
                        tag-only development refs for the active product.
+  pins [--all-catalog] [--channel NAME] print `<tag-only ref><TAB><digest>`
+                       per pullable row (digest empty for a row nothing pins),
+                       so the shell tools can check what a local tag points at.
 
 Two small internal helpers, used by tools/images.sh's bash-side drift/baked
 logic rather than meant for interactive use:
@@ -375,9 +378,9 @@ def channel_keys(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> set[st
     return keys
 
 
-def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, development: bool = False,
-                  channel: str = DEFAULT_CHANNEL) -> list[str]:
-    """Return unique active refs in production or tag-only development form.
+def pullable_keys(catalog: dict[str, Any], *, all_catalog: bool = False,
+                  channel: str = DEFAULT_CHANNEL) -> set[str]:
+    """The catalog keys whose images setup, ensure-images and pull-all-images pull.
 
     `channel: local` rows are built on this machine and have no registry
     counterpart, so they are never pullable: they are left out here and
@@ -402,8 +405,40 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, develop
                 "active product references unavailable image(s): " + ", ".join(unavailable))
         keys = {key for key in keys
                 if images[key]["channel"] != "local" and images[key].get("pull", True)}
+    return keys
+
+
+def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, development: bool = False,
+                  channel: str = DEFAULT_CHANNEL) -> list[str]:
+    """Return unique active refs in production or tag-only development form."""
+    images = catalog["images"]
+    keys = pullable_keys(catalog, all_catalog=all_catalog, channel=channel)
     ref_for = development_ref if development else image_ref
     return sorted({ref_for(images, key) for key in keys})
+
+
+def tag_pins(catalog: dict[str, Any], *, all_catalog: bool = False,
+             channel: str = DEFAULT_CHANNEL) -> list[tuple[str, str]]:
+    """(development ref, pinned digest) for every pullable row.
+
+    The development ref is a bare tag, and a tag is only a name: a registry
+    tag republished in place (the -v1.0.0 retags of 2026-10-07) leaves the
+    old image under that name on every machine that pulled it before.
+    `tools/ensure-images.sh --development`, `tools/doctor.sh` and
+    `tools/pull-all-images.sh` use the digest to see that and to point the
+    tag back at the pin. The digest is empty when the development tag is
+    not the pinned tag, so nothing pins it: a row without a digest (a
+    `pending:` row), a `channel: moving` row, or a row whose development ref
+    is its `latest_tag`.
+    """
+    images = catalog["images"]
+    pins: set[tuple[str, str]] = set()
+    for key in pullable_keys(catalog, all_catalog=all_catalog, channel=channel):
+        row = images[key]
+        pinned = (row.get("digest") and row["channel"] != "moving"
+                  and (row.get("latest_tag") or row["tag"]) == row["tag"])
+        pins.add((development_ref(images, key), str(row["digest"]) if pinned else ""))
+    return sorted(pins)
 
 
 def local_refs(catalog: dict[str, Any], channel: str = DEFAULT_CHANNEL) -> list[str]:
@@ -506,14 +541,17 @@ def render_development_image_set(catalog: dict[str, Any]) -> str:
     """Tag-only v2 image set for local-first development.
 
     The catalog remains the source of image names. Digests are removed only in
-    this development artifact so a locally built matching tag wins; Compose
-    pulls the tag only when it is absent from the Docker image store.
+    this development artifact, so the local tags run; tools/ensure-images.sh
+    --development points each tag at its catalog digest first (pulling the
+    pin only when it is not local), and Compose pulls a tag only when it is
+    absent from the Docker image store.
     """
     header = (
         "schema: mns.image_sets.v1\n\n"
         f"{GENERATED_MARKER}\n"
-        "# Development overlay: tag-only refs plus pull_policy: missing let a\n"
-        "# local build win and pull the published tag only when it is absent.\n\n"
+        "# Development overlay: tag-only refs plus pull_policy: missing run the\n"
+        "# local tags; tools/ensure-images.sh --development points each one at\n"
+        "# its catalog digest first.\n\n"
     )
     body = {"image_sets": resolved_image_sets(catalog, development_ref)}
     return header + yaml.safe_dump(body, sort_keys=False, default_flow_style=False)
@@ -535,8 +573,9 @@ def render_development_env(catalog: dict[str, Any]) -> str:
     lines = [
         GENERATED_MARKER,
         "",
-        "# Local-first dashboard defaults. Matching local tags win; missing",
-        "# tags are pulled by tools/ensure-images.sh. Production uses the",
+        "# Local-first dashboard defaults: the local tags run, and",
+        "# tools/ensure-images.sh points each one at its catalog digest first,",
+        "# pulling the pin only when it is not local. Production uses the",
         "# digest-pinned generated env files instead.",
         "",
     ]
@@ -2354,6 +2393,15 @@ def cmd_refs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pins(args: argparse.Namespace) -> int:
+    """`<development ref><TAB><pinned digest or empty>`, one row per line."""
+    catalog = load_catalog()
+    assert_invariants(catalog)
+    for ref, digest in tag_pins(catalog, all_catalog=args.all_catalog, channel=args.channel):
+        print(f"{ref}\t{digest}")
+    return 0
+
+
 def cmd_local_refs(args: argparse.Namespace) -> int:
     """`channel: local` images a release channel needs present in the Docker
     store; empty for a fully published channel."""
@@ -2560,6 +2608,11 @@ def main(argv: list[str]) -> int:
     p_refs.add_argument("--channel", default=DEFAULT_CHANNEL,
                         help=f"release channel whose active set to list (default: {DEFAULT_CHANNEL})")
     p_refs.set_defaults(fn=cmd_refs)
+
+    p_pins = sub.add_parser("pins")
+    p_pins.add_argument("--all-catalog", action="store_true")
+    p_pins.add_argument("--channel", default=DEFAULT_CHANNEL)
+    p_pins.set_defaults(fn=cmd_pins)
 
     p_local = sub.add_parser("local-refs")
     p_local.add_argument("--channel", default=DEFAULT_CHANNEL)

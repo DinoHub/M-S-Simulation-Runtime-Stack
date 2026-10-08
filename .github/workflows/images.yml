@@ -12,6 +12,8 @@ on:
       - "tools/images.sh"
       - "tools/pull-all-images.sh"
       - "tools/ensure-images.sh"
+      - "tools/image-tags.sh"
+      - "tools/test_image_tags.py"
       - "tools/stage-authoring-packs.sh"
       - "tools/install-demo-packs.sh"
       - "tools/install_demo_packs.py"
@@ -89,6 +91,7 @@ jobs:
             tools/images.sh \
             tools/pull-all-images.sh \
             tools/ensure-images.sh \
+            tools/image-tags.sh \
             tools/stage-authoring-packs.sh \
             tools/install-demo-packs.sh \
             tools/pull-packs.sh \
@@ -107,8 +110,10 @@ jobs:
 
       - name: tooling unit tests
         # Offline: the installer's lock/store/contract/download logic and its
-        # mns-packs calls, the channel declaration, and osmo/campaign.py's
-        # mns-stacks calls, all against synthetic fixtures and fake CLIs.
+        # mns-packs calls, the channel declaration, osmo/campaign.py's
+        # mns-stacks calls, and what ensure-images, pull-all-images and doctor
+        # do with a local tag that is not at its pin, all against synthetic
+        # fixtures and fake CLIs.
         run: |
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_install_demo_packs.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_channels.py'
@@ -117,6 +122,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_check_spawn.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_effective_image_set.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_scenario_pack_pins.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_image_tags.py'
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s osmo -p 'test_campaign.py'
 
       - name: dry-run smoke (no registry, no Docker daemon)
@@ -125,6 +131,7 @@ jobs:
         run: |
           tools/images.sh refs > /dev/null
           tools/images.sh refs --development > /dev/null
+          tools/images.sh pins > /dev/null
           tools/pull-all-images.sh --dry-run > /dev/null
           tools/pull-all-images.sh --dry-run --all-catalog > /dev/null
           tools/install-demo-packs.sh --all --dry-run > /dev/null
