@@ -91,6 +91,12 @@ services:
       # whatever the database is doing.
       - INIT_DB_SCHEMA=false
       - SIM2REAL_RUNS_DIR=/data/runs
+      # The Sim tab: runs the dashboard starts stream their simulator viewport
+      # to dashboard-pixel-streaming (mns-stacks run --view). CLI and CI runs
+      # never stream. DASHBOARD_PIXEL_STREAMING_URL= (empty) turns it off, for
+      # a network that does not allow WebRTC.
+      - TEVV_PIXEL_STREAMING_URL=${DASHBOARD_PIXEL_STREAMING_URL-ws://host.docker.internal:8888}
+      - TEVV_PIXEL_STREAMING_PLAYER_PORT=${DASHBOARD_PIXEL_STREAMING_PORT:-8080}
       # The HOST path of that same runs directory -- the identical expression
       # as the /data/runs mount source below, so the two cannot diverge. The
       # backend hands it to its mns-stacks siblings (--runs-dir, mounted at
@@ -355,6 +361,18 @@ services:
       # BUILD time (localhost:8082 appears ~15x under /app/.next) and cannot be
       # moved from here.
       - "${DASHBOARD_LICHTBLICK_PORT:-8082}:8080"
+    restart: unless-stopped
+
+  dashboard-pixel-streaming:
+    # The Sim tab's signalling server (tevv-web-dashboard pixel-streaming/):
+    # the player for the browser, and the port runtime hosts stream to. Part
+    # of the dashboard only; a stack never starts it.
+    image: ${DASHBOARD_PIXEL_STREAMING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.8-dev}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
+    container_name: ${DASHBOARD_CONTAINER_PREFIX:-}dashboard-pixel-streaming
+    ports:
+      - "${DASHBOARD_PIXEL_STREAMING_PORT:-8080}:80"   # the player (the browser)
+      - "8888:8888"                                    # streamers (runtime hosts)
     restart: unless-stopped
 
   # Telemetry DB — opt-in: docker compose --profile db (or make dashboard DB=true).

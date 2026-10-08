@@ -196,6 +196,8 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	check_ports 3001:airsim-dashboard-frontend:frontend \
 	            8001:airsim-dashboard-api:backend \
 	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):dashboard-lichtblick:Lichtblick \
+	            $(or $(DASHBOARD_PIXEL_STREAMING_PORT),8080):dashboard-pixel-streaming:"Sim view player" \
+	            8888:dashboard-pixel-streaming:"Sim view streamers" \
 	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):ros2-tools:"Foxglove websocket" || exit 1
 	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
