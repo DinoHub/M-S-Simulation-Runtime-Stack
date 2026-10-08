@@ -219,11 +219,23 @@ To move a checkout you set up earlier onto a new release:
 make dashboard-down
 git pull
 grep -n '_IMAGE=' .env        # delete any image lines this shows; they override the release
-make pull-images              # refresh images whose tags were republished
-./setup.sh                    # pulls any new images
+./setup.sh                    # pulls new images; points every release tag at its pinned digest
 ./download-packs.sh           # installs any new packs
+make doctor                   # "Ready" means every image is here and every tag is at its pin
 make dashboard
 ```
+
+A tag can be republished in place (the `-v1.0.0` tags were, on 2026-10-07),
+so a tag already on your machine may name an older image than the release
+pins. `./setup.sh` (and `make dashboard`, `make fly`, `make author` and
+`make campaign`, which run the same step) compares each local tag with the
+digest the release pins and, when they differ, points the tag at the pinned
+image, pulling it by digest only if it is not already here. `make pull-images`
+pulls every pin again and does the same. To check one image:
+`docker image inspect -f '{{.RepoDigests}}' <tag>` lists the pinned digest. An
+image you built yourself under a release tag is replaced by that step too,
+unless you set `MNS_KEEP_LOCAL_TAGS=1`; better, give your build its own name
+in `./.env` (see [How the dashboard gets its images](dashboard-images.md)).
 
 Scenarios in `scenarios/` and runs in `runs/` are kept.
 

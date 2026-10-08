@@ -187,7 +187,7 @@ files, which images the backend hands to generated stacks, and why the
 backend needs a credentials mount to pull anything at all is in
 [How the dashboard gets its images](dashboard-images.md).
 
-**1. Local development overrides.** `make dashboard` defaults to the generated tag-only development image set. A matching locally built tag wins, while an absent tag is pulled from the registry. Shell/.env image overrides still take precedence through `tools/load-images-env.sh` — that is how a dashboard backend/frontend built locally from a TEVV-Web-Dashboard branch runs before it is published: `DASHBOARD_BACKEND_IMAGE=local/tevv-web-dashboard-backend:v2-dev` in `./.env`, and `tools/images.sh status` lists it under FYI. `IMAGE_MODE=production make dashboard` selects the immutable digest-pinned artifacts instead.
+**1. Local development overrides.** `make dashboard` defaults to the generated tag-only development image set. `make ensure-images` points each of those tags at the digest the catalog pins (see 3), so a different image under a release tag only wins with `MNS_KEEP_LOCAL_TAGS=1`. Shell/.env image overrides still take precedence through `tools/load-images-env.sh` — that is how a dashboard backend/frontend built locally from a TEVV-Web-Dashboard branch runs before it is published: `DASHBOARD_BACKEND_IMAGE=local/tevv-web-dashboard-backend:v2-dev` in `./.env`, and `tools/images.sh status` lists it under FYI. `IMAGE_MODE=production make dashboard` selects the immutable digest-pinned artifacts instead.
 
 **2. Baked defaults (none now).** A pin baked into another image cannot be
 fixed by `sync`: it needs a rebuild of the image that bakes it. The dashboard
@@ -197,7 +197,7 @@ nothing and takes `MNS_STACKS_IMAGE`, `MNS_PACKS_IMAGE` and
 `MNS_AUTHORING_IMAGE` from the channel env file at run time. No row declares
 `bakes:`, and `tools/images.sh baked` would report drift if one ever did.
 
-**3. A locally-present newer image.** Development mode intentionally uses a matching local tag and never pulls merely to check for a newer remote copy. If the tag is absent, `make dashboard` pulls it. Production mode remains digest-pinned and ignores a different local build. After publishing, other developers run `./setup.sh` (or `make pull-images`) to refresh the approved remote set.
+**3. A local tag at another digest.** Development mode runs the bare tags, and a tag is only a name: a registry tag republished in place leaves the older image under that name on every machine that pulled it before, and `docker pull repo:tag@digest` fetches the pin without moving the tag. So `make ensure-images` (run by `./setup.sh`, `make dashboard`, `fly`, `author` and `campaign`) compares each local tag with its pin (`tools/images.sh pins`) and points it at the pinned image, pulling that by digest only when it is not local; it never pulls merely to look for a newer copy. `make pull-images` pulls every pin and points its tag at it. `make doctor` reports a tag at another digest as `STALE TAG`. An image without any registry digest (built here, classic image store) is kept; `MNS_KEEP_LOCAL_TAGS=1` keeps every existing tag. Production mode remains digest-pinned and ignores the tags. After publishing, other developers run `./setup.sh` (or `make pull-images`) to get the approved remote set.
 
 ## Channels
 
@@ -237,7 +237,7 @@ catalog rows use the immutable tag plus its full manifest digest. The
 `-latest` alias is for discovery and developer pulls; it is not a production
 pin. Retagging the same manifest does not duplicate its layers in the registry.
 
-The production M-S image set is remote-only and digest-pinned. The dashboard’s development mode derives tag-only refs from that same catalog, allowing a local build to win without adding `local/...` repository names.
+The production M-S image set is remote-only and digest-pinned. The dashboard’s development mode derives tag-only refs from that same catalog; `make ensure-images` keeps those tags at the catalog's digests (a local build under one is kept with `MNS_KEEP_LOCAL_TAGS=1`).
 
 Use locally available development tags and pull only missing ones:
 
