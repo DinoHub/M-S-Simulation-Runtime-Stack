@@ -91,9 +91,10 @@ case "$1" in
   campaign)
     case "${2:-}" in run|preflight|status|watch|cancel) needs_socket=true ;; esac ;;
   # init reads the container image (docker image inspect) to prefill the
-  # command; check only reads files.
+  # command, validate reports whether each image is present, build builds
+  # them; check only reads files.
   component)
-    case "${2:-}" in init) needs_socket=true ;; esac ;;
+    case "${2:-}" in init|validate|build) needs_socket=true ;; esac ;;
 esac
 
 # load-images-env.sh leaves keys that ./.env sets for compose to read; this
