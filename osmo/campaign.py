@@ -5,6 +5,7 @@
     osmo/campaign.py run    vio-osmo-condo --only calm-r1
     osmo/campaign.py status vio-osmo-condo            # the platform's scorecard, unchanged
     osmo/campaign.py registry sync [vio-osmo-condo]   # the run registry, rebuilt from runs/
+    osmo/campaign.py run vio-reference --backend argo # the same, as Argo Workflows (osmo/backends.py)
 
 This is an executor, not a runner. The platform's campaign runner
 (`mns-stacks campaign`, MnS-Integration-Platform platform/stacks) already does
@@ -46,6 +47,11 @@ never authored: it is derived here from the materialised spec's
 runtime.profile and written into the manifest. The compose runner ignores all
 of it, so one CampaignSpec drives both targets.
 
+Backends. The OSMO calls -- submit, query, the workflow's clock, the evidence download,
+the logs -- are OsmoBackend's; `--backend argo` swaps them for osmo/backends.py's
+ArgoBackend, one Argo Workflow per run with the whole real-time group in one pod. The
+rest of this file is the same for both, and so is the evidence layout it writes.
+
 Exit codes follow the platform's: 0 every run flew and no gate failed, 1 a run
 failed or a gate did, 2 usage, 42 the platform (cluster, submission) was not
 usable.
@@ -68,6 +74,7 @@ from typing import Any
 
 import yaml
 
+import backends
 from registry import Registry
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -715,10 +722,11 @@ def workflow_times(workflow_id: str) -> dict[str, str | None]:
             "ended": utc(doc.get("end_time"))}
 
 
-def wait(workflow_id: str, poll_s: float = 20.0,
-         on_poll: Any = None) -> tuple[str, dict[str, str]]:
+def wait(workflow_id: str, poll_s: float = 20.0, on_poll: Any = None,
+         backend: Any = None) -> tuple[str, dict[str, str]]:
+    ask = backend.query if backend is not None else query
     while True:
-        status, tasks = query(workflow_id)
+        status, tasks = ask(workflow_id)
         if status in TERMINAL:
             return status, tasks
         if on_poll is not None:
@@ -776,6 +784,68 @@ def download(workflow_id: str, task: str, dest: Path, endpoint: str,
         print(f"[campaign]   no output for {task}: {proc.stderr.strip()[:160]}")
         return False
     return any(dest.rglob("*"))
+
+
+class OsmoBackend:
+    """The OSMO calls, behind the interface osmo/backends.py describes."""
+    name = "osmo"
+    workflow = str(WORKFLOW)
+
+    def __init__(self) -> None:
+        self.endpoint: str | None = None
+
+    def prepare(self) -> None:
+        # Object storage as the host reaches it; exit 42 when the cluster has none.
+        self.endpoint = self.endpoint or storage_endpoint()
+
+    def submit_run(self, *, stack_dir: Path, bundle: Path, spec: dict[str, Any],
+                   campaign: dict[str, Any], run_gates: dict[str, Any], campaign_file: Path,
+                   images: dict[str, str], vehicle: str | None, run_key: str,
+                   campaign_id: str, viz: bool, viz_hold_sec: int) -> str:
+        return submit(stack_dir, campaign, run_gates, campaign_file, images, viz=viz,
+                      viz_hold_sec=viz_hold_sec)
+
+    def query(self, ref: str) -> tuple[str, dict[str, str]]:
+        return query(ref)
+
+    def times(self, ref: str) -> dict[str, str | None]:
+        return workflow_times(ref)
+
+    def fetch(self, ref: str, bundle: Path) -> None:
+        self.prepare()
+        download(ref, "recorder", bundle, self.endpoint, replace=("bag", "mission.json"))
+        for evaluator in ("vio-eval", "spawn-eval", "validate", "verdict"):
+            download(ref, evaluator, bundle / "eval" / evaluator, self.endpoint)
+
+    def logs(self, ref: str, tasks: dict[str, str], bundle: Path, since: str | None = None) -> None:
+        capture_logs(ref, tasks, bundle, since=since)
+
+
+class ArgoRun(backends.ArgoBackend):
+    """ArgoBackend with this file's path mapping and submit signature."""
+
+    def __init__(self) -> None:
+        super().__init__(container_path)
+
+    def submit_run(self, *, stack_dir: Path, bundle: Path, spec: dict[str, Any],
+                   campaign: dict[str, Any], run_gates: dict[str, Any], campaign_file: Path,
+                   images: dict[str, str], vehicle: str | None, run_key: str,
+                   campaign_id: str, viz: bool, viz_hold_sec: int) -> str:
+        if viz:
+            print(f"[campaign] {run_key}: no live view on the argo backend yet; flying without")
+        params = self.submit_params(stack_dir=stack_dir, bundle=bundle, spec=spec,
+                                    campaign=campaign, run_gates=run_gates,
+                                    route_b64=route_blob(campaign_file, campaign),
+                                    images=images, vehicle=vehicle)
+        return self.submit(params, {"tevv.campaign": campaign_id, "tevv.run-key": run_key})
+
+
+BACKENDS = {"osmo": OsmoBackend, "argo": ArgoRun}
+
+
+def backend_for(name: str | None):
+    """A backend by name; a run.json from before backends existed was OSMO's."""
+    return BACKENDS[name or "osmo"]()
 
 
 # --------------------------------------------------------------------------
@@ -839,7 +909,7 @@ def read_validation(bundle: Path) -> tuple[bool | None, list[str]]:
 
 def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any],
             workflow_id: str, platform: dict[str, str], run_gates: dict[str, Any],
-            endpoint: str, images: dict[str, Any] | None = None,
+            backend: Any, images: dict[str, Any] | None = None,
             reg: Registry | None = None, others: list[str] | None = None) -> None:
     reg = reg or Registry(dsn="")
 
@@ -849,18 +919,16 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
         reg.progress(workflow_id, s, t)
         for other in others or []:
             if other != workflow_id and reg.on:
-                reg.progress(other, *query(other))
+                reg.progress(other, *backend.query(other))
 
-    status, tasks = wait(workflow_id, on_poll=progress)
+    status, tasks = wait(workflow_id, on_poll=progress, backend=backend)
     rec.finished_at = now()
     bundle = root / "runs" / rec.run_key
     bundle.mkdir(parents=True, exist_ok=True)
 
     # Evidence, into the layout the scorecard reads.
-    download(workflow_id, "recorder", bundle, endpoint, replace=("bag", "mission.json"))
+    backend.fetch(workflow_id, bundle)
     rec.status, rec.error = judge_flight(status, tasks, bundle)
-    for evaluator in ("vio-eval", "spawn-eval", "validate", "verdict"):
-        download(workflow_id, evaluator, bundle / "eval" / evaluator, endpoint)
     # runs/<key>/ is reused by every attempt of the key, and a sync adds files
     # without removing old ones: the copy at the top must come from this
     # attempt's validate task, or it is the last attempt's answer (run 62 was
@@ -887,8 +955,8 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
         "run_id": workflow_id, "scenario_id": rec.scenario_id, "vehicle": rec.vehicle,
         "stack": rec.stack, "gt_bundle": None, "layout": None,
         "evaluation": campaign.get("evaluation"),
-        # OSMO- and omega-specific facts live here, not in the RunRecord.
-        "target": "osmo", "workflow_id": workflow_id, "workflow_status": status,
+        # Backend- and omega-specific facts live here, not in the RunRecord.
+        "target": backend.name, "workflow_id": workflow_id, "workflow_status": status,
         "tasks": tasks, "platform": platform, "gates": run_gates,
         # Which images flew, as pinned and as found on the node.
         "images": images,
@@ -900,9 +968,9 @@ def run_one(rec: RunRecord, spec_file: Path, root: Path, campaign: dict[str, Any
 
     outcome, _ = registry_outcome(rec.status, rec.error, status, tasks, load_verdict(bundle, run_gates))
     if outcome != "passed":
-        capture_logs(workflow_id, tasks, bundle, since=rec.started_at)
+        backend.logs(workflow_id, tasks, bundle, since=rec.started_at)
     register_run(reg, workflow_id, bundle, rec.status, rec.error, status, tasks, run_gates,
-                 rec.recording_valid, rec.failed_checks, rec.finished_at)
+                 rec.recording_valid, rec.failed_checks, rec.finished_at, times_of=backend.times)
     if others is not None and workflow_id in others:
         others.remove(workflow_id)
 
@@ -1102,7 +1170,7 @@ def capture_logs(workflow_id: str, tasks: dict[str, str], bundle: Path,
 def register_run(reg: Registry, workflow_id: str, bundle: Path, flight: str, error: str | None,
                  workflow_status: str, tasks: dict[str, str], run_gates: dict[str, Any],
                  recording_valid: bool | None, failed_checks: list[str],
-                 ended_at: str | None) -> None:
+                 ended_at: str | None, times_of: Any = None) -> None:
     if not reg.on:
         return
     verdict = load_verdict(bundle, run_gates)
@@ -1110,7 +1178,7 @@ def register_run(reg: Registry, workflow_id: str, bundle: Path, flight: str, err
     viz = None
     if (bundle / "run.json").exists():
         viz = json.loads((bundle / "run.json").read_text()).get("viz")
-    times = workflow_times(workflow_id) if reg.on else {}
+    times = (times_of or workflow_times)(workflow_id) if reg.on else {}
     reg.finish(workflow_id, status=status, reason=reason, error=error,
                workflow_status=workflow_status, tasks=tasks, run_dir=str(bundle),
                recording_valid=recording_valid, failed_checks=failed_checks, viz=viz,
@@ -1160,7 +1228,9 @@ def _merge_runs(root: Path, records: list[RunRecord]) -> list[dict[str, Any]]:
 
 def write_manifest(root: Path, campaign_file: Path, campaign: dict[str, Any],
                    records: list[RunRecord], platform: dict[str, str] | None,
-                   status: str | None = None) -> None:
+                   status: str | None = None, backend: Any = None) -> None:
+    target = backend.name if backend is not None else "osmo"
+    workflow = backend.workflow if backend is not None else str(WORKFLOW)
     doc = {
         "schema": MANIFEST_SCHEMA,
         "campaign_id": campaign["id"],
@@ -1174,7 +1244,7 @@ def write_manifest(root: Path, campaign_file: Path, campaign: dict[str, Any],
         "thresholds": campaign.get("thresholds") or {},
         "runs_dir": str(root / "runs"),
         "updated_at": now(),
-        "provenance": {"executor": "osmo/campaign.py", "workflow": str(WORKFLOW)},
+        "provenance": {"executor": "osmo/campaign.py", "backend": target, "workflow": workflow},
         "preflight": None,
         "status": status,
         # A --only invocation carries records for the runs it touched. The
@@ -1184,7 +1254,7 @@ def write_manifest(root: Path, campaign_file: Path, campaign: dict[str, Any],
         # the scorecard. Order follows the existing manifest, new keys append.
         "runs": _merge_runs(root, records),
         # Top level is unconstrained; this is where omega lives.
-        "target": "osmo",
+        "target": target,
         "omega": omega_fields(campaign),
         "platform": platform,
         "gates": gates(campaign),
@@ -1289,10 +1359,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     om = omega_fields(campaign)
     print(f"[campaign] {campaign['id']}: tier={om['tier']} verifies={om['verifies']} gates={run_gates}")
 
+    backend = backend_for(args.backend)
+    print(f"[campaign] backend: {backend.name}")
     images, image_record = resolve_images(args.allow_image_drift)
     runs = materialise(campaign_file, CAMPAIGNS_HOST, args.only or [])
     print(f"[campaign] {len(runs)} run(s) materialised under {root}")
-    endpoint = storage_endpoint()
+    backend.prepare()
     # Keyed by the campaign directory, so a chase-camera copy is its own
     # campaign in the registry as it is on disk.
     reg = Registry()
@@ -1322,30 +1394,39 @@ def cmd_run(args: argparse.Namespace) -> int:
                 generate_stack(spec_file, stack_dir)
             rec.stack = str(stack_dir)
             viz = wants_viz(spec, args.viz)
-            wf = submit(stack_dir, campaign, run_gates, campaign_file, images, viz=viz,
-                        viz_hold_sec=args.viz_hold)
+            # Made here, by this user, before the workflow writes into it.
+            bundle = root / "runs" / key
+            bundle.mkdir(parents=True, exist_ok=True)
+            wf = backend.submit_run(stack_dir=stack_dir, bundle=bundle, spec=spec,
+                                    campaign=campaign, run_gates=run_gates,
+                                    campaign_file=campaign_file, images=images,
+                                    vehicle=rec.vehicle, run_key=key, campaign_id=root.name,
+                                    viz=viz, viz_hold_sec=args.viz_hold)
             rec.run_id = wf
             reg.submitted(root.name, key, attempt, wf, images=image_record, viz=viz, at=now())
             print(f"[campaign] {key}: submitted {wf}" + (" (live view on)" if viz else ""))
-            if viz:
+            if viz and backend.name == "osmo":
                 print(f"[campaign] {key}: watch live with  osmo/campaign.py watch {wf}")
             submitted.append((rec, spec_file, wf))
-        except RuntimeError as exc:
+        except Exception as exc:  # noqa: BLE001 -- one run's failure must not strand the rest
+            # Anything, not only a failed generation: a stack the backend could not
+            # read left the registry's attempt pending forever.
             rec.status, rec.error, rec.finished_at = "failed", str(exc), now()
-            reg.not_submitted(root.name, key, attempt, "stack_generation", str(exc))
-        write_manifest(root, campaign_file, campaign, records, platform)
+            reg.not_submitted(root.name, key, attempt,
+                              "stack_generation" if rec.stack is None else "infra", str(exc))
+        write_manifest(root, campaign_file, campaign, records, platform, backend=backend)
         if args.serial and submitted:
             rec_s, spec_s, wf_s = submitted.pop()
-            run_one(rec_s, spec_s, root, campaign, wf_s, platform or {}, run_gates, endpoint,
+            run_one(rec_s, spec_s, root, campaign, wf_s, platform or {}, run_gates, backend,
                     image_record, reg)
-            write_manifest(root, campaign_file, campaign, records, platform)
+            write_manifest(root, campaign_file, campaign, records, platform, backend=backend)
 
     outstanding = [wf for _, _, wf in submitted]
     for rec, spec_file, wf in submitted:
-        run_one(rec, spec_file, root, campaign, wf, platform or {}, run_gates, endpoint,
+        run_one(rec, spec_file, root, campaign, wf, platform or {}, run_gates, backend,
                 image_record, reg, outstanding)
         print(f"[campaign] {rec.run_key}: {rec.status}" + (f" ({rec.error})" if rec.error else ""))
-        write_manifest(root, campaign_file, campaign, records, platform)
+        write_manifest(root, campaign_file, campaign, records, platform, backend=backend)
 
     rc = 0
     if any(r.status != "done" for r in records):
@@ -1356,7 +1437,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         # not score: both mean this campaign did not pass.
         if evaluate(root, campaign, reg) != 0:
             rc = 1
-    write_manifest(root, campaign_file, campaign, records, platform)
+    write_manifest(root, campaign_file, campaign, records, platform, backend=backend)
     print(f"[campaign] manifest: {root / 'campaign_manifest.json'}")
     return rc
 
@@ -1522,9 +1603,11 @@ def cmd_reindex(args: argparse.Namespace) -> int:
     root = CAMPAIGNS_HOST / str(campaign["id"])
     records: list[RunRecord] = []
     platform: dict[str, str] | None = None
+    target: str | None = None
     for meta_file in sorted((root / "runs").glob("*/run.json")):
         meta = json.loads(meta_file.read_text())
         bundle = meta_file.parent
+        target = target or meta.get("target")
         valid, failed = read_validation(bundle)
         tasks = meta.get("tasks") or {}
         done = tasks.get("recorder") == "COMPLETED" and tasks.get("pilot") == "COMPLETED"
@@ -1541,7 +1624,7 @@ def cmd_reindex(args: argparse.Namespace) -> int:
         sys.exit(f"[campaign] no run bundles under {root / 'runs'}")
     # Replace rather than merge: the evidence is the authority here.
     (root / "campaign_manifest.json").unlink(missing_ok=True)
-    write_manifest(root, campaign_file, campaign, records, platform)
+    write_manifest(root, campaign_file, campaign, records, platform, backend=backend_for(target))
     print(f"[campaign] rebuilt {len(records)} run(s) into {root / 'campaign_manifest.json'}")
     return 0
 
@@ -1595,7 +1678,8 @@ def cmd_registry(args: argparse.Namespace) -> int:
             ended = ended or datetime.fromtimestamp(meta_file.stat().st_mtime, timezone.utc).isoformat()
             valid, failed = read_validation(bundle)
             register_run(reg, wf, bundle, flight, error, meta.get("workflow_status", ""), tasks,
-                         meta.get("gates") or gates(campaign), valid, failed, ended)
+                         meta.get("gates") or gates(campaign), valid, failed, ended,
+                         times_of=backend_for(meta.get("target")).times)
             total += 1
     print(f"[registry] {total} run(s) synced")
     return 0 if reg.on else 42
@@ -1649,6 +1733,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("campaign", help="campaign name under scenarios/, or a path")
     p.add_argument("--only", action="append", help="run key(s) to include")
     p.add_argument("--serial", action="store_true", help="wait for each run before submitting the next")
+    p.add_argument("--backend", choices=sorted(BACKENDS),
+                   default=os.environ.get("TEVV_CAMPAIGN_BACKEND", "osmo"),
+                   help="where the runs execute: osmo (default) or argo, one Argo Workflow per run "
+                        "(argo/README.md); TEVV_CAMPAIGN_BACKEND sets the default")
     p.add_argument("--no-evaluate", action="store_true")
     p.add_argument("--viz", action=argparse.BooleanOptionalAction, default=None,
                    help="the live Foxglove task on (--viz) or off (--no-viz) for every run; "

@@ -1,0 +1,28 @@
+# The service account every tevv-campaign-run pod runs as. Argo's executor
+# records each step's outputs as WorkflowTaskResult objects, so the account
+# needs create/patch on them in its own namespace; nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tevv-runner
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tevv-runner-executor
+rules:
+  - apiGroups: [argoproj.io]
+    resources: [workflowtaskresults]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tevv-runner-executor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tevv-runner-executor
+subjects:
+  - kind: ServiceAccount
+    name: tevv-runner
