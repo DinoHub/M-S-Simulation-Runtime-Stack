@@ -10,13 +10,16 @@ DEVELOPMENT=false
 usage() {
   echo "Usage: tools/pull-all-images.sh [--dry-run] [--refresh-moving] [--all-catalog] [--development]"
   echo
-  echo "Pulls the active product's remote images at exact catalog tag+digest pins."
+  echo "Pulls the active product's remote images at exact catalog tag+digest pins,"
+  echo "then points each pinned tag at its digest (docker tag repo@digest repo:tag):"
+  echo "pulling by digest does not move a tag, and development mode (the default)"
+  echo "runs the bare tags."
   echo "--all-catalog includes optional catalog images too."
   echo "--development refreshes mutable tag-only refs used by make dashboard."
   echo "--refresh-moving first runs 'images.sh bump --channel moving', regenerates, and"
   echo "  verifies. That advances every channel: moving row (the dashboard, autopilot"
   echo "  and QGroundControl images) to the digest its mutable tag points at"
-  echo "  now. It does NOT touch the standalone-v2 rows: those are channel: pinned,"
+  echo "  now. It does NOT touch the v1 release rows: those are channel: pinned,"
   echo "  and bump refuses pinned rows by design. Rewrites the catalog, so it is"
   echo "  refused together with --dry-run."
 }
@@ -102,6 +105,40 @@ fi
 
 if [[ "$DEVELOPMENT" == true ]]; then
   echo "Refreshed ${#refs[@]} development image tag(s); make dashboard will use them locally."
-else
-  echo "Pulled ${#refs[@]} exact remote image pin(s); the next production run uses this approved catalog set."
+  exit 0
 fi
+
+# `docker pull repo:tag@digest` stores the image under its digest and leaves
+# repo:tag wherever it was. When the registry tag was republished in place,
+# that is the OLD image, and development mode (make dashboard, fly, author,
+# campaign) runs the bare tag. Point every pinned tag at the pin just pulled.
+# shellcheck source=tools/image-tags.sh
+. "$ROOT/tools/image-tags.sh"
+pins_args=()
+[[ "$ALL_CATALOG" == true ]] && pins_args+=(--all-catalog)
+if ! pins_out="$("$ROOT/tools/images.sh" pins "${pins_args[@]}")"; then
+  echo "ERROR: could not list the catalog's tag pins (tools/images.sh pins failed)." >&2
+  exit 1
+fi
+retagged=0
+while IFS=$'\t' read -r tag_ref digest; do
+  [[ -n "$tag_ref" && -n "$digest" ]] || continue
+  tag_state "$tag_ref" "$digest"
+  [[ "$TAG_STATE" == at-pin ]] && continue
+  if ! point_tag_at_pin "$tag_ref" "$digest"; then
+    failed+=("$tag_ref")
+    continue
+  fi
+  if [[ "$TAG_STATE" == absent ]]; then
+    echo "TAGGED  $tag_ref -> $digest"
+  else
+    echo "TAGGED  $tag_ref -> $digest (it was ${TAG_DIGESTS:-a local build})"
+  fi
+  retagged=$((retagged + 1))
+done <<<"$pins_out"
+if [[ "${#failed[@]}" -ne 0 ]]; then
+  printf 'ERROR: could not point %s at its pinned digest\n' "${failed[@]}" >&2
+  exit 1
+fi
+
+echo "Pulled ${#refs[@]} exact remote image pin(s) and pointed $retagged tag(s) at them; development and production runs both use this approved catalog set."

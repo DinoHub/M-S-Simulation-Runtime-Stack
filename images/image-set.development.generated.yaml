@@ -1,34 +1,11 @@
 schema: mns.image_sets.v1
 
 # GENERATED from images/catalog.yaml — see docs/adr/0002-one-image-catalog.md. Do not hand-edit; run tools/images.sh sync.
-# Development overlay: tag-only refs plus pull_policy: missing let a
-# local build win and pull the published tag only when it is absent.
+# Development overlay: tag-only refs plus pull_policy: missing run the
+# local tags; tools/ensure-images.sh --development points each one at
+# its catalog digest first.
 
 image_sets:
-  published:
-    pull_policy: missing
-    images:
-      simulators:
-        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-latest
-      autopilots:
-        ardupilot: dhdevspace/auto_mns:ardupilot-slim-latest
-        px4: dhdevspace/auto_mns:px4-airsim-px4
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-latest
-      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
-      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest
-      vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123
-  ue582:
-    pull_policy: missing
-    images:
-      simulators:
-        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-20260910.1
-      autopilots:
-        ardupilot: dhdevspace/auto_mns:ardupilot-slim-latest
-        px4: dhdevspace/auto_mns:px4-airsim-px4
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-latest
-      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
-      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest
-      vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123
   v1:
     pull_policy: missing
     images:
@@ -38,18 +15,6 @@ image_sets:
         ardupilot: dhdevspace/auto_mns:ardupilot-v1.0.0
         px4: dhdevspace/auto_mns:px4-airsim-px4-v1.0.0
       ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0
-      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
-      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest
-      vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123
-  origin-integration:
-    pull_policy: missing
-    images:
-      simulators:
-        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-20260918.1
-      autopilots:
-        ardupilot: dhdevspace/auto_mns:ardupilot-slim-v0.4.0-origin.1
-        px4: dhdevspace/auto_mns:px4-airsim-px4-v0.4.0-origin.3
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v0.4.0-origin.1
-      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest
-      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest
+      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-v1.0.0
+      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-v1.0.0
       vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123

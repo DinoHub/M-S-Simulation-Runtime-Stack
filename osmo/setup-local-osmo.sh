@@ -6,6 +6,14 @@
 #   osmo/setup-local-osmo.sh observability
 #                                    on a cluster already up: the run registry
 #                                    and Grafana's view of it (observability/install.sh)
+#   osmo/setup-local-osmo.sh kind-config
+#                                    only render the GPU cluster config (below) and
+#                                    print its path, for creating the cluster by hand
+#
+# The GPU cluster mounts the product checkout into its compute node at
+# /workspace. kind-osmo-cluster-config.gpu.yaml.tmpl leaves that path open; it
+# is rendered from the checkout this script runs in, or MNS_OSMO_WORKSPACE=<checkout>,
+# into .mns/osmo/kind-osmo-cluster-config.gpu.yaml.
 #
 # The GPU variant needs three things done on the host first, all requiring root,
 # and none of which this script will attempt:
@@ -29,12 +37,33 @@ MODE="${1:-cpu}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Not a cluster build: the steps below start by deleting the cluster.
 [[ "$MODE" == observability ]] && exec "$HERE/observability/install.sh"
+
+# The GPU config with this checkout (or MNS_OSMO_WORKSPACE) as the node's
+# /workspace. The runs directory is made here, as you: kind would create a
+# missing hostPath as root, and the recorder could not write into it.
+render_kind_config() {
+  local workspace="${MNS_OSMO_WORKSPACE:-$(cd "$HERE/.." && pwd)}" out
+  [[ -d "$workspace" ]] || { echo "MNS_OSMO_WORKSPACE=$workspace is not a directory" >&2; return 1; }
+  workspace="$(cd "$workspace" && pwd)"
+  [[ "$workspace" != *"|"* ]] || { echo "the checkout path may not contain '|': $workspace" >&2; return 1; }
+  [[ -x "$workspace/tools/mns-stacks.sh" ]] || {
+    echo "$workspace is not a product checkout (no tools/mns-stacks.sh); set MNS_OSMO_WORKSPACE" >&2; return 1; }
+  out="$HERE/../.mns/osmo/kind-osmo-cluster-config.gpu.yaml"
+  mkdir -p "$(dirname "$out")" "$workspace/.mns/osmo-runs"
+  sed "/^[[:space:]]*#/!s|@MNS_OSMO_WORKSPACE@|$workspace|g" \
+    "$HERE/kind-osmo-cluster-config.gpu.yaml.tmpl" > "$out"
+  echo "$(cd "$(dirname "$out")" && pwd)/$(basename "$out")"
+}
+if [[ "$MODE" == kind-config ]]; then
+  render_kind_config
+  exit
+fi
 OSMO_SRC="${OSMO_SRC:-$HOME/OSMO}"
 OSMO_631="${OSMO_631:-$HOME/OSMO-6.3.1}"
 CHART="$OSMO_631/deployments/charts/quick-start"
 export PATH="$HOME/.local/bin:$PATH"
 
-case "$MODE" in cpu|gpu) ;; *) echo "usage: $0 [cpu|gpu|observability]" >&2; exit 2 ;; esac
+case "$MODE" in cpu|gpu) ;; *) echo "usage: $0 [cpu|gpu|observability|kind-config]" >&2; exit 2 ;; esac
 
 for tool in kind kubectl helm osmo; do
   command -v "$tool" >/dev/null || { echo "missing $tool; see docs/osmo-mapping.md" >&2; exit 1; }
@@ -54,9 +83,13 @@ helm dependency update "$CHART" >/dev/null
 grep -q '^version: 1.3.1' "$CHART/Chart.yaml" || { echo "chart is not 1.3.1" >&2; exit 1; }
 
 echo "== 2/6 cluster"
+if [[ "$MODE" == gpu ]]; then
+  kind_config="$(render_kind_config)"
+  echo "   /workspace is $(sed -n 's|^ *- hostPath: \(/.*\)$|\1|p' "$kind_config" | sed -n 2p) ($kind_config)"
+fi
 kind delete cluster --name osmo 2>/dev/null || true
 if [[ "$MODE" == gpu ]]; then
-  nvkind cluster create --config-template="$HERE/kind-osmo-cluster-config.gpu.yaml"
+  nvkind cluster create --config-template="$kind_config"
   nvkind cluster print-gpus
 else
   kind create cluster --config "$HERE/kind-osmo-cluster-config.yaml"

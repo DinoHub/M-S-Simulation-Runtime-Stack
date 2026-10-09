@@ -1,7 +1,7 @@
 # TEVV Web Dashboard — the browser entry point for the full loop:
-# Scenario Configuration (generate + launch stacks via the pinned generator
-# image) → Runtime Config (hot-reload evaluation files) → Calibration
-# (sim-to-real verdicts) → bag replay/monitoring.
+# Scenario Configuration (generate + launch stacks through the pinned
+# mns-stacks image) → Runtime Config (hot-reload evaluation files) →
+# Calibration (sim-to-real verdicts) → bag replay/monitoring.
 #
 #   make dashboard / make dashboard-down          # the supported entry point
 #
@@ -11,20 +11,18 @@
 #
 #   docker compose -f docker-compose-dashboard.yml \
 #     --env-file .env \
-#     --env-file images/standalone-v2-ue582.generated.env \
-#     --env-file images/standalone-v2-development.generated.env \
+#     --env-file images/v1.0.0.generated.env \
+#     --env-file images/development.generated.env \
 #     up -d
 #
-# (the ue582 file first: it is the default channel's pins, the development
-# file then supplies the dashboard/tooling -latest tags it does not bind)
+# (the v1 channel file first: its pins win, and the development file then
+# supplies the tooling images it does not bind)
 #
 # That is the development (tag-only) set. The production (digest-pinned) set
-# is spread over three files, the same ones make's IMAGE_MODE=production
-# loads:
+# is spread over two files, the same ones make's IMAGE_MODE=production loads:
 #
 #   --env-file .env \
-#   --env-file images/standalone-v2-images.generated.env \
-#   --env-file product-images.env \
+#   --env-file images/v1.0.0.generated.env \
 #   --env-file images/platform-images.generated.env
 #
 # Locally built dashboard images (a backend/frontend built from a
@@ -37,19 +35,20 @@
 # Precedence, highest first: shell environment, ./.env, the generated env
 # files in the order make loads them (first file to set a key wins).
 #
-# Frontend: http://localhost:3001  (3000 belongs to the monitoring Grafana)
+# Frontend: http://localhost:3001
 # Backend:  http://localhost:8001
 #
-# The backend generates stacks in DISTRIBUTION MODE: no platform checkout —
-# it runs ${MNS_STACK_GENERATOR_IMAGE} (from the standalone-v2 generated env
-# files above) against this repository's directory, mounted at its identical
-# host path so the generated stacks' bind mounts resolve on the host. Scenario
-# specs land in ./scenarios/<name>/, generated stacks in ./generated/<name>/ —
-# the same places ./product.sh uses. Standalone-v2 level and
-# asset packs live in ./.mns/pack-store (installed by `make dashboard` via
-# tools/install-demo-packs.sh) and are staged for ScenarioLab under
-# ./.mns/authoring-data/ResolvedPacks; both paths are handed to the backend
-# below so the nested generator run and the editor see the same packs.
+# The backend runs in DISTRIBUTION MODE: no platform checkout. It runs
+# ${MNS_STACKS_IMAGE} (generate, run/stop/status, record, campaigns) and
+# ${MNS_PACKS_IMAGE} (pack status) from the channel's generated env file above
+# against this repository's directory, mounted at its identical host path so
+# the generated stacks' bind mounts resolve on the host. Scenario specs land
+# in ./scenarios/<name>/, generated stacks in ./generated/<name>/ — the same
+# places `make fly` uses. Level and asset packs live in
+# ./.mns/v1/pack-store (installed by ./download-packs.sh or the Content phase
+# via tools/install-demo-packs.sh) and are staged for ScenarioLab under
+# ./.mns/v1/authoring-data/ResolvedPacks; both paths are handed to the backend
+# below so mns-stacks and the editor see the same packs.
 #
 # TEVV_RUNS_DIR is the shared runs directory: the run director / bridge
 # record bags into it, the sim-real-eval worker (part of generated stacks
@@ -58,8 +57,8 @@
 
 services:
   dashboard-backend:
-    image: ${DASHBOARD_BACKEND_IMAGE:?source product-images.env}
-    # `product.sh setup` refreshes the exact remote pins. Normal dashboard
+    image: ${DASHBOARD_BACKEND_IMAGE:?add --env-file images/v1.0.0.generated.env, or use make dashboard}
+    # `./setup.sh` refreshes the exact remote pins. Normal dashboard
     # starts use those cached pins and pull only when an image is absent.
     # Set DASHBOARD_PULL_POLICY=always for a deliberate registry re-check.
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
@@ -92,6 +91,12 @@ services:
       # whatever the database is doing.
       - INIT_DB_SCHEMA=false
       - SIM2REAL_RUNS_DIR=/data/runs
+      # The HOST path of that same runs directory -- the identical expression
+      # as the /data/runs mount source below, so the two cannot diverge. The
+      # backend hands it to its mns-stacks siblings (--runs-dir, mounted at
+      # that path) and never infers it from its own mounts. Use an absolute
+      # path in ./.env; `make dashboard` resolves ~ and relative paths itself.
+      - TEVV_RUNS_DIR=${TEVV_RUNS_DIR:-${MSRS_ROOT:-${PWD}}/runs}
       # ONE entry, read by two consumers: the Monitor tab's Grafana panel and
       # the Launch phase's Observe embed (served to the frontend at runtime via
       # /api/services/ui-config, so enabling it is an env change here, never a
@@ -116,10 +121,11 @@ services:
       # bridge serves fine (the same failure the sidecar healthcheck already
       # fixed via FOXGLOVE_BRIDGE_PORT; both must track the same knob).
       - FOXGLOVE_PROBE_PORT=${FOXGLOVE_BRIDGE_PORT:-8764}
-      # distribution mode: generate through the pinned generator image.
-      # Generator/authoring pins are BAKED into the backend image as defaults
-      # (MNS_*_IMAGE_DEFAULT), so the env lines below are overrides — empty is
-      # fine on an image-only deploy; product-images.env keeps them explicit.
+      # distribution mode: generate and run through the pinned mns-stacks.
+      # The backend bakes NO image pins: MNS_STACKS_IMAGE, MNS_PACKS_IMAGE and
+      # MNS_AUTHORING_IMAGE below are its only source, from the channel env
+      # file (images/v1.0.0.generated.env). Left empty, the backend still
+      # starts, and the action needing that image fails naming the variable.
       # Defaults to the directory compose was invoked from, which is this
       # repository for every normal invocation — so `docker compose up` works
       # without anyone exporting a path first. It stayed required for a long
@@ -134,13 +140,11 @@ services:
       # the backend asserts at startup that whatever arrives here really is
       # this repository rather than trusting the guess.
       - MNS_WORKSPACE_ROOT=${MSRS_ROOT:-${PWD}}
-      # The dashboard passes this through to the nested stack-generator run.
+      # The dashboard passes this through to the nested mns-stacks run.
       # Development uses the tag-only overlay; production selects the pinned one.
-      # The image_sets entry generated stacks select from MNS_IMAGE_SET_FILE.
-      # `ue582` is the default channel's; `make dashboard CHANNEL=v2` selects
-      # `published` (the UE 5.5.4 set). Both are rendered into the same file
-      # from images/catalog.yaml.
-      - MNS_IMAGE_SET=${MNS_IMAGE_SET:-ue582}
+      # The image_sets entry generated stacks select from MNS_IMAGE_SET_FILE,
+      # rendered from images/catalog.yaml.
+      - MNS_IMAGE_SET=${MNS_IMAGE_SET:-v1}
       # A repo-owned path, not an image pin, so a default carries no drift
       # risk -- and a required var here broke `down`/`ps`/`logs` too, since
       # compose interpolates every service at parse time. The default is the
@@ -149,12 +153,11 @@ services:
       - MNS_IMAGE_SET_FILE=${MNS_IMAGE_SET_FILE:-${MSRS_ROOT:-${PWD}}/images/image-set.generated.yaml}
       # HOST paths, valid inside this container through the identical-path
       # mount below. The backend forwards the pack store to the nested
-      # generator run -- without it the generator looks in its own baked
-      # /opt/mns/platform/.mns/pack-store and every v2 ScenarioSpec fails with
-      # "install the immutable archive in MNS_PACK_STORE_ROOT" -- and reads the
-      # staged ScenarioLab index under the data root for /api/scenario/catalog
-      # and /api/scenario/preflight. Same defaults product.sh and
-      # tools/stage-authoring-packs.sh use, so all three agree on one store.
+      # mns-stacks run -- without it every ScenarioSpec fails with "install
+      # the immutable archive in MNS_PACK_STORE_ROOT" -- and reads the staged
+      # ScenarioLab index under the data root for /api/scenario/catalog and
+      # /api/scenario/preflight. Same defaults as the Makefile and
+      # tools/stage-authoring-packs.sh, so all of them agree on one store.
       - MNS_PACK_STORE_ROOT=${MNS_PACK_STORE_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/v1/pack-store}
       - MNS_AUTHORING_DATA_ROOT=${MNS_AUTHORING_DATA_ROOT:-${MSRS_ROOT:-${PWD}}/.mns/v1/authoring-data}
       # The pack mount directory: archives dropped or pulled here
@@ -162,43 +165,50 @@ services:
       # tools/install-demo-packs.sh --import install into the store. Mounted at
       # its identical host path below so the installer sees it either way.
       - MNS_PACKS_DIR=${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}
-      # The runtime host's frozen capability contract, forwarded to the
-      # generator the same way. The generator validates the pack variant it
-      # selects against this document, and the published generator image
-      # ships without one (its default path is empty), so a v2 generate
-      # failed with "host compatibility document does not exist". The file is
-      # the one baked into the pinned tevv_runtime_host image -- see
-      # packs/README.md for how it is refreshed.
+      # The runtime host's frozen capability contract, forwarded to
+      # mns-stacks generate the same way. It validates the pack variant it
+      # selects against this document; without it, generate fails with "host
+      # compatibility document does not exist". The file is the one baked into
+      # the pinned tevv_runtime_host image -- see packs/README.md for how it is
+      # refreshed.
       - MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=${MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT:-${MSRS_ROOT:-${PWD}}/packs/runtime-host-compatibility.v1.json}
       # ScenarioLab's own contract (same id; its plugin set may lag the runtime
       # host's). The Content phase compares each pack's required plugins to it
       # and marks packs the editor cannot open as "runtime only"; the staging
-      # step validates against it too. Empty on a channel whose authoring
-      # image embeds none (5.5.4).
+      # step validates against it too.
       - MNS_AUTHORING_HOST_CONTRACT=${MNS_AUTHORING_HOST_CONTRACT-${MSRS_ROOT:-${PWD}}/packs/authoring-host-compatibility.v1.json}
       # Content onboarding (the dashboard's Content phase, /api/content): the
-      # pack lock the catalog is read from and the product shell that installs
-      # and stages packs. Both come from the selected channel; `make dashboard
-      # CHANNEL=` exports them, and the defaults are the v1 (MnS 1.0) channel.
-      # The backend runs the runtime stack's own tools/install-demo-packs.sh
-      # against this checkout, so a pack installed from the browser is exactly
-      # a pack installed by `make dashboard`.
+      # pack lock the catalog is read from and the mns-packs image that
+      # installs, stages and reports packs. Both come from the selected
+      # channel; `make dashboard CHANNEL=` exports them, and the defaults are
+      # the v1 (MnS 1.0) channel. The backend runs the runtime stack's own
+      # tools/install-demo-packs.sh against this checkout, so a pack installed
+      # from the browser is exactly a pack installed by ./download-packs.sh.
       - MNS_CHANNEL=${MNS_CHANNEL:-v1}
       - MNS_DEMO_PACK_LOCK=${MNS_DEMO_PACK_LOCK:-${MSRS_ROOT:-${PWD}}/packs/v1.0.0.lock.json}
-      - MNS_PRODUCT_SHELL_IMAGE=${MNS_PRODUCT_SHELL_IMAGE:-}
-      # Reported (presence + host label) by the Content phase; the generated
-      # stacks take the runtime host from MNS_IMAGE_SET_FILE, not from this.
+      - MNS_PACKS_IMAGE=${MNS_PACKS_IMAGE:-}
+      # Stack generation, lifecycle, recording and campaigns (mns-stacks).
+      - MNS_STACKS_IMAGE=${MNS_STACKS_IMAGE:-}
+      # Reported (presence + host label) by the Content phase, and the host
+      # the authoring preflight grades against; the generated stacks take the
+      # runtime host from MNS_IMAGE_SET_FILE, into which `make dashboard`
+      # writes an override of this (tools/images.sh effective-image-set).
       - MNS_RUNTIME_HOST_IMAGE=${MNS_RUNTIME_HOST_IMAGE:-}
-      - MNS_SEED_AUTHORING_DEFAULTS=${MNS_SEED_AUTHORING_DEFAULTS:-0}
+      # Optional overrides, empty by default (HOST paths; the backend mounts
+      # them into its mns-stacks / mns-packs siblings at the same path):
+      # a local kit folder used instead of the pinned host's kit (generate
+      # --kit, preflight checks), and a ScenarioLab project checkout for the
+      # preflight's `mns-packs host check`.
+      - MNS_CAPABILITY_KIT=${MNS_CAPABILITY_KIT:-}
+      - MNS_AUTHORING_PROJECT=${MNS_AUTHORING_PROJECT:-}
       - MNS_IMAGE_PULL_POLICY=${MNS_IMAGE_PULL_POLICY:-missing}
-      - MNS_STACK_GENERATOR_IMAGE=${MNS_STACK_GENERATOR_IMAGE:-}
       - MNS_AUTHORING_IMAGE=${MNS_AUTHORING_IMAGE:-}
-      # The backend owns the ros2-tools sidecar; select the same published
-      # v2 bridge used by generated stacks instead of its baked default.
+      # The backend owns the ros2-tools sidecar; select the same bridge
+      # generated stacks use instead of its baked default.
       # Stays required: this one IS a catalog pin, and an inline default would
       # be exactly the drift images/catalog.yaml exists to prevent. It ships in
-      # both generated env files -- pass one with --env-file (see the header).
-      - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?add --env-file images/standalone-v2-development.generated.env (or the -images- variant), or use make dashboard}
+      # the channel env file -- pass it with --env-file (see the header).
+      - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?add --env-file images/v1.0.0.generated.env, or use make dashboard}
       - ROS2_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}ros2-tools
       - MNS_AUTHORING_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}mns-scenariolab-editor
       - MNS_AUTHORING_DOCKER_ARGS=-v "${MSRS_ROOT:-${PWD}}/config/scenariolab/airsim-settings.json:/tmp/Documents/AirSim/settings.json:ro" ${MNS_AUTHORING_DOCKER_ARGS:-}
@@ -228,14 +238,13 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # Registry credentials for the generator image. The socket alone is not
-      # enough: `docker run <generator>` from in here pulls with THIS
+      # Registry credentials for the mns-stacks/mns-packs images. The socket
+      # alone is not enough: `docker run <image>` from in here pulls with THIS
       # container's config, so without it the pull of the private
-      # dhdevspace/auto_mns generator is anonymous and /api/scenario/generate
-      # fails with 422 "generation failed". Same read-only mount product.sh
-      # already does (product.sh:24).
+      # dhdevspace/auto_mns images is anonymous and /api/scenario/generate
+      # fails with 422 "generation failed".
       - ${DOCKER_CONFIG:-${HOME}/.docker}:/root/.docker:ro
-      # this repo at its identical host path (generator + stack lifecycle)
+      # this repo at its identical host path (mns-stacks + stack lifecycle)
       - ${MSRS_ROOT:-${PWD}}:${MSRS_ROOT:-${PWD}}
       # the pack mount directory (may live outside the checkout), read-only
       - ${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}:${MNS_PACKS_DIR:-${MSRS_ROOT:-${PWD}}/.mns/v1/packs}:ro
@@ -249,7 +258,7 @@ services:
     # an unreachable dashboard.
     # Marks the ~4s of import + startup where the API is up but not listening.
     # /api/scenario/catalog rather than a bare TCP probe: it is a plain read of
-    # the generator's environment/profile lists, so it answers 200 only once
+    # the staged environment/profile lists, so it answers 200 only once
     # routing is actually live.
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8001/api/scenario/catalog >/dev/null"]
@@ -259,9 +268,10 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # ROS2 sidecar the backend drives over the docker socket for bag
-  # record/replay (services/ros2_recorder.py + ros2_player.py exec into it;
-  # container name must match ROS2_CONTAINER_NAME, default "ros2-tools").
+  # ROS2 sidecar the backend drives over the docker socket for bag replay
+  # (services/ros2_player.py execs into it; container name must match
+  # ROS2_CONTAINER_NAME, default "ros2-tools"). Recording is mns-stacks
+  # record, inside the stack's bridge container, as for headless runs.
   # The bridge image ships ros2 + rosbag2 + foxglove_bridge, so the same
   # container also serves the Foxglove websocket (:8764) that Lichtblick
   # connects to for rendering replayed/live topics.
@@ -284,12 +294,11 @@ services:
   # FOXGLOVE_BRIDGE_PORT, DASHBOARD_ROS_DOMAIN_ID, TEVV_RUNS_DIR, HOST_UID/GID.
   # 8764, not 8765: the per-vehicle bridges a generated stack publishes take
   # 8765 upward, and vehicle 1 would collide with this sidecar. Arbitrated the
-  # same way as before:
-  # the product shell moved to 8760 and the monitoring profile's bridge to
+  # same way as before: the monitoring profile's bridge moved to
   # MONITORING_FOXGLOVE_PORT (8766).
 
   dashboard-frontend:
-    image: ${DASHBOARD_FRONTEND_IMAGE:?source product-images.env}
+    image: ${DASHBOARD_FRONTEND_IMAGE:?add --env-file images/v1.0.0.generated.env, or use make dashboard}
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: ${DASHBOARD_CONTAINER_PREFIX:-}airsim-dashboard-frontend
     ports:
@@ -352,7 +361,7 @@ services:
   # makes the entrypoint's 120s retry loop a backstop instead of the mechanism.
   db-init:
     profiles: ["db"]
-    image: ${DASHBOARD_BACKEND_IMAGE:?source product-images.env}
+    image: ${DASHBOARD_BACKEND_IMAGE:?add --env-file images/v1.0.0.generated.env, or use make dashboard}
     container_name: ${DASHBOARD_CONTAINER_PREFIX:-}dashboard-db-init
     environment:
       - INIT_DB_SCHEMA=true

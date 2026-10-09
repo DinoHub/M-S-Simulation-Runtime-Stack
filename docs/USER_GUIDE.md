@@ -93,7 +93,7 @@ docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
 
 | MnS term | What it is, in domain terms |
 |---|---|
-| **Level pack** | A pre-built Unreal map, the environment you fly in: Warehouse, Office Environment, Condo, XFS, Safti or Fisherman's Cabin. It is downloaded once and checksum-verified. ScenarioLab can open **Warehouse** and **Office Environment**; the other four are *runtime only* and fly from hand-written specs. |
+| **Level pack** | A pre-built Unreal map, the environment you fly in: Blocks, Warehouse, Office Environment, Condo, XFS, Safti or Fisherman's Cabin. It is downloaded once and checksum-verified. ScenarioLab opens all seven. |
 | **Object pack** | Placeable props: office, warehouse and cabin props. The drone models come as their own pack, `mns_vehicle_models`. |
 | **ScenarioLab** | An Unreal-based editor. You place vehicles, sensors and objects in a level, then **Export**. |
 | **ScenarioSpec** | The exported scenario: a folder of YAML files covering the environment, vehicles, sensor profiles, objects and runtime settings. It is the single input to everything downstream. |
@@ -219,13 +219,29 @@ To move a checkout you set up earlier onto a new release:
 make dashboard-down
 git pull
 grep -n '_IMAGE=' .env        # delete any image lines this shows; they override the release
-./product.sh pull-images      # refresh images whose tags were republished
-./setup.sh                    # pulls any new images
+./setup.sh                    # pulls new images; points every release tag at its pinned digest
 ./download-packs.sh           # installs any new packs
+make doctor                   # "Ready" means every image is here and every tag is at its pin
 make dashboard
 ```
 
+A tag can be republished in place (the `-v1.0.0` tags were, on 2026-10-07),
+so a tag already on your machine may name an older image than the release
+pins. `./setup.sh` (and `make dashboard`, `make fly`, `make author` and
+`make campaign`, which run the same step) compares each local tag with the
+digest the release pins and, when they differ, points the tag at the pinned
+image, pulling it by digest only if it is not already here. `make pull-images`
+pulls every pin again and does the same. To check one image:
+`docker image inspect -f '{{.RepoDigests}}' <tag>` lists the pinned digest. An
+image you built yourself under a release tag is replaced by that step too,
+unless you set `MNS_KEEP_LOCAL_TAGS=1`; better, give your build its own name
+in `./.env` (see [How the dashboard gets its images](dashboard-images.md)).
+
 Scenarios in `scenarios/` and runs in `runs/` are kept.
+
+Packs installed for earlier pre-release lines are no longer used. If
+`.mns/ue582/`, `.mns/pack-store/` or `.mns/authoring-data/` exist, delete them
+to free the disk; your v1 packs are in `.mns/v1/`.
 
 Runs recorded before this release are in `~/tevv-runs`, the old default.
 They stay there. To keep recording into that folder, add
@@ -294,9 +310,10 @@ The whole loop takes about 15 minutes the first time.
 
 This step shows what is installed.
 
-- **Engine line** lists four roles: ScenarioLab, Runtime host, Stack
-  generator and Product shell. ScenarioLab and the runtime host should say
-  **matches**; the generator and shell say **present**.
+- **Engine line** lists the roles: ScenarioLab, Runtime host, `mns-stacks`
+  (generates and runs stacks) and `mns-packs` (installs and stages packs).
+  ScenarioLab and the runtime host should say **matches**; `mns-stacks` and
+  `mns-packs` say **present**.
 - **Level packs** and **Object packs** should say **ready**.
 
 `./download-packs.sh` has already done this work, so normally you just click
@@ -335,8 +352,8 @@ this order:
    folder name `scenarios/<name>/`.
 2. **Environment**: pick a **Level Pack** and click **Apply Level Pack**. The
    level loads.
-   - For a first run, pick **Warehouse**. The list shows only levels
-     ScenarioLab can open: Warehouse and Office Environment.
+   - For a first run, pick **Warehouse**. The list shows every level pack
+     you have downloaded and staged; ScenarioLab opens all seven.
    - Do this **first**. Switching levels can restart ScenarioLab, and it
      discards everything placed so far.
    - Optional settings here: **Edit MnS Origin** (the ROS frame origin), time
@@ -471,8 +488,9 @@ You can also fly from your own autonomy stack; see
 ### Step 4: Stop, which finalizes the bag
 
 Go back to **Launch** and click **Stop**. The dashboard stops the recorder
-cleanly, writing the bag's `metadata.yaml`, and then shuts the stack down.
-**Analysis** then unlocks.
+cleanly, writing the bag's `metadata.yaml`, and then shuts the stack down
+(`mns-stacks stop`, which finalizes the run's metrics first). **Analysis** then
+unlocks.
 
 Always stop through the dashboard. A bag killed mid-write has no
 `metadata.yaml`, so it cannot be replayed or analysed.
@@ -616,44 +634,40 @@ above.
 
 ### Running stacks without the dashboard
 
-The same generate, run and stop steps are available as commands, for scripts,
-CI, or a machine where you only need the simulation. Paths are inside the
-repository, which is mounted at `/workspace`:
+The same steps run from a terminal, for scripts, CI, or a machine where you
+only need the simulation. They use the same images the dashboard uses, the
+same way, so a stack or a bag made one way is usable the other:
 
 ```bash
-./product.sh cli runtime --scenario /workspace/scenarios/<name> \
-                         --out /workspace/generated/<name> --no-run   # validate + generate
-./product.sh cli run-stack --stack /workspace/generated/<name> --detach
-./product.sh cli status    --stack /workspace/generated/<name>
-./product.sh cli logs      --stack /workspace/generated/<name>
-./product.sh cli stop      --stack /workspace/generated/<name>
+make author SCENARIO=<name>              # ScenarioLab, as the dashboard opens it
+make fly SCENARIO=<name>                 # generate, fly a fixed 300 s run, stop
+make fly SCENARIO=<name> RECORD=1        # ... and record: runs/<run id>/bag
+make fly SCENARIO=<name> FLY_SECONDS=90  # a shorter run
+make stop                                # stop the last `make fly` if it was interrupted
+make stacks ARGS="status --stack generated/<name>"
+make stacks ARGS="logs --stack generated/<name> --tail 200"
 ```
 
-Nothing records a bag automatically this way. Record from your own container
-as shown in [Connecting your autonomy stack](#connecting-your-autonomy-stack),
-for example:
+`make fly` checks the packs the way `make dashboard` does, then runs
+`mns-stacks generate` and `mns-stacks run --until-done`, which waits for the
+run to finish and stops the stack (metrics finalized). A scenario exported from
+ScenarioLab names no mission and the simulator emits no "mission complete"
+signal, so the run lasts `FLY_SECONDS` (default 300) unless you name a real
+completion signal, for example `ARGS="--done topic:/my_autonomy/done"`; see
+[Headless](stacks.md). Fly it meanwhile from the dashboard's Teleop, or leave
+it up with `KEEP=1`. With `RECORD=1` the
+bag is recorded by the bridge container, exactly as the dashboard's Record
+button records it, and replays in **Replay → Bags**.
 
-```bash
-docker run --rm --network <stack>_agent_internal-1 --ipc host -v /dev/shm:/dev/shm \
-  -u $(id -u):$(id -g) -e HOME=/tmp -e ROS_DOMAIN_ID=<domain> \
-  -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
-  -v "$PWD/runs":/out --entrypoint bash \
-  dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0 -lc \
-  'source /opt/ros/humble/setup.bash && mkdir -p /out/my_run && ros2 bag record \
-   -o /out/my_run/bag -s sqlite3 /ground_truth/odom /imu/data /front_rgb/image_raw /clock'
-```
-
-Press Ctrl-C to stop recording. The bag is finalized when `ros2 bag record`
-exits cleanly.
-
-Every `product.sh` command, including setup and the image cache, is in
-[The product shell from a terminal](cli.md).
+Every headless target, and how it mounts this checkout for `mns-stacks`, is in
+[Headless](stacks.md).
 
 ### Repeatable test campaigns
 
 `make campaign` flies a *campaign*: a scored matrix of runs over one scenario,
 for example 4 wind strengths × 3 repeats, each recorded, validity-gated and
-scored. [Campaigns](campaigns.md) covers the commands, and
+scored. (Each wind variant is both seen by the cameras and felt by the
+vehicle: `wind` and `wind_mps` together.) [Campaigns](campaigns.md) covers the commands, and
 [`scenarios/vio-reference/README.md`](../scenarios/vio-reference/README.md) shows how to copy the reference
 campaign and swap in your own estimator.
 
@@ -697,6 +711,7 @@ Nothing here is needed for a normal run.
 |---|---|---|
 | `TEVV_RUNS_DIR` | `runs/` in the checkout | keep runs and bags on another disk (an absolute path) |
 | `DASHBOARD_LICHTBLICK_PORT`, `FOXGLOVE_BRIDGE_PORT` | `8082`, `8764` | move a port that clashes |
+| `DASHBOARD_CONTAINER_PREFIX` | none | a prefix such as `alice-` for every dashboard container name (`alice-airsim-dashboard-api`, `alice-ros2-tools`, ...), so they do not clash by name with other containers. One dashboard per Docker daemon: `make dashboard-down` acts on the whole compose project, and ports 3001/8001 are fixed |
 | `GRAFANA_URL` | local Grafana | empty, to hide the Grafana embed |
 | `DOCKER_CONFIG` | `~/.docker` | a non-default Docker login location |
 
@@ -707,11 +722,10 @@ Nothing here is needed for a normal run.
 | `DB=true` | Adds the telemetry history database. |
 | `IMAGE_MODE=production` | Uses only the exact, digest-pinned release images. |
 | `MNS_DEMO_PACKS=--all` | Installs any missing packs before starting, like `./download-packs.sh --all`. |
-| `CHANNEL=ue582` / `CHANNEL=v2` | Runs an older pre-release line (UE 5.8.2 review set / UE 5.5.4). Each has its own packs and data. |
 
 **Evaluation and sim-to-real.** The dashboard’s **Scenario Configuration** tab authors a ScenarioSpec and
-generates + launches stacks through the selected `MNS_STACK_GENERATOR_IMAGE`
-(no source checkouts).
+generates + launches stacks through the pinned `mns-stacks` image
+(`MNS_STACKS_IMAGE`; no source checkouts).
 **Monitor → Controls** edits the evaluation files in the shared runs directory
 (`TEVV_RUNS_DIR`, default `runs/` in this checkout; hot-reloaded). **Calibration**
 shows the sim-to-real verdicts the `sim-real-eval` worker writes there
@@ -720,6 +734,9 @@ automatically after each recorded run (enable with
 
 **Keep image variables (`*_IMAGE`) out of `.env`.** An image set there
 overrides the release, so you would run a different image from everyone else.
+That is the point when you test a local build (for example
+`MNS_STACKS_IMAGE=mns-stacks:local-test`): the dashboard and the headless
+targets both use it, and each prints a note that it is an override.
 
 ---
 
@@ -747,8 +764,9 @@ overrides the release, so you would run a different image from everyone else.
 | Author: *not ready*, `display` / `xauthority` | Run `make dashboard` from a desktop terminal, or see Display access in [section 3](#3-setup). |
 | Author: *not ready*, `pack_store` / `packs_staged` | In Content, click **Download & stage** or **Stage**. |
 | *editor exited immediately* | Usually the GPU or the display. **Editor log** in Author shows Unreal's own error. |
-| Generate prints *…different registry digests; proceeding without enforcing base-release compatibility* | Advisory only: the level pack was cooked against an earlier build of the same base release. Generation continues and the level loads. |
-| A downloaded level (Condo, XFS, Safti, Fisherman's Cabin) is missing from ScenarioLab's list, or shows *runtime only* in Content | Expected: ScenarioLab cannot open those four, so it doesn't list them; see [Known limitations](#10-known-limitations). Author in Warehouse or Office Environment. |
+| Generate, `make fly` or a campaign prints *Pack level/… cooked against base release … same name, different registry digests; proceeding without enforcing* | Harmless: the level pack was cooked against an earlier build of the same base release (Warehouse and Condo on v1.0.0). Generation continues and the level loads and flies. |
+| A downloaded level is missing from ScenarioLab's list | It is not staged yet. In Content, click **Stage** (or run `make dashboard` again, which stages every installed pack). On v1.0.0 every level opens in ScenarioLab. |
+| The dashboard overview lists `m-s-simulation-runtime-stack` as a running stack (source `docker_only`, no autopilot) | Cosmetic: that is the dashboard's own compose project, not a simulation stack. Leave it alone; `make dashboard-down` stops it. |
 | Scenario doesn't appear in Authored scenarios | It wasn't exported; closing ScenarioLab does not save. Check its status line for *Exported ScenarioSpec*. |
 | Export succeeded but has a default drone at the origin | No drone was placed. Export adds a default one; run **Validate** first. |
 
@@ -759,6 +777,9 @@ overrides the release, so you would run a different image from everyone else.
 | Launch never reaches *Visualization ready* | The level is still loading; wait up to 3 minutes and check the `unreal-airsim` row. Make sure nothing else holds port 8765, such as another stack or Foxglove bridge. |
 | `unreal-airsim is unhealthy`, restarting in a loop | The display. Start `make dashboard` from a desktop terminal. |
 | PX4 won't arm: `ekf2 missing data` | Wait 1–2 minutes after spawn. |
+| PX4 won't arm: `vertical velocity unstable` / `height estimate error`, and `/ground_truth/odom` z keeps falling | The vehicle spawned under the level: XFS, Condo and Fisherman's Cabin have no floor at the world origin. Use the measured start in `packs/level-spawn-hints.json` (`make fly` warns about this). |
+| On Warehouse, PX4 arms but takeoff fails (*climb did not reach the target altitude*) | A hand-written spec without ScenarioLab's `coordinate_frame` spawns at the world origin, which is on the floor among boxes. Author the scenario in ScenarioLab, or copy an export's `coordinate_frame` (the PlayerStart, in `packs/level-spawn-hints.json`). |
+| Campaign preflight prints *WARN images.ros2_bridge: … carries no version tag … Pin it as tag@digest* | Harmless in the default `IMAGE_MODE=development`: the bridge image is the release's `-v1.0.0` tag, used without its digest. The campaign runs. |
 | Lichtblick shows *You're using an unsupported browser* | Open the dashboard in Chrome or Chromium. |
 | Lichtblick shows no topics | ROS domain mismatch. Relaunch from the dashboard, and check the hint on Monitor. |
 | Your node sees only `/rosout` and `/parameter_events` | Wrong `ROS_DOMAIN_ID`, or the bridge hasn't finished starting. Read the domain from `generated/<name>/docker-compose.yml`. |
@@ -781,11 +802,20 @@ overrides the release, so you would run a different image from everyone else.
 - **ArduPilot:** the dashboard's command link carries heartbeats only, so
   takeoff altitude is not reported and the vehicle stays armed after a
   descent "land". Disarm it explicitly.
-- **Runtime-only levels.** ScenarioLab cannot open Condo, XFS, Safti or
-  Fisherman's Cabin: its editor lacks plugins those levels need. They still
-  mount and fly, but you author them by hand, starting from a Warehouse
-  export. Set the spec's origin to the level's PlayerStart; with the default
-  (0,0,0) origin the drone can spawn high above the level and fall.
+- **Hand-written specs need a real start.** ScenarioLab opens all seven
+  levels and records each level's PlayerStart as `coordinate_frame.origin`,
+  so author in ScenarioLab where you can. A hand-written spec without that
+  block spawns at the Unreal world origin: XFS, Condo and Fisherman's Cabin
+  have no floor there (the vehicle falls and PX4 refuses to arm), and on
+  Warehouse it is on the floor among boxes (takeoff fails). The measured
+  starts are in `packs/level-spawn-hints.json` (XFS: `x: 423, y: -906,
+  z: -21.0`; Condo: `x: 0, y: -20, z: -2.0`; Warehouse PlayerStart: Unreal
+  `(-927.2, -493.2, 128.2)` cm), and `make fly` / `make campaign` warn about a
+  start at a floorless origin.
+- **Re-exporting a hand-written spec through ScenarioLab** replaces its
+  vehicle with the default DroneA at the PlayerStart, and for a PX4 spec
+  writes `autopilot.type: ardupilot` under the PX4 profile. Fix the runtime
+  block by hand after such an export (fixed in v1.1).
 - **Office Environment** has a low ceiling. PX4 takeoffs there can be slow, and
   flights fly low.
 - **Bags are sqlite3 (`.db3`).** Convert with `ros2 bag convert` if you need
@@ -801,6 +831,10 @@ overrides the release, so you would run a different image from everyone else.
 ./setup.sh                      # once: check, log in, pull images
 ./download-packs.sh --list      # what packs exist; ./download-packs.sh to get them
 make dashboard                  # start → http://localhost:3001
+make author                     # ScenarioLab without the dashboard
+make fly SCENARIO=<name> RECORD=1     # fly one scenario headless, bag in runs/
+make campaign                   # the reference campaign, scored
+make doctor                     # every pinned image present?
 make topics STACK=generated/<name>    # what a stack publishes
 ls runs/                 # runs; bag in <run>/bag/
 make dashboard-down             # stop the dashboard

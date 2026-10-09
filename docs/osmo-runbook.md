@@ -61,6 +61,15 @@ binary the published image lacks, the install, and four workarounds for
 upstream bugs. It refuses to start the GPU variant unless docker's default
 runtime is already `nvidia`.
 
+The GPU node mounts the checkout you run it from at `/workspace` (and its
+`.mns/osmo-runs` at `/runs`): the cluster config is a template,
+`osmo/kind-osmo-cluster-config.gpu.yaml.tmpl`, rendered into
+`.mns/osmo/kind-osmo-cluster-config.gpu.yaml` with that path.
+`MNS_OSMO_WORKSPACE=<checkout>` mounts another one;
+`osmo/setup-local-osmo.sh kind-config` only renders it. `osmo/campaign.py`
+reads the mount back from the running cluster, so it writes where the cluster
+looks, and says what to do when that checkout is missing or not yours.
+
 Then log in and prove the control plane on its own before involving a stack:
 
 ```bash
@@ -103,8 +112,8 @@ platform needs its own user template: OSMO's shared one requests
 ## Per run
 
 ```bash
-# 1. Generate. stackgen decides what the run IS; the workflow only schedules it.
-./product.sh cli runtime --scenario /workspace/scenarios/vio-osmo-condo --no-run
+# 1. Generate. mns-stacks decides what the run IS; the workflow only schedules it.
+make stacks ARGS="generate scenarios/vio-osmo-condo --profile docker --out $PWD/generated/vio-osmo-condo"
 
 # 2. Put the images in the compute node's containerd store.
 kind load docker-image --name osmo --nodes osmo-worker2 \
@@ -347,10 +356,8 @@ one environment variable, not a code change.
 
 **And this scenario has no fisheye camera.** `vio-osmo-condo` declares two
 `image_type: 0` (Scene) pinhole cameras at 640×480, FOV 80, inherited from
-`vio-reference`. The SHM path carries fisheye captures specifically.
-`scenarios/contract-probe-condo/` is the nearest thing that does declare one
-(FOV 190, 1344×1344, no estimator) — though its `environment:` block names the
-ue582 pack ids and would need the same one-block edit `vio-osmo-condo` has.
+`vio-reference`. The SHM path carries fisheye captures specifically, and no
+committed scenario declares a fisheye camera yet.
 
 So the honest position: **the fisheye SHM path is untested here**, and it was
 untested before this work began. What blocks it is now two things rather than
@@ -440,7 +447,7 @@ with the chart gap that omits `addressing_style` from
 | a campaign asked for two runs planned one | the platform's `campaign plan --only` is `nargs="+"` too, so `--only a --only b` plans b alone | one flag, every key. Any `nargs="+"` option in these CLIs takes its values together, never repeated |
 | verdict rc=0 with no estimate in the bag | the gate named `ate_rmse_m` (the scorecard's vocabulary), the trajectory report spells it `ate_trans_m.rmse`, and a metric found nowhere was a WARN | aliases for the platform's names; a gate no report measured is a FAIL |
 | pilot: `position estimate available at z=-3.36 m`, then `arming refused` for three minutes | PX4 EKF height not settled at boot (`Preflight Fail: height estimate not stable`), pilot proceeded after a fixed 5 s; run 24 read 0.04 m and armed at once | pilot gate waits for six seconds of local height within a metre of zero and spanning under 15 cm; one retry on a refused arming |
-| `campaign status` empty; `sim-real-eval: invalid choice: 'vio-stress'` | the `-latest` worker image on Docker Hub is from 2026-08-09, before the scorer existed; the platform runs it from source inside its own process | build the worker from `MnS-Integration-Platform/tools/sim_real_eval` and point `MNS_SIM_REAL_EVAL_IMAGE` at it; `campaign.py evaluate <id>` re-scores a manifest |
+| `campaign status` empty; `sim-real-eval: invalid choice: 'vio-stress'` | the `-latest` worker image the catalog pinned then was from 2026-08-09, before the scorer existed; the platform runs it from source inside its own process | the catalog now pins `sim-real-eval-worker-v1.0.0`, which has `vio-stress`; for another worker, point `MNS_SIM_REAL_EVAL_IMAGE` at it; `campaign.py evaluate <id>` re-scores a manifest |
 
 And one the task table cannot show: a pilot exits 0 or 1 as COMPLETED, so a
 flight that never armed looks like a flight. The recorder now writes
@@ -532,10 +539,10 @@ is then dropped: `stackgen`'s `_normalize_conditions` reads the top-level
 Authored at `environment.weather`, the same value reaches
 `scenario_conditions.json` and the sim starts with
 `SCENARIO_CONDITIONS_ENABLED=true`, so the path is live and only the spelling
-was wrong. **`scenarios/vio-reference` is authored the inert way today**, which
-means its published wind sweep varied nothing -- worth fixing there and worth
-a schema change upstream, since a field that validates and does nothing is the
-worst of both.
+was wrong. `scenarios/vio-reference` was authored the inert way until v1.0.0, so its
+earlier wind sweeps varied nothing; it now uses `environment.weather` with
+`wind_mps`, and `mns-stacks campaign validate` fails the nested spelling
+(`conditions.path.*`).
 
 The general lesson for a campaign under any executor: a variant is not proven
 by appearing in the spec. Diff two generated stacks before believing a sweep.
@@ -551,7 +558,7 @@ holding position in real wind must lean into it. The value is a 0-10 visual
 intensity (at or below 1 read as a 0-1 fraction), not m/s. The tevv_ws harness
 this replaced sent `wind N 0 0` over RPC, which was physics wind; the move to a
 declared condition kept the traceability and lost the physics.
-`tevv-campaign validate` now warns on any wind and fails the nested spelling
+`mns-stacks campaign validate` now warns on any wind and fails the nested spelling
 (platform `feat/campaign-target-osmo`). The second lesson: diff the vehicle's
 motion, not only the stacks.
 
@@ -616,7 +623,7 @@ takes an assigned one. The node IP changes only when the cluster is rebuilt.
 `ws://localhost:8765` without a held tunnel needs the port mapped out of the
 kind node, which kind only does at cluster creation: an `extraPortMappings`
 entry `containerPort: 30765, hostPort: 8765` on a node in
-`osmo/kind-osmo-cluster-config.gpu.yaml`, then a rebuild. Not done yet: 8765
+`osmo/kind-osmo-cluster-config.gpu.yaml.tmpl`, then a rebuild. Not done yet: 8765
 is also what a compose stack's `foxglove_bridge_d1` publishes, and the two
 would collide whenever both run.
 
@@ -756,8 +763,8 @@ CampaignSpec mission / evaluation --osmo/campaign.py submit--> --set / --set-str
 | block | generated file (under `stacks/<run_key>/config/`) | read by |
 | --- | --- | --- |
 | `environment.{id,version,artifact_digest}` | `content-packs/resolved-pack-set.json` | sim; the level must be in the v1 pack store |
-| `environment.weather`, `time_of_day`, `wind_mps` / `wind_from_deg` | `scenario/scenario_conditions.json`; `unreal-airsim/host-launch-args.json` where the generator emits it | sim |
-| top-level `conditions.weather` / `conditions.time_of_day` | `scenario/scenario_conditions.json`, **instead of** `environment.weather` / `time_of_day`: the generator takes the top-level block whole and the two are not merged, so a variant's `environment.weather` under a base with `conditions.weather` is dropped and flies the base world. `time_of_day`, like `weather`, needs `enabled: true` or the host keeps the level's sky. The platform's `tevv-campaign validate` fails both (`conditions.shadowed.*`, `conditions.time_of_day.*`); `osmo/campaign.py` does not check | sim |
+| `environment.weather`, `time_of_day`, `wind_mps` / `wind_from_deg` | `scenario/scenario_conditions.json`; `unreal-airsim/host-launch-args.json` (always written by the generator; `osmo/files/sim.sh` launches the host from it) | sim |
+| top-level `conditions.weather` / `conditions.time_of_day` | `scenario/scenario_conditions.json`, **instead of** `environment.weather` / `time_of_day`: the generator takes the top-level block whole and the two are not merged, so a variant's `environment.weather` under a base with `conditions.weather` is dropped and flies the base world. `time_of_day`, like `weather`, needs `enabled: true` or the host keeps the level's sky. `mns-stacks campaign validate` fails both (`conditions.shadowed.*`, `conditions.time_of_day.*`); `osmo/campaign.py` does not check | sim |
 | `runtime.profile` | `unreal-airsim/settings.json` (vehicle type, ArduPilot's UDP pair) | sim |
 | `vehicles[0].start` | `settings.json` | sim: the spawn |
 | `vehicles[0].cameras`, `sensors`, `dynamics` | `settings.json`, `topic_names.yaml` | sim and bridge |
@@ -784,8 +791,8 @@ rather than an error:
 The workflow file names no image; its `*_image` values are empty, and a
 submit without them is refused (`Could not parse docker image`). Every run
 flies the images `images/catalog.yaml` pins for the product's channel, read
-from `images/image-set.generated.yaml`, the file the stack generator uses.
-Two overrides, the generator's own: `MNS_IMAGE_SET_FILE` (another file) and
+from `images/image-set.generated.yaml`, the file `mns-stacks generate` uses.
+Two overrides, the same as mns-stacks': `MNS_IMAGE_SET_FILE` (another file) and
 `MNS_IMAGE_SET` (another set). Otherwise the set is `MNS_CHANNEL`'s (default
 `v1`).
 
@@ -801,9 +808,9 @@ osmo/campaign.py images        # ok / DRIFT per image, and the --set-string for 
 ```
 
 The campaign-level scorer is the set's `sim_real_eval` unless
-`MNS_SIM_REAL_EVAL_IMAGE` names another. The published `-latest` worker
-predates `vio-stress`, so today `evaluate` stops with a message saying so
-until that variable names a worker that has it.
+`MNS_SIM_REAL_EVAL_IMAGE` names another. The pinned
+`sim-real-eval-worker-v1.0.0` has `vio-stress`; a worker without it makes
+`evaluate` stop with a message saying so.
 
 ### The whole tree
 
@@ -818,7 +825,7 @@ until that variable names a worker that has it.
     campaign.py                                the executor: run, watch, status, evaluate, reindex
     sim-bridge-vio.workflow.yaml               structure and default-values (no images: see "Images")
     files/                                     one script per task -- behaviour is edited here, not in the YAML
-    kind-osmo-cluster-config*.yaml, setup-local-osmo.sh
+    kind-osmo-cluster-config.yaml, kind-osmo-cluster-config.gpu.yaml.tmpl, setup-local-osmo.sh
   generated/campaigns/<id>/                    WRITTEN FOR YOU
     campaign_manifest.json                     what `status` and the dashboard read
     <run_key>/ScenarioSpec.yaml                base + variant, merged by `campaign plan`
@@ -881,8 +888,9 @@ anything.
 runner already validates the spec, expands `variants × seeds × repeats`,
 merges each variant's overrides into a materialised ScenarioSpec, generates a
 stack per run, scores the evidence, and renders `status`. The executor reuses
-every one of those by shelling into the product shell — `campaign plan`
-writes every run's spec to disk, `runtime --no-run` generates its stack — and
+every one of those through the pinned `mns-stacks` image (`tools/mns-stacks.sh`)
+— `campaign plan` writes every run's spec to disk, `generate` writes its stack —
+and
 replaces only the middle of the runner's `run_one`: instead of a compose
 command it submits the workflow, polls it, and pulls the evidence back.
 
@@ -891,18 +899,20 @@ Where things land, and why the layout is fixed:
 ```
 <checkout>/generated/campaigns/<id>/
   campaign_manifest.json      mns.vio_campaign_manifest.v1 — what `status` reads
-  <run_key>/ScenarioSpec.yaml written by the platform (as root: the product shell is)
-  stacks/<run_key>/           written by the generator (as this user); the workflow's `stack=`
+  <run_key>/ScenarioSpec.yaml written by mns-stacks campaign plan (as this user)
+  stacks/<run_key>/           written by mns-stacks generate (as this user); the workflow's `stack=`
   runs/<run_key>/             bag/, eval/*/…, validation.json, topics.yaml, run.json
   reports/<run_key>.json      the campaign-level evaluator (vio-stress)
 ```
 
-`<checkout>` is the one the cluster mounts at `/workspace` (read from the
-kind config), even when the executor runs from a worktree beneath it: that
-checkout owns the pack store the generator needs, and a `stack=` value is a
-path under its `generated/`. The stacks sit beside the run directories, not
-inside them, because `campaign plan` creates those as root and the generator
-runs as the invoking user.
+`<checkout>` is the one the cluster mounts at `/workspace` (read back from the
+running cluster's node, else the config `setup-local-osmo.sh` rendered, or
+`MNS_OSMO_WORKSPACE`), even when the executor runs from a worktree beneath it: that
+checkout owns the pack store `mns-stacks generate` needs, and a `stack=` value
+is a path under its `generated/`. mns-stacks sees that checkout at its own host
+path (`tools/mns-stacks.sh` mounts it identically), so every path it prints is a
+host path. The stacks sit beside the run directories, not inside them, so a
+run directory holds only evidence.
 
 Nothing downstream reads anything else, so an executor that lands these files
 gets `campaign status` — and the dashboard's campaign view — unchanged.

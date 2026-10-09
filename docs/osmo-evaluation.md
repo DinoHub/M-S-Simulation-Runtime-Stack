@@ -138,7 +138,7 @@ recorded as passed from an earlier attempt's file.
 | | |
 | --- | --- |
 | Question | The campaign's scorecard: per run and per segment, how did the estimator do, in the platform's vocabulary? |
-| Image | `sim_real_eval` with `vio-stress`. The catalog's `-latest` predates it, so `MNS_SIM_REAL_EVAL_IMAGE` names one that has it. |
+| Image | `sim_real_eval` with `vio-stress`: the catalog's `sim-real-eval-worker-v1.0.0` has it; `MNS_SIM_REAL_EVAL_IMAGE` names another worker. |
 | Where | the host, after every run of the campaign is back (`campaign.py` `evaluate()`), once per `done` run |
 | Input | vio-eval's trimmed pair (`--est`, `--gt`); the whole bag if there is none |
 | Writes | `reports/<key>.json` and `.md`: `vio_stress.run` (ATE and RPE rmse, ATE max, scale, yaw drift, coverage, tracking gaps, recovery ATE, alignment), `.segments`, `.comparison` |

@@ -10,20 +10,36 @@ on:
       - "product-images.env"
       - "tools/images.py"
       - "tools/images.sh"
-      - "tools/check-image-pins.sh"
       - "tools/pull-all-images.sh"
       - "tools/ensure-images.sh"
+      - "tools/image-tags.sh"
+      - "tools/test_image_tags.py"
       - "tools/stage-authoring-packs.sh"
       - "tools/install-demo-packs.sh"
       - "tools/install_demo_packs.py"
       - "tools/test_install_demo_packs.py"
       - "tools/build_pack_lock.py"
       - "tools/load-images-env.sh"
+      - "tools/check_docker.sh"
+      - "tools/mns-stacks.sh"
+      - "tools/fly.sh"
+      - "tools/author.sh"
+      - "tools/doctor.sh"
+      - "tools/pull-packs.sh"
+      - "tools/test_channels.py"
+      - "tools/test_images_host_pin.py"
+      - "tools/test_images_release.py"
+      - "tools/check_spawn.py"
+      - "tools/test_check_spawn.py"
+      - "tools/test_effective_image_set.py"
+      - "tools/test_scenario_pack_pins.py"
+      - "Makefile"
+      - "scenarios/**"
+      - "osmo/**"
       - "packs/**"
       - "docker-compose-dashboard.yml"
       - "setup.sh"
       - "download-packs.sh"
-      - "product.sh"
       - "Makefile"
       - ".github/workflows/images.yml"
   schedule:
@@ -52,6 +68,14 @@ jobs:
       - name: images.sh verify
         run: tools/images.sh verify
 
+      - name: release guard (PRs into release/v1.0.0 or main)
+        # What ships is exact: no pending row, no -rc tag in a release channel,
+        # no tag-only ref in images/v1.0.0.generated.env or the pack lock. The
+        # step above already turns this on through GITHUB_BASE_REF; this one
+        # names it, so a red run says which rule failed.
+        if: github.base_ref == 'release/v1.0.0' || github.base_ref == 'main'
+        run: tools/images.sh verify --release
+
       - name: images.sh status --offline
         # Advisory on a PR: an outstanding follow-up is not that PR's fault,
         # so it is reported, never a failure. `|| true` keeps status's
@@ -61,49 +85,89 @@ jobs:
       # The steps below exist because the paths: filter above used to list
       # executables that nothing in this job ever ran, so touching them
       # triggered a workflow that could not fail on them.
-      - name: shellcheck the image entrypoints
+      - name: shellcheck the entrypoints
         run: |
-          shellcheck -S warning \
-            product.sh \
+          shellcheck -S warning -x \
             tools/images.sh \
             tools/pull-all-images.sh \
             tools/ensure-images.sh \
+            tools/image-tags.sh \
             tools/stage-authoring-packs.sh \
             tools/install-demo-packs.sh \
+            tools/pull-packs.sh \
             tools/load-images-env.sh \
+            tools/check_docker.sh \
+            tools/mns-stacks.sh \
+            tools/fly.sh \
+            tools/author.sh \
+            tools/doctor.sh \
+            osmo/setup-local-osmo.sh \
             setup.sh \
             download-packs.sh
 
       - name: python syntax
-        run: python -m compileall -q tools/images.py tools/install_demo_packs.py tools/build_pack_lock.py tools/preview_topics.py
+        run: python -m compileall -q tools/images.py tools/install_demo_packs.py tools/build_pack_lock.py tools/preview_topics.py tools/check_spawn.py osmo/campaign.py osmo/registry.py
 
       - name: tooling unit tests
-        # Offline: the installer's lock/store/contract/download logic against
-        # synthetic fixtures.
+        # Offline: the installer's lock/store/contract/download logic and its
+        # mns-packs calls, the channel declaration, osmo/campaign.py's
+        # mns-stacks calls, and what ensure-images, pull-all-images and doctor
+        # do with a local tag that is not at its pin, all against synthetic
+        # fixtures and fake CLIs.
         run: |
           PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_install_demo_packs.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_channels.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_images_host_pin.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_images_release.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_check_spawn.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_effective_image_set.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_scenario_pack_pins.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tools -p 'test_image_tags.py'
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s osmo -p 'test_campaign.py'
 
-      - name: offline dry-run smoke
+      - name: dry-run smoke (no registry, no Docker daemon)
         # Every one of these resolves the catalog and prints; none contacts a
         # registry or the Docker daemon.
         run: |
           tools/images.sh refs > /dev/null
           tools/images.sh refs --development > /dev/null
+          tools/images.sh pins > /dev/null
           tools/pull-all-images.sh --dry-run > /dev/null
           tools/pull-all-images.sh --dry-run --all-catalog > /dev/null
           tools/install-demo-packs.sh --all --dry-run > /dev/null
           tools/install-demo-packs.sh --missing --all --dry-run > /dev/null
           # A runner has no pack store, so --check reports every pack missing
-          # and exits 1; the point is that the offline path runs at all.
+          # and exits 1; the point is that the no-network path runs at all.
           tools/install-demo-packs.sh --check --all > /dev/null || true
-          # The defaults above are the UE 5.8.2 channel; the 5.5.4 lock still
-          # resolves against its own contract.
-          MNS_DEMO_PACK_LOCK=packs/standalone-v2-review.1.lock.json \
-          MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=packs/runtime-host-compatibility.json \
-            tools/install-demo-packs.sh --all --dry-run > /dev/null
-          tools/images.sh refs --channel standalone_v2 > /dev/null
-          tools/images.sh local-refs --channel standalone_v2_ue582 > /dev/null
+          tools/images.sh refs --channel v1 > /dev/null
+          tools/images.sh local-refs --channel v1 > /dev/null
+          tools/images.py baked-pins v1_dashboard_backend > /dev/null
+          ./download-packs.sh --list > /dev/null
           tools/ensure-images.sh --dry-run > /dev/null || true
+          # The headless targets: usage errors and help work without Docker.
+          make help > /dev/null
+          if make fly 2>/dev/null; then echo "make fly without SCENARIO must fail" >&2; exit 1; fi
+          if make stacks 2>/dev/null; then echo "make stacks without ARGS must fail" >&2; exit 1; fi
+          tools/fly.sh --help | grep -q -- --keep
+          # KEEP=1 hands fly.sh --keep (and nothing else changes); -n prints the recipe only.
+          make -n fly SCENARIO=vio-reference KEEP=1 | grep -q 'tools/fly.sh "vio-reference"  --keep --'
+          if make -n fly SCENARIO=vio-reference | grep -q -- '--keep'; then echo "--keep without KEEP=1" >&2; exit 1; fi
+          tools/author.sh --help > /dev/null
+          # tools/mns-stacks.sh gives the socket and the host network exactly to
+          # the commands that need them (a fake docker prints the argv).
+          fake="$(mktemp -d)"; printf '#!/bin/sh\nprintf "%%s\\n" "$@"\n' > "$fake/docker"; chmod +x "$fake/docker"
+          for cmd in "run --stack x" "stop --stack x" "campaign preflight vio-reference" "campaign run vio-reference"; do
+            argv="$(PATH="$fake:$PATH" MNS_STACKS_IMAGE=fake tools/mns-stacks.sh $cmd)"
+            echo "$argv" | grep -qx -- '--network=host' || { echo "$cmd: no --network=host" >&2; exit 1; }
+            echo "$argv" | grep -q -- '/var/run/docker.sock' || { echo "$cmd: no socket" >&2; exit 1; }
+          done
+          for cmd in "generate scenarios/vio-reference" "campaign plan vio-reference" "campaign validate vio-reference"; do
+            argv="$(PATH="$fake:$PATH" MNS_STACKS_IMAGE=fake tools/mns-stacks.sh $cmd)"
+            echo "$argv" | grep -qx -- '--network=none' || { echo "$cmd: not --network=none" >&2; exit 1; }
+            if echo "$argv" | grep -q -- '/var/run/docker.sock'; then echo "$cmd: has the socket" >&2; exit 1; fi
+          done
+          rm -rf "$fake" runs
+          tools/doctor.sh --help > /dev/null
 
       - name: --dry-run must refuse --refresh-moving
         # Guards the ordering bug where the bump ran BEFORE the dry-run exit
@@ -123,14 +187,27 @@ jobs:
           cp .env.example .env
           docker compose -f docker-compose-dashboard.yml \
             --env-file .env \
-            --env-file images/standalone-v2-development.generated.env \
+            --env-file images/v1.0.0.generated.env \
+            --env-file images/development.generated.env \
             config > /dev/null
           docker compose -f docker-compose-dashboard.yml \
             --env-file .env \
-            --env-file images/standalone-v2-images.generated.env \
-            --env-file product-images.env \
+            --env-file images/v1.0.0.generated.env \
             --env-file images/platform-images.generated.env \
-            config > /dev/null
+            config > config.out
+          # The backend gets the v1.0.0 image variables, and no retired ones.
+          grep -q 'MNS_STACKS_IMAGE: ' config.out
+          grep -q 'MNS_PACKS_IMAGE: ' config.out
+          # The backend bakes no image pins, so these three must arrive
+          # non-empty from the pin file, or its actions fail.
+          for var in MNS_STACKS_IMAGE MNS_PACKS_IMAGE MNS_AUTHORING_IMAGE; do
+            grep -Eq "^ +$var: [^ ]+" config.out || { echo "$var is empty in the backend's env" >&2; exit 1; }
+          done
+          grep -q 'MNS_CAPABILITY_KIT: ' config.out
+          grep -q 'TEVV_RUNS_DIR: /' config.out
+          grep -q 'MNS_AUTHORING_PROJECT: ' config.out
+          if grep -Eq 'PRODUCT_SHELL|STACK_GENERATOR' config.out; then exit 1; fi
+          rm -f config.out
           rm -f .env
 
   # Weekly drift watch. Online, so it CAN fail for reasons that are not a

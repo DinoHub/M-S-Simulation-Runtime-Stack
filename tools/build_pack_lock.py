@@ -3,11 +3,11 @@
 MnS pack releases.
 
     tools/build_pack_lock.py --release-repo DinoHub/TEVV-Airsim --discover
-        --host-contract packs/runtime-host-compatibility.ue582.json
-        --images-env images/standalone-v2-ue582.generated.env
-        --shell local/mns-product-shell:ue582-local.a1936b0a5f5f
+        --host-contract packs/runtime-host-compatibility.v1.json
+        --images-env images/v1.0.0.generated.env
+        --packs dhdevspace/auto_mns:mns-packs-v1.0.0@sha256:...
         --cache .mns/downloads/pack-cache
-        --output packs/standalone-v2-ue582.lock.json
+        --output packs/v1.0.0.lock.json
 
 (`make pack-lock` runs exactly that for the selected channel.) --discover takes
 every pack-* release cooked for the contract's host id, newest version per
@@ -19,9 +19,10 @@ semantic manifest (`mns_level_pack.json` / `mns_asset_pack.json`). Everything
 the installer verifies at download time comes from those files; the one value
 they do not carry is the bundle's content-addressed `artifact_digest`, which is
 what the pack store indexes on and what a ScenarioSpec names. That comes from
-the product shell's own verifier (`packs verify --host <id>`), run on the
-archive -- so the lock is written by the same code that will later install it,
-and a bundle that the shell rejects never makes it into a lock.
+the SDK's own verifier (`mns-packs verify --host <id> --json`, from the pinned
+mns-packs image), run on the archive -- so the lock is written by the same
+code that will later install it, and a bundle mns-packs rejects never makes it
+into a lock.
 
 The archive is fetched into --cache if it is not already there with the right
 checksum; tools/install-demo-packs.sh reuses the same cache, so a lock build
@@ -41,10 +42,13 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "mns.pack_release_lock.v1"
+# required_images: the lock restates these channel pins (images/catalog.yaml
+# consumers.pack_locks declares the same edges, and `tools/images.sh verify`
+# asserts they agree). `packs` is the one the installer runs.
 IMAGE_ROLES = {
-    "product_shell": "MNS_PRODUCT_SHELL_IMAGE",
+    "packs": "MNS_PACKS_IMAGE",
+    "stacks": "MNS_STACKS_IMAGE",
     "authoring": "MNS_AUTHORING_IMAGE",
-    "stack_generator": "MNS_STACK_GENERATOR_IMAGE",
     "runtime_host": "MNS_RUNTIME_HOST_IMAGE",
     "ros2_bridge": "MNS_ROS2_BRIDGE_IMAGE",
 }
@@ -88,13 +92,24 @@ def selection_for(pack_id: str, kind: str) -> str:
     return pack_id
 
 
-def shell_verify(shell: str, archive: Path, host_id: str) -> dict[str, Any]:
+def packs_verify(image: str, archive: Path, host_id: str) -> dict[str, Any]:
+    """`mns-packs verify ARCHIVE --host ID --json` in the pinned image; the
+    envelope's result ({kind, id, version, digest, variant, ...})."""
+    archive = archive.resolve()
     result = subprocess.run(
         ["docker", "run", "--rm", "--network=none", "--user", f"{os.getuid()}:{os.getgid()}",
-         "-e", "HOME=/tmp", "-v", f"{archive.parent}:/in:ro", shell,
-         "packs", "verify", f"/in/{archive.name}", "--host", host_id],
-        check=True, text=True, capture_output=True)
-    return json.loads(result.stdout)
+         "-e", "HOME=/tmp", "-v", f"{archive.parent}:{archive.parent}:ro", image,
+         "verify", str(archive), "--host", host_id, "--json"],
+        text=True, capture_output=True)
+    try:
+        envelope = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        raise SystemExit(f"{archive.name}: mns-packs verify printed no JSON "
+                         f"(exit {result.returncode}): {(result.stderr or '').strip()[-600:]}")
+    if not envelope.get("ok"):
+        message = (envelope.get("error") or {}).get("message") or "failed"
+        raise SystemExit(f"{archive.name}: mns-packs verify refused it: {message}")
+    return envelope.get("result") or {}
 
 
 def version_key(version: str) -> tuple[int, ...]:
@@ -152,8 +167,8 @@ def discover_release_tags(repo: str, host_id: str, cache: Path) -> list[str]:
     return sorted(entry["tag"] for entry in latest.values())
 
 
-def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> dict[str, Any]:
-    release = gh_json("release", "view", tag, "-R", repo, "--json", "assets,createdAt")
+def build_entry(repo: str, tag: str, cache: Path, packs_image: str, host_id: str) -> dict[str, Any]:
+    release = gh_json("release", "view", tag, "-R", repo, "--json", "assets,publishedAt")
     assets = {asset["name"]: asset for asset in release["assets"]}
     bundle_name = next((n for n in assets if n.endswith((".mnslevelpack", ".mnsassetpack"))), None)
     # publish_pack.py splits a bundle over 1900 MB into <bundle>.part-NNN and
@@ -210,8 +225,8 @@ def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> d
     if archive.stat().st_size != size:
         raise SystemExit(f"{bundle_name}: size {archive.stat().st_size} != release {size}")
 
-    print(f"Verifying {bundle_name} with {shell}...", flush=True)
-    verified = shell_verify(shell, archive, host_id)
+    print(f"Verifying {bundle_name} with {packs_image}...", flush=True)
+    verified = packs_verify(packs_image, archive, host_id)
     identity = manifest.get("level_pack" if kind == "level" else "asset_pack") or {}
     pack_id, version = artifact["pack"]["id"], artifact["pack"]["version"]
     if (verified.get("id"), verified.get("version"), verified.get("kind")) != (pack_id, version, kind):
@@ -233,7 +248,9 @@ def build_entry(repo: str, tag: str, cache: Path, shell: str, host_id: str) -> d
         "map_path": str((manifest.get("unreal") or {}).get("entry_map") or ""),
         "required_plugins": plugins,
         "release": {"repository": repo, "tag": tag},
-        "published_at": release.get("createdAt", ""),
+        # When the release was published, not createdAt: that is the tagged
+        # commit's date, and a pack rebuilt later keeps the older tag date.
+        "published_at": release.get("publishedAt", ""),
     }
 
 
@@ -249,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="runtime host capability contract; its id is the lock's capability_id")
     parser.add_argument("--images-env", type=Path, required=True,
                         help="generated channel env whose MNS_*_IMAGE pins become required_images")
-    parser.add_argument("--shell", help="product shell image to verify with (default: the env's MNS_PRODUCT_SHELL_IMAGE)")
+    parser.add_argument("--packs", help="mns-packs image to verify with (default: the env's MNS_PACKS_IMAGE)")
     parser.add_argument("--cache", type=Path, default=ROOT / ".mns" / "downloads" / "pack-cache")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--lock-repository", default="DinoHub/M-S-Simulation-Runtime-Stack")
@@ -261,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     missing = [var for var in IMAGE_ROLES.values() if var not in env]
     if missing:
         raise SystemExit(f"{args.images_env}: missing {', '.join(missing)}")
-    shell = args.shell or env["MNS_PRODUCT_SHELL_IMAGE"]
+    packs_image = args.packs or env["MNS_PACKS_IMAGE"]
     args.cache.mkdir(parents=True, exist_ok=True)
 
     tags = list(args.release_tag)
@@ -270,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
     if not tags:
         raise SystemExit("no releases selected: pass --release-tag and/or --discover")
     print(f"Releases: {', '.join(tags)}")
-    packs = [build_entry(args.release_repo, tag, args.cache, shell, host_id) for tag in tags]
+    packs = [build_entry(args.release_repo, tag, args.cache, packs_image, host_id) for tag in tags]
     packs.sort(key=lambda p: (p["kind"] != "level", p["id"]))
     lock = {
         "schema": SCHEMA,

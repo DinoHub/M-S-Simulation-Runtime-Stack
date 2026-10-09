@@ -1,0 +1,71 @@
+{
+  "schema": "mns.level_spawn_hints.v1",
+  "about": "Measured facts about where a vehicle can spawn on a published level pack. A level pack carries no PlayerStart pose the generator can read, and a hand-written ScenarioSpec's coordinate_frame.origin defaults to the Unreal world origin, so a vehicle starting at (0, 0) lands wherever that origin happens to be. On the levels listed with origin_has_floor false there is nothing under it: the vehicle falls through the world and the autopilot refuses to arm. tools/check_spawn.py (make fly, make campaign) warns about such a spawn and suggests the known start. Start poses are AirSim NED metres relative to the world origin (+z is down). A level whose origin has a floor but no clear space (origin_has_floor true) is listed for its known start only: check_spawn.py does not warn about it.",
+  "levels": {
+    "xfs-level": {
+      "versions": [
+        "1.0.2"
+      ],
+      "origin_has_floor": false,
+      "known_start": {
+        "x": 423,
+        "y": -906,
+        "z": -21.0
+      },
+      "known_start_name": "the container yard",
+      "measured": "Held 160 m up for World Partition to stream the terrain in, then dropped: at rest on the ground at NED z = -18.70 at (423, -906). -21.0 is 2.3 m above it. A (0, 0, 0) spawn free-falls at ~8 m/s (phase 5 acceptance F8, OSMO sim-bridge-vio runs). A container stack stands 4 m east of the yard start. 1.0.2 (the v1.0.0 lock): the same start flew vio-osmo-xfs-ardupilot, 4 routes (integration/v1.0.0 e2e, 2026-10-05).",
+      "used_by": [
+        "scenarios/vio-reference",
+        "scenarios/vio-osmo-xfs",
+        "scenarios/vio-osmo-xfs-ardupilot",
+        "scenarios/vio-osmo-xfs-surround",
+        "scenarios/fisheye-surround-shm"
+      ]
+    },
+    "condo-level": {
+      "versions": [
+        "1.0.2"
+      ],
+      "origin_has_floor": false,
+      "known_start": {
+        "x": 0,
+        "y": -20,
+        "z": -2.0
+      },
+      "known_start_name": "the apartment",
+      "measured": "An origin spawn free-fell indefinitely (sim-bridge-vio-13: /ground_truth/odom -71.7 m to -1216.4 m at ~9 m/s, x and y 0.000). (0, -20, -2.0) is 2 m above the floor and flies the bedroom loop (scenarios/vio-osmo-condo). The compose stack's Z: 1.3 is 1.3 m BELOW the floor and fell too. 1.0.2 (the v1.0.0 lock): the same start flew the bedroom loop on ArduPilot (integration/v1.0.0 e2e, 2026-10-05).",
+      "used_by": [
+        "scenarios/vio-osmo-condo",
+        "scenarios/vio-osmo-condo-ardupilot"
+      ]
+    },
+    "fishermans-cabin": {
+      "versions": [
+        "1.0.1"
+      ],
+      "origin_has_floor": false,
+      "known_start": {
+        "x": 10,
+        "y": 10,
+        "z": -3.1
+      },
+      "known_start_name": "beside the cabin",
+      "measured": "An origin spawn free-fell from t=0 (vehicle.pose.gt to -2.2 km in 230 s; integration/v1.0.0 e2e, 2026-10-05): the ground around the cabin is 1-4 m above the world origin, so a z=0 start is under it. Line-of-sight bisection put the ground at NED z=-1.1 at (10, 10); a start there 2 m above it took off, held and landed on ArduPilot.",
+      "used_by": []
+    },
+    "warehouse": {
+      "versions": [
+        "1.0.1"
+      ],
+      "origin_has_floor": true,
+      "known_start": {
+        "x": -9.27,
+        "y": -4.93,
+        "z": -1.28
+      },
+      "known_start_name": "the Warehouse PlayerStart",
+      "measured": "The world origin is at floor level among boxes: a hand-written PX4 spec with no coordinate_frame spawned there, armed and failed takeoff 8/8 ('climb did not reach the target altitude'; 1809 collisions with SM__Box/SM_Floor_Module), also at x=10 and on the previous host (release e2e, 2026-10-07). ScenarioLab records the PlayerStart as coordinate_frame.origin, Unreal (-927.2, -493.2, 128.2) cm, i.e. NED (-9.27, -4.93, -1.28) m; its exported spec, a vehicle 2 m forward of the PlayerStart, flew takeoff, teleop and land on PX4. Author Warehouse scenarios in ScenarioLab, or copy that coordinate_frame.",
+      "used_by": []
+    }
+  }
+}

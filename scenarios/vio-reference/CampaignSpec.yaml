@@ -8,7 +8,7 @@ name: Reference VIO campaign
 # Twelve flights -- four wind strengths, three repeats each -- over one scenario,
 # each recorded, checked and scored. Copy it and make it yours:
 #
-#     tevv-campaign init my-test --from vio-reference
+#     make campaign ARGS="init my-test --from vio-reference"
 #
 # Three repeats per variant is not padding. Two campaigns run from an identical
 # configuration have differed by roughly a factor of two on the same case, so a
@@ -32,30 +32,44 @@ evaluation:
 # metre per second flight. The case measures error against the vehicle's actual
 # attitude and gyroscope peaks, which the recording carries, not against the
 # setting.
+#
+# Each wind variant sets both winds: `wind` is what the cameras see (the
+# level's weather actor: foliage, particles, on a 0-10 scale) and `wind_mps` is
+# what the vehicle feels (the generator writes it as AirSim's physics `Wind`,
+# applied as drag). Visual wind alone would change the images but not the
+# flight. `enabled: true` is required for the visual part. The overrides go
+# under environment.weather: environment.conditions is dropped by the
+# generator, and `mns-stacks campaign validate` refuses it.
 variants:
   - id: calm
     name: No wind
   - id: wind-3
-    name: Wind 3 m/s
+    name: Wind 3 m/s (physics) + visual level 3
     overrides:
       environment:
-        conditions:
-          weather:
-            wind: 3.0
+        weather:
+          enabled: true
+          wind: 3.0
+          wind_mps: 3.0
+          wind_from_deg: 180
   - id: wind-6
-    name: Wind 6 m/s
+    name: Wind 6 m/s (physics) + visual level 6
     overrides:
       environment:
-        conditions:
-          weather:
-            wind: 6.0
+        weather:
+          enabled: true
+          wind: 6.0
+          wind_mps: 6.0
+          wind_from_deg: 180
   - id: wind-10
-    name: Wind 10 m/s
+    name: Wind 10 m/s (physics) + visual level 10
     overrides:
       environment:
-        conditions:
-          weather:
-            wind: 10.0
+        weather:
+          enabled: true
+          wind: 10.0
+          wind_mps: 10.0
+          wind_from_deg: 180
 
 repeats: 3
 
@@ -106,7 +120,7 @@ recording:
 # finish_hold_seconds keeps it up through the landing call.
 mission:
   source: external
-  trajectory: ./routes/reference-flight.yaml
+  trajectory: ./routes/yard-box.yaml
   # The flight blocks until the vehicle is down, so this cap is the tail after
   # it rather than the flight's own budget.
   done: timeout

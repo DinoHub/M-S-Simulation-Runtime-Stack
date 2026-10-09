@@ -93,9 +93,9 @@ it is simply untested on this stack.
 Four of the six services mount `/tmp/.X11-unix` and pass `DISPLAY`. A pod has
 no X server.
 
-The runtime host is already fine: `AIRSIM_HEADLESS=true` maps to
-`-RenderOffScreen -NoSound -Unattended -NoSplash` (`launch.sh:78`,
-`Makefile:156`), cameras still render. **This contradicts the bridge's
+The runtime host is already fine: it renders headless with
+`-RenderOffScreen -NoSound -Unattended -NoSplash`, which the OSMO `sim.sh`
+passes (see [the runbook](osmo-runbook.md)), and cameras still render. **This contradicts the bridge's
 `docs/OSMO.md`, which lists a headless sim entrypoint as outstanding
 runtime-stack work — it exists.** What is outstanding is smaller: the generated
 compose still emits `DISPLAY=${DISPLAY:-:0}` unconditionally
@@ -173,8 +173,8 @@ want a node-local cache that is a platform decision, not a repository one.
 ## 5. Images: the catalog is already the right shape
 
 `images/catalog.yaml` is one row per image with an explicit digest, and every
-env file, image set and pack-lock pin is rendered from it and verified offline
-on every PR (`tools/images.sh verify`). OSMO wants digest-pinned images from a
+env file, image set and pack-lock pin is rendered from it and verified, with
+no network, on every PR (`tools/images.sh verify`). OSMO wants digest-pinned images from a
 registry the cluster can reach. That is the same discipline, so the work is
 rendering, not redesign: another generated output beside
 `images/*.generated.env` that emits the `--set` pins a workflow needs.

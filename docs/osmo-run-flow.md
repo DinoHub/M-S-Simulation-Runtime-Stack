@@ -32,15 +32,16 @@ runs/<key>/ on the host  ->  vio-stress reports  ->  campaign_manifest.json
 ## The command
 
 ```bash
-MNS_IMAGE_SET_FILE=/home/mnsuser/M-S-Simulation-Runtime-Stack/images/image-set.generated.yaml \
+MNS_IMAGE_SET_FILE="$PWD/images/image-set.generated.yaml" \
 MNS_SIM_REAL_EVAL_IMAGE=dhdevspace/auto_mns:sim-real-eval-worker-bcb899f \
 python3 osmo/campaign.py run vio-osmo-condo --only calm-r1 --no-viz
 ```
 
 - `MNS_IMAGE_SET_FILE` picks the image set: the main checkout's, which pins
   runtime host 303a5c.
-- `MNS_SIM_REAL_EVAL_IMAGE` is a scorer that has `vio-stress`. The catalog's
-  `-latest` worker predates it.
+- `MNS_SIM_REAL_EVAL_IMAGE` is a scorer that has `vio-stress`. At the time the
+  catalog pinned a `-latest` worker that predated it; the catalog's
+  `sim-real-eval-worker-v1.0.0` has it, so the variable is no longer needed.
 - `--no-viz` leaves the live Foxglove task out.
 
 ## Timeline of run 62
@@ -95,18 +96,18 @@ off it:
 | Artifact | Path | Read by |
 | --- | --- | --- |
 | CampaignSpec | `scenarios/vio-osmo-condo/CampaignSpec.yaml`: variants, repeats, mission route, `evaluation.gates`, `extensions.mns.omega` | `campaign plan`, the executor (gates, route, timeout) |
-| ScenarioSpec | the one the CampaignSpec's `scenario:` names: level pack, vehicle, rig, weather, estimator, `runtime.features` | `campaign plan` (merged per variant), the stack generator |
+| ScenarioSpec | the one the CampaignSpec's `scenario:` names: level pack, vehicle, rig, weather, estimator, `runtime.features` | `campaign plan` (merged per variant), `mns-stacks generate` |
 | Route | the CampaignSpec's `mission.trajectory` file | the executor, as base64 JSON in `route_b64` |
 | Image catalog | `images/catalog.yaml`, rendered to `images/image-set.generated.yaml` | the executor: every image is pinned by digest there |
 
 ### 2. Plan and generate, on the host
 
-`campaign.py run` shells into the product shell and does not re-implement it.
+`campaign.py run` asks `mns-stacks` (the pinned image, through `tools/mns-stacks.sh`) and does not re-implement it.
 
 | Artifact | Path under `generated/campaigns/<campaign>/` | Written by | Notes |
 | --- | --- | --- | --- |
-| Materialised spec | `<key>/ScenarioSpec.yaml` | `./product.sh cli campaign plan` | one per run key, the variant's overrides merged in; owned by root |
-| Stack | `stacks/<key>/` | `./product.sh cli runtime --no-run` | see below |
+| Materialised spec | `<key>/ScenarioSpec.yaml` | `mns-stacks campaign plan` | one per run key, the variant's overrides merged in; owned by you (no socket, runs as you) |
+| Stack | `stacks/<key>/` | `mns-stacks generate` | see below; it starts nothing |
 
 The stack is what the workflow mounts at `/workspace/generated/<stack>`:
 

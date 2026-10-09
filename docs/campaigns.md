@@ -5,13 +5,19 @@ difference at a time, each flight recorded, gated and scored. The reference camp
 in this repository and is meant to be copied.
 
 ```bash
-./product.sh setup            # once: images, including the estimator and the shell
+./setup.sh                    # once: images, including the estimator and mns-stacks
 make campaign                 # 12 flights: 4 wind strengths x 3 repeats, scored
 make campaign-status          # one row per flight
 ```
 
-`make campaign` runs the product shell's CLI, so it needs no platform checkout. Anything the
-CLI accepts can go through it:
+Each wind variant sets both the visual wind (`wind`, what the cameras see) and
+the physics wind (`wind_mps`, which AirSim applies to the vehicle as drag), so
+the drone is pushed as well as the scene moving. See the note in
+`scenarios/vio-reference/CampaignSpec.yaml`.
+
+`make campaign` runs `mns-stacks campaign` from the pinned `mns-stacks` image (the same
+command the dashboard's campaign page runs), so it needs no platform checkout. Every
+`campaign` subcommand can go through it:
 
 ```bash
 make campaign ARGS="validate vio-reference"   # spec, route and calibration; flies nothing
@@ -25,6 +31,11 @@ one runs at a time; a second is refused and told which one holds the machine. `m
 ARGS="cancel <name>"` stops one cleanly — the flight in the air is finished and bundled,
 nothing further starts.
 
+Each flight is generated, flown and recorded exactly as `make fly SCENARIO=... RECORD=1`
+flies one scenario (see [Headless](stacks.md)): the bag lands in the campaign's
+`runs/<run_key>/bag`, recorded by the bridge container, in the layout the dashboard's
+replay and `sim_real_eval` read.
+
 To test your own estimator, copy the reference campaign and change one block in its
 `ScenarioSpec.yaml`. [`scenarios/vio-reference/README.md`](../scenarios/vio-reference/README.md) covers it, including the two things
 checked before anything flies: your calibration against the rig the scenario declares, and
@@ -36,8 +47,9 @@ worse than no number.
 
 ## The same campaign on a cluster (OSMO)
 
-`osmo/campaign.py` flies a CampaignSpec on NVIDIA OSMO instead of compose: one
-workflow per run, the evidence pulled back into the same
+`osmo/campaign.py` flies a CampaignSpec on NVIDIA OSMO instead of compose. It asks
+`mns-stacks` (through `tools/mns-stacks.sh`) to plan the matrix and generate each run's
+stack, then submits one workflow per run and pulls the evidence back into the same
 `generated/campaigns/<id>/` layout, so `status` and the dashboard read it
 unchanged. Four campaigns ship ready: `vio-osmo-condo` (PX4),
 `vio-osmo-condo-ardupilot`, `vio-osmo-xfs` and `vio-osmo-xfs-ardupilot`.
@@ -66,6 +78,6 @@ estimator's `launch_args`); images come from `images/catalog.yaml`, and
 - [Logs on OSMO](osmo-logs.md): what Loki and Alloy are for, what they are not, and how to
   tell whether they are working.
 
-How a campaign run flows through validate, preflight, the generator, `validate_recording`
+How a campaign run flows through validate, preflight, `mns-stacks generate`, `validate_recording`
 and `sim-real-eval`, and which files each step leaves, is in
 [How it fits together](how-it-fits-together.md#campaigns-the-loop-n-times-scored).

@@ -1,9 +1,12 @@
-# MnS product: the TEVV Web Dashboard and its content/image tooling.
+# MnS product: the TEVV Web Dashboard, the same flows headless, and the
+# content/image tooling.
 #
 #   make dashboard / make dashboard-down   the browser entry point (:3001)
+#   make fly SCENARIO=<name> [RECORD=1]    fly one scenario headless for FLY_SECONDS (300; KEEP=1: leave it up)
+#   make author [SCENARIO=<name>]          open ScenarioLab
+#   make campaign [CAMPAIGN=<name>]        fly a scored run matrix
 #   make topics STACK=generated/<name>     what a generated stack will publish
-#   make campaign [CAMPAIGN=<name>]         fly a scored run matrix
-#   make help                               everything else
+#   make help                              everything else
 #
 # One-time setup is ./setup.sh (machine, .env, images) then
 # ./download-packs.sh (content packs); see docs/USER_GUIDE.md.
@@ -19,16 +22,17 @@ XAUTHORITY := $(shell f="$$XAUTHORITY"; [ -f "$$f" ] && { echo "$$f"; exit; }; \
 	[ -f "$$c" ] && { echo "$$c"; exit; }; done)
 export XAUTHORITY
 
-# Transitional image workflow: development is local-first and tag-only;
-# production keeps the immutable catalog pins.
+# Which refs of the catalog's pins run. development: the pinned tags alone;
+# ensure-images points each at its pinned digest (pulling it only when it is
+# not local; MNS_KEEP_LOCAL_TAGS=1 keeps a local build under the tag);
+# production: tag@digest, exactly what images/catalog.yaml pins.
 IMAGE_MODE ?= development
-# Which standalone-v2 release channel the dashboard runs (images/catalog.yaml
-# consumers.release_channels). Each channel owns a pack lock, a runtime-host
-# capability contract, and its own pack store + authoring data root under
-# .mns/, because packs cooked for one engine line never mount on the other
-# and the product shell stages everything in its store for ONE contract.
-#   ue582  UE 5.8.2 (default):  packs/standalone-v2-ue582.lock.json,      .mns/ue582/{pack-store,authoring-data}
-#   v2     UE 5.5.4 (previous): packs/standalone-v2-review.1.lock.json, .mns/{pack-store,authoring-data}
+# The release channel the dashboard runs (images/catalog.yaml
+# consumers.release_channels; packs/channels.json lists it for the dashboard).
+# A channel owns a pack lock, a runtime-host capability contract, and its own
+# pack store + authoring data root under .mns/<channel>/, because packs cooked
+# for one engine build never mount on another.
+#   v1  MnS 1.0, UE 5.8.2 (the stable line): packs/v1.0.0.lock.json, .mns/v1/
 CHANNEL ?= v1
 # Content packs are downloaded by ./download-packs.sh (or the dashboard's
 # Content phase), not by `make dashboard`: it stages whatever the channel's
@@ -57,6 +61,24 @@ LEGACY_DASHBOARD_PROJECT = $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lowe
 # always- always recreate (the pre-existing behaviour)
 # never - never touch it
 RECREATE_ROS2_TOOLS ?= auto
+# The HOST runs directory, resolved once: the shell's TEVV_RUNS_DIR, else
+# ./.env's, else ./runs; ~ and relative paths made absolute. Exported, so the
+# dashboard compose file (its /data/runs mount and the backend's
+# TEVV_RUNS_DIR) and tools/mns-stacks.sh all get the same absolute host path.
+TEVV_RUNS_DIR := $(shell r="$$TEVV_RUNS_DIR"; [ -n "$$r" ] || r=$$(sed -n 's/^[[:space:]]*TEVV_RUNS_DIR=//p' .env 2>/dev/null | tail -1 | tr -d "\"'"); \
+	[ -n "$$r" ] || r="$(CURDIR)/runs"; r=$$(printf '%s' "$$r" | sed "s|^~|$$HOME|"); \
+	case "$$r" in (/*) ;; (*) r="$(CURDIR)/$$r" ;; esac; printf '%s' "$$r")
+export TEVV_RUNS_DIR
+# Prepended to every dashboard container name (docker-compose-dashboard.yml's
+# container_name lines, the backend's ros2-tools, tools/author.sh's editor), so
+# they do not clash by name with another set on the same daemon. The shell's
+# or command line's value (even empty), else ./.env's, else none. Read here so
+# the containers `make dashboard` inspects, removes and restarts are the ones
+# compose named, never another dashboard's or a user's unprefixed ros2-tools.
+ifeq ($(origin DASHBOARD_CONTAINER_PREFIX),undefined)
+DASHBOARD_CONTAINER_PREFIX := $(shell sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}DASHBOARD_CONTAINER_PREFIX=//p' .env 2>/dev/null | tail -1 | tr -d "\"'")
+endif
+export DASHBOARD_CONTAINER_PREFIX
 ifeq ($(CHANNEL),v1)
 CHANNEL_NAME := v1
 CHANNEL_ENV := images/v1.0.0.generated.env
@@ -68,50 +90,8 @@ CHANNEL_AUTHORING_CONTRACT := packs/authoring-host-compatibility.v1.json
 CHANNEL_STORE := .mns/v1/pack-store
 CHANNEL_DATA := .mns/v1/authoring-data
 PACK_RELEASE_REPO := DinoHub/TEVV-Airsim
-# The v1 authoring image bakes mns_vehicle_models; nothing is seeded from the
-# pinned v1 (5.5.4-era) authoring image on this channel.
-CHANNEL_SEED_DEFAULTS := 0
-else ifeq ($(CHANNEL),v2)
-CHANNEL_NAME := standalone_v2
-CHANNEL_ENV := images/standalone-v2-images.generated.env
-CHANNEL_DEV_ENV := images/standalone-v2-development.generated.env
-CHANNEL_IMAGE_SET := published
-CHANNEL_LOCK := packs/standalone-v2-review.1.lock.json
-CHANNEL_CONTRACT := packs/runtime-host-compatibility.json
-# The 5.5.4 authoring image embeds no contract and its shell ignores
-# MNS_AUTHORING_HOST_CONTRACT; empty = the shell's baked fixture.
-CHANNEL_AUTHORING_CONTRACT :=
-CHANNEL_STORE := .mns/pack-store
-CHANNEL_DATA := .mns/authoring-data
-# The 5.5.4 packs are one release of this repository, not per-pack releases;
-# its lock is not rebuilt by `make pack-lock`.
-PACK_RELEASE_REPO := DinoHub/M-S-Simulation-Runtime-Stack
-# Neither standalone-v2 authoring image ships the mns_vehicle_models /
-# scenario_runtime_basic default asset packs; seed them from the v1 image
-# (see tools/stage-authoring-packs.sh).
-CHANNEL_SEED_DEFAULTS := 1
-else ifeq ($(CHANNEL),ue582)
-CHANNEL_NAME := standalone_v2_ue582
-CHANNEL_ENV := images/standalone-v2-ue582.generated.env
-# No -latest aliases exist on this line yet: development and production
-# source the same pinned/local file.
-CHANNEL_DEV_ENV := images/standalone-v2-ue582.generated.env
-CHANNEL_IMAGE_SET := ue582
-CHANNEL_LOCK := packs/standalone-v2-ue582.lock.json
-CHANNEL_CONTRACT := packs/runtime-host-compatibility.ue582.json
-# ScenarioLab's own contract (same id, its plugin set): what staging validates
-# packs against, and what the Content phase uses to say "runtime only".
-CHANNEL_AUTHORING_CONTRACT := packs/authoring-host-compatibility.ue582.json
-CHANNEL_STORE := .mns/ue582/pack-store
-CHANNEL_DATA := .mns/ue582/authoring-data
-PACK_RELEASE_REPO := DinoHub/TEVV-Airsim
-# The 5.5.4-cooked vehicle-model pak mounts in the 5.8.2 ScenarioLab (verified
-# 2026-09-09: "Loaded asset pack: mns_vehicle_models (0 asset(s), 6 vehicle
-# model(s))"), so the same seed serves this channel until an authoring image
-# ships its own.
-CHANNEL_SEED_DEFAULTS := 1
 else
-$(error CHANNEL must be v1, ue582 or v2)
+$(error CHANNEL must be v1)
 endif
 
 # Exported to every script on the dashboard chain and interpolated by
@@ -123,38 +103,45 @@ CHANNEL_ENV_EXPORTS := MNS_CHANNEL=$(CHANNEL) MNS_IMAGE_SET=$(CHANNEL_IMAGE_SET)
 	MNS_AUTHORING_HOST_CONTRACT=$(if $(CHANNEL_AUTHORING_CONTRACT),$(CURDIR)/$(CHANNEL_AUTHORING_CONTRACT),) \
 	MNS_PACK_STORE_ROOT=$(CURDIR)/$(CHANNEL_STORE) \
 	MNS_AUTHORING_DATA_ROOT=$(CURDIR)/$(CHANNEL_DATA) \
-	MNS_PACKS_DIR=$(CURDIR)/.mns/$(CHANNEL)/packs \
-	MNS_SEED_AUTHORING_DEFAULTS=$(CHANNEL_SEED_DEFAULTS)
+	MNS_PACKS_DIR=$(CURDIR)/.mns/$(CHANNEL)/packs
 
 ifeq ($(IMAGE_MODE),development)
 DASHBOARD_IMAGE_SET_FILE := images/image-set.development.generated.yaml
 ENSURE_IMAGES_FLAG := --development --channel $(CHANNEL_NAME)
-LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_DEV_ENV); load_images_env ./images/standalone-v2-development.generated.env
+LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_DEV_ENV); load_images_env ./images/development.generated.env
+NOTE_IMAGE_OVERRIDES := note_image_overrides ./$(CHANNEL_DEV_ENV) ./images/development.generated.env
 else ifeq ($(IMAGE_MODE),production)
 DASHBOARD_IMAGE_SET_FILE := images/image-set.generated.yaml
 ENSURE_IMAGES_FLAG := --production --channel $(CHANNEL_NAME)
-LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_ENV); load_images_env ./product-images.env; load_images_env ./images/platform-images.generated.env
+LOAD_DASHBOARD_IMAGES := export $(CHANNEL_ENV_EXPORTS); load_images_env ./$(CHANNEL_ENV); load_images_env ./images/platform-images.generated.env
+NOTE_IMAGE_OVERRIDES := note_image_overrides ./$(CHANNEL_ENV) ./images/platform-images.generated.env
 else
 $(error IMAGE_MODE must be development or production)
 endif
 
-.PHONY: help ps topics campaign campaign-status verify-images pull-images ensure-images ensure-demo-packs pack-lock stage-authoring-packs dashboard dashboard-down print-channel-env
+.PHONY: help ps topics fly stop author author-stop stacks campaign campaign-status doctor verify-images pull-images ensure-images ensure-demo-packs pack-status pack-lock stage-authoring-packs dashboard dashboard-down print-channel-env
 
 ensure-images:  ## Use local image tags; pull only those that are missing
 	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
 
-# The product-shell image comes from the selected IMAGE_MODE's env (the
-# -latest alias in development, the digest pin in production), not from the
-# pack lock's pin, so install and the staging step right after it use ONE
-# shell image and stage-authoring-packs.sh's .staged-with stamp stays current.
-ensure-demo-packs: ensure-images  ## Install the MNS_DEMO_PACKS selection if set; otherwise check the store has packs
+# The mns-packs image comes from the selected IMAGE_MODE's env (the pinned
+# tag in development, tag@digest in production), not from the pack lock's
+# pin, so install and the staging step right after it use ONE mns-packs image
+# and stage-authoring-packs.sh's .staged-with stamp stays current.
+# --sync: the lock decides each pack's version. It adds the lock's version of
+# the vehicle models and of every pack already installed in any version, so a
+# lock bump is pulled on the next start; packs never chosen are never fetched.
+# What --sync adds is best effort (offline or no credentials: a warning).
+ensure-demo-packs: ensure-images  ## Bring installed packs (and MNS_DEMO_PACKS, if set) to the lock's versions
 	@if [ "$(MNS_SKIP_PACK_INSTALL)" = "1" ]; then \
 	  echo "MNS_SKIP_PACK_INSTALL=1: not installing demo packs."; \
 	elif [ -n "$(MNS_DEMO_PACKS)" ]; then \
 	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
-	  ./tools/install-demo-packs.sh --missing $(MNS_DEMO_PACKS); \
+	  ./tools/install-demo-packs.sh --missing --sync $(MNS_DEMO_PACKS); \
 	else \
-	  export $(CHANNEL_ENV_EXPORTS); \
+	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	  ./tools/install-demo-packs.sh --missing --sync \
+	    || echo "WARNING: could not bring the packs to the lock's versions (above); continuing with what is installed."; \
 	  if ! ./tools/install-demo-packs.sh --check --all 2>/dev/null | grep -q 'installed:'; then \
 	    echo "WARNING: no content packs are installed for channel $(CHANNEL). Run ./download-packs.sh,"; \
 	    echo "         or install them from the dashboard's Content step."; \
@@ -163,7 +150,7 @@ ensure-demo-packs: ensure-images  ## Install the MNS_DEMO_PACKS selection if set
 
 # The lock is a snapshot of what packaging had published when it was built;
 # this catches it up (newest version of every pack cooked for the channel's
-# host id), downloading and verifying anything new through the channel's shell.
+# host id), downloading and verifying anything new with the channel's mns-packs.
 # Review the diff, commit, then `make dashboard` installs what is new.
 # The script exits nonzero when its NEEDS YOU list is non-empty, so CI can gate
 # on it the way it gates on `tools/images.sh verify`. That is a report, not a
@@ -176,7 +163,7 @@ pack-lock: ensure-images  ## Rebuild the channel's pack lock from every pack rel
 	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 	python3 tools/build_pack_lock.py --release-repo $(PACK_RELEASE_REPO) --discover \
 	  --host-contract $(CHANNEL_CONTRACT) --images-env $(CHANNEL_ENV) \
-	  --shell "$$MNS_PRODUCT_SHELL_IMAGE" --cache .mns/downloads/pack-cache \
+	  --packs "$$MNS_PACKS_IMAGE" --cache .mns/downloads/pack-cache \
 	  --output $(CHANNEL_LOCK) --lock-tag $(notdir $(basename $(basename $(CHANNEL_LOCK))))
 
 # The channel's lock, contracts and pack roots as shell assignments, for
@@ -191,56 +178,61 @@ stage-authoring-packs: ensure-demo-packs  ## Refresh ScenarioLab's view of insta
 	./tools/stage-authoring-packs.sh
 
 dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on :3001; DB=true adds telemetry DB
-	# Create these as the HOST user first, the way product.sh does. The backend
-	# container runs as root, so if it mkdirs generated/ itself the directory
-	# lands root-owned and the generator image cannot write into it.
-	@mkdir -p generated scenarios
-	# Same for the runs directory: compose would create a missing bind source
-	# as root, and the recorder (the host uid) then cannot write a bag into it
-	# ("Failed to create database directory"). TEVV_RUNS_DIR may come from the
-	# shell or ./.env, as it does for compose; the default is ./runs here.
-	@runs="$${TEVV_RUNS_DIR:-$$(sed -n 's/^TEVV_RUNS_DIR=//p' .env 2>/dev/null | tail -1)}"; \
-	runs="$${runs:-$$(pwd)/runs}"; case "$$runs" in "~"*) runs="$$HOME$${runs#\~}" ;; esac; \
+	@# Create these as the HOST user first. The backend container runs as
+	@# root, so if it mkdirs generated/ itself the directory lands root-owned
+	@# and mns-stacks generate (which runs as you) cannot write into it.
+	@# The pack drop-in directory is a bind source too; a root-owned one
+	@# would need sudo to drop a pack archive into.
+	@mkdir -p generated scenarios "$(CURDIR)/.mns/$(CHANNEL)/packs"
+	@# Same for the runs directory: compose would create a missing bind source
+	@# as root, and the recorder (the host uid) then cannot write a bag into it
+	@# ("Failed to create database directory"). TEVV_RUNS_DIR may come from the
+	@# shell or ./.env, as it does for compose; the default is ./runs here.
+	@runs="$(TEVV_RUNS_DIR)"; \
 	mkdir -p "$$runs" 2>/dev/null; \
 	if [ ! -w "$$runs" ]; then \
 	  echo "ERROR: the runs directory $$runs is not writable by you (owner: $$(stat -c %U "$$runs" 2>/dev/null)),"; \
 	  echo "       so recordings would fail. Fix it with:  sudo chown -R $$(id -un): $$runs"; \
 	  exit 1; \
 	fi
-	# Fail early on Docker, X11, or host-port problems.
+	@# Fail early on Docker, X11, or host-port problems.
 	@. ./tools/check_docker.sh; check_docker || exit 1; \
 	. ./tools/load-images-env.sh; \
+	$(NOTE_IMAGE_OVERRIDES); \
 	$(LOAD_DASHBOARD_IMAGES); \
-	check_images "$$MNS_STACK_GENERATOR_IMAGE" "$$MNS_AUTHORING_IMAGE" || true; \
+	check_images "$${MNS_STACKS_IMAGE:-$$(dotenv_value MNS_STACKS_IMAGE)}" \
+	             "$${MNS_PACKS_IMAGE:-$$(dotenv_value MNS_PACKS_IMAGE)}" \
+	             "$${MNS_AUTHORING_IMAGE:-$$(dotenv_value MNS_AUTHORING_IMAGE)}" || true; \
 	check_x11 || true; \
-	check_ports 3001:airsim-dashboard-frontend:frontend \
-	            8001:airsim-dashboard-api:backend \
-	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):dashboard-lichtblick:Lichtblick \
-	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):ros2-tools:"Foxglove websocket" || exit 1
+	check_ports 3001:$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-frontend:frontend \
+	            8001:$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api:backend \
+	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):$(DASHBOARD_CONTAINER_PREFIX)dashboard-lichtblick:Lichtblick \
+	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):$(DASHBOARD_CONTAINER_PREFIX)ros2-tools:"Foxglove websocket" || exit 1
 	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
-	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
+	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE="$$($(EFFECTIVE_IMAGE_SET))" \
 	MSRS_ROOT=$$(pwd) HOST_UID=$$(id -u) HOST_GID=$$(id -g) \
 	compose_retry -f docker-compose-dashboard.yml $(if $(filter true,$(DB)),--profile db,) up -d
-	# ros2-tools is created outside Compose by the backend. It serves the
-	# Foxglove websocket Lichtblick renders from and is what services/
-	# ros2_recorder.py execs into for bag recording, so removing it
-	# unconditionally destroyed an in-progress recording and dropped the viz
-	# connection every time `make dashboard` was re-run against a live stack.
-	# Recreate it only when the selected bridge image actually changed —
-	# RECREATE_ROS2_TOOLS=always restores the old behaviour, =never skips it.
+	@# ros2-tools is created outside Compose by the backend. It serves the
+	@# Foxglove websocket Lichtblick renders from, so removing it
+	@# unconditionally dropped the viz connection every time `make dashboard`
+	@# was re-run against a live stack.
+	@# Recreate it only when the selected bridge image actually changed —
+	@# RECREATE_ROS2_TOOLS=always restores the old behaviour, =never skips it.
+	@# Only this dashboard's own ros2-tools: the prefixed name that
+	@# docker-compose-dashboard.yml hands the backend (ROS2_CONTAINER_NAME).
 	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
-	desired="$${MNS_ROS2_BRIDGE_IMAGE:-}"; \
-	current=$$(docker inspect -f '{{.Config.Image}}' $(DASHBOARD_CONTAINER_PREFIX)ros2-tools 2>/dev/null || true); \
+	desired="$${MNS_ROS2_BRIDGE_IMAGE:-}"; tools="$(DASHBOARD_CONTAINER_PREFIX)ros2-tools"; \
+	current=$$(docker inspect -f '{{.Config.Image}}' "$$tools" 2>/dev/null || true); \
 	if [ "$(RECREATE_ROS2_TOOLS)" = "never" ]; then \
-	  echo "RECREATE_ROS2_TOOLS=never: leaving ros2-tools as it is."; \
+	  echo "RECREATE_ROS2_TOOLS=never: leaving $$tools as it is."; \
 	elif [ "$(RECREATE_ROS2_TOOLS)" = "always" ] || [ -z "$$current" ] || [ "$$current" != "$$desired" ]; then \
-	  [ -n "$$current" ] && [ "$$current" != "$$desired" ] && echo "ros2-tools image changed ($$current -> $$desired); recreating."; \
-	  docker rm -f $(DASHBOARD_CONTAINER_PREFIX)ros2-tools >/dev/null 2>&1 || true; \
+	  [ -n "$$current" ] && [ "$$current" != "$$desired" ] && echo "$$tools image changed ($$current -> $$desired); recreating."; \
+	  docker rm -f "$$tools" >/dev/null 2>&1 || true; \
 	else \
-	  echo "ros2-tools already running $$desired; leaving it (Foxglove :8764 and any bag recording stay up)."; \
+	  echo "$$tools already running $$desired; leaving it (Foxglove :$(or $(FOXGLOVE_BRIDGE_PORT),8764) stays up)."; \
 	fi; \
-	docker restart $(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api >/dev/null
+	docker restart "$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api" >/dev/null
 	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082), image mode: $(IMAGE_MODE))"
 
@@ -249,9 +241,9 @@ dashboard-down:
 	$(LOAD_DASHBOARD_IMAGES); \
 	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
 	MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db down
-	# Also tear down the pre-fixed-name project, or a dashboard started before
-	# DASHBOARD_COMPOSE_PROJECT_NAME existed is left running and its
-	# daemon-global container names block the next `up`.
+	@# Also tear down the pre-fixed-name project, or a dashboard started before
+	@# DASHBOARD_COMPOSE_PROJECT_NAME existed is left running and its
+	@# daemon-global container names block the next `up`.
 	@if [ "$(LEGACY_DASHBOARD_PROJECT)" != "$(DASHBOARD_COMPOSE_PROJECT_NAME)" ]; then \
 	  . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
 	  COMPOSE_PROJECT_NAME=$(LEGACY_DASHBOARD_PROJECT) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) \
@@ -262,16 +254,23 @@ help:
 	@echo "Product:"
 	@echo "  dashboard        start the TEVV Web Dashboard on :3001 [CHANNEL= IMAGE_MODE= DB=true MNS_DEMO_PACKS=]"
 	@echo "  dashboard-down   stop it"
-	@echo "  topics           ROS 2 topics a generated stack will publish [STACK=generated/name]"
+	@echo "Headless (the same images the dashboard runs):"
+	@echo "  fly              generate and fly one scenario, a FLY_SECONDS (300) run unless ARGS names --done [SCENARIO=name RECORD=1 KEEP=1 ARGS=...]"
+	@echo "                   KEEP=1: bring it up and leave it up (make stop ends it)"
+	@echo "  stop             stop a flown stack, finalize_metrics first [STACK=generated/name, default: the last fly]"
+	@echo "  author           open ScenarioLab [SCENARIO=name]; author-stop closes it"
 	@echo "  campaign         fly a run matrix over one scenario, scored [CAMPAIGN=name]"
 	@echo "                   or any subcommand: ARGS=\"status vio-reference\""
 	@echo "  campaign-status  one row per flight: recording verdict and accuracy [CAMPAIGN=name]"
+	@echo "  stacks           any mns-stacks command: ARGS=\"status --stack generated/name --json\""
+	@echo "  topics           ROS 2 topics a generated stack will publish [STACK=generated/name]"
 	@echo "  ps               running containers (name/status/image)"
 	@echo "Images and packs:"
-	@echo "  ensure-images    use local tags and pull only missing images [IMAGE_MODE=development|production]"
-	@echo "  pull-images      explicitly refresh every exact published remote image pin"
+	@echo "  doctor           is this machine ready: Docker, Compose, every pinned image present (and tagged, in development mode)"
+	@echo "  ensure-images    use local tags, point stale ones at their pins, pull only missing images [IMAGE_MODE=development|production]"
+	@echo "  pull-images      explicitly refresh every exact published remote image pin, and point its tag at it"
 	@echo "  verify-images    CI gate: images/catalog.yaml matches generated artifacts"
-	@echo "  pack-status      what is locked, installed, and published since [CHANNEL=v1|ue582|v2]"
+	@echo "  pack-status      what is locked, installed, and published since"
 	@echo "  pack-lock        rebuild the channel's pack lock from published releases"
 	@echo "Content packs are downloaded with ./download-packs.sh (--list shows them)."
 
@@ -286,24 +285,89 @@ topics:
 	@test -n "$(STACK)" || { echo "usage: make topics STACK=generated/<name>" >&2; exit 2; }
 	@python3 tools/preview_topics.py $(STACK)
 
+# Headless: the dashboard's flows from a terminal, through the same images.
+# Every target runs mns-stacks (MNS_STACKS_IMAGE) as a sibling container with
+# the checkout and the runs directory mounted at their host paths
+# (tools/mns-stacks.sh); ScenarioLab runs exactly as the dashboard starts it
+# (tools/author.sh).
+#
+#   make fly SCENARIO=my-scene RECORD=1             # generate, fly FLY_SECONDS (300), stop
+#   make fly SCENARIO=my-scene KEEP=1               # bring it up and leave it up; make stop ends it
+#   make fly SCENARIO=my-scene ARGS="--done topic:/x" # ARGS: extra `mns-stacks run` flags
+#   make stop [STACK=generated/<name>]              # default: the last `make fly`
+#   make author [SCENARIO=my-scene]                 # ScenarioLab; exports to scenarios/
+#   make stacks ARGS="status --stack generated/my-scene --json"
+#
+# fly first brings the packs to the lock's versions (ensure-demo-packs), the
+# check `make dashboard` runs; `mns-stacks run` then verifies the stack's
+# resolved packs before anything starts.
+SCENARIO ?=
+RECORD ?=
+KEEP ?=
+STACK ?=
+ARGS ?=
+# The image-set file the dashboard's generated stacks run: the selected one,
+# or a copy with the shell/./.env image overrides applied (MNS_RUNTIME_HOST_IMAGE,
+# MNS_ROS2_BRIDGE_IMAGE), each with a NOTE. tools/mns-stacks.sh does the same
+# for make fly / make campaign. Falls back to the selected file, with the
+# error, when the overrides cannot be applied.
+EFFECTIVE_IMAGE_SET = python3 tools/images.py effective-image-set --in "$(CURDIR)/$(DASHBOARD_IMAGE_SET_FILE)" \
+	--out "$(CURDIR)/.mns/image-set.effective.yaml" --dotenv "$(CURDIR)/.env" || echo "$(CURDIR)/$(DASHBOARD_IMAGE_SET_FILE)"
+
+MNS_STACKS_ENV = . ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
+	export MNS_IMAGE_SET_FILE=$(CURDIR)/$(DASHBOARD_IMAGE_SET_FILE) MNS_HOST_UID=$$(id -u) MNS_HOST_GID=$$(id -g)
+
+# Checked when the Makefile is read, so a missing SCENARIO fails before the
+# pack and image prerequisites start pulling anything.
+ifneq ($(filter fly,$(MAKECMDGOALS)),)
+ifeq ($(strip $(SCENARIO)),)
+$(error usage: make fly SCENARIO=<name under scenarios/> [RECORD=1] [KEEP=1] [ARGS=...])
+endif
+endif
+fly: ensure-demo-packs  ## Generate and fly SCENARIO for FLY_SECONDS unless ARGS names --done (RECORD=1 records a bag)
+	@$(MNS_STACKS_ENV); ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
+
+stop:  ## Stop a flown stack (simulator first, finalize_metrics, then compose down)
+	@last=$$(cut -f1 .mns/last-stack 2>/dev/null); last_project=$$(cut -s -f2 .mns/last-stack 2>/dev/null); \
+	stack="$(STACK)"; [ -n "$$stack" ] || stack="$$last"; \
+	test -n "$$stack" || { echo "usage: make stop STACK=generated/<name>  (no make fly to default to)" >&2; exit 2; }; \
+	case "$$stack" in /*) ;; *) stack="$(CURDIR)/$$stack" ;; esac; \
+	project=""; [ "$$stack" = "$$last" ] && [ -n "$$last_project" ] && project="$$last_project"; \
+	$(MNS_STACKS_ENV); ./tools/mns-stacks.sh stop --stack "$$stack" $${project:+--project "$$project"}
+
+author: stage-authoring-packs  ## Open ScenarioLab (SCENARIO=<folder or ScenarioSpec> to open one)
+	@. ./tools/check_docker.sh; check_x11 || true
+	@$(MNS_STACKS_ENV); ./tools/author.sh $(if $(SCENARIO),"$(SCENARIO)",)
+
+author-stop:  ## Close ScenarioLab
+	@./tools/author.sh --stop
+
+stacks:  ## Any mns-stacks command: make stacks ARGS="<command> ..."
+	@test -n "$(ARGS)" || { echo 'usage: make stacks ARGS="<mns-stacks command> ..."   (ARGS=--help lists them)' >&2; exit 2; }
+	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh $(ARGS)
+
 # Campaigns: a run matrix over one scenario, flown, recorded, checked and
-# scored. Runs the product shell's CLI, so it needs no platform checkout --
-# the same tevv-campaign a developer has on PATH.
+# scored by `mns-stacks campaign`, so it needs no platform checkout.
 #
 #   make campaign                                  # the reference campaign
 #   make campaign CAMPAIGN=my-test                 # yours
-#   make campaign ARGS="status vio-reference"      # any subcommand
+#   make campaign ARGS="status vio-reference"      # any campaign subcommand
 #
 # A campaign is hours long and holds the GPU, the simulator ports and the X
 # display, so only one runs at a time; it refuses to start a second.
 CAMPAIGN ?= vio-reference
-ARGS ?= run $(CAMPAIGN)
 campaign: ensure-images  ## Fly a campaign (CAMPAIGN=<name>, or ARGS="<subcommand> ...")
 	@mkdir -p generated scenarios
-	./product.sh cli campaign $(ARGS)
+	@# Advisory: warns when the campaign's vehicle spawns where its level has no
+	@# floor (packs/level-spawn-hints.json), before hours of runs fail to arm.
+	@python3 tools/check_spawn.py campaign $(or $(ARGS),run $(CAMPAIGN)) || true
+	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh campaign $(or $(ARGS),run $(CAMPAIGN))
 
 campaign-status:  ## One row per flight of a campaign (CAMPAIGN=<name>)
-	./product.sh cli campaign status $(CAMPAIGN)
+	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh campaign status $(CAMPAIGN)
+
+doctor:  ## Docker, Compose, and every pinned image present (changes nothing)
+	@./tools/doctor.sh $(ENSURE_IMAGES_FLAG)
 
 # CI gate for the image catalog (images/catalog.yaml): regenerates
 # product-images.env / images/*.generated.* into a temp location and diffs

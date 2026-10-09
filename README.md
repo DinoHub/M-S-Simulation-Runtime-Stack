@@ -22,6 +22,8 @@ This repository is the customer distribution. Its historical name is
 ## Quick start
 
 ```bash
+git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
+cd M-S-Simulation-Runtime-Stack
 ./setup.sh           # checks the machine, logs in to Docker Hub, pulls the images
 ./download-packs.sh  # downloads the starter levels (logs in to GitHub)
 make dashboard       # then open http://localhost:3001 in Chrome
@@ -29,6 +31,16 @@ make dashboard       # then open http://localhost:3001 in Chrome
 
 From there, the [User Guide](docs/USER_GUIDE.md) walks you from an empty
 scenario to a recorded rosbag. Stop with `make dashboard-down`.
+
+The same flows run without the browser, through the same images:
+
+```bash
+make author                                  # ScenarioLab; exports land in scenarios/<name>/
+make fly SCENARIO=<name> RECORD=1            # generate, fly a fixed-length run (FLY_SECONDS, 300), keep the bag
+make campaign CAMPAIGN=vio-reference         # a scored run matrix
+```
+
+See [Headless](docs/stacks.md).
 
 ## Find your way
 
@@ -39,10 +51,10 @@ scenario to a recorded rosbag. Stop with `make dashboard-down`.
 | go from a fresh clone to my first rosbag | [User Guide](docs/USER_GUIDE.md) |
 | connect my own autonomy stack to a running simulation | [User Guide: connecting your autonomy stack](docs/USER_GUIDE.md#connecting-your-autonomy-stack) |
 | know which ROS 2 topics a stack will publish | [What will this stack publish?](docs/topics.md) |
-| run stacks from a terminal or a script, without the browser | [The product shell from a terminal](docs/cli.md) |
+| fly, author or run a campaign from a terminal, without the browser | [Headless: `make fly`, `make author`, `make campaign`](docs/stacks.md) |
+| choose a fisheye rig (tiled or shared cubemap) and set it up for VIO | [Fisheye rig performance](docs/fisheye-rig-performance.md) |
 | fly a scored run matrix to characterise an estimator | [Campaigns](docs/campaigns.md), then [the reference campaign](scenarios/vio-reference/README.md) |
 | fly the same campaign on a GPU cluster (NVIDIA OSMO) | [Campaigns: OSMO](docs/campaigns.md#the-same-campaign-on-a-cluster-osmo), then the [OSMO runbook](docs/osmo-runbook.md) |
-| install on a machine with no network | [Offline setup](docs/offline-setup.md) |
 | fix something that went wrong | [User Guide: troubleshooting](docs/USER_GUIDE.md#9-troubleshooting) |
 
 **Understand it**
@@ -65,7 +77,7 @@ scenario to a recorded rosbag. Stop with `make dashboard-down`.
 | understand which images `make dashboard` pulls, or run my own dashboard build | [How the dashboard gets its images](docs/dashboard-images.md) |
 | see what a release pins | [Release notes](docs/releases/v1.0.0.md) |
 | know why there is one image catalog | [ADR 0002](docs/adr/0002-one-image-catalog.md) |
-| use the sim-facing helper scripts | [tools/README.md](tools/README.md) |
+| know what each script under `tools/` is for | [tools/README.md](tools/README.md) |
 
 Updating an existing checkout is covered in the
 [User Guide](docs/USER_GUIDE.md#updating-an-existing-checkout).

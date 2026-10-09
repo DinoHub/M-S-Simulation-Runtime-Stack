@@ -5,51 +5,15 @@ schema: mns.image_sets.v1
 # existing overlay hook — see docs/adr/0002-one-image-catalog.md).
 
 image_sets:
-  published:
-    pull_policy: missing
-    images:
-      simulators:
-        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-20260826@sha256:04723c3fb35b1516946283bd942179a2def986ab843a88b667c7290a9f82af3c
-      autopilots:
-        ardupilot: dhdevspace/auto_mns:ardupilot-slim-20260826.1@sha256:0ba679fed0309e3004def725acb003b286d4cd99587618533f5d120760039bd9
-        px4: dhdevspace/auto_mns:px4-airsim-px4@sha256:cd5a87467c73a0f8f506bca38a6f5d8df0779cf3c21a99dd0f4384784d40588a
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260915.1@sha256:2f5c20e7d3283386162f4dc0d88254c97d3c81e95e96b97d583e4faed869464d
-      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
-      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest@sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb
-      vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123@sha256:ac48f34984863b159c0bf805e4f8ea2daecff4c23539aac00afd89c4d3a48078
-  ue582:
-    pull_policy: missing
-    images:
-      simulators:
-        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-20260910.1@sha256:3a5de227f3ab8a2ac81b0a2cda3262283fedc731b46438395a51e8a376e2cfb8
-      autopilots:
-        ardupilot: dhdevspace/auto_mns:ardupilot-slim-20260826.1@sha256:0ba679fed0309e3004def725acb003b286d4cd99587618533f5d120760039bd9
-        px4: dhdevspace/auto_mns:px4-airsim-px4@sha256:cd5a87467c73a0f8f506bca38a6f5d8df0779cf3c21a99dd0f4384784d40588a
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-20260915.1@sha256:2f5c20e7d3283386162f4dc0d88254c97d3c81e95e96b97d583e4faed869464d
-      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
-      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest@sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb
-      vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123@sha256:ac48f34984863b159c0bf805e4f8ea2daecff4c23539aac00afd89c4d3a48078
   v1:
     pull_policy: missing
     images:
       simulators:
-        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0@sha256:303a5c84662a3fc420ce93e5f2e87198065798719884d48f679915cf22a29339
+        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-v1.0.0@sha256:952ee258ff77d9401edfae045b6bc091b016eeb5b3321611cddece0807ce6967
       autopilots:
         ardupilot: dhdevspace/auto_mns:ardupilot-v1.0.0@sha256:93b9e50b7b44e91aafd38b9a223100d7c67f971ebd9c246bce3582ed9ef015c1
         px4: dhdevspace/auto_mns:px4-airsim-px4-v1.0.0@sha256:0f03b74335e92450efba7421782d7ca2986edef2c4b900c3350729c8a2e7deea
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0@sha256:b91e4b92d6a8ec538da33ab40758ab3d1c0af99cb9bdf853452561e44046530c
-      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
-      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest@sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb
-      vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123@sha256:ac48f34984863b159c0bf805e4f8ea2daecff4c23539aac00afd89c4d3a48078
-  origin-integration:
-    pull_policy: missing
-    images:
-      simulators:
-        tevv_runtime_host: dhdevspace/auto_mns:tevv-runtime-host-20260918.1@sha256:72ef41b2040a2de6986068a303ce51f377fb21edf670b32819dd84ae84a8e3bd
-      autopilots:
-        ardupilot: dhdevspace/auto_mns:ardupilot-slim-v0.4.0-origin.1@sha256:aa77cd67258cb5f11c17d327cc78833eb959145e4c54778313117c2b0c645920
-        px4: dhdevspace/auto_mns:px4-airsim-px4-v0.4.0-origin.3@sha256:70d3fdf1f44f973f4ad36f11eb1560cada2b1aefccadcf5ed1b0dcd198be23bc
-      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v0.4.0-origin.1@sha256:24be9ec9c70412f09de251aae201f6d1a70d5d7569205a3268739982f729b4f6
-      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-latest@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
-      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-latest@sha256:4159d4c63f747dbdfc1ff86dfcbcbde87685c014b7f6fc9eb18478ddaa20c7eb
+      ros2_bridge: dhdevspace/auto_mns:tevv-airsim-ros2-bridge-humble-v1.0.0@sha256:0736b2949dc748f7ed92d4821c7ec382f8daa06a61e11e7d810b99fc6f9c6efc
+      qgroundcontrol: dhdevspace/auto_mns:airsim-qgc-x11-v1.0.0@sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
+      sim_real_eval: dhdevspace/auto_mns:sim-real-eval-worker-v1.0.0@sha256:9780594b56cc29c5e5432188b9d70260a72f3804dd933fcd9f3183c590d9f67a
       vio_estimator: dhdevspace/auto_mns:vio-estimator-openvins-69488123@sha256:ac48f34984863b159c0bf805e4f8ea2daecff4c23539aac00afd89c4d3a48078

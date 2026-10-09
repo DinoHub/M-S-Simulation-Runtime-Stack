@@ -24,13 +24,11 @@ stack_name: vio-osmo-xfs-ardupilot
 # calibration was characterised on.
 
 environment:
-  # The v1 channel's XFS as packs/v1.0.0.lock.json pins it since MnS v1.0.0
-  # (PR #87): `xfs-level` at sha256:08fb1485..., the same release the ue582
-  # channel and scenarios/vio-reference use. The earlier v1 pin (`xfs` at
-  # sha256:6750aa11...) no longer resolves for the iostore-v2 runtime host.
+  # XFS as packs/v1.0.0.lock.json pins it: `xfs-level` at sha256:7eeb41a5...,
+  # the same release scenarios/vio-reference uses.
   id: xfs-level
-  version: 1.0.1
-  artifact_digest: sha256:08fb14857ded949d41926dcdfb5008abcde605a94e4bd4adb8b1449b2f21f8b9
+  version: 1.0.2
+  artifact_digest: sha256:7eeb41a5ad04d3d2f4bd8c5d876703793b7485d93d59d07172d12c174c100871
 
 runtime:
   profile: airsim_unreal_ardupilot_docker
@@ -70,32 +68,6 @@ vehicles:
     x: 423
     y: -906
     z: -21.0
-  # Spawn pose taken from the condo compose stack's own settings, which is the
-  # known-good pose for this level:
-  #   config/unreal-airsim/condo/settings-px4.json -> X: 0, Y: -20, Z: 1.3
-  #
-  # It has to be stated, because (0, 0, 0) is not on the ground here. A run
-  # with the origin spawn free-falls indefinitely -- measured on
-  # sim-bridge-vio-13, /ground_truth/odom went from -71.7 m to -1216.4 m at
-  # ~9 m/s with x and y exactly 0.000, while the estimator reported z between
-  # 0.002 and 0.107 m. Not "below the floor": there is no floor under the
-  # level's world origin at all.
-  #
-  # This is the failure PR #87's findings describe -- "hand-authored scenarios
-  # ... need the level's PlayerStart as origin or the vehicle spawns
-  # kilometres above the ground". A pack does not carry its PlayerStart yet,
-  # so the pose has to be found by measurement.
-  #
-  # config/unreal-airsim/condo/settings-px4.json is NOT a source for it, though
-  # it looks like one: its Z: 1.3 places the vehicle 1.3 m BELOW the origin and
-  # so below condo's floor. Tried first, and the run fell 224 m in 25 s.
-  #
-  # AirSim NED metres relative to OriginGeopoint, and +Z is DOWN -- so a
-  # POSITIVE z spawns the vehicle BELOW the origin. The compose stack's
-  # Z: 1.3 was tried first and still fell: the sim placed it at
-  # world_cm Z=-130, i.e. 1.3 m under the floor. z: -2.0 puts it 2 m above.
-  # stackgen copies these straight into settings.json.
-  #
   # Stereo pair, 0.12 m baseline. Camera Z is 0.25 m above the IMU: at zero the
   # camera sits inside the airframe and the rotor arms fill about a third of
   # every frame.

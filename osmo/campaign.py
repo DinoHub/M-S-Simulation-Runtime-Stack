@@ -7,17 +7,18 @@
     osmo/campaign.py registry sync [vio-osmo-condo]   # the run registry, rebuilt from runs/
 
 This is an executor, not a runner. The platform's campaign runner
-(MnS-Integration-Platform apps/scenario_launcher/campaign.py) already does
+(`mns-stacks campaign`, MnS-Integration-Platform platform/stacks) already does
 everything a campaign needs except talk to a cluster: it validates the spec,
 expands variants x seeds x repeats into runs, merges each variant's overrides
 into a materialised ScenarioSpec, generates a stack per run, and afterwards
 scores the evidence and renders `campaign status`. All of that is reused here
-by shelling into the product shell -- `./product.sh cli campaign plan` writes
-every run's ScenarioSpec to disk and prints where, `./product.sh cli runtime
---no-run` generates a stack from one. Only the middle of the runner's `run_one`
--- build a docker-compose command, run it, tear it down -- is replaced, with:
-render the OSMO workflow for the run, submit it, poll it, and pull its evidence
-back into the directory layout the runner's own scorecard reads.
+through the pinned mns-stacks image (tools/mns-stacks.sh, the wrapper `make
+campaign` uses) -- `mns-stacks campaign plan` writes every run's ScenarioSpec
+to disk and returns where (`--json`: result.runs[].spec), `mns-stacks generate`
+generates a stack from one (it never starts anything). Only the middle of the runner's `run_one` -- bring
+the stack up, fly it, tear it down -- is replaced, with: render the OSMO
+workflow for the run, submit it, poll it, and pull its evidence back into the
+directory layout the runner's own scorecard reads.
 
 That layout is the contract this script honours, because nothing downstream
 reads anything else:
@@ -25,13 +26,13 @@ reads anything else:
     generated/campaigns/<id>/
       campaign_manifest.json         mns.vio_campaign_manifest.v1
       <run_key>/ScenarioSpec.yaml    written by the platform (plan)
-      <run_key>/stack/               written by the platform (runtime --no-run)
+      stacks/<run_key>/              written by the platform (generate)
       runs/<run_key>/                the evidence: bag/, eval/*.json,
                                      validation.json, topics.yaml, run.json
       reports/<run_key>.json         written by the campaign-level evaluator
 
 Why not a `--target osmo` inside the platform's runner, which is where this
-belongs eventually: the runner executes inside the product-shell container,
+belongs eventually: the runner executes inside the mns-stacks container,
 which has no `osmo` CLI, no ~/.osmo session and no kubeconfig. Proving the
 shape here first costs nothing later; the seam in `run_one` is one function.
 
@@ -73,32 +74,98 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / "osmo" / "sim-bridge-vio.workflow.yaml"
 
 
-def workspace_host() -> Path:
-    """The host directory the cluster mounts at /workspace.
+KIND_CLUSTER = "osmo"
+# Rendered from kind-osmo-cluster-config.gpu.yaml.tmpl by
+# `osmo/setup-local-osmo.sh gpu` (or `kind-config`), with the checkout path in.
+RENDERED_KIND_CONFIG = ROOT / ".mns" / "osmo" / "kind-osmo-cluster-config.gpu.yaml"
+
+
+def _cluster_workspace_mount() -> Path | None:
+    """The host directory a running kind cluster's node has at /workspace.
+
+    kind turns a node's extraMounts into docker bind mounts on the node
+    container, so the running cluster is the ground truth: the checkout it was
+    created from, whichever checkout this script runs from."""
+    try:
+        names = subprocess.run(
+            ["docker", "ps", "--filter", f"label=io.x-k8s.kind.cluster={KIND_CLUSTER}",
+             "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=10, check=False).stdout.split()
+        for name in names:
+            out = subprocess.run(["docker", "inspect", "-f", "{{json .Mounts}}", name],
+                                 capture_output=True, text=True, timeout=10, check=False).stdout
+            for mount in json.loads(out or "[]"):
+                if mount.get("Destination") == "/workspace" and mount.get("Source"):
+                    return Path(mount["Source"])
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    return None
+
+
+def _config_workspace_mount(cfg: Path) -> Path | None:
+    try:
+        doc = yaml.safe_load(cfg.read_text())
+    except (OSError, yaml.YAMLError):
+        return None
+    for node in (doc or {}).get("nodes") or []:
+        for mount in node.get("extraMounts") or []:
+            if mount.get("containerPath") == "/workspace":
+                return Path(mount["hostPath"])
+    return None
+
+
+def workspace_host() -> tuple[Path, str]:
+    """The host directory the cluster mounts at /workspace, and where that
+    came from.
 
     The workflow resolves a stack as /workspace/generated/<stack>/config, and
-    /workspace is whatever the kind config says it is -- the main checkout,
+    /workspace is whatever the cluster was created with -- the main checkout,
     not necessarily the checkout this script runs from. A worktree under it
     is still reachable, as a relative path through `..`, which is what the
-    `stack` value becomes when this script runs from one."""
-    for name in ("kind-osmo-cluster-config.gpu.yaml", "kind-osmo-cluster-config.yaml"):
-        cfg = ROOT / "osmo" / name
-        if not cfg.exists():
-            continue
-        doc = yaml.safe_load(cfg.read_text())
-        for node in doc.get("nodes") or []:
-            for mount in node.get("extraMounts") or []:
-                if mount.get("containerPath") == "/workspace":
-                    return Path(mount["hostPath"])
-    return ROOT
+    `stack` value becomes when this script runs from one.
+
+    In order: MNS_OSMO_WORKSPACE, the running cluster's own mount, the config
+    setup-local-osmo.sh rendered in this checkout, then this checkout."""
+    if os.environ.get("MNS_OSMO_WORKSPACE"):
+        return Path(os.environ["MNS_OSMO_WORKSPACE"]), "MNS_OSMO_WORKSPACE"
+    mounted = _cluster_workspace_mount()
+    if mounted is not None:
+        return mounted, f"the running kind cluster '{KIND_CLUSTER}'"
+    rendered = _config_workspace_mount(RENDERED_KIND_CONFIG)
+    if rendered is not None:
+        return rendered, str(RENDERED_KIND_CONFIG.relative_to(ROOT))
+    return ROOT, "this checkout (no cluster found)"
 
 
-WORKSPACE_HOST = workspace_host()
-# The product shell, the cluster and the generated campaign tree all hang off
-# the one checkout the cluster mounts, even when this script runs from a
-# worktree beneath it: that checkout owns the pack store, and paths the
-# workflow sees under /workspace are paths under it.
-PRODUCT_SH = WORKSPACE_HOST / "product.sh"
+def require_workspace() -> None:
+    """Stop with the fix, not a traceback, when the checkout the cluster
+    mounts is not one this user can use: missing, not a product checkout, or
+    not writable (the campaign tree is written under it)."""
+    problem = None
+    if not WORKSPACE_HOST.is_dir():
+        problem = "does not exist on this machine"
+    elif not (WORKSPACE_HOST / "tools" / "mns-stacks.sh").is_file():
+        problem = "is not a product checkout (no tools/mns-stacks.sh)"
+    elif not os.access(WORKSPACE_HOST, os.W_OK | os.X_OK):
+        problem = "is not writable by you"
+    if problem:
+        print(
+            f"[campaign] the cluster's /workspace is {WORKSPACE_HOST} (from {WORKSPACE_SOURCE}), "
+            f"which {problem}.\n"
+            f"[campaign] Fix: create the cluster from the checkout you run this from "
+            f"(osmo/setup-local-osmo.sh gpu renders the mount from its checkout path), or set "
+            f"MNS_OSMO_WORKSPACE=<the checkout the cluster mounts>.", file=sys.stderr)
+        raise SystemExit(2)
+
+
+WORKSPACE_HOST, WORKSPACE_SOURCE = workspace_host()
+# mns-stacks, the cluster and the generated campaign tree all hang off the one
+# checkout the cluster mounts, even when this script runs from a worktree
+# beneath it: that checkout owns the pack store, and paths the workflow sees
+# under /workspace are paths under it.
+STACKS_SH = WORKSPACE_HOST / "tools" / "mns-stacks.sh"
+# The pins come from this checkout, like IMAGE_SET_FILE below.
+CHANNEL_ENV_FILE = ROOT / "images" / "v1.0.0.generated.env"
 CAMPAIGNS_HOST = WORKSPACE_HOST / "generated" / "campaigns"
 MANIFEST_SCHEMA = "mns.vio_campaign_manifest.v1"
 RUN_META_SCHEMA = "mns.vio_run_meta.v1"
@@ -111,12 +178,12 @@ RUN_META_SCHEMA = "mns.vio_run_meta.v1"
 # (images/image-set.generated.yaml) -- the same file, and the same two
 # overrides, the stack generator uses: MNS_IMAGE_SET_FILE for another file,
 # MNS_IMAGE_SET for another set. Otherwise the set is the one MNS_CHANNEL's
-# release channel names (product.sh's default, v1).
+# release channel names (the Makefile's default, v1).
 IMAGE_SET_FILE = Path(os.environ.get("MNS_IMAGE_SET_FILE",
                                      ROOT / "images" / "image-set.generated.yaml"))
 CATALOG_FILE = ROOT / "images" / "catalog.yaml"
-# product.sh's channel names -> the catalog's release_channels keys.
-CHANNEL_NAMES = {"v1": "v1", "v2": "standalone_v2", "ue582": "standalone_v2_ue582"}
+# The Makefile's channel names -> the catalog's release_channels keys.
+CHANNEL_NAMES = {"v1": "v1"}
 
 # Workflow value -> where the image set keeps that role.
 WORKFLOW_IMAGES = {
@@ -176,29 +243,62 @@ def sh(argv: list[str], *, cwd: Path | None = None, check: bool = True,
                           capture_output=capture, env={**os.environ, **(env or {})})
 
 
-def product_cli(*args: str) -> subprocess.CompletedProcess:
-    """The platform's launcher, through the product shell of the checkout the
-    cluster mounts. Paths it prints are container paths under /workspace,
-    which is that checkout."""
-    return sh([str(PRODUCT_SH), "cli", *args], cwd=WORKSPACE_HOST,
-              env={"MNS_IMAGE_PULL_POLICY": "missing"}, check=False)
+DOTENV_FILE = ROOT / ".env"
 
 
-def host_path(container_path: str) -> Path:
-    if container_path.startswith("/workspace/"):
-        return WORKSPACE_HOST / container_path[len("/workspace/"):]
-    return Path(container_path)
-
-
-def container_path(p: Path) -> str:
+def _env_file_value(path: Path, name: str) -> str:
+    """`name`'s value in a KEY=VAL file (last one wins, quotes stripped), or ""."""
     try:
-        return "/workspace/" + str(p.resolve().relative_to(WORKSPACE_HOST))
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    value = ""
+    for line in lines:
+        key, sep, raw = line.strip().removeprefix("export ").partition("=")
+        if sep and key.strip() == name:
+            value = raw.strip().strip("'\"")
+    return value
+
+
+def stacks_image() -> str:
+    """The mns-stacks image, with the product's precedence: the shell
+    environment, then ./.env (a local override, said out loud), then the
+    channel's generated pin."""
+    if os.environ.get("MNS_STACKS_IMAGE"):
+        return os.environ["MNS_STACKS_IMAGE"]
+    override = _env_file_value(DOTENV_FILE, "MNS_STACKS_IMAGE")
+    if override:
+        print(f"[campaign] NOTE: MNS_STACKS_IMAGE from ./.env overrides the catalog pin: "
+              f"{override}", file=sys.stderr)
+        return override
+    pinned = _env_file_value(CHANNEL_ENV_FILE, "MNS_STACKS_IMAGE")
+    if pinned:
+        return pinned
+    sys.exit(f"[campaign] MNS_STACKS_IMAGE is not set and {CHANNEL_ENV_FILE} pins none")
+
+
+def stacks_cli(*args: str) -> subprocess.CompletedProcess:
+    """mns-stacks from its pinned image, for the checkout the cluster mounts
+    (tools/mns-stacks.sh: that checkout and the runs directory at their host
+    paths, the Docker socket only for the commands that need it). Paths in
+    and out are host paths."""
+    return sh([str(STACKS_SH), *args], cwd=WORKSPACE_HOST,
+              env={"MNS_STACKS_IMAGE": stacks_image(), "MNS_IMAGE_PULL_POLICY": "missing",
+                   "MNS_IMAGE_SET_FILE": str(IMAGE_SET_FILE)}, check=False)
+
+
+def workspace_path(p: Path) -> str:
+    """`p` as mns-stacks sees it: the same host path, which must be under the
+    mounted checkout (nothing else is mounted)."""
+    resolved = p.resolve()
+    try:
+        resolved.relative_to(WORKSPACE_HOST)
     except ValueError:
-        # The product shell only sees this repository, mounted at /workspace;
-        # a path outside it cannot be handed to it. Exit 2, the usage code.
-        print(f"[campaign] {p} is outside {WORKSPACE_HOST}; the product shell only "
+        # Exit 2, the usage code.
+        print(f"[campaign] {p} is outside {WORKSPACE_HOST}; mns-stacks only "
               "sees paths under this repository", file=sys.stderr)
         raise SystemExit(2)
+    return str(resolved)
 
 
 def worse_rc(rc: int, new: int) -> int:
@@ -251,29 +351,43 @@ def derive_platform(spec: dict[str, Any]) -> dict[str, str]:
 # Materialise and generate -- both by the platform
 # --------------------------------------------------------------------------
 
-PLAN_LINE = re.compile(r"^\[campaign\] (?P<key>\S+): (?P<spec>/\S+ScenarioSpec\.yaml)\s*$")
+def stacks_json(proc: subprocess.CompletedProcess) -> dict[str, Any] | None:
+    """The mns.stacks_cli.v1 envelope a `--json` call printed, or None."""
+    try:
+        envelope = json.loads(proc.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if isinstance(envelope, dict) and envelope.get("schema") == "mns.stacks_cli.v1":
+        return envelope
+    return None
 
 
 def materialise(campaign_file: Path, out_root: Path, only: list[str]) -> list[tuple[str, Path]]:
-    """Run `campaign plan`, which validates the spec, expands the matrix and
-    writes <out_root>/<campaign id>/<run_key>/ScenarioSpec.yaml for every run
-    -- the runner nests the id itself, so out_root is the campaigns directory.
-    Returns [(run_key, host path of that spec)] in the runner's own order."""
-    args = ["campaign", "plan", container_path(campaign_file), "--out", container_path(out_root)]
+    """Run `campaign plan --json`, which validates the spec, expands the matrix
+    and writes <out_root>/<campaign id>/<run_key>/ScenarioSpec.yaml for every
+    run -- the runner nests the id itself, so out_root is the campaigns
+    directory. Returns [(run_key, host path of that spec)] in the runner's own
+    order, from the envelope's result.runs[] ({run_key, variant, seed, repeat,
+    spec, stack, bag_dir, command})."""
+    args = ["campaign", "plan", workspace_path(campaign_file), "--out", workspace_path(out_root)]
     if only:
         # One flag, every key: `--only` is nargs="+" and a repeated option
         # keeps only its last occurrence, so `--only a --only b` plans b
         # alone. The same argparse shape bites `osmo workflow submit --set`.
         args += ["--only", *only]
-    proc = product_cli(*args)
+    proc = stacks_cli(*args, "--json")
+    envelope = stacks_json(proc)
     runs: list[tuple[str, Path]] = []
-    for line in proc.stdout.splitlines():
-        m = PLAN_LINE.match(line.strip())
-        if m:
-            runs.append((m.group("key"), host_path(m.group("spec"))))
-    if proc.returncode != 0 or not runs:
+    if envelope and envelope.get("ok"):
+        for run in (envelope.get("result") or {}).get("runs") or []:
+            if run.get("run_key") and run.get("spec"):
+                runs.append((str(run["run_key"]), Path(run["spec"])))
+    if not runs:
         sys.stderr.write(proc.stdout + proc.stderr)
-        sys.exit(f"[campaign] plan failed (rc={proc.returncode}); nothing materialised")
+        why = ((envelope or {}).get("error") or {}).get("message") or f"rc={proc.returncode}"
+        sys.exit(f"[campaign] plan failed ({why}); nothing materialised")
+    for warning in (envelope or {}).get("warnings") or []:
+        print(f"[campaign] warning: {warning}", file=sys.stderr)
     return runs
 
 
@@ -305,8 +419,10 @@ def with_chase_camera(spec_file: Path, out_dir: Path) -> Path:
 
 
 def generate_stack(spec_file: Path, stack_dir: Path) -> None:
-    proc = product_cli("runtime", "--scenario", container_path(spec_file.parent),
-                       "--no-run", "--out", container_path(stack_dir))
+    """`mns-stacks generate`, which writes the stack and starts nothing."""
+    # --no-topics: no socket here, so the topic preview could only say "unavailable".
+    proc = stacks_cli("generate", workspace_path(spec_file.parent), "--profile", "docker",
+                      "--no-topics", "--out", workspace_path(stack_dir))
     if proc.returncode != 0 or not (stack_dir / "docker-compose.yml").exists():
         sys.stderr.write(proc.stdout + proc.stderr)
         raise RuntimeError(f"stack generation failed for {spec_file}")
@@ -321,7 +437,7 @@ def image_set_name() -> str:
     entry = channels.get(CHANNEL_NAMES.get(channel, channel))
     if not entry:
         sys.exit(f"[campaign] MNS_CHANNEL={channel!r} names no release channel in {CATALOG_FILE}")
-    return str(entry.get("image_set") or "published")
+    return str(entry.get("image_set") or channel)
 
 
 def pinned_images() -> tuple[str, dict[str, str]]:
@@ -496,6 +612,28 @@ def route_blob(campaign_file: Path, campaign: dict[str, Any]) -> str:
     return base64.b64encode(json.dumps(plan).encode()).decode()
 
 
+def camera_info_topics(stack_dir: Path) -> list[str]:
+    """Every CameraInfo topic the stack's bridge will publish, by the bridge
+    image's own naming rules (tools/preview_topics.py reads settings.json,
+    topic_names.yaml and the launch arguments). The recorder subscribes to
+    these by name: a plain discovery-server client sees only the endpoints it
+    matches, so it cannot find them by listing the graph. Empty, with a
+    warning, if the preview fails; the recorder then falls back to discovery."""
+    proc = subprocess.run([sys.executable, str(ROOT / "tools" / "preview_topics.py"),
+                           str(stack_dir), "--json"], capture_output=True, text=True)
+    try:
+        bridges = json.loads(proc.stdout) if proc.returncode == 0 else None
+    except json.JSONDecodeError:
+        bridges = None
+    if not isinstance(bridges, list):
+        err = (proc.stderr or proc.stdout).strip().splitlines()
+        print(f"[campaign] camera_info topics not derived from {stack_dir}"
+              f" ({err[-1] if err else f'exit {proc.returncode}'}); the recorder falls back to discovery")
+        return []
+    return sorted({t["topic"] for b in bridges for t in b.get("topics") or []
+                   if str(t.get("topic", "")).endswith("/camera_info")})
+
+
 def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
            campaign_file: Path, images: dict[str, str], viz: bool = False,
            viz_hold_sec: int = 0) -> str:
@@ -523,6 +661,9 @@ def submit(stack_dir: Path, campaign: dict[str, Any], run_gates: dict[str, Any],
         "viz_hold_sec": str(int(viz_hold_sec)),
         "gates_json": json.dumps(run_gates),
         "route_b64": route_blob(campaign_file, campaign),
+        # Recorded by name: one CameraInfo per delivered frame gives each
+        # camera's real rate without the images.
+        "camera_info_topics": ",".join(camera_info_topics(stack_dir)),
         # The workflow names no image of its own; each comes from the catalog.
         **images,
     }
@@ -1073,10 +1214,9 @@ def evaluate(root: Path, campaign: dict[str, Any] | None = None,
     runs = [r for r in manifest.get("runs", []) if r.get("status") == "done" and r.get("bundle")]
     image = evaluator_image()
     if sh(["docker", "run", "--rm", image, "vio-stress", "--help"], check=False).returncode != 0:
-        # The published -latest worker predates vio-stress (2026-08-09). Until
-        # a worker that has it is published and pinned in the catalog, point
-        # MNS_SIM_REAL_EVAL_IMAGE at a local build of
-        # MnS-Integration-Platform/tools/sim_real_eval.
+        # The catalog's sim-real-eval-worker-v1.0.0 has vio-stress; an older
+        # worker (the 2026-08-09 -latest) does not. For one without it, point
+        # MNS_SIM_REAL_EVAL_IMAGE at a worker that has it.
         print(f"[campaign] {image} has no vio-stress; set MNS_SIM_REAL_EVAL_IMAGE to a worker "
               "that does. Runs are collected; `evaluate` scores them later.", file=sys.stderr)
         return 3
@@ -1139,10 +1279,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         # Its own manifest and scorecard: a chase-camera run flew a different
         # image budget, and must never sit in the campaign it was copied from.
         root = root.with_name(root.name + "-viz")
-    # The product shell runs as root and `campaign plan` creates <root>/<key>/
-    # as root. The manifest, the stacks and the evidence are written by this
-    # user, so their directories are made here first, and the stacks live
-    # beside the run directories rather than inside them.
+    # The manifest, the stacks and the evidence are written by this user, so
+    # their directories are made here first (a directory the container makes
+    # would not be), and the stacks live beside the run directories rather
+    # than inside them.
     for d in (root, root / "stacks", root / "runs", root / "reports"):
         d.mkdir(parents=True, exist_ok=True)
     run_gates = gates(campaign)
@@ -1478,8 +1618,24 @@ def cmd_status(args: argparse.Namespace) -> int:
     campaign_file = find_campaign(args.campaign)
     campaign = yaml.safe_load(campaign_file.read_text())
     root = CAMPAIGNS_HOST / str(campaign["id"])
-    proc = product_cli("campaign", "status", container_path(root / "campaign_manifest.json"),
-                       *(["--json"] if args.json else []))
+    proc = stacks_cli("campaign", "status", workspace_path(root / "campaign_manifest.json"),
+                      *(["--json"] if args.json else []))
+    if args.json:
+        # mns-stacks wraps every --json result in its envelope; this command
+        # keeps printing the scorecard itself, as it always has.
+        try:
+            envelope = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            envelope = None
+        if isinstance(envelope, dict) and envelope.get("schema") == "mns.stacks_cli.v1":
+            for warning in envelope.get("warnings") or []:
+                print(f"[campaign] warning: {warning}", file=sys.stderr)
+            if envelope.get("error"):
+                print(f"[campaign] {envelope['error'].get('message', envelope['error'])}",
+                      file=sys.stderr)
+            print(json.dumps(envelope.get("result"), indent=2))
+            sys.stderr.write(proc.stderr)
+            return int(envelope.get("exit_code", proc.returncode))
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
     return proc.returncode
@@ -1535,7 +1691,25 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_status)
     args = ap.parse_args(argv)
-    return args.fn(args)
+    if args.cmd in ("run", "reindex", "registry", "evaluate", "status"):
+        require_workspace()
+    try:
+        return args.fn(args)
+    except PermissionError as exc:
+        print(f"[campaign] {exc.strerror}: {exc.filename}\n"
+              f"[campaign] The campaign tree is written under {WORKSPACE_HOST} "
+              f"(the cluster's /workspace, from {WORKSPACE_SOURCE}). Fix the ownership "
+              f"(sudo chown -R $(id -un): <dir>), or set MNS_OSMO_WORKSPACE.", file=sys.stderr)
+        return 2
+    except subprocess.CalledProcessError as exc:
+        # kubectl, osmo or docker said no: their own message, not a traceback.
+        detail = (exc.stderr or exc.stdout or "").strip().splitlines()
+        print(f"[campaign] {shlex.join(exc.cmd)} failed (exit {exc.returncode})"
+              + (f": {detail[-1]}" if detail else ""), file=sys.stderr)
+        if exc.cmd and exc.cmd[0] in ("kubectl", "osmo"):
+            print("[campaign] Is the OSMO cluster up (osmo/setup-local-osmo.sh gpu) and "
+                  "`kubectl config use-context kind-osmo` selected?", file=sys.stderr)
+        return 42
 
 
 if __name__ == "__main__":

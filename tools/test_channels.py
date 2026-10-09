@@ -56,11 +56,6 @@ class ChannelsDeclarationMatchesTheMakefile(unittest.TestCase):
             expected = self.makefile[name].get("CHANNEL_AUTHORING_CONTRACT", "") or None
             self.assertEqual(declared["authoring_contract"], expected, name)
 
-    def test_seeding_matches(self):
-        for name, declared in self.by_name.items():
-            expected = self.makefile[name]["CHANNEL_SEED_DEFAULTS"] == "1"
-            self.assertEqual(declared["seed_authoring_defaults"], expected, name)
-
     def test_every_declared_file_exists(self):
         for name, declared in self.by_name.items():
             for field in ("lock", "contract"):

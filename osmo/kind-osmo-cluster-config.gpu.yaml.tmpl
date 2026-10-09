@@ -1,11 +1,19 @@
 # OSMO Quickstart cluster, GPU variant (NVIDIA/OSMO deploy_local.rst, Option A).
 #
-# Create it with nvkind, not kind, so the host GPU is passed through to the
-# compute worker:
+# A template: @MNS_OSMO_WORKSPACE@ is the product checkout the compute node
+# mounts. `osmo/setup-local-osmo.sh gpu` renders it from the checkout it runs
+# in (or MNS_OSMO_WORKSPACE=<checkout>) into
+# .mns/osmo/kind-osmo-cluster-config.gpu.yaml and creates the cluster from
+# that. By hand:
 #
-#   nvkind cluster create --config-template=osmo/kind-osmo-cluster-config.gpu.yaml
+#   osmo/setup-local-osmo.sh kind-config        # renders it, prints the path
+#   nvkind cluster create --config-template=.mns/osmo/kind-osmo-cluster-config.gpu.yaml
 #   nvkind cluster print-gpus
 #   kubectl config use-context kind-osmo
+#
+# Created with nvkind, not kind, so the host GPU is passed through to the
+# compute worker. osmo/campaign.py reads the mount back from the running
+# cluster, so it always writes where the cluster looks.
 #
 # nvkind requires docker's default runtime to be nvidia, which is a sudo step on
 # the host (`nvidia-ctk runtime configure --runtime=docker --set-as-default`).
@@ -61,7 +69,7 @@ nodes:
       # Read-only, so a run can load a pack and read its config but cannot
       # write back into the checkout. A task that must produce artifacts needs
       # its own writable mount.
-      - hostPath: /home/mnsuser/M-S-Simulation-Runtime-Stack
+      - hostPath: @MNS_OSMO_WORKSPACE@
         containerPath: /workspace
         readOnly: true
       # Where a run's evidence lands: the recorder writes /runs/<run_id>/, the
@@ -76,7 +84,7 @@ nodes:
       # upload does not land (control-plane artifacts do), so evidence moves
       # through a shared host path instead. Single-node only; replace this with
       # {{output}} once the upload works.
-      - hostPath: /home/mnsuser/M-S-Simulation-Runtime-Stack/.mns/osmo-runs
+      - hostPath: @MNS_OSMO_WORKSPACE@/.mns/osmo-runs
         containerPath: /runs
     kubeadmConfigPatches:
       - |

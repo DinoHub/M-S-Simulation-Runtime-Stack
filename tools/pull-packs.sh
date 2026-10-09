@@ -11,11 +11,11 @@
 #
 # Thin wrapper over tools/install_demo_packs.py so the channel roots (lock,
 # store, contract, pack mount directory MNS_PACKS_DIR) come from the same env
-# the Makefile, product.sh and the dashboard backend export. Every archive is
-# verified (size, sha256 from the release, and the product shell's own
-# `packs verify`) before it enters the store, and ScenarioLab's index is
-# re-staged afterwards. Split releases (>1900 MB, published as .part-NNN
-# assets) are reassembled here.
+# the Makefile and the dashboard backend export. Every archive is verified
+# (size, sha256 from the release, and `mns-packs install`'s own verification)
+# before it enters the store, and ScenarioLab's index is re-staged afterwards
+# (`mns-packs stage-authoring --lock`). Split releases (>1900 MB, published as
+# .part-NNN assets) are reassembled here.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ $# -gt 0 ]] || { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
