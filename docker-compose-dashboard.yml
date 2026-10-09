@@ -221,7 +221,8 @@ services:
       # be exactly the drift images/catalog.yaml exists to prevent. It ships in
       # the channel env file -- pass it with --env-file (see the header).
       - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?add --env-file images/v1.0.0.generated.env, or use make dashboard}
-      - ROS2_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}ros2-tools
+      # A second dashboard (tools/dashboard-instance.sh) shares the main one's.
+      - ROS2_CONTAINER_NAME=${DASHBOARD_ROS2_CONTAINER:-${DASHBOARD_CONTAINER_PREFIX:-}ros2-tools}
       - MNS_AUTHORING_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}mns-scenariolab-editor
       - MNS_AUTHORING_DOCKER_ARGS=-v "${MSRS_ROOT:-${PWD}}/config/scenariolab/airsim-settings.json:/tmp/Documents/AirSim/settings.json:ro" ${MNS_AUTHORING_DOCKER_ARGS:-}
       - MNS_HOST_UID=${HOST_UID:-1000}

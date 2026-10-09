@@ -10,7 +10,7 @@
 # What it runs: only its own backend and frontend, as containers
 # <name>-airsim-dashboard-api and <name>-airsim-dashboard-frontend (compose
 # project tevv-dash-<name>). They join the main dashboard's network and share
-# its metrics service, Lichtblick and Sim-view signalling server: a second
+# its metrics service, Lichtblick, ros2-tools and Sim-view signalling server: a second
 # metrics service would score every run twice. The main dashboard must be up.
 #
 # The frontend talks to the backend port it was BUILT for (NEXT_PUBLIC_API_URL
@@ -21,11 +21,12 @@
 #
 # Runs stay one at a time across both dashboards: they share the GPU and the
 # simulator's ports, and a run's preflight refuses while another holds them.
-# Each dashboard lists only the jobs it started itself.
+# Each dashboard lists only the jobs it started itself. Bag replay uses one
+# player for both: replay in one dashboard at a time.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 [ $# -ge 2 ] || usage
 NAME=$1 ACTION=$2; shift 2
 [[ $NAME =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || { echo "ERROR: name must be lower-case letters, digits, hyphens" >&2; exit 2; }
@@ -62,6 +63,9 @@ export MNS_IMAGE_SET_FILE="$(eval "$(mk EFFECTIVE_IMAGE_SET)")"
 export MSRS_ROOT=$PWD HOST_UID=$(id -u) HOST_GID=$(id -g)
 export COMPOSE_PROJECT_NAME=$PROJECT DASHBOARD_CONTAINER_PREFIX="$NAME-"
 export DASHBOARD_PORT=$PORT DASHBOARD_API_PORT=$API_PORT
+# The main dashboard's ros2-tools sidecar (Foxglove :8764, bag replay): its
+# backend creates it, and a second one would fight it for the port.
+export DASHBOARD_ROS2_CONTAINER="${MAIN_CONTAINER_PREFIX:-}ros2-tools"
 [ -n "$BACKEND_IMAGE" ] && export DASHBOARD_BACKEND_IMAGE=$BACKEND_IMAGE
 [ -n "$FRONTEND_IMAGE" ] && export DASHBOARD_FRONTEND_IMAGE=$FRONTEND_IMAGE
 
@@ -81,6 +85,7 @@ case $ACTION in
   down)
     [ -f "$OVERRIDE" ] || { echo "no dashboard '$NAME'"; exit 0; }
     compose rm -sf dashboard-backend dashboard-frontend
+    docker rm -f "$NAME-ros2-tools" >/dev/null 2>&1 || true   # from builds before ros2-tools was shared
     rm -rf "$STATE"
     ;;
   status)
