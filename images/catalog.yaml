@@ -247,8 +247,8 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.0.0-g44d7dc0"
-    digest: sha256:3eac964c0896f38a8fbc09e6033ffe5672b957548d939a7b111228621cda6b24
+    tag: "tevv-web-dashboard-backend-v1.0.0-gb3d16d3"
+    digest: sha256:2bfeacdf636b88c1910a12afded8bc62f583da5b29723d8de0e26810264a6262
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
@@ -258,11 +258,14 @@ images:
     # so rebuilding mns-stacks, mns-packs or the authoring image is a repin
     # here, never a dashboard rebuild.
     purpose: >-
-      MnS 1.0 dashboard backend (TEVV-Web-Dashboard release/v1.0.0-next 44d7dc0:
-      #127, .env quoting, counts via mns-packs; a campaign cancel reports
-      cancelled only when the runner took it, 409 otherwise; no virtualenv in
-      the image), pilot and sim_real_eval from MnS-Integration-Platform
-      release/v1.0.0-next 761f5e9 (pilot unchanged since 4ded7cf): REST takeoff
+      MnS 1.0 dashboard backend (TEVV-Web-Dashboard release/v1.0.0-next b3d16d3,
+      44d7dc0's code plus a docs note: #127, .env quoting, counts via mns-packs;
+      a campaign cancel reports cancelled only when the runner took it, 409
+      otherwise; no virtualenv in the image), pilot and sim_real_eval from
+      MnS-Integration-Platform release/v1.0.0-next 71039d8 (the 761f5e9 pilot
+      plus 71039d8: a PX4 takeoff reads the newest LOCAL_POSITION_NED, so a
+      completed climb is no longer reported as failed and then lost to PX4's
+      offboard-loss failsafe; replaces -g44d7dc0, sha256:3eac964c...): REST takeoff
       reports success only once armed and climbed; WASD re-enters OFFBOARD
       after Hold; STOP holds via the autopilot; one REST flight command per vehicle. Every stack lifecycle,
       recording, campaign and topic call goes through mns-stacks and pack status
