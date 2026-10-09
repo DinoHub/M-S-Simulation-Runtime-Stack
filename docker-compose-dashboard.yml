@@ -64,9 +64,13 @@ services:
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: ${DASHBOARD_CONTAINER_PREFIX:-}airsim-dashboard-api
     ports:
-      - "8001:8001"
+      # DASHBOARD_API_PORT / DASHBOARD_PORT move a second dashboard on the
+      # same host (tools/dashboard-instance.sh); the defaults are this one's.
+      - "${DASHBOARD_API_PORT:-8001}:8001"
     environment:
       - AIRSIM_HOST=host.docker.internal
+      # The frontend port CORS lets in (besides 3000 and 3001).
+      - DASHBOARD_PORT=${DASHBOARD_PORT:-3001}
       # postgres-telemetry is a service in THIS compose file (db profile), so
       # reach it by service name on the default network. It publishes no host
       # port, so the host.docker.internal form this used to carry — from when
@@ -344,7 +348,7 @@ services:
       # container, not the standalone default of 3000. Mapping 3001:3000 hit a
       # dead port; the browser reported an empty response / connection reset
       # while `docker ps` showed the container happily Up.
-      - "3001:3001"
+      - "${DASHBOARD_PORT:-3001}:3001"
     environment:
       # Pinned so the port mapping above cannot drift from an image default.
       - PORT=3001
