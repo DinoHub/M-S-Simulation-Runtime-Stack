@@ -5,8 +5,9 @@ author a scenario in ScenarioLab (an Unreal editor), MnS generates a stack from
 it (Unreal + Cosys-AirSim, PX4 or ArduPilot SITL, ROS 2 Humble), and you fly,
 record and evaluate it from a browser dashboard. Everything runs in Docker.
 
-This repository is the customer distribution. Its historical name is
-`M-S-Simulation-Runtime-Stack`, but it holds the whole product, not one stack.
+This repository is the customer distribution. Until 12 October 2026 it was
+called `M-S-Simulation-Runtime-Stack`; GitHub redirects the old URL, and an
+existing clone keeps working under its old folder name.
 
 ## Requirements
 
@@ -22,8 +23,8 @@ This repository is the customer distribution. Its historical name is
 ## Quick start
 
 ```bash
-git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
-cd M-S-Simulation-Runtime-Stack
+git clone https://github.com/DinoHub/TEVV-Distribution.git
+cd TEVV-Distribution
 ./setup.sh           # checks the machine, logs in to Docker Hub, pulls the images
 ./download-packs.sh  # downloads the starter levels (logs in to GitHub)
 make dashboard       # then open http://localhost:3001 in Chrome

@@ -31,7 +31,8 @@ OSMO variant 2026-07-13, Jenkins CI plane 2026-08-18. Bridge repo state:
 
 ## 2. Where the bridge sits
 
-The spec's "existing assets" name `M-S-Simulation-Runtime-Stack`, not the
+The spec's "existing assets" name `M-S-Simulation-Runtime-Stack` (now
+`TEVV-Distribution`), not the
 bridge. The bridge is "per-drone ROS 2 bridges" inside the run-plane
 sim-adapter box: **one component in the `sim: cosys-airsim-ue5` profile**, plus
 pieces of the `middleware` (airsim_mavros_bringup) and `comms` axes. Not the
