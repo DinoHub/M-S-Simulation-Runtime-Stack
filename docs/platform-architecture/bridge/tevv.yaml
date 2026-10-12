@@ -74,7 +74,7 @@ requires:
     name: /run_state
     type: airsim_interfaces/msg/RunState
     optional: true
-    notes: published by the scenario controller (M-S-Simulation-Runtime-Stack); the bridge
+    notes: published by the scenario controller (TEVV-Distribution); the bridge
       only defines the message type.
 
 # QoS classes map 1:1 to topic_contract.yaml:

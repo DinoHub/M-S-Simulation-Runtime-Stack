@@ -6,7 +6,7 @@
 #                     rendezvous. DDS multicast does not survive pod networking,
 #                     so every participant dials {{host:discovery-server}}.
 #   sim               Cosys-AirSim UE5 headless (GPU). Image/settings come from
-#                     M-S-Simulation-Runtime-Stack; this file only names the
+#                     TEVV-Distribution; this file only names the
 #                     interface: RPC on 41451, settings.json injected via files:.
 #   bridge            this repo's image. Dial-waits on the sim RPC port, then
 #                     launches single_vehicle with topic_prefix={vehicle}/.

@@ -28,7 +28,7 @@ D1, D2 = "sha256:" + "a" * 64, "sha256:" + "b" * 64
 def _lock(**overrides):
     lock = {
         "schema": "mns.pack_release_lock.v1",
-        "release": {"repository": "DinoHub/M-S-Simulation-Runtime-Stack", "tag": "lock-release"},
+        "release": {"repository": "DinoHub/TEVV-Distribution", "tag": "lock-release"},
         "capability_id": HOST,
         "required_images": {"packs": "local/packs:1"},
         "packs": [
@@ -177,7 +177,7 @@ class InstallerTests(unittest.TestCase):
         code, out = self._run("--dry-run", "--all")
         self.assertEqual(code, 0)
         self.assertIn("DinoHub/TEVV-Airsim@pack-level-condo-level-1.0.0", out)
-        self.assertIn("DinoHub/M-S-Simulation-Runtime-Stack@lock-release", out)
+        self.assertIn("DinoHub/TEVV-Distribution@lock-release", out)
         self.assertFalse(self.store.exists())
 
     def test_disk_guard_counts_archive_plus_store_copy(self):
@@ -292,7 +292,7 @@ class UnpublishedLockEntries(unittest.TestCase):
         self.assertIn("mns_vehicle_models", str(caught.exception))
 
     def test_a_lock_level_release_still_covers_a_pack_without_one(self):
-        lock = {"release": {"repository": "DinoHub/M-S-Simulation-Runtime-Stack", "tag": "v1"}}
+        lock = {"release": {"repository": "DinoHub/TEVV-Distribution", "tag": "v1"}}
         self.assertEqual(installer.pack_release(lock, {"id": "x"})["tag"], "v1")
 
 

@@ -20,8 +20,8 @@ clicking. Section 5 explains each step in full.
 **On the command line** (once):
 
 ```bash
-git clone https://github.com/DinoHub/M-S-Simulation-Runtime-Stack.git
-cd M-S-Simulation-Runtime-Stack
+git clone https://github.com/DinoHub/TEVV-Distribution.git
+cd TEVV-Distribution
 ./setup.sh           # checks the machine, logs in to Docker Hub, pulls the images
 ./download-packs.sh  # downloads the starter levels, ~0.8 GB (logs in to GitHub)
 make dashboard       # run from a terminal on the desktop, not over SSH
@@ -498,12 +498,12 @@ Always stop through the dashboard. A bag killed mid-write has no
 ### Step 5: Get your rosbag
 
 Everything a run produces is inside the folder you cloned
-(`M-S-Simulation-Runtime-Stack/`). Each run gets its own folder in `runs/`,
+(`TEVV-Distribution/`). Each run gets its own folder in `runs/`,
 named after the scenario and the time the stack started, in **UTC**. The
 newest run is the last one listed:
 
 ```bash
-cd M-S-Simulation-Runtime-Stack
+cd TEVV-Distribution
 ls -t runs | head -1              # your latest run
 ```
 
@@ -675,7 +675,7 @@ campaign and swap in your own estimator.
 
 ## 7. Where everything is stored
 
-Everything lives inside the folder you cloned, `M-S-Simulation-Runtime-Stack/`.
+Everything lives inside the folder you cloned, `TEVV-Distribution/`.
 
 **Your results**
 

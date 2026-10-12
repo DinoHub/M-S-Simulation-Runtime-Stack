@@ -269,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--packs", help="mns-packs image to verify with (default: the env's MNS_PACKS_IMAGE)")
     parser.add_argument("--cache", type=Path, default=ROOT / ".mns" / "downloads" / "pack-cache")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--lock-repository", default="DinoHub/M-S-Simulation-Runtime-Stack")
+    parser.add_argument("--lock-repository", default="DinoHub/TEVV-Distribution")
     parser.add_argument("--lock-tag", help="release.tag recorded in the lock (default: output stem)")
     args = parser.parse_args(argv)
 
