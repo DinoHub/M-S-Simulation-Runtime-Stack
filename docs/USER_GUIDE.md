@@ -44,16 +44,21 @@ run the same script again; it skips whatever is already done.
 4. Back in the dashboard, click your scenario under **Authored scenarios**.
 5. **Generate**: **Generate stack**.
 6. **ROS 2** → **Bag capture**: tick `/ground_truth/odom`, `/imu/data` and
-   `/gps/fix` → **Save & continue to metrics**. Then **Metrics** → **Save &
-   apply**.
-7. **Launch**: pick your stack → **Launch**. Wait for *Visualization ready* →
-   **Go to Monitor**.
-8. **Monitor**: the **Bag recording** panel shows **REC mm:ss**; that's your bag
-   recording. Fly with **Teleop (WASD)** or **Quick Mission Launch**. *PX4 needs
-   1–2 minutes after spawn before it will arm.*
-9. **Launch** → **Stop**. This finalizes the bag.
-10. Your bag is in `runs/<scenario>_<timestamp>/bag/`. **Replay → Bags**
-    lists and plays it; with ROS 2 on the host, `ros2 bag info` reads it too.
+   `/gps/fix` → **Save & continue to the test plan**.
+7. **Test plan**: keep **Measure** and **Judge** as they are, pick **Route**
+   `box-10m.yaml` under **Fly**, keep 1 run under **Repeat** → **Save plan**.
+8. **Run** → **Run**. The run's row says *flying*; **Watch live** opens it on
+   Monitor. It takes off, flies the route, lands and stops by itself.
+9. When the row says *done* it shows the verdict (PASS or FAIL, and why) and a
+   map of the flight.
+10. Your bag is in `generated/campaigns/<plan>/runs/<run>/bag/`. **Replay →
+    Bags** lists and plays it; with ROS 2 on the host, `ros2 bag info` reads it
+    too.
+
+To fly by hand instead, open **Run → Open the stack for manual flying**:
+**Launch**, fly on **Monitor**, then **Stop** (which finalizes the bag into
+`runs/<scenario>_<timestamp>/bag/`). *PX4 needs 1–2 minutes after spawn
+before it will arm.*
 
 Starting again from scratch on a machine that has run MnS before? Stop what
 is running first:
@@ -86,14 +91,19 @@ docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
 
 ```
  ScenarioLab ──export──▶ ScenarioSpec ──generate──▶ Stack ──launch──▶ Simulation ──record──▶ rosbag
- (Unreal editor)          (YAML files)              (docker compose)   (sim + SITL + ROS 2)     (runs/)
+ (Unreal editor)          (YAML files)       ▲      (docker compose)   (sim + SITL + ROS 2     (runs/)
+                               │             │                          + components)
+                               │      components/<id>                        │ stop: metrics,
+                               │      (--component)                          ▼ component scores
+                               └──▶ CampaignSpec ──▶ N runs ──────▶ metrics service ──▶ verdict per run
+                                    (Test plan step) (one stack each)  (localhost:8770)    (runs/)
          ▲                                                                   ▲
          └───────────────── all driven from the dashboard (localhost:3001) ──┘
 ```
 
 | MnS term | What it is, in domain terms |
 |---|---|
-| **Level pack** | A pre-built Unreal map, the environment you fly in: Warehouse, Office Environment, Condo, XFS, Safti or Fisherman's Cabin. It is downloaded once and checksum-verified. ScenarioLab can open **Warehouse** and **Office Environment**; the other four are *runtime only* and fly from hand-written specs. |
+| **Level pack** | A pre-built Unreal map, the environment you fly in: Blocks, Warehouse, Office Environment, Condo, XFS, Safti or Fisherman's Cabin. It is downloaded once and checksum-verified. ScenarioLab opens all seven. |
 | **Object pack** | Placeable props: office, warehouse and cabin props. The drone models come as their own pack, `mns_vehicle_models`. |
 | **ScenarioLab** | An Unreal-based editor. You place vehicles, sensors and objects in a level, then **Export**. |
 | **ScenarioSpec** | The exported scenario: a folder of YAML files covering the environment, vehicles, sensor profiles, objects and runtime settings. It is the single input to everything downstream. |
@@ -219,11 +229,23 @@ To move a checkout you set up earlier onto a new release:
 make dashboard-down
 git pull
 grep -n '_IMAGE=' .env        # delete any image lines this shows; they override the release
-make pull-images              # refresh images whose tags were republished
-./setup.sh                    # pulls any new images
+./setup.sh                    # pulls new images; points every release tag at its pinned digest
 ./download-packs.sh           # installs any new packs
+make doctor                   # "Ready" means every image is here and every tag is at its pin
 make dashboard
 ```
+
+A tag can be republished in place (the `-v1.0.0` tags were, on 2026-10-07),
+so a tag already on your machine may name an older image than the release
+pins. `./setup.sh` (and `make dashboard`, `make fly`, `make author` and
+`make campaign`, which run the same step) compares each local tag with the
+digest the release pins and, when they differ, points the tag at the pinned
+image, pulling it by digest only if it is not already here. `make pull-images`
+pulls every pin again and does the same. To check one image:
+`docker image inspect -f '{{.RepoDigests}}' <tag>` lists the pinned digest. An
+image you built yourself under a release tag is replaced by that step too,
+unless you set `MNS_KEEP_LOCAL_TAGS=1`; better, give your build its own name
+in `./.env` (see [How the dashboard gets its images](dashboard-images.md)).
 
 Scenarios in `scenarios/` and runs in `runs/` are kept.
 
@@ -288,8 +310,11 @@ docker ps -a --filter name=mns-recorder- -q | xargs -r docker rm -f
 Open **Scenario Configuration**. A stepper runs across the top:
 
 ```
-0 Content → 1a Author → 1b Generate → 1c ROS 2 → 1d Metrics → 2 Launch → 3 Runtime → 4 Analysis
+0 Content → 1a Author → 1b Generate → 1c ROS 2 → 1d Test plan → 2 Run → 3 Analysis
 ```
+
+Every step is required: a scenario is tested by its test plan, and Run runs
+that plan. Flying by hand is still there, as an option inside Run.
 
 Each step unlocks when the previous one is done and then shows a check mark.
 The whole loop takes about 15 minutes the first time.
@@ -302,7 +327,10 @@ This step shows what is installed.
   (generates and runs stacks) and `mns-packs` (installs and stages packs).
   ScenarioLab and the runtime host should say **matches**; `mns-stacks` and
   `mns-packs` say **present**.
-- **Level packs** and **Object packs** should say **ready**.
+- **Packs** has two tabs, **Level packs** and **Object packs**; each tab
+  counts its ready packs, and every pack should say **ready**. A pack that
+  is not installed has **Add to download**, one downloaded but not staged
+  **Add to staging**; ready packs have nothing to add.
 
 `./download-packs.sh` has already done this work, so normally you just click
 **Continue to Author**.
@@ -315,7 +343,21 @@ the free space and how much the selection needs.
 1. Check the header reads **environment ready**. If it doesn't, the failing
    checks are listed; see [Troubleshooting](#9-troubleshooting).
 2. Click **Launch editor**. ScenarioLab opens in its own window after 30–90
-   seconds.
+   seconds, on its start screen: **New scenario** starts an empty one, and
+   **Open a scenario** lists every scenario in `scenarios/` with an **Open**
+   button (or type the path of any spec folder). **Refresh** picks up a
+   folder you have just copied in. Opening an authored scenario from the
+   list on this step skips the start screen.
+
+**Bringing in a ScenarioSpec you already have.** Under **Import a
+ScenarioSpec**, choose one `ScenarioSpec.yaml`, a spec folder (the split layout
+with its includes), or a `.zip` of either, and check the name it will get.
+ScenarioLab reads and rewrites the spec as it does every spec; if it refuses
+it, the errors are listed and nothing is added. On success the step lists the
+level and asset packs the spec needs, calling out any that are not installed
+(install them in **Content**), then offers **Open in ScenarioLab** and **Use
+this scenario**. An existing scenario of the same name is only replaced when
+you ask, and never while its stack or test plan is running.
 
 **Moving around the viewport**
 
@@ -340,8 +382,8 @@ this order:
    folder name `scenarios/<name>/`.
 2. **Environment**: pick a **Level Pack** and click **Apply Level Pack**. The
    level loads.
-   - For a first run, pick **Warehouse**. The list shows only levels
-     ScenarioLab can open: Warehouse and Office Environment.
+   - For a first run, pick **Warehouse**. The list shows every level pack
+     you have downloaded and staged; ScenarioLab opens all seven.
    - Do this **first**. Switching levels can restart ScenarioLab, and it
      discards everything placed so far.
    - Optional settings here: **Edit MnS Origin** (the ROS frame origin), time
@@ -404,6 +446,12 @@ The badge (*working: authored*, *modified from authored*, …) shows whether the
 spec still matches your export. **Restore authored** returns to the export, and
 **Save as new…** forks the spec under a new name.
 
+**This stack carries ...** reports the components under test the stack was
+generated with (`mns-stacks generate --component <path>`, or your own compose).
+The dashboard keeps them when it regenerates the stack. A test plan picks its
+own components (see [Step 1d](#step-1d-test-plan)). Cameras are placed in
+ScenarioLab.
+
 ### Step 1c: ROS 2 settings and what to record
 
 | Sub-step | What you set |
@@ -425,15 +473,85 @@ On **Bag capture**:
      ros2-tools*.
    - If you tick nothing, **everything** is recorded, which with cameras is
      gigabytes per minute.
-3. Click **Save & continue to metrics**.
+3. Click **Save & continue to the test plan**.
 
-### Step 1d: Metrics
+### Step 1d: Test plan
 
-Optionally tick **Measure this run** and choose a preset. Event detectors then
-log to `generated/<name>/outputs/metrics/<run>/events.jsonl`. Click **Save &
-apply**.
+One page holds everything about how the scenario is tested, in four numbered
+sections:
 
-### Step 2: Launch
+1. **Measure**: which detectors the simulator runs (presets: Safety only,
+   Trajectory, Everything). They log to the run's `events.jsonl`.
+2. **Judge**: which checks each run is judged on and their thresholds, for
+   example collisions at most 0, or path length at most 100 m. A check needs
+   its detector, so judging a metric keeps its detector on.
+3. **Fly**: the mission (a route from the scenario's `routes/`, or a shared
+   route such as `box-10m.yaml`, a goal course, or a custom command), and when
+   a run starts (once ground truth and the cameras are steady) and ends.
+   Runs render off-screen; tick **Show the simulator window during runs** to
+   watch them on the desktop. A window costs GPU time and drops camera rates
+   on heavy levels such as XFS, and a monitor that goes to sleep stalls the
+   cameras and fails the recording check, so keep the display awake.
+4. **Repeat**: repeats, seeds and sweeps (wind, weather, any ScenarioSpec
+   field), and what each run's bag keeps. A run records only the topics it is
+   scored on: clock, transforms, ground truth, IMU, estimates, what the
+   components read and publish, and the autopilot's status. Tick **Record
+   every topic** to keep the cameras and raw sensors too, for replay; a stereo
+   run then writes several GB.
+
+**Save plan** saves Measure and Judge into the scenario's `ScenarioSpec.yaml`
+(`extensions."mns.metrics"`, written through ScenarioLab) and regenerates the
+stack, then saves Fly and Repeat as `CampaignSpec.<plan>.yaml` next to it.
+Because measuring and judging live in the scenario, every way of flying it,
+the plan's runs, a manual flight or a campaign on OSMO, is measured and judged
+the same way. **Components** above the plan picks the components under test
+its runs fly, one tick box per package in `components/`. A new plan starts with
+the ones the stack carries. The plan's list is the whole list, so a plan that
+picks SUPER flies SUPER alone, even on a stack generated with MIGHTY. The
+Component under test checks follow the list.
+
+### Step 2: Run
+
+**Run** runs the saved plan: each run brings up a stack of its own, flies the
+mission, records, and is judged. The plan panel lists every run up front:
+
+- **Now**: the run in the air ("Run 3 of 4: physics wind 4 m/s, seed 1") and
+  its phase: bringing up, waiting for the streams, recording and flying the
+  mission, stopping, scoring. **Watch this run** opens it on Monitor.
+- **Queued**: the runs still to fly, in order, with their sweep values.
+- **Done**: each finished run's verdict, why it failed if it did, component
+  scores and a map of the flight.
+
+Click any run, queued, flying or done, to open its details beside the list:
+its sweep values, the spec overrides it applies and its seed; where it is in
+the queue; its phase while it flies; and once done its verdict, key metrics,
+map, run events, **Replay** of its bag and **Open in Analysis**. Opening a run
+never moves the live view: **Now** and Monitor stay on the run in the air.
+
+**Watch on Monitor** opens Monitor following the plan: a banner across the
+top names the plan, the run in the air, its values and phase, with the queue
+and the results in a fold. Monitor moves to each run as it starts (between
+runs it says which run comes next). Pick a run in the banner, or **Pinned**,
+to stay on one run. The banner's run list opens the same details in a drawer
+while the viewer keeps following the plan.
+When the plan ends, the banner offers **See results in Analysis** and **Back
+to Run**; when a stack you were flying by hand stops, a strip offers **Back to
+Scenario Configuration**. Both open the scenario that ran.
+
+Reopening the step shows the plan's last results. **Stop after this run**
+lets the run in the air finish and starts nothing further. **Stop now** (it
+asks once more) also stops the run in the air: its recording stops, its stack
+is taken down and it is marked cancelled rather than failed. Both work on a
+plan started from a terminal, or before the dashboard restarted, and clear a
+plan whose process has died.
+
+While a plan run flies, its stack carries the scenario's stack name, so
+**Launch** and **Stop** below wait until the plan ends.
+
+#### Flying by hand
+
+Open **Open the stack for manual flying** to bring the scenario's stack up
+yourself:
 
 1. Under **Generated stack**, select your stack and click **Launch**. Use
    **Refresh stacks** if it isn't listed.
@@ -455,7 +573,8 @@ desktop.
 The **Monitor** page has these areas:
 
 - **Viewers → Lichtblick**: live 3D view, camera images and plots. **Viewers →
-  Sim** shows the simulator view.
+  Sim** shows the simulator view where the runtime host streams it (the v1
+  host does not).
 - **Mission Control** (right-hand panel):
   - pick a vehicle
   - **Quick Mission Launch** and **Flight patterns** for scripted flights
@@ -475,10 +594,21 @@ You can also fly from your own autonomy stack; see
 
 ### Step 4: Stop, which finalizes the bag
 
-Go back to **Launch** and click **Stop**. The dashboard stops the recorder
+A plan run stops by itself. For a stack you launched by hand, go back to
+**Run → Open the stack for manual flying** and click **Stop**. The dashboard stops the recorder
 cleanly, writing the bag's `metadata.yaml`, and then shuts the stack down
 (`mns-stacks stop`, which finalizes the run's metrics first). **Analysis** then
 unlocks.
+
+### Analysis
+
+**Analysis** lists every run of the scenario in one table: the latest test
+plan's runs and the runs flown by hand, with the same rows and details as
+**Run**, and a pass count per sweep value above it. Pick a run (the newest
+finished one is picked to start with); the run metrics, **Replay**, the
+hand-off bundle and the comparison with a real flight below all act on it.
+The hand-off bundle and the real-flight comparison work on runs flown by hand;
+for a plan run Analysis shows where its bag is kept.
 
 Always stop through the dashboard. A bag killed mid-write has no
 `metadata.yaml`, so it cannot be replayed or analysed.
@@ -486,7 +616,10 @@ Always stop through the dashboard. A bag killed mid-write has no
 ### Step 5: Get your rosbag
 
 Everything a run produces is inside the folder you cloned
-(`M-S-Simulation-Runtime-Stack/`). Each run gets its own folder in `runs/`,
+(`M-S-Simulation-Runtime-Stack/`). A test plan's runs are under
+`generated/campaigns/<plan>/runs/<run>/` (`bag/`, `validation.json`,
+`metrics/`), with the plan's `campaign_manifest.json` beside them. A stack
+flown by hand gets its own folder in `runs/`,
 named after the scenario and the time the stack started, in **UTC**. The
 newest run is the last one listed:
 
@@ -620,6 +753,43 @@ above.
 **Visualisation.** Connect Foxglove or Lichtblick to `ws://localhost:8765`
 (vehicle 1).
 
+### Bringing your own container as a component
+
+To test your own estimator, perception node or planner, attach it to a stack as
+a component. You do not need to edit the stack's compose file, and you do not
+need to write adaptor code. Describe the container in one `components.json`,
+and the platform's generic adaptor fits it to the stack:
+- it republishes the stack's sensors under the names your container
+  subscribes to;
+- it turns your output into the platform's estimate;
+- it writes your config files from the stack's calibration.
+
+```bash
+make stacks ARGS="component init my-vo --container myorg/my-vo:1.2"      # scaffold components/my-vo
+# fill in components/my-vo/components.json (its README.md lists the steps)
+make stacks ARGS="component check components/my-vo --stack generated/stereo-xfs"
+make stacks ARGS="generate scenarios/stereo-xfs --component components/my-vo --out $PWD/generated/stereo-xfs-my-vo"
+```
+
+`component check` prints what the adaptor will do with your file: each stack
+topic and the container topic it is relayed to, with the conversions, and
+every config value it will fill in. `components/dsta-mac-vo` is a worked
+example: MAC-VO run through the generic adaptor. `components/mac-vo` is the
+same estimator with a hand-written adaptor.
+
+The full walkthrough is MnS-Integration-Platform
+[`docs/guides/bring-your-own-container.md`](https://github.com/DinoHub/MnS-Integration-Platform/blob/feat/components/docs/guides/bring-your-own-container.md).
+It covers:
+- the fields;
+- the frame conventions;
+- pacing;
+- placeholders;
+- what to do when the generic adaptor is not enough.
+
+Under `make stacks`, `component init` runs without the Docker socket. It
+therefore cannot inspect your image, and it leaves the command for you to fill
+in.
+
 ### Running stacks without the dashboard
 
 The same steps run from a terminal, for scripts, CI, or a machine where you
@@ -671,7 +841,8 @@ Everything lives inside the folder you cloned, `M-S-Simulation-Runtime-Stack/`.
 |---|---|---|
 | Rosbag of a run | `runs/<scenario>_<time>/bag/` (`bag_0.db3` + `metadata.yaml`) | **Replay → Bags** (plays it); **Calibration** → *Sim run* → **⬇ View bag files** (downloads it) |
 | Run record | `runs/<scenario>_<time>/run.json`: run id, stack, bag name | shown with the run in **Replay → Bags** |
-| Metrics events | `generated/<scenario>/outputs/metrics/<run id>/events.jsonl` | **Monitor → Run events** while the stack runs |
+| Metrics events | `generated/<scenario>/outputs/metrics/<run id>/events.jsonl`, closed with `manifest.json` when the stack stops | **Monitor → Run events** |
+| Run metrics and verdict | `runs/<scenario>/<run id>/metrics/` (`metrics.json`, `evaluated.json`, `run_summary.json`), scored by the metrics service | **Monitor → Run metrics**; also `http://localhost:8770/runs` |
 | Calibration reports | `runs/_reports/` | **Calibration** |
 | Hand-off bundle | downloaded by your browser | **Analysis → Record integration bundle → Download bundle** |
 
@@ -683,6 +854,10 @@ Everything lives inside the folder you cloned, `M-S-Simulation-Runtime-Stack/`.
 | `generated/<name>/` | The stack generated from it: `docker-compose.yml` and configs. |
 | `.mns/v1/pack-store/` | Installed level and object packs. |
 | `.env` | Local settings. Defaults only; see [section 8](#8-optional-configuration). |
+
+`runs/` is the one runs folder: the dashboard, `make fly`/`make stop`, every generated
+stack and the metrics service all read and write it. [Metrics](metrics.md)
+explains what is measured, how a run is scored and the full layout of `runs/`.
 
 To free disk, delete old runs from `runs/`, and old scenarios with the
 🗑 icon in Author. `du -sh generated/ runs/` shows the usage.
@@ -697,8 +872,11 @@ Nothing here is needed for a normal run.
 
 | Variable | Default | Change it to |
 |---|---|---|
-| `TEVV_RUNS_DIR` | `runs/` in the checkout | keep runs and bags on another disk (an absolute path) |
+| `TEVV_RUNS_DIR` | `runs/` in the checkout | keep runs, bags and metrics on another disk (an absolute path); regenerate stacks afterwards so they pick it up |
+| `METRICS_SERVICE_PORT` | `8770` | move the metrics service's local port |
+| `METRICS_IDLE_SECONDS` | `120` | how long a run must be quiet before it is scored without a clean end |
 | `DASHBOARD_LICHTBLICK_PORT`, `FOXGLOVE_BRIDGE_PORT` | `8082`, `8764` | move a port that clashes |
+| `DASHBOARD_CONTAINER_PREFIX` | none | a prefix such as `alice-` for every dashboard container name (`alice-airsim-dashboard-api`, `alice-ros2-tools`, ...), so they do not clash by name with other containers. One dashboard per Docker daemon: `make dashboard-down` acts on the whole compose project, and ports 3001/8001 are fixed |
 | `GRAFANA_URL` | local Grafana | empty, to hide the Grafana embed |
 | `DOCKER_CONFIG` | `~/.docker` | a non-default Docker login location |
 
@@ -751,8 +929,9 @@ targets both use it, and each prints a note that it is an override.
 | Author: *not ready*, `display` / `xauthority` | Run `make dashboard` from a desktop terminal, or see Display access in [section 3](#3-setup). |
 | Author: *not ready*, `pack_store` / `packs_staged` | In Content, click **Download & stage** or **Stage**. |
 | *editor exited immediately* | Usually the GPU or the display. **Editor log** in Author shows Unreal's own error. |
-| Generate prints *…different registry digests; proceeding without enforcing base-release compatibility* | Advisory only: the level pack was cooked against an earlier build of the same base release. Generation continues and the level loads. |
-| A downloaded level (Condo, XFS, Safti, Fisherman's Cabin) is missing from ScenarioLab's list, or shows *runtime only* in Content | Expected: ScenarioLab cannot open those four, so it doesn't list them; see [Known limitations](#10-known-limitations). Author in Warehouse or Office Environment. |
+| Generate, `make fly` or a campaign prints *Pack level/… cooked against base release … same name, different registry digests; proceeding without enforcing* | Harmless: the level pack was cooked against an earlier build of the same base release (Warehouse and Condo on v1.0.0). Generation continues and the level loads and flies. |
+| A downloaded level is missing from ScenarioLab's list | It is not staged yet. In Content, click **Stage** (or run `make dashboard` again, which stages every installed pack). On v1.0.0 every level opens in ScenarioLab. |
+| The dashboard overview lists `m-s-simulation-runtime-stack` as a running stack (source `docker_only`, no autopilot) | Cosmetic: that is the dashboard's own compose project, not a simulation stack. Leave it alone; `make dashboard-down` stops it. |
 | Scenario doesn't appear in Authored scenarios | It wasn't exported; closing ScenarioLab does not save. Check its status line for *Exported ScenarioSpec*. |
 | Export succeeded but has a default drone at the origin | No drone was placed. Export adds a default one; run **Validate** first. |
 
@@ -763,7 +942,9 @@ targets both use it, and each prints a note that it is an override.
 | Launch never reaches *Visualization ready* | The level is still loading; wait up to 3 minutes and check the `unreal-airsim` row. Make sure nothing else holds port 8765, such as another stack or Foxglove bridge. |
 | `unreal-airsim is unhealthy`, restarting in a loop | The display. Start `make dashboard` from a desktop terminal. |
 | PX4 won't arm: `ekf2 missing data` | Wait 1–2 minutes after spawn. |
-| PX4 won't arm: `vertical velocity unstable` / `height estimate error`, and `/ground_truth/odom` z keeps falling | The vehicle spawned under the level: XFS and Condo have no floor at the world origin. Use the measured start in `packs/level-spawn-hints.json` (`make fly` warns about this). |
+| PX4 won't arm: `vertical velocity unstable` / `height estimate error`, and `/ground_truth/odom` z keeps falling | The vehicle spawned under the level: XFS, Condo and Fisherman's Cabin have no floor at the world origin. Use the measured start in `packs/level-spawn-hints.json` (`make fly` warns about this). |
+| On Warehouse, PX4 arms but takeoff fails (*climb did not reach the target altitude*) | A hand-written spec without ScenarioLab's `coordinate_frame` spawns at the world origin, which is on the floor among boxes. Author the scenario in ScenarioLab, or copy an export's `coordinate_frame` (the PlayerStart, in `packs/level-spawn-hints.json`). |
+| Campaign preflight prints *WARN images.ros2_bridge: … carries no version tag … Pin it as tag@digest* | Harmless in the default `IMAGE_MODE=development`: the bridge image is the release's `-v1.0.0` tag, used without its digest. The campaign runs. |
 | Lichtblick shows *You're using an unsupported browser* | Open the dashboard in Chrome or Chromium. |
 | Lichtblick shows no topics | ROS domain mismatch. Relaunch from the dashboard, and check the hint on Monitor. |
 | Your node sees only `/rosout` and `/parameter_events` | Wrong `ROS_DOMAIN_ID`, or the bridge hasn't finished starting. Read the domain from `generated/<name>/docker-compose.yml`. |
@@ -786,14 +967,20 @@ targets both use it, and each prints a note that it is an override.
 - **ArduPilot:** the dashboard's command link carries heartbeats only, so
   takeoff altitude is not reported and the vehicle stays armed after a
   descent "land". Disarm it explicitly.
-- **Runtime-only levels.** ScenarioLab cannot open Condo, XFS, Safti or
-  Fisherman's Cabin: its editor lacks plugins those levels need. They still
-  mount and fly, but you author them by hand, starting from a Warehouse
-  export. Give the vehicle a start over the level's floor: XFS and Condo have
-  none under the world origin, so a (0, 0, 0) start falls through the level and
-  PX4 refuses to arm. The measured starts are in `packs/level-spawn-hints.json`
-  (XFS: `x: 423, y: -906, z: -21.0`; Condo: `x: 0, y: -20, z: -2.0`), and
-  `make fly` / `make campaign` warn when a vehicle starts at such an origin.
+- **Hand-written specs need a real start.** ScenarioLab opens all seven
+  levels and records each level's PlayerStart as `coordinate_frame.origin`,
+  so author in ScenarioLab where you can. A hand-written spec without that
+  block spawns at the Unreal world origin: XFS, Condo and Fisherman's Cabin
+  have no floor there (the vehicle falls and PX4 refuses to arm), and on
+  Warehouse it is on the floor among boxes (takeoff fails). The measured
+  starts are in `packs/level-spawn-hints.json` (XFS: `x: 423, y: -906,
+  z: -21.0`; Condo: `x: 0, y: -20, z: -2.0`; Warehouse PlayerStart: Unreal
+  `(-927.2, -493.2, 128.2)` cm), and `make fly` / `make campaign` warn about a
+  start at a floorless origin.
+- **Re-exporting a hand-written spec through ScenarioLab** replaces its
+  vehicle with the default DroneA at the PlayerStart, and for a PX4 spec
+  writes `autopilot.type: ardupilot` under the PX4 profile. Fix the runtime
+  block by hand after such an export (fixed in v1.1).
 - **Office Environment** has a low ceiling. PX4 takeoffs there can be slow, and
   flights fly low.
 - **Bags are sqlite3 (`.db3`).** Convert with `ros2 bag convert` if you need

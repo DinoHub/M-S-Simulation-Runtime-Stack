@@ -1,0 +1,16 @@
+# A local-planner course over the XFS yard: one goal, in metres relative to
+# the take-off spot, in the planner's odometry frame (x east, y north, z
+# above the ground). It sits behind a 3 to 4 m structure south-west of the
+# spawn (x -27..-12, y -22..-14, mapped from the registered cloud), so the
+# straight line to it is blocked at the course altitude.
+#
+# One goal per flight, start to goal, as planner benchmarks are usually
+# flown: MIGHTY (mighty_algo_only) segfaults when a new goal arrives right
+# after it has reached one, which would score its crash, not its planning.
+name: yard-detour
+altitude: 3.0            # take-off height before the goal (m)
+tolerance_m: 1.0         # reached when sim truth is this close (MIGHTY stops ~0.8 m short)
+goal_timeout_s: 120
+hold_s: 2
+goals:
+  - [-30, -25, 3]

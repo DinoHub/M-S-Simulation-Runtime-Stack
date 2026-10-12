@@ -22,8 +22,9 @@ XAUTHORITY := $(shell f="$$XAUTHORITY"; [ -f "$$f" ] && { echo "$$f"; exit; }; \
 	[ -f "$$c" ] && { echo "$$c"; exit; }; done)
 export XAUTHORITY
 
-# Which refs of the catalog's pins run. development: the pinned tags alone,
-# so a local build under the same tag wins and a missing tag is pulled;
+# Which refs of the catalog's pins run. development: the pinned tags alone;
+# ensure-images points each at its pinned digest (pulling it only when it is
+# not local; MNS_KEEP_LOCAL_TAGS=1 keeps a local build under the tag);
 # production: tag@digest, exactly what images/catalog.yaml pins.
 IMAGE_MODE ?= development
 # The release channel the dashboard runs (images/catalog.yaml
@@ -68,6 +69,16 @@ TEVV_RUNS_DIR := $(shell r="$$TEVV_RUNS_DIR"; [ -n "$$r" ] || r=$$(sed -n 's/^[[
 	[ -n "$$r" ] || r="$(CURDIR)/runs"; r=$$(printf '%s' "$$r" | sed "s|^~|$$HOME|"); \
 	case "$$r" in (/*) ;; (*) r="$(CURDIR)/$$r" ;; esac; printf '%s' "$$r")
 export TEVV_RUNS_DIR
+# Prepended to every dashboard container name (docker-compose-dashboard.yml's
+# container_name lines, the backend's ros2-tools, tools/author.sh's editor), so
+# they do not clash by name with another set on the same daemon. The shell's
+# or command line's value (even empty), else ./.env's, else none. Read here so
+# the containers `make dashboard` inspects, removes and restarts are the ones
+# compose named, never another dashboard's or a user's unprefixed ros2-tools.
+ifeq ($(origin DASHBOARD_CONTAINER_PREFIX),undefined)
+DASHBOARD_CONTAINER_PREFIX := $(shell sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}DASHBOARD_CONTAINER_PREFIX=//p' .env 2>/dev/null | tail -1 | tr -d "\"'")
+endif
+export DASHBOARD_CONTAINER_PREFIX
 ifeq ($(CHANNEL),v1)
 CHANNEL_NAME := v1
 CHANNEL_ENV := images/v1.0.0.generated.env
@@ -108,7 +119,7 @@ else
 $(error IMAGE_MODE must be development or production)
 endif
 
-.PHONY: help ps topics fly stop author author-stop stacks campaign campaign-status doctor verify-images pull-images ensure-images ensure-demo-packs pack-status pack-lock stage-authoring-packs dashboard dashboard-down print-channel-env
+.PHONY: help ps topics fly evaluate stop author author-stop stacks campaign campaign-status doctor verify-images pull-images ensure-images ensure-demo-packs pack-status pack-lock stage-authoring-packs dashboard dashboard-down print-channel-env
 
 ensure-images:  ## Use local image tags; pull only those that are missing
 	./tools/ensure-images.sh $(ENSURE_IMAGES_FLAG)
@@ -193,10 +204,10 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	             "$${MNS_PACKS_IMAGE:-$$(dotenv_value MNS_PACKS_IMAGE)}" \
 	             "$${MNS_AUTHORING_IMAGE:-$$(dotenv_value MNS_AUTHORING_IMAGE)}" || true; \
 	check_x11 || true; \
-	check_ports 3001:airsim-dashboard-frontend:frontend \
-	            8001:airsim-dashboard-api:backend \
-	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):dashboard-lichtblick:Lichtblick \
-	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):ros2-tools:"Foxglove websocket" || exit 1
+	check_ports 3001:$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-frontend:frontend \
+	            8001:$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api:backend \
+	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):$(DASHBOARD_CONTAINER_PREFIX)dashboard-lichtblick:Lichtblick \
+	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):$(DASHBOARD_CONTAINER_PREFIX)ros2-tools:"Foxglove websocket" || exit 1
 	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
 	COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE="$$($(EFFECTIVE_IMAGE_SET))" \
@@ -208,18 +219,20 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	@# was re-run against a live stack.
 	@# Recreate it only when the selected bridge image actually changed —
 	@# RECREATE_ROS2_TOOLS=always restores the old behaviour, =never skips it.
+	@# Only this dashboard's own ros2-tools: the prefixed name that
+	@# docker-compose-dashboard.yml hands the backend (ROS2_CONTAINER_NAME).
 	@. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); \
-	desired="$${MNS_ROS2_BRIDGE_IMAGE:-}"; \
-	current=$$(docker inspect -f '{{.Config.Image}}' $(DASHBOARD_CONTAINER_PREFIX)ros2-tools 2>/dev/null || true); \
+	desired="$${MNS_ROS2_BRIDGE_IMAGE:-}"; tools="$(DASHBOARD_CONTAINER_PREFIX)ros2-tools"; \
+	current=$$(docker inspect -f '{{.Config.Image}}' "$$tools" 2>/dev/null || true); \
 	if [ "$(RECREATE_ROS2_TOOLS)" = "never" ]; then \
-	  echo "RECREATE_ROS2_TOOLS=never: leaving ros2-tools as it is."; \
+	  echo "RECREATE_ROS2_TOOLS=never: leaving $$tools as it is."; \
 	elif [ "$(RECREATE_ROS2_TOOLS)" = "always" ] || [ -z "$$current" ] || [ "$$current" != "$$desired" ]; then \
-	  [ -n "$$current" ] && [ "$$current" != "$$desired" ] && echo "ros2-tools image changed ($$current -> $$desired); recreating."; \
-	  docker rm -f $(DASHBOARD_CONTAINER_PREFIX)ros2-tools >/dev/null 2>&1 || true; \
+	  [ -n "$$current" ] && [ "$$current" != "$$desired" ] && echo "$$tools image changed ($$current -> $$desired); recreating."; \
+	  docker rm -f "$$tools" >/dev/null 2>&1 || true; \
 	else \
-	  echo "ros2-tools already running $$desired; leaving it (Foxglove :8764 stays up)."; \
+	  echo "$$tools already running $$desired; leaving it (Foxglove :$(or $(FOXGLOVE_BRIDGE_PORT),8764) stays up)."; \
 	fi; \
-	docker restart $(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api >/dev/null
+	docker restart "$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api" >/dev/null
 	@$(if $(filter true,$(DB)),. ./tools/load-images-env.sh; $(LOAD_DASHBOARD_IMAGES); COMPOSE_PROJECT_NAME=$(DASHBOARD_COMPOSE_PROJECT_NAME) MNS_IMAGE_SET_FILE=$$(pwd)/$(DASHBOARD_IMAGE_SET_FILE) MSRS_ROOT=$$(pwd) docker compose -f docker-compose-dashboard.yml --profile db restart dashboard-backend >/dev/null && echo "Telemetry pool reconnected.",true)
 	@echo "Dashboard: http://localhost:3001 (backend :8001, lichtblick :$(or $(DASHBOARD_LICHTBLICK_PORT),8082), image mode: $(IMAGE_MODE))"
 
@@ -253,9 +266,9 @@ help:
 	@echo "  topics           ROS 2 topics a generated stack will publish [STACK=generated/name]"
 	@echo "  ps               running containers (name/status/image)"
 	@echo "Images and packs:"
-	@echo "  doctor           is this machine ready: Docker, Compose, every pinned image present"
-	@echo "  ensure-images    use local tags and pull only missing images [IMAGE_MODE=development|production]"
-	@echo "  pull-images      explicitly refresh every exact published remote image pin"
+	@echo "  doctor           is this machine ready: Docker, Compose, every pinned image present (and tagged, in development mode)"
+	@echo "  ensure-images    use local tags, point stale ones at their pins, pull only missing images [IMAGE_MODE=development|production]"
+	@echo "  pull-images      explicitly refresh every exact published remote image pin, and point its tag at it"
 	@echo "  verify-images    CI gate: images/catalog.yaml matches generated artifacts"
 	@echo "  pack-status      what is locked, installed, and published since"
 	@echo "  pack-lock        rebuild the channel's pack lock from published releases"
@@ -311,10 +324,13 @@ ifeq ($(strip $(SCENARIO)),)
 $(error usage: make fly SCENARIO=<name under scenarios/> [RECORD=1] [KEEP=1] [ARGS=...])
 endif
 endif
-fly: ensure-demo-packs  ## Generate and fly SCENARIO for FLY_SECONDS unless ARGS names --done (RECORD=1 records a bag)
-	@$(MNS_STACKS_ENV); ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
+fly: ensure-demo-packs  ## Generate and fly SCENARIO for FLY_SECONDS unless ARGS names --done (RECORD=1 records a bag; COMPONENTS="openvins components/x ..." attaches packages, by id or folder)
+	@$(MNS_STACKS_ENV); COMPONENTS="$(COMPONENTS)" ./tools/fly.sh "$(SCENARIO)" $(if $(filter 1 true yes,$(RECORD)),--record,) $(if $(filter 1 true yes,$(KEEP)),--keep,) -- $(ARGS)
 
-stop:  ## Stop a flown stack (finalize_metrics, then compose down)
+evaluate: ensure-demo-packs  ## Fly SCENARIO end to end and print its verdict: record what scorers read, MISSION="<cmd>" ({stack} = the stack), score, report (COMPONENTS= as for fly)
+	@$(MNS_STACKS_ENV); COMPONENTS="$(COMPONENTS)" ./tools/evaluate.sh "$(SCENARIO)" $(if $(MISSION),--mission "$(MISSION)",) -- $(ARGS)
+
+stop:  ## Stop a flown stack (simulator first, finalize_metrics, then compose down)
 	@last=$$(cut -f1 .mns/last-stack 2>/dev/null); last_project=$$(cut -s -f2 .mns/last-stack 2>/dev/null); \
 	stack="$(STACK)"; [ -n "$$stack" ] || stack="$$last"; \
 	test -n "$$stack" || { echo "usage: make stop STACK=generated/<name>  (no make fly to default to)" >&2; exit 2; }; \
@@ -354,7 +370,7 @@ campaign-status:  ## One row per flight of a campaign (CAMPAIGN=<name>)
 	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh campaign status $(CAMPAIGN)
 
 doctor:  ## Docker, Compose, and every pinned image present (changes nothing)
-	@./tools/doctor.sh --channel $(CHANNEL_NAME)
+	@./tools/doctor.sh $(ENSURE_IMAGES_FLAG)
 
 # CI gate for the image catalog (images/catalog.yaml): regenerates
 # product-images.env / images/*.generated.* into a temp location and diffs

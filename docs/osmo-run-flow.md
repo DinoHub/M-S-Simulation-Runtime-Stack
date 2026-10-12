@@ -9,10 +9,11 @@ For commands and troubleshooting, see [osmo-runbook.md](osmo-runbook.md). For
 the Kubernetes and OSMO ideas underneath, see
 [osmo-kubernetes-concepts.md](osmo-kubernetes-concepts.md). Pictures:
 - `docs/diagrams/osmo-end-to-end.png` covers onboarding through to the
-  scorecard.
-- `docs/diagrams/campaign-to-metrics.png` covers the spec through to what is
-  stored and shown, marking what is built, what exists elsewhere, and what is
-  still target.
+  scorecard, the run registry and the logs.
+- `docs/diagrams/campaign-to-metrics.png` covers the spec through to a verdict
+  per run, stored and shown, on local compose and on OSMO, marking what is
+  built, what exists elsewhere, and what is still target.
+- `docs/architecture/as-built-system.png` is the whole system as built.
 
 ```
 CampaignSpec + ScenarioSpec + image catalog          (git)
@@ -39,8 +40,9 @@ python3 osmo/campaign.py run vio-osmo-condo --only calm-r1 --no-viz
 
 - `MNS_IMAGE_SET_FILE` picks the image set: the main checkout's, which pins
   runtime host 303a5c.
-- `MNS_SIM_REAL_EVAL_IMAGE` is a scorer that has `vio-stress`. The catalog's
-  `-latest` worker predates it.
+- `MNS_SIM_REAL_EVAL_IMAGE` is a scorer that has `vio-stress`. At the time the
+  catalog pinned a `-latest` worker that predated it; the catalog's
+  `sim-real-eval-worker-v1.0.0` has it, so the variable is no longer needed.
 - `--no-viz` leaves the live Foxglove task out.
 
 ## Timeline of run 62

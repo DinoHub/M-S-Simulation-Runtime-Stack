@@ -1,0 +1,1217 @@
+schema: mns.scenario.v1
+id: ardu-swarm-60-xfs-lean
+name: ardu-swarm-60-xfs-lean
+stack_name: stereo-xfs
+environment:
+  id: xfs-level
+  version: 1.0.2
+  artifact_digest: sha256:7eeb41a5ad04d3d2f4bd8c5d876703793b7485d93d59d07172d12c174c100871
+runtime:
+  profile: airsim_unreal_ardupilot_docker
+  features:
+    sim_real_eval: false
+    ros2_bridge: true
+    qgroundcontrol: false
+    mavros: false
+vehicles:
+- id: drone_1
+  name: drone_1
+  runtime_name: Copter1
+  ros_domain_id: 1
+  start:
+    x: 422.0
+    y: -1086.0
+    z: -16.27
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_2
+  name: drone_2
+  runtime_name: Copter2
+  ros_domain_id: 2
+  start:
+    x: 422.0
+    y: -1094.0
+    z: -16.24
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_3
+  name: drone_3
+  runtime_name: Copter3
+  ros_domain_id: 3
+  start:
+    x: 422.0
+    y: -1102.0
+    z: -16.26
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_4
+  name: drone_4
+  runtime_name: Copter4
+  ros_domain_id: 4
+  start:
+    x: 422.0
+    y: -1110.0
+    z: -16.31
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_5
+  name: drone_5
+  runtime_name: Copter5
+  ros_domain_id: 5
+  start:
+    x: 422.0
+    y: -1118.0
+    z: -16.38
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_6
+  name: drone_6
+  runtime_name: Copter6
+  ros_domain_id: 6
+  start:
+    x: 422.0
+    y: -1126.0
+    z: -16.44
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_7
+  name: drone_7
+  runtime_name: Copter7
+  ros_domain_id: 7
+  start:
+    x: 422.0
+    y: -1134.0
+    z: -16.48
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_8
+  name: drone_8
+  runtime_name: Copter8
+  ros_domain_id: 8
+  start:
+    x: 422.0
+    y: -1142.0
+    z: -16.46
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_9
+  name: drone_9
+  runtime_name: Copter9
+  ros_domain_id: 9
+  start:
+    x: 430.0
+    y: -1086.0
+    z: -16.42
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_10
+  name: drone_10
+  runtime_name: Copter10
+  ros_domain_id: 10
+  start:
+    x: 430.0
+    y: -1094.0
+    z: -16.38
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_11
+  name: drone_11
+  runtime_name: Copter11
+  ros_domain_id: 11
+  start:
+    x: 430.0
+    y: -1102.0
+    z: -16.4
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_12
+  name: drone_12
+  runtime_name: Copter12
+  ros_domain_id: 12
+  start:
+    x: 430.0
+    y: -1110.0
+    z: -16.44
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_13
+  name: drone_13
+  runtime_name: Copter13
+  ros_domain_id: 13
+  start:
+    x: 430.0
+    y: -1118.0
+    z: -16.5
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_14
+  name: drone_14
+  runtime_name: Copter14
+  ros_domain_id: 14
+  start:
+    x: 430.0
+    y: -1126.0
+    z: -16.55
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_15
+  name: drone_15
+  runtime_name: Copter15
+  ros_domain_id: 15
+  start:
+    x: 430.0
+    y: -1134.0
+    z: -16.58
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_16
+  name: drone_16
+  runtime_name: Copter16
+  ros_domain_id: 16
+  start:
+    x: 430.0
+    y: -1142.0
+    z: -16.56
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_17
+  name: drone_17
+  runtime_name: Copter17
+  ros_domain_id: 17
+  start:
+    x: 438.0
+    y: -1086.0
+    z: -16.59
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_18
+  name: drone_18
+  runtime_name: Copter18
+  ros_domain_id: 18
+  start:
+    x: 438.0
+    y: -1094.0
+    z: -16.55
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_19
+  name: drone_19
+  runtime_name: Copter19
+  ros_domain_id: 19
+  start:
+    x: 438.0
+    y: -1102.0
+    z: -16.55
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_20
+  name: drone_20
+  runtime_name: Copter20
+  ros_domain_id: 20
+  start:
+    x: 438.0
+    y: -1110.0
+    z: -16.58
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_21
+  name: drone_21
+  runtime_name: Copter21
+  ros_domain_id: 21
+  start:
+    x: 438.0
+    y: -1118.0
+    z: -16.63
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_22
+  name: drone_22
+  runtime_name: Copter22
+  ros_domain_id: 22
+  start:
+    x: 438.0
+    y: -1126.0
+    z: -16.67
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_23
+  name: drone_23
+  runtime_name: Copter23
+  ros_domain_id: 23
+  start:
+    x: 438.0
+    y: -1134.0
+    z: -16.69
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_24
+  name: drone_24
+  runtime_name: Copter24
+  ros_domain_id: 24
+  start:
+    x: 438.0
+    y: -1142.0
+    z: -16.66
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_25
+  name: drone_25
+  runtime_name: Copter25
+  ros_domain_id: 25
+  start:
+    x: 446.0
+    y: -1086.0
+    z: -16.76
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_26
+  name: drone_26
+  runtime_name: Copter26
+  ros_domain_id: 26
+  start:
+    x: 446.0
+    y: -1094.0
+    z: -16.71
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_27
+  name: drone_27
+  runtime_name: Copter27
+  ros_domain_id: 27
+  start:
+    x: 446.0
+    y: -1102.0
+    z: -16.7
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_28
+  name: drone_28
+  runtime_name: Copter28
+  ros_domain_id: 28
+  start:
+    x: 446.0
+    y: -1110.0
+    z: -16.72
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_29
+  name: drone_29
+  runtime_name: Copter29
+  ros_domain_id: 29
+  start:
+    x: 446.0
+    y: -1118.0
+    z: -16.76
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_30
+  name: drone_30
+  runtime_name: Copter30
+  ros_domain_id: 30
+  start:
+    x: 446.0
+    y: -1126.0
+    z: -16.79
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_31
+  name: drone_31
+  runtime_name: Copter31
+  ros_domain_id: 31
+  start:
+    x: 446.0
+    y: -1134.0
+    z: -16.79
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_32
+  name: drone_32
+  runtime_name: Copter32
+  ros_domain_id: 32
+  start:
+    x: 446.0
+    y: -1142.0
+    z: -16.76
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_33
+  name: drone_33
+  runtime_name: Copter33
+  ros_domain_id: 33
+  start:
+    x: 454.0
+    y: -1086.0
+    z: -16.91
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_34
+  name: drone_34
+  runtime_name: Copter34
+  ros_domain_id: 34
+  start:
+    x: 454.0
+    y: -1094.0
+    z: -16.85
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_35
+  name: drone_35
+  runtime_name: Copter35
+  ros_domain_id: 35
+  start:
+    x: 454.0
+    y: -1102.0
+    z: -16.84
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_36
+  name: drone_36
+  runtime_name: Copter36
+  ros_domain_id: 36
+  start:
+    x: 454.0
+    y: -1110.0
+    z: -16.85
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_37
+  name: drone_37
+  runtime_name: Copter37
+  ros_domain_id: 37
+  start:
+    x: 454.0
+    y: -1118.0
+    z: -16.87
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_38
+  name: drone_38
+  runtime_name: Copter38
+  ros_domain_id: 38
+  start:
+    x: 454.0
+    y: -1126.0
+    z: -16.88
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_39
+  name: drone_39
+  runtime_name: Copter39
+  ros_domain_id: 39
+  start:
+    x: 454.0
+    y: -1134.0
+    z: -16.88
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_40
+  name: drone_40
+  runtime_name: Copter40
+  ros_domain_id: 40
+  start:
+    x: 454.0
+    y: -1142.0
+    z: -16.84
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_41
+  name: drone_41
+  runtime_name: Copter41
+  ros_domain_id: 41
+  start:
+    x: 462.0
+    y: -1086.0
+    z: -17.03
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_42
+  name: drone_42
+  runtime_name: Copter42
+  ros_domain_id: 42
+  start:
+    x: 462.0
+    y: -1094.0
+    z: -16.97
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_43
+  name: drone_43
+  runtime_name: Copter43
+  ros_domain_id: 43
+  start:
+    x: 462.0
+    y: -1102.0
+    z: -16.95
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_44
+  name: drone_44
+  runtime_name: Copter44
+  ros_domain_id: 44
+  start:
+    x: 462.0
+    y: -1110.0
+    z: -16.94
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_45
+  name: drone_45
+  runtime_name: Copter45
+  ros_domain_id: 45
+  start:
+    x: 462.0
+    y: -1118.0
+    z: -16.95
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_46
+  name: drone_46
+  runtime_name: Copter46
+  ros_domain_id: 46
+  start:
+    x: 462.0
+    y: -1126.0
+    z: -16.96
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_47
+  name: drone_47
+  runtime_name: Copter47
+  ros_domain_id: 47
+  start:
+    x: 462.0
+    y: -1134.0
+    z: -16.94
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_48
+  name: drone_48
+  runtime_name: Copter48
+  ros_domain_id: 48
+  start:
+    x: 462.0
+    y: -1142.0
+    z: -16.9
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_49
+  name: drone_49
+  runtime_name: Copter49
+  ros_domain_id: 49
+  start:
+    x: 470.0
+    y: -1086.0
+    z: -17.12
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_50
+  name: drone_50
+  runtime_name: Copter50
+  ros_domain_id: 50
+  start:
+    x: 470.0
+    y: -1094.0
+    z: -17.05
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_51
+  name: drone_51
+  runtime_name: Copter51
+  ros_domain_id: 51
+  start:
+    x: 470.0
+    y: -1102.0
+    z: -17.02
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_52
+  name: drone_52
+  runtime_name: Copter52
+  ros_domain_id: 52
+  start:
+    x: 470.0
+    y: -1110.0
+    z: -17.01
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_53
+  name: drone_53
+  runtime_name: Copter53
+  ros_domain_id: 53
+  start:
+    x: 470.0
+    y: -1118.0
+    z: -17.01
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_54
+  name: drone_54
+  runtime_name: Copter54
+  ros_domain_id: 54
+  start:
+    x: 470.0
+    y: -1126.0
+    z: -17.0
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_55
+  name: drone_55
+  runtime_name: Copter55
+  ros_domain_id: 55
+  start:
+    x: 470.0
+    y: -1134.0
+    z: -16.98
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_56
+  name: drone_56
+  runtime_name: Copter56
+  ros_domain_id: 56
+  start:
+    x: 470.0
+    y: -1142.0
+    z: -16.92
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_57
+  name: drone_57
+  runtime_name: Copter57
+  ros_domain_id: 57
+  start:
+    x: 478.0
+    y: -1086.0
+    z: -17.17
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_58
+  name: drone_58
+  runtime_name: Copter58
+  ros_domain_id: 58
+  start:
+    x: 478.0
+    y: -1094.0
+    z: -17.1
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_59
+  name: drone_59
+  runtime_name: Copter59
+  ros_domain_id: 59
+  start:
+    x: 478.0
+    y: -1102.0
+    z: -17.06
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+- id: drone_60
+  name: drone_60
+  runtime_name: Copter60
+  ros_domain_id: 60
+  start:
+    x: 478.0
+    y: -1110.0
+    z: -17.04
+    yaw: 0
+  sensors:
+    imu:
+      generate_noise: true
+      angular_random_walk: 0.5833
+      velocity_random_walk: 0.2039
+      gyro_bias_stability: 0.0
+      accel_bias_stability: 0.0
+    gps: true
+    barometer: true
+    magnetometer: true
+    gpu_lidar: false
+random_spawns: []

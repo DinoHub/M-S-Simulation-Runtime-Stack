@@ -29,6 +29,9 @@
 #                                            host's contract (the override; warns)
 #   TEVV_RUNS_DIR                            runs directory (default ./runs, or .env)
 #   MNS_IMAGE_PULL_POLICY                    missing (default) | always | never
+#   MNS_SIM_STOP_TIMEOUT                     seconds the simulator gets to shut down
+#                                            on stop (mns-stacks default 60); passed
+#                                            through only when set
 #   MNS_STACKS_DOCKER_ARGS                   extra `docker run` flags (word-split)
 set -euo pipefail
 
@@ -90,6 +93,10 @@ case "$1" in
   run|stop|status|restart|logs|record|check) needs_socket=true ;;
   campaign)
     case "${2:-}" in run|preflight|status|watch|cancel) needs_socket=true ;; esac ;;
+  # init reads the container image (docker image inspect) to prefill the
+  # command; check only reads files.
+  component)
+    case "${2:-}" in init) needs_socket=true ;; esac ;;
 esac
 
 args=(--rm --pull "${MNS_IMAGE_PULL_POLICY:-missing}"
@@ -104,6 +111,7 @@ args+=(
   -e "MNS_PACK_STORE_ROOT=$PACK_STORE"
   -e "MNS_HOST_UID=$HOST_UID" -e "MNS_HOST_GID=$HOST_GID"
 )
+[[ -n "${MNS_SIM_STOP_TIMEOUT:-}" ]] && args+=(-e "MNS_SIM_STOP_TIMEOUT=$MNS_SIM_STOP_TIMEOUT")
 if [[ -n "$KIT" ]]; then
   # The escape hatch for a kit that is not in an image yet: its contract
   # replaces the pinned host's, so the contract variable is not set at all.
@@ -112,6 +120,12 @@ if [[ -n "$KIT" ]]; then
 else
   args+=(-e "MNS_RUNTIME_HOST_COMPATIBILITY_CONTRACT=$CONTRACT")
 fi
+# Stack settings to take from this shell for one experiment, without editing
+# a generated stack's .env (e.g. MNS_STACKS_PASSENV=POLL_RATE_HZ POLL_RATE_HZ=12).
+# Compose reads them where the stack's .env leaves them unset.
+for name in ${MNS_STACKS_PASSENV:-}; do
+  [[ -n "${!name+x}" ]] && args+=(-e "$name=${!name}")
+done
 case "$PWD/" in "$ROOT"/*) ;; *) args+=(-v "$PWD:$PWD") ;; esac
 
 # Inputs outside the checkout, at their identical paths. --mount (not -v)

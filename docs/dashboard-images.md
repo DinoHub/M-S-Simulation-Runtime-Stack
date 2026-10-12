@@ -25,7 +25,7 @@ make dashboard IMAGE_MODE=production   # exact release pins
 make dashboard-down
 ```
 
-By default, `make dashboard` runs the development workflow: it keeps any locally built matching image tags, pulls only tags absent from the Docker image store, and uses the tag-only development image-set overlay for generated stacks. It does not refresh an existing tag. Run `./setup.sh` (or `make pull-images`) when you deliberately want the approved remote images refreshed; use `IMAGE_MODE=production` to test the immutable release pins.
+By default, `make dashboard` runs the development workflow: it uses the tag-only development image-set overlay for generated stacks, so the release tags on this machine are what runs. It therefore checks each tag against the digest the catalog pins: a tag at its pin is kept, a missing tag or one that points at another digest (a tag republished since this machine pulled it) is pointed at the pin, which is pulled by digest only when it is not already local. It never pulls just to look for a newer image. `make pull-images` pulls every pin again and points the tags at them; use `IMAGE_MODE=production` to run the exact `tag@digest` pins.
 
 To run a dashboard backend or frontend you built locally from a
 TEVV-Web-Dashboard branch, put `DASHBOARD_BACKEND_IMAGE=` /
@@ -45,27 +45,42 @@ make dashboard
   -> ros2-tools              recreated only if the bridge image changed
 ```
 
-### 1. `ensure-images` — pull only what is missing
+### 1. `ensure-images` — every tag at its pin, pulling only what is missing
 
-`tools/ensure-images.sh` walks every ref the selected channel declares and asks
-`docker image inspect`. Present is kept and reported `LOCAL`; absent is pulled,
-with three retries. `channel: local` rows are checked for presence and **never
-pulled** — a missing one is a build step you have to run, and the error names
-the row so the catalog can say what builds it.
+`tools/ensure-images.sh` walks every ref the selected channel declares. In
+development mode that is the bare tag plus the digest the catalog pins it to
+(`tools/images.sh pins`), and it asks `docker image inspect` for the tag's
+digests:
 
-This never refreshes a tag that already exists locally. That is deliberate:
-it is what lets you iterate on a locally built image without a dashboard start
-silently replacing it. `./setup.sh` / `make pull-images` is the operation that refreshes.
+- at the pin: kept, reported `LOCAL`;
+- absent, or at another digest (`STALE` in a dry run): `docker tag
+  repo@<pin> repo:<tag>`, reported `TAGGED`. The pinned image is pulled by
+  digest first, with three retries, only when it is not already local, so an
+  offline machine that has the pin is fixed without the network;
+- no registry digest at all (an image built here, on the classic image
+  store): kept, reported `LOCAL … built here`.
+
+A row nothing pins (no digest, or a `channel: moving` tag) is checked for
+presence only, as in production mode, where the refs are the exact
+`repo:tag@digest` pins. `channel: local` rows are checked for presence and
+**never pulled** — a missing one is a build step you have to run, and the
+error names the row so the catalog can say what builds it.
+
+The containerd image store gives your own builds a digest too, so a build
+under a release tag looks like a stale tag and is replaced. Run your own build
+under its own name in `./.env` (below), or set `MNS_KEEP_LOCAL_TAGS=1` to keep
+every existing tag where it is. `make doctor` reports a tag that is not at its
+pin as `STALE TAG`.
 
 ```bash
-tools/ensure-images.sh --dry-run --development   # LOCAL / MISSING per ref
+tools/ensure-images.sh --dry-run --development   # LOCAL / MISSING / STALE per ref
 ```
 
 ### 2. `IMAGE_MODE` picks which generated files are loaded
 
 | `IMAGE_MODE` | Env files loaded, in order | `MNS_IMAGE_SET_FILE` handed to the backend |
 | --- | --- | --- |
-| `development` (default) | the channel's env (`images/v1.0.0.generated.env`), then `images/development.generated.env` | `images/image-set.development.generated.yaml` — tag-only refs, so a local build with the same tag wins |
+| `development` (default) | the channel's env (`images/v1.0.0.generated.env`), then `images/development.generated.env` | `images/image-set.development.generated.yaml` — tag-only refs, kept at their pins by `ensure-images` |
 | `production` | the channel's env, then `images/platform-images.generated.env` | `images/image-set.generated.yaml` — exact `repo:tag@digest` pins |
 
 `tools/load-images-env.sh` exports each `KEY=VAL` from those files **only when

@@ -1,9 +1,12 @@
-%% TEVV on OSMO, as built (24 Sept 2026): from getting onto OSMO, through a
-%% CampaignSpec, to one gang-scheduled workflow per run and the scorecard.
-%% Sources: docs/osmo-runbook.md, docs/osmo-kubernetes-concepts.md,
-%% osmo/campaign.py, osmo/sim-bridge-vio.workflow.yaml.
-%% Render: npx -y @mermaid-js/mermaid-cli -i osmo-end-to-end.mermaid -o osmo-end-to-end.png -w 2400 -b white
-%%   (on Ubuntu 23.10+ add -p with {"args":["--no-sandbox"]} if Chromium reports no usable sandbox)
+%% TEVV on OSMO, as built (4 Oct 2026): from getting onto OSMO, through a
+%% CampaignSpec, to one gang-scheduled workflow per run, the scorecard, the run
+%% registry and the logs. Grey dashed: built for local compose runs, not yet
+%% carried into the OSMO workflow (target only).
+%% Sources: docs/osmo-runbook.md, docs/osmo-kubernetes-concepts.md, docs/osmo-logs.md,
+%% osmo/campaign.py, osmo/sim-bridge-vio.workflow.yaml, osmo/observability/install.sh.
+%% Render (from this folder):
+%%   docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/data" minlag/mermaid-cli \
+%%     -p /puppeteer-config.json -i /data/osmo-end-to-end.mermaid -o /data/osmo-end-to-end.png -s 2
 flowchart TB
   subgraph ONB["1. Onboarding, once"]
     direction LR
@@ -24,8 +27,8 @@ flowchart TB
 
   subgraph HOST["3. Per campaign, on the host: osmo/campaign.py run"]
     direction LR
-    PLAN["mns-stacks campaign plan<br/>one merged ScenarioSpec per run"]
-    GEN["mns-stacks generate<br/>stacks/run/config: settings.json,<br/>topics, conditions, estimator"]
+    PLAN["mns-stacks campaign plan --json<br/>one merged ScenarioSpec per run"]
+    GEN["mns-stacks generate<br/>stacks/run/config: settings.json,<br/>host-launch-args.json, topics,<br/>conditions, estimator"]
     IMG["image check<br/>catalog digest = node image"]
     SUB["osmo workflow submit, one per run<br/>--set stack, autopilot, viz<br/>--set-string route, gates, images"]
     PLAN --> GEN --> IMG --> SUB
@@ -57,8 +60,25 @@ flowchart TB
     PULL --> VS --> MAN
   end
 
+  subgraph OBS["7. Observability: osmo/observability"]
+    direction LR
+    REG["run registry<br/>Postgres (CNPG), namespace tevv<br/>campaign.py registry sync"]
+    LOKI["Loki + Alloy<br/>every task and the control plane,<br/>by workflow, :31100, 30 days"]
+    GRAF["the host's Grafana :3000<br/>TEVV campaign progress,<br/>TEVV run logs"]
+    REG --> GRAF
+    LOKI --> GRAF
+  end
+
+  GAP["not yet under OSMO:<br/>attached component packages,<br/>the metrics service's verdict per run"]
+
   ONB -->|"cluster ready, images loaded"| HOST
   AUTH -->|"specs + image pins"| HOST
   HOST -->|"one workflow per run"| CP
   CP -->|"gang per run"| NODE
   NODE -->|"evidence in object storage"| OUT
+  HOST -->|"status as it flies, verdict"| REG
+  NODE -->|"container logs"| LOKI
+  NODE -.-> GAP
+
+  classDef target fill:#F1F1EE,stroke:#8A8F99,color:#4A5160,stroke-dasharray:6 4
+  class GAP target
