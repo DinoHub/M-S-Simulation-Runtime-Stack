@@ -26,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import images  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-HOST_TAG = "dhdevspace/auto_mns:tevv-runtime-host-v1.0.0"
+_IMAGES = images.load_catalog()["images"]
+HOST_TAG = images.development_ref(_IMAGES, "v1_runtime_host")
 HOST_REPO = "dhdevspace/auto_mns"
 OLD = "sha256:f540c4fb" + "0" * 56
 
@@ -171,8 +172,8 @@ class TagPins(unittest.TestCase):
         catalog["images"]["v1_authoring"]["channel"] = "moving"        # a moving tag
         pins = dict(images.tag_pins(catalog))
         self.assertEqual(pins[HOST_TAG], "")
-        self.assertEqual(pins["dhdevspace/auto_mns:mns-authoring-v1.0.0"], "")
-        self.assertTrue(pins["dhdevspace/auto_mns:mns-stacks-v1.0.0"])
+        self.assertEqual(pins[images.development_ref(_IMAGES, "v1_authoring")], "")
+        self.assertTrue(pins[images.development_ref(_IMAGES, "v1_stacks")])
 
 
 class EnsureImagesDevelopment(unittest.TestCase):
