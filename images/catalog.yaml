@@ -89,31 +89,23 @@ images:
   # ---------------------------------------------------------------------
   qgroundcontrol:
     repo: dhdevspace/auto_mns
-    tag: airsim-qgc-x11-latest
+    tag: "airsim-qgc-x11-v1.0.0"
     digest: sha256:fe1e9e05d9300afeab92787973b84c378cf021c25f0f61b8f27cbf712e299804
-    channel: moving
+    channel: pinned
     purpose: >-
       QGroundControl (X11), the published qgroundcontrol role
-      (MnS-Integration-Platform integrations/qgroundcontrol).
-    follow_up: >-
-      v1.0.0 pins this as the immutable tag airsim-qgc-x11-v1.0.0, a retag of
-      this digest (same bits). The retag is published in phase 6; then set
-      tag: airsim-qgc-x11-v1.0.0, channel: pinned, keep the digest, and delete
-      this note.
+      (MnS-Integration-Platform integrations/qgroundcontrol). A retag of the
+      airsim-qgc-x11-latest build: same digest, same bits.
 
   sim_real_eval:
     repo: dhdevspace/auto_mns
-    tag: "sim-real-eval-worker-v1.0.0-rc"
+    tag: "sim-real-eval-worker-v1.0.0"
     digest: sha256:9780594b56cc29c5e5432188b9d70260a72f3804dd933fcd9f3183c590d9f67a
     channel: pinned
     purpose: >-
       Sim-to-real evaluation worker, the published sim_real_eval role
-      (MnS-Integration-Platform platform/sim_real_eval).
-    follow_up: >-
-      v1.0.0 pins this as the immutable tag sim-real-eval-worker-v1.0.0, the
-      accepted sim-real-eval-worker-v1.0.0-rc build. It is published in phase
-      6; then set tag: sim-real-eval-worker-v1.0.0, channel: pinned, its
-      digest, and delete this note.
+      (MnS-Integration-Platform platform/sim_real_eval). The accepted
+      sim-real-eval-worker-v1.0.0-rc build, retagged: same digest, same bits.
 
   vio_estimator_openvins:
     repo: dhdevspace/auto_mns
