@@ -1214,10 +1214,9 @@ def evaluate(root: Path, campaign: dict[str, Any] | None = None,
     runs = [r for r in manifest.get("runs", []) if r.get("status") == "done" and r.get("bundle")]
     image = evaluator_image()
     if sh(["docker", "run", "--rm", image, "vio-stress", "--help"], check=False).returncode != 0:
-        # The published -latest worker predates vio-stress (2026-08-09). Until
-        # a worker that has it is published and pinned in the catalog, point
-        # MNS_SIM_REAL_EVAL_IMAGE at a local build of
-        # MnS-Integration-Platform/tools/sim_real_eval.
+        # The catalog's sim-real-eval-worker-v1.0.0 has vio-stress; an older
+        # worker (the 2026-08-09 -latest) does not. For one without it, point
+        # MNS_SIM_REAL_EVAL_IMAGE at a worker that has it.
         print(f"[campaign] {image} has no vio-stress; set MNS_SIM_REAL_EVAL_IMAGE to a worker "
               "that does. Runs are collected; `evaluate` scores them later.", file=sys.stderr)
         return 3

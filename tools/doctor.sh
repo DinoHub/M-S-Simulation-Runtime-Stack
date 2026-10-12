@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
 # Is this machine ready to run the product? Checks Docker and Compose, creates
 # the working directories, and lists every image the channel pins that is not
-# in the local Docker store. Changes nothing else and pulls nothing.
+# in the local Docker store. In development mode (the default, as for make)
+# it also lists every pinned tag that points at another digest than its pin:
+# development mode runs the bare tags. Changes nothing else and pulls nothing.
 #
-#   tools/doctor.sh [--channel v1]      (make doctor)
+#   tools/doctor.sh [--development|--production] [--channel v1]   (make doctor)
 #
-# Exit 0 when every image is present, 1 otherwise. `./setup.sh` (or
-# tools/pull-all-images.sh) pulls what is missing.
+# Exit 0 when every image is present (and, in development mode, every pinned
+# tag is at its pin), 1 otherwise. `make ensure-images` or `./setup.sh` fixes
+# either.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHANNEL=v1
+MODE=development
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --channel) CHANNEL="${2:?--channel needs a name}"; shift ;;
-    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "usage: tools/doctor.sh [--channel NAME]" >&2; exit 2 ;;
+    --development) MODE=development ;;
+    --production) MODE=production ;;
+    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "usage: tools/doctor.sh [--development|--production] [--channel NAME]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -53,9 +59,55 @@ for image in "${images[@]}" "${local_images[@]}"; do
   [[ -n "$image" ]] || continue
   docker image inspect "$image" >/dev/null 2>&1 || { echo "MISSING IMAGE: $image"; missing=$((missing + 1)); }
 done
-if [[ "$missing" == 0 ]]; then
-  echo "Ready: channel $CHANNEL, ${#images[@]} pinned image(s) present."
+
+# Development mode runs repo:tag, so the tag has to name the pinned image. A
+# tag republished in place since this machine pulled it does not, and the
+# digest check above cannot see that.
+stale=0
+if [[ "$MODE" == development ]]; then
+  # shellcheck source=tools/image-tags.sh
+  . "$ROOT/tools/image-tags.sh"
+  if ! pins_out="$("$ROOT/tools/images.sh" pins --channel "$CHANNEL")"; then
+    echo "ERROR: could not list the channel's tag pins (tools/images.sh pins failed)." >&2
+    exit 1
+  fi
+  while IFS=$'\t' read -r tag_ref digest; do
+    [[ -n "$tag_ref" && -n "$digest" ]] || continue
+    tag_state "$tag_ref" "$digest"
+    case "$TAG_STATE" in
+      at-pin) ;;
+      built-here) echo "NOTE: $tag_ref is a local build, not the pinned $digest" ;;
+      absent)
+        # Already a MISSING IMAGE when the pinned image is absent too.
+        if pin_present "$tag_ref" "$digest"; then
+          echo "UNTAGGED: $tag_ref (the pinned $digest is here under its digest only)"
+          stale=$((stale + 1))
+        fi ;;
+      stale)
+        if keep_local_tags; then
+          echo "NOTE: $tag_ref is $TAG_DIGESTS, not the pinned $digest (kept by MNS_KEEP_LOCAL_TAGS=1)"
+        else
+          echo "STALE TAG: $tag_ref is $TAG_DIGESTS, but the catalog pins $digest"
+          stale=$((stale + 1))
+        fi ;;
+    esac
+  done <<<"$pins_out"
+fi
+
+if [[ "$missing" == 0 && "$stale" == 0 ]]; then
+  if [[ "$MODE" == development ]]; then
+    echo "Ready: channel $CHANNEL, ${#images[@]} pinned image(s) present, and their tags point at the pins."
+  else
+    echo "Ready: channel $CHANNEL, ${#images[@]} pinned image(s) present."
+  fi
   exit 0
 fi
-echo "$missing pinned image(s) missing. Pull them with ./setup.sh (or tools/pull-all-images.sh)." >&2
+if [[ "$missing" != 0 ]]; then
+  echo "$missing pinned image(s) missing. Pull them with ./setup.sh (or tools/pull-all-images.sh)." >&2
+fi
+if [[ "$stale" != 0 ]]; then
+  echo "$stale tag(s) do not point at their pinned digest, so make dashboard, fly, author and" >&2
+  echo "campaign (IMAGE_MODE=development, the default) would run other images. Fix:" >&2
+  echo "  make ensure-images        (points each tag at its pin; pulls the pin only if it is not here)" >&2
+fi
 exit 1

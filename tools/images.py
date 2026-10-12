@@ -36,6 +36,9 @@ docs/adr/0002-one-image-catalog.md (why this exists). Subcommands:
 
   refs [--all-catalog] [--development] print exact production refs or
                        tag-only development refs for the active product.
+  pins [--all-catalog] [--channel NAME] print `<tag-only ref><TAB><digest>`
+                       per pullable row (digest empty for a row nothing pins),
+                       so the shell tools can check what a local tag points at.
 
 Two small internal helpers, used by tools/images.sh's bash-side drift/baked
 logic rather than meant for interactive use:
@@ -375,9 +378,9 @@ def channel_keys(catalog: dict[str, Any], name: str = DEFAULT_CHANNEL) -> set[st
     return keys
 
 
-def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, development: bool = False,
-                  channel: str = DEFAULT_CHANNEL) -> list[str]:
-    """Return unique active refs in production or tag-only development form.
+def pullable_keys(catalog: dict[str, Any], *, all_catalog: bool = False,
+                  channel: str = DEFAULT_CHANNEL) -> set[str]:
+    """The catalog keys whose images setup, ensure-images and pull-all-images pull.
 
     `channel: local` rows are built on this machine and have no registry
     counterpart, so they are never pullable: they are left out here and
@@ -402,8 +405,40 @@ def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, develop
                 "active product references unavailable image(s): " + ", ".join(unavailable))
         keys = {key for key in keys
                 if images[key]["channel"] != "local" and images[key].get("pull", True)}
+    return keys
+
+
+def pullable_refs(catalog: dict[str, Any], *, all_catalog: bool = False, development: bool = False,
+                  channel: str = DEFAULT_CHANNEL) -> list[str]:
+    """Return unique active refs in production or tag-only development form."""
+    images = catalog["images"]
+    keys = pullable_keys(catalog, all_catalog=all_catalog, channel=channel)
     ref_for = development_ref if development else image_ref
     return sorted({ref_for(images, key) for key in keys})
+
+
+def tag_pins(catalog: dict[str, Any], *, all_catalog: bool = False,
+             channel: str = DEFAULT_CHANNEL) -> list[tuple[str, str]]:
+    """(development ref, pinned digest) for every pullable row.
+
+    The development ref is a bare tag, and a tag is only a name: a registry
+    tag republished in place (the -v1.0.0 retags of 2026-10-07) leaves the
+    old image under that name on every machine that pulled it before.
+    `tools/ensure-images.sh --development`, `tools/doctor.sh` and
+    `tools/pull-all-images.sh` use the digest to see that and to point the
+    tag back at the pin. The digest is empty when the development tag is
+    not the pinned tag, so nothing pins it: a row without a digest (a
+    `pending:` row), a `channel: moving` row, or a row whose development ref
+    is its `latest_tag`.
+    """
+    images = catalog["images"]
+    pins: set[tuple[str, str]] = set()
+    for key in pullable_keys(catalog, all_catalog=all_catalog, channel=channel):
+        row = images[key]
+        pinned = (row.get("digest") and row["channel"] != "moving"
+                  and (row.get("latest_tag") or row["tag"]) == row["tag"])
+        pins.add((development_ref(images, key), str(row["digest"]) if pinned else ""))
+    return sorted(pins)
 
 
 def local_refs(catalog: dict[str, Any], channel: str = DEFAULT_CHANNEL) -> list[str]:
@@ -506,14 +541,17 @@ def render_development_image_set(catalog: dict[str, Any]) -> str:
     """Tag-only v2 image set for local-first development.
 
     The catalog remains the source of image names. Digests are removed only in
-    this development artifact so a locally built matching tag wins; Compose
-    pulls the tag only when it is absent from the Docker image store.
+    this development artifact, so the local tags run; tools/ensure-images.sh
+    --development points each tag at its catalog digest first (pulling the
+    pin only when it is not local), and Compose pulls a tag only when it is
+    absent from the Docker image store.
     """
     header = (
         "schema: mns.image_sets.v1\n\n"
         f"{GENERATED_MARKER}\n"
-        "# Development overlay: tag-only refs plus pull_policy: missing let a\n"
-        "# local build win and pull the published tag only when it is absent.\n\n"
+        "# Development overlay: tag-only refs plus pull_policy: missing run the\n"
+        "# local tags; tools/ensure-images.sh --development points each one at\n"
+        "# its catalog digest first.\n\n"
     )
     body = {"image_sets": resolved_image_sets(catalog, development_ref)}
     return header + yaml.safe_dump(body, sort_keys=False, default_flow_style=False)
@@ -535,8 +573,9 @@ def render_development_env(catalog: dict[str, Any]) -> str:
     lines = [
         GENERATED_MARKER,
         "",
-        "# Local-first dashboard defaults. Matching local tags win; missing",
-        "# tags are pulled by tools/ensure-images.sh. Production uses the",
+        "# Local-first dashboard defaults: the local tags run, and",
+        "# tools/ensure-images.sh points each one at its catalog digest first,",
+        "# pulling the pin only when it is not local. Production uses the",
         "# digest-pinned generated env files instead.",
         "",
     ]
@@ -1126,6 +1165,11 @@ _RC_TAG_RE = re.compile(r"-rc(?:[.\-]?\d+)?(?:$|-)")
 _RELEASE_TAG_RE = re.compile(r"-v\d+\.\d+\.\d+$")
 _TRACED_RELEASE_TAG_RE = re.compile(r"-v\d+\.\d+\.\d+-g[0-9a-f]{7,40}$")
 TRACED_TAG_ROWS = frozenset({"v1_dashboard_backend", "v1_dashboard_frontend"})
+# Rows whose tag names the upstream commit they were built from instead of a
+# version, `<name>-<commit>` (8 to 40 hex): the estimator's numbers are only
+# meaningful with the upstream ref, so a rebuild at another ref is a new tag.
+UPSTREAM_COMMIT_TAG_ROWS = frozenset({"vio_estimator_openvins"})
+_UPSTREAM_COMMIT_TAG_RE = re.compile(r"-[0-9a-f]{8,40}$")
 
 
 def release_tag_problem(key: str, var: str, tag: str) -> str | None:
@@ -1137,10 +1181,64 @@ def release_tag_problem(key: str, var: str, tag: str) -> str | None:
         return None
     if key in TRACED_TAG_ROWS and _TRACED_RELEASE_TAG_RE.search(tag):
         return None
-    shape = "<name>-vX.Y.Z" + (" or <name>-vX.Y.Z-g<sha>" if key in TRACED_TAG_ROWS else "")
+    if key in UPSTREAM_COMMIT_TAG_ROWS and _UPSTREAM_COMMIT_TAG_RE.search(tag):
+        return None
+    shape = ("<name>-vX.Y.Z"
+             + (" or <name>-vX.Y.Z-g<sha>" if key in TRACED_TAG_ROWS else "")
+             + (" or <name>-<upstream commit>" if key in UPSTREAM_COMMIT_TAG_ROWS else ""))
     return (f"images.{key} ({var}) is on {tag!r}, which is not a release tag ({shape}): "
             f"build it from the merged commit, push a release tag and pin it "
             f"(tools/images.sh bump --only {key} --tag <release tag>)")
+
+
+def _leaf_paths(node: Any, prefix: str) -> list[tuple[str, str]]:
+    """(dotted role path, catalog key) for every leaf of an image_sets tree."""
+    if isinstance(node, dict):
+        out: list[tuple[str, str]] = []
+        for name, child in node.items():
+            out += _leaf_paths(child, f"{prefix}.{name}")
+        return out
+    return [(prefix, node)] if isinstance(node, str) else []
+
+
+def release_rows(catalog: dict[str, Any]) -> list[tuple[str, str, bool]]:
+    """(catalog key, where it is referenced, tag rule applies) for every row a
+    release ships, each key once (its first reference wins):
+
+    - the release channels' variables (images/<release>.generated.env);
+    - the pack locks' restated pins (packs/*.lock.json);
+    - every image set, `inherits` applied (images/image-set.generated.yaml:
+      what generated stacks run, so as much a part of the release as the
+      channel's own images);
+    - compose_env and product_env (the dashboard compose file's inline images).
+      Their `channel: upstream` rows are someone else's images on that
+      project's own version tags, so the tag rule does not apply to them; the
+      digest rule still does.
+    """
+    consumers = catalog["consumers"]
+    images = catalog["images"]
+    found: dict[str, tuple[str, bool]] = {}
+
+    def add(key: str, where: str, tag_rule: bool = True) -> None:
+        if key not in found:
+            found[key] = (where, tag_rule)
+
+    for _name, spec in sorted((consumers.get("release_channels") or {}).items()):
+        for var, key in spec["vars"].items():
+            add(key, var)
+    for lock_path, mapping in sorted((consumers.get("pack_locks") or {}).items()):
+        for lock_key, key in mapping.items():
+            add(key, f"{lock_path} required_images.{lock_key}")
+    for set_name in consumers.get("image_sets") or {}:
+        for where, key in _leaf_paths(resolved_image_set_keys(catalog, set_name),
+                                      f"image_sets.{set_name}"):
+            add(key, where)
+    for group_name in ("compose_env", "product_env"):
+        for group, mapping in sorted((consumers.get(group_name) or {}).items()):
+            for var, key in mapping.items():
+                add(key, f"{group_name}.{group}.{var}",
+                    images.get(key, {}).get("channel") != "upstream")
+    return [(key, where, tag_rule) for key, (where, tag_rule) in found.items()]
 
 
 def release_problems(catalog: dict[str, Any]) -> list[str]:
@@ -1150,22 +1248,26 @@ def release_problems(catalog: dict[str, Any]) -> list[str]:
     immutable tag AND its digest. Pending rows, release-candidate tags and
     tag-only refs are fine on a development branch while images are being
     filled in, and must all be gone before the merge into main. Tags are
-    checked against an allowlist of release shapes (release_tag_problem).
+    checked against an allowlist of release shapes (release_tag_problem), for
+    every row the release ships (release_rows), not only the channel's own.
     """
     images = catalog["images"]
     problems: list[str] = []
-    for key, _note in pending_rows(catalog):
+    pending = {key for key, _note in pending_rows(catalog)}
+    for key in sorted(pending):
         problems.append(f"images.{key} is still pending (no digest): pin it with "
                         f"tools/images.sh bump --only {key} [--tag <release tag>]")
-    channel_keys_seen: set[str] = set()
-    for name, spec in sorted((catalog["consumers"].get("release_channels") or {}).items()):
-        for var, key in spec["vars"].items():
-            if key in channel_keys_seen:
-                continue
-            channel_keys_seen.add(key)
-            problem = release_tag_problem(key, var, str(images[key]["tag"]))
+    for key, where, tag_rule in release_rows(catalog):
+        row = images[key]
+        if tag_rule:
+            problem = release_tag_problem(key, where, str(row["tag"]))
             if problem:
                 problems.append(problem)
+        if not row.get("digest") and key not in pending:
+            problems.append(f"images.{key} ({where}) has no digest (channel "
+                            f"{row['channel']}): a release pins every image it ships "
+                            f"by digest")
+    for name, spec in sorted((catalog["consumers"].get("release_channels") or {}).items()):
         emitted = ROOT / spec["emits"]
         if emitted.is_file():
             for line in emitted.read_text(encoding="utf-8").splitlines():
@@ -1554,7 +1656,10 @@ def _selftest_pending_and_host_pin() -> None:
                          ("v1_authoring", "mns-authoring-v1.0.0-rc.pkg.1", False),
                          ("v1_stacks", "tevv-jsonl-ingest-v0.4.5-gfc88f57", False),
                          ("v1_stacks", "mns-stacks-v1.0.0-m5b74d92", False),
-                         ("v1_packs", "mns-packs-latest", False)):
+                         ("v1_packs", "mns-packs-latest", False),
+                         ("vio_estimator_openvins", "vio-estimator-openvins-69488123", True),
+                         ("vio_estimator_openvins", "vio-estimator-openvins-latest", False),
+                         ("v1_stacks", "mns-stacks-69488123", False)):
         assert (release_tag_problem(key, "X", tag) is None) is ok, \
             f"selftest FAILED: release tag allowlist on {key}={tag!r}"
 
@@ -2288,6 +2393,15 @@ def cmd_refs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pins(args: argparse.Namespace) -> int:
+    """`<development ref><TAB><pinned digest or empty>`, one row per line."""
+    catalog = load_catalog()
+    assert_invariants(catalog)
+    for ref, digest in tag_pins(catalog, all_catalog=args.all_catalog, channel=args.channel):
+        print(f"{ref}\t{digest}")
+    return 0
+
+
 def cmd_local_refs(args: argparse.Namespace) -> int:
     """`channel: local` images a release channel needs present in the Docker
     store; empty for a fully published channel."""
@@ -2494,6 +2608,11 @@ def main(argv: list[str]) -> int:
     p_refs.add_argument("--channel", default=DEFAULT_CHANNEL,
                         help=f"release channel whose active set to list (default: {DEFAULT_CHANNEL})")
     p_refs.set_defaults(fn=cmd_refs)
+
+    p_pins = sub.add_parser("pins")
+    p_pins.add_argument("--all-catalog", action="store_true")
+    p_pins.add_argument("--channel", default=DEFAULT_CHANNEL)
+    p_pins.set_defaults(fn=cmd_pins)
 
     p_local = sub.add_parser("local-refs")
     p_local.add_argument("--channel", default=DEFAULT_CHANNEL)
