@@ -148,24 +148,32 @@ images:
   # ---- MnS 1.0 (channel v1): baseline rebuilt from release/v1.0.0 on 2026-09-18 ----
   v1_runtime_host:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-v1.1.0-dev-3d71c1c"
-    digest: sha256:4790c5979b5b2037d5bfcf4695bccb1002bbbcf9320fd3d8cdfd53f8d47ae0ef
+    tag: "tevv-runtime-host-v1.1.0-dev-44bd6f7"
+    digest: sha256:44b393b7e4bdb8bf686a3572a5269b14e1c35b9f853113edbf1dc613c5058812
     channel: pinned
     purpose: >-
       MnS 1.0 generic TEVVRuntimeHost (TEVV-Airsim integration/v1.0.0 dea429015355, dirty=false; v1.0.0 candidate: #228 packs, #226 authored origin, exec launcher): the shared Scenario* plugins single copy (shared_set_id 8ef1c3b7), SDK 1.0.0rc5; carries its host contract (label tevv.host.contract); its layered kit is v1_runtime_host_kit, iceoryx2 SHM camera publishing. Non-Substrate iostore-v2 baseline; its companion kit is v1_runtime_host_kit (label tevv.host.kit_image).
+      Rebuilt from TEVV-Airsim feat/multi-drone-missions 44bd6f7 (#234):
+      MissionOverlay draws every mission's pins per drone; GPU lidar readback in
+      batches; PixelStreaming2 for the dashboard's Sim view.
 
   v1_authoring:
     repo: dhdevspace/auto_mns
-    tag: "mns-authoring-v1.1.0-dev-61a7b4c"
-    digest: sha256:66b11b18a48caa6418fff896df800d2558e4329b2cd26cc2e7816fe7ba6c8c65
+    tag: "mns-authoring-v1.1.0-dev-1a59625"
+    digest: sha256:cb3e76280833bc82500a8534b335b74c1678b5bf57ee945d200b8cdfcb3a2ebd
     channel: pinned
     purpose: >-
       MnS 1.0 ScenarioLab (TEVV-Authoring integration/v1.0.0 e821a2f074fc; v1.0.0 candidate: #25 spawn clearance, CableComponent), built kit-only with --kit <v1_runtime_host_kit> --strict and no waivers (labels tevv.authoring.kit_image / tevv.authoring.shared_set_id): the nine shared Scenario* plugins, UDS and the preview content come from that kit (TEVV-Airsim dea429015355); SDK 1.0.0rc5; reopen keeps placed pack objects (F3). Bakes mns_vehicle_models 1.0.4 (sha256:317a6dd7...), the version the product lock pins. Level packs are staged from the PackStore.
+      Rebuilt from TEVV-Authoring feat/multi-drone-missions 1a59625 (#41): the
+      Missions tab (one mission per drone, pins per drone, every mission
+      exported). Built --strict against tevv-runtime-host-kit-v1.1.0-dev-44bd6f7
+      with one waiver, sdk-version:mns-contentpacks (ScenarioLab's SDK 1.0.0rc6,
+      the host's 1.0.0rc5), as the previous authoring pin.
 
   v1_stacks:
     repo: dhdevspace/auto_mns
-    tag: "mns-stacks-v1.1.0-dev-dbcd10e"
-    digest: sha256:cf3a107a6e891e832d3ac252873bcf869a81f5fa6069aba2374c80cb3baa00a2
+    tag: "mns-stacks-v1.1.0-dev-63d1bc6"
+    digest: sha256:070f8b068a2103f96b5814f99983abe232d1931f87553c22ef0839dc3e702885
     channel: pinned
     purpose: >-
       mns-stacks (MnS-Integration-Platform platform/stacks, ENTRYPOINT
@@ -191,6 +199,11 @@ images:
       integration/v1.1 b879028 (#145): the run director writes mission.json, the
       pilot's goals and whether it reached them, for the metrics service to
       judge goal reached from.
+      Rebuilt from MnS-Integration-Platform feat/multi-drone-missions 63d1bc6
+      (#154): ScenarioSpec missions per drone, a stack picked per drone at run
+      time (built-in tevv-default), one supervisor per mission, per-mission
+      results and scoring, suites; ScenarioSpec from MnS-ScenarioSpec 507c453
+      (#10).
 
   v1_packs:
     repo: dhdevspace/auto_mns
@@ -206,8 +219,8 @@ images:
 
   v1_runtime_host_kit:
     repo: dhdevspace/auto_mns
-    tag: "tevv-runtime-host-kit-v1.1.0-dev-3d71c1c"
-    digest: sha256:cf64aac837dfb58da35a0fcb29f4b7ed8c64b2a1d8dd373a7c5ec2f8313a3b8a
+    tag: "tevv-runtime-host-kit-v1.1.0-dev-44bd6f7"
+    digest: sha256:7b2ead4ead0e72927e876c425df750e9c9824ebc080a0ae729d1e25c35d3b2a6
     channel: pinned
     pull: false
     purpose: >-
@@ -216,6 +229,7 @@ images:
       build. The host image's tevv.host.kit_image label names its digest, and
       tools/images.sh verify warns when that label and this pin differ.
       Packaging and authoring builds read it; the product never pulls it.
+      The kit of the same build as v1_runtime_host (TEVV-Airsim 44bd6f7, #234).
 
   v1_ros2_bridge:
     repo: dhdevspace/auto_mns
@@ -243,8 +257,8 @@ images:
 
   v1_dashboard_backend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-backend-v1.1.0-dev-3e8ffc9"
-    digest: sha256:5426a53732726a5fb59d62bdeb67e184b43158008047417b91e072a7516768d2
+    tag: "tevv-web-dashboard-backend-v1.1.0-dev-bf6922a"
+    digest: sha256:c43a73985ffd9a99b5404156d44b490aef4d7e6d79ee13a5d41b0ab2a984f8e8
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
@@ -274,11 +288,13 @@ images:
       route or goal course; ending on landing is offered only with a MAVLink
       endpoint; the test plan's Id box keeps hyphens. Rebuilt from cabceca (#137): a
       run's map and JSON open in a dialog over the page, not a new tab.
+      Rebuilt from TEVV-Web-Dashboard feat/multi-drone-missions bf6922a (#142):
+      a stack picked per drone, results per mission, Stacks and Suites pages.
 
   v1_dashboard_frontend:
     repo: dhdevspace/auto_mns
-    tag: "tevv-web-dashboard-frontend-v1.1.0-dev-3e8ffc9"
-    digest: sha256:b49d45eadc9152f09cbd8e7db4f22766f607d66eec4628632e40f55d12561a70
+    tag: "tevv-web-dashboard-frontend-v1.1.0-dev-bf6922a"
+    digest: sha256:a3e99f8716faca42ab355d8a36a1e338709381a79e53564582e8149001218d8e
     channel: pinned
     source:
       repo: DinoHub/TEVV-Web-Dashboard
@@ -287,11 +303,13 @@ images:
       MnS 1.0 dashboard frontend (TEVV-Web-Dashboard integration/v1.0.0
       b36d1a9), built with the backend above; it bakes no pins. v1.1
       development build of TEVV-Web-Dashboard cabceca, with the backend above.
+      Rebuilt from TEVV-Web-Dashboard feat/multi-drone-missions bf6922a (#142),
+      the same commit as the backend.
 
   metrics_service:
     repo: dhdevspace/auto_mns
-    tag: "tevv-jsonl-ingest-v0.4.6-g27a720c"
-    digest: sha256:c99307ca4b0c00920b071911a3717f4a6d9034d0d751c7596886a60b0790a7aa
+    tag: "tevv-jsonl-ingest-v0.5.0-gcfe09f6"
+    digest: sha256:5a7c5380ab484c56b55868d8c16c6fc9ec1925b21f2b8f8b62d40b7a50e9481e
     channel: pinned
     source:
       repo: DinoHub/TEVV-Metrics
@@ -312,6 +330,8 @@ images:
       fails, and nothing inside a probe narrower than the limit is not judged;
       a goal reached before take-off no longer counts, and mission.json
       decides goal reached when present.
+      Rebuilt from TEVV-Metrics feat/multi-drone-missions cfe09f6 (#22):
+      jsonl_ingestor 0.5.0 judges every mission of a run on its own observers.
 
 consumers:
   # Empty in v1.0.0: its one row (airsim-tools) was removed. product-images.env
