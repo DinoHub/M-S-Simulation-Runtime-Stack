@@ -5,7 +5,7 @@
 schema: tevv.component.v1
 id: openvins-vio
 name: OpenVINS stereo VIO
-version: 0.2.0
+version: 0.3.0
 kind: estimator
 
 # Your component, unmodified (here with CycloneDDS added; see image/).
@@ -17,7 +17,7 @@ component:
 # Your adaptor: writes OpenVINS's config from TEVV's sensor description, and
 # republishes OpenVINS's odometry as /tevv/estimate.
 adaptor:
-  image: dhdevspace/auto_mns:openvins-vio-adaptor-0.2.0
+  image: dhdevspace/auto_mns:openvins-vio-adaptor-0.3.0
   volumes: ["config:/config"]
 
 volumes:

@@ -1,0 +1,19 @@
+# A TEVV test suite (tevv.suite.v1), an example to copy. Each campaign is a folder
+# under campaigns/ holding its run request (CampaignSpec.yaml: its scenario, how
+# many runs) and its scenario (ScenarioSpec.yaml: the test and its observers).
+schema: tevv.suite.v1
+id: local-planner
+name: Local planner suite
+description: >-
+  How well a local planner reaches goals in the container yard: goal following
+  in open space, finding a way round an obstacle row, and keeping its distance
+  in clutter. TEVV takes off and hands over; the component flies every course
+  on ground truth and the registered point cloud.
+intended_for: [planner]
+campaigns:
+  - id: nav-open-course
+    purpose: Goal following in open space (three goals, nothing in the way)
+  - id: nav-detour
+    purpose: Finding a way round a 30 m container row to a goal behind it
+  - id: nav-container-weave
+    purpose: Weaving between containers to every goal, keeping clear and flying smoothly

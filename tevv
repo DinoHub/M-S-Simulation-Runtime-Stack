@@ -4,24 +4,39 @@
 #   ./tevv up | down                       the dashboard (browser entry point)
 #   ./tevv component init <id> --container <image> --kind <kind>
 #   ./tevv component check components/<id>
-#   ./tevv run scenarios/<test> --component components/<id> [--repeats N]
-#                                          fly a scenario's test (N runs)
-#   ./tevv results <test> [--format csv|md] one row per run: ended, verdict, observers
+#   ./tevv stack list | show <id> | check <id>
+#                                          who can fly a drone (stacks/<id>/stack.yaml; tevv-default built in)
+#   ./tevv run scenarios/<test> [--stack <drone>=<stack>]... [--stack <stack>] [--component components/<id>] [--repeats N]
+#                                          fly a scenario's missions (N runs), each drone by its stack
+#   ./tevv results <test> [--format csv|md] one row per run per mission: ended, verdict, observers
 #   ./tevv stop <test>                     stop a running test now
 #   ./tevv observers [--json]              the observer types a scenario can list
+#   ./tevv suite init <id> --from scenarios/<a> scenarios/<b> ...
+#                                          a test suite from scenarios (one campaign each)
+#   ./tevv suite check suites/<id>         the suite and each campaign's test and observers
+#   ./tevv suite run suites/<id> [--stack <drone>=<stack>]... [--stack <stack>] [--component components/<pkg>]
+#                                          fly every campaign of the suite with those stacks
+#   ./tevv suite results <id> [--run <run>] [--format md|csv]
+#                                          per campaign: purpose, runs passed, failed observers
+#   ./tevv suite list | runs <id> | stop <id> [--now]
 set -euo pipefail
 cd "$(dirname "$0")"
-usage() { sed -n '3,11p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,21p' "$0" | sed 's/^# \{0,1\}//'; }
 cmd="${1:-}"; shift || true
 case "$cmd" in
   up)        exec make dashboard "$@" ;;
   down)      exec make dashboard-down ;;
   component) exec make stacks ARGS="component $*" ;;
+  stack)     exec make --no-print-directory stacks ARGS="stack $*" ;;
   run)       exec make campaign ARGS="run $*" ;;
   results)   exec make --no-print-directory stacks ARGS="campaign status $*" ;;
   stop)      exec make stacks ARGS="campaign cancel --now $*" ;;
   observers) image="${METRICS_SERVICE_IMAGE:-$(sed -n 's/^METRICS_SERVICE_IMAGE=//p' .env 2>/dev/null | tail -1)}"
              exec docker run --rm --entrypoint tevv-jsonl-ingest "${image:?set METRICS_SERVICE_IMAGE}" observers "$@" ;;
+  suite)     case "${1:-}" in
+               run) exec make --no-print-directory suite ARGS="$*" ;;
+               *)   exec make --no-print-directory stacks ARGS="suite $*" ;;
+             esac ;;
   ""|-h|--help|help) usage ;;
   *) echo "tevv: unknown command '$cmd'" >&2; usage >&2; exit 2 ;;
 esac

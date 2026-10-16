@@ -64,7 +64,7 @@ IMAGE_SET_FILE="${MNS_IMAGE_SET_FILE:-$ROOT/images/image-set.generated.yaml}"
 # for the commands that generate stacks. Without overrides the file is used
 # as it is.
 case "$1" in
-  generate|campaign)
+  generate|campaign|suite)
     if effective="$("${PYTHON:-python3}" "$ROOT/tools/images.py" effective-image-set \
           --in "$IMAGE_SET_FILE" --out "$ROOT/.mns/image-set.effective.yaml" --dotenv "$ROOT/.env")"; then
       IMAGE_SET_FILE="$effective"
@@ -95,6 +95,10 @@ case "$1" in
   # them; check only reads files.
   component)
     case "${2:-}" in init|validate|build) needs_socket=true ;; esac ;;
+  # A suite run flies its campaigns; the others read a run's lock, which asks
+  # Docker whether the run's container is still alive.
+  suite)
+    case "${2:-}" in run|stop|results|runs|list) needs_socket=true ;; esac ;;
 esac
 
 # load-images-env.sh leaves keys that ./.env sets for compose to read; this

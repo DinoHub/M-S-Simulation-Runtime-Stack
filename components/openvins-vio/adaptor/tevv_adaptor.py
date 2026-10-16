@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """OpenVINS <-> TEVV adaptor (the component's own code, not TEVV's).
 
-TEVV gives every component the same fixed interface (tevv.interface.v1):
-  in:  /tevv/sensors/<camera>/image_raw, /camera_info, /tevv/sensors/imu,
-       /tevv/mission/*, /tevv/control_state, /clock, /tf
-       $TEVV_INTERFACE  (interface.json: these topics, frames and the
-                         calibration of the sensors this package consumes)
-  out: /tevv/estimate (nav_msgs/Odometry: base_link FLU in a fixed world frame)
+TEVV gives every component the same fixed interface (tevv.interface.v1),
+namespaced by its drone (/tevv/<drone>, e.g. /tevv/Drone1):
+  in:  /tevv/<drone>/sensors/<camera>/image_raw, /camera_info,
+       /tevv/<drone>/sensors/imu, /tevv/<drone>/mission/*,
+       /tevv/<drone>/control_state, /clock, /tf
+       $TEVV_INTERFACE  (interface.json: the drone, its namespace, these
+                         topics, frames and the calibration of the sensors
+                         this package consumes)
+  out: /tevv/<drone>/estimate (nav_msgs/Odometry: base_link FLU in a fixed world frame)
 
 This adaptor does the two things OpenVINS needs:
  1. writes OpenVINS's config (/config) from interface.json, so it
     subscribes to TEVV's sensor topics with the right calibration;
- 2. republishes OpenVINS's /ov_msckf/odomimu as /tevv/estimate.
+ 2. republishes OpenVINS's /ov_msckf/odomimu as /tevv/<drone>/estimate.
 """
 import json
 import math
@@ -90,7 +93,9 @@ def relay_estimate():
     class Adaptor(Node):
         def __init__(self):
             super().__init__("openvins_tevv_adaptor")
-            self.pub = self.create_publisher(Odometry, "/tevv/estimate", 10)
+            # This drone's estimate topic (interface.json's namespace, e.g. /tevv/Drone1).
+            namespace = str(json.loads(INTERFACE.read_text()).get("namespace") or "/tevv").rstrip("/")
+            self.pub = self.create_publisher(Odometry, f"{namespace}/estimate", 10)
             self.create_subscription(Odometry, "/ov_msckf/odomimu", self.on_odom, 10)
 
         def on_odom(self, msg):

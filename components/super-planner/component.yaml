@@ -6,7 +6,7 @@
 schema: tevv.component.v1
 id: super-planner
 name: SUPER local planner
-version: 0.3.0
+version: 0.4.0
 kind: planner
 
 component:
@@ -21,12 +21,12 @@ component:
     -p config_name:=/cfg/component/files/config/click.yaml
 
 adaptor:
-  image: dhdevspace/auto_mns:super-planner-adaptor-0.2.0
+  image: dhdevspace/auto_mns:super-planner-adaptor-0.3.0
 
-# What TEVV should provide: /tevv/gt/odom and /tevv/sensors/point_cloud (odom
-# frame). The goal (/tevv/mission/goal) is always there.
+# What TEVV should provide: /tevv/<drone>/gt/odom and /tevv/<drone>/sensors/point_cloud
+# (odom frame). The mission (/tevv/<drone>/mission/waypoints and .../next) is always there.
 consumes: [ground_truth, point_cloud]
-# What SUPER gives back: /tevv/command (mavros_msgs/PositionTarget).
+# What SUPER gives back: /tevv/<drone>/command (mavros_msgs/PositionTarget).
 produces: [command]
 
 # TEVV hands over once SUPER's state machine is up.

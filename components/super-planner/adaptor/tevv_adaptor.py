@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """super-planner <-> TEVV adaptor. Yours to edit: TEVV runs it, but never changes it.
 
-TEVV gives every component the same fixed interface (tevv.interface.v1). On
-the component's own network and ROS domain it publishes /tevv/gt/...,
-/tevv/sensors/..., /tevv/mission/... and /tevv/control_state, and reads back
-/tevv/estimate, /tevv/command and /tevv/mission_status. $TEVV_INTERFACE
-(interface.json) lists every one of those this package gets, with its message
-type, frame and QoS, and the calibration of the sensors it consumes.
+TEVV gives every component the same fixed interface (tevv.interface.v1),
+namespaced by the drone it is attached to (/tevv/<drone>, e.g. /tevv/Drone2).
+On the component's own network and ROS domain it publishes
+/tevv/<drone>/gt/..., /tevv/<drone>/sensors/..., /tevv/<drone>/mission/waypoints
+and .../mission/next, and /tevv/<drone>/control_state, and reads back
+/tevv/<drone>/estimate, /tevv/<drone>/command and /tevv/<drone>/mission_status.
+$TEVV_INTERFACE (interface.json) names the drone and its namespace, and lists
+every one of those this package gets, with its message type, frame and QoS,
+and the calibration of the sensors it consumes. TEVV's names are written
+tevv("/gt/odom") below, so the same adaptor works on any drone.
 
 This adaptor converts between those names and your component's own:
 
@@ -27,19 +31,26 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rosidl_runtime_py.utilities import get_message
 
 INTERFACE = json.loads(Path(os.environ.get("TEVV_INTERFACE", "/cfg/component/interface.json")).read_text())
+# This drone's namespace, e.g. /tevv/Drone2.
+NAMESPACE = str(INTERFACE.get("namespace") or "/tevv").rstrip("/")
+
+
+def tevv(name):
+    """A TEVV topic for this drone: tevv("/gt/odom") -> /tevv/Drone2/gt/odom."""
+    return NAMESPACE + name
 
 # --- your component's topics -------------------------------------------------
 
 INPUTS = {
     # TEVV topic                 SUPER's topic (files/config/click.yaml)
-    "/tevv/gt/odom":             "/px4vision_custom_0/mavros/local_position/odom",
-    "/tevv/sensors/point_cloud": "/px4vision_custom_0/lidar",
-    "/tevv/mission/goal":        "/goal",
+    tevv("/gt/odom"):             "/px4vision_custom_0/mavros/local_position/odom",
+    tevv("/sensors/point_cloud"): "/px4vision_custom_0/lidar",
+    tevv("/mission/next"):        "/goal",
 }
 
 
 def velocity_command(msg):
-    """SUPER's PositionTarget -> /tevv/command: its velocity (odom ENU) and yaw."""
+    """SUPER's PositionTarget -> TEVV's command: its velocity (odom ENU) and yaw."""
     from mavros_msgs.msg import PositionTarget
     out = PositionTarget()
     out.header.frame_id = "odom"
@@ -54,7 +65,7 @@ def velocity_command(msg):
 
 OUTPUTS = {
     # SUPER's topic                                  (its type)                        TEVV topic       convert
-    "/px4vision_custom_0/mavros/setpoint_raw/local": ("mavros_msgs/msg/PositionTarget", "/tevv/command", velocity_command),
+    "/px4vision_custom_0/mavros/setpoint_raw/local": ("mavros_msgs/msg/PositionTarget", tevv("/command"), velocity_command),
 }
 
 # --- the relay (generic; usually left as it is) ------------------------------

@@ -1,0 +1,24 @@
+{
+  "schema": "mns.authored_overlay.v1",
+  "generated_by": "ScenarioAuthoringApp",
+  "map": "/MnsEnv_Xfs_Level_1_0_2/Xfs/Maps/L_Main_WP",
+  "exported_at_utc": "2026-10-07T08:00:04.923Z",
+  "vehicles": [
+    {
+      "name": "drone_1",
+      "runtime_name": "Drone1",
+      "vehicle_type": "quadrotor_small",
+      "ros_domain_id": 1,
+      "spawn_source": "packaged_authoring_app",
+      "spawn_source_actor": "MnS_Drone_drone_2147482206",
+      "spawn_airsim_meters": {"x": 423.000, "y": 906.000, "z": 21.000, "yaw": 0.000}
+    }
+  ],
+  "placed_assets": [
+  ],
+  "random_spawns": [
+  ],
+  "aoi_volumes": [],
+  "route_anchors": [],
+  "pcg_zones": []
+}

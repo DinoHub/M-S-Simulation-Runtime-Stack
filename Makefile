@@ -355,6 +355,11 @@ campaign: ensure-images  ## Fly a campaign (CAMPAIGN=<name>, or ARGS="<subcomman
 	@python3 tools/check_spawn.py campaign $(or $(ARGS),run $(CAMPAIGN)) || true
 	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh campaign $(or $(ARGS),run $(CAMPAIGN))
 
+suite: ensure-images  ## A test suite: make suite ARGS="run suites/<id> --component components/<pkg>"
+	@test -n "$(ARGS)" || { echo 'usage: make suite ARGS="run suites/<id> --component components/<pkg>"' >&2; exit 2; }
+	@mkdir -p generated suites
+	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh suite $(ARGS)
+
 campaign-status:  ## One row per flight of a campaign (CAMPAIGN=<name>)
 	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh campaign status $(CAMPAIGN)
 
