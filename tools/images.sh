@@ -17,6 +17,7 @@
 #   tools/images.sh verify          # CI gate: selftest + regenerate + diff, exit 1 on
 #                                    # drift or a selftest failure (offline)
 #   tools/images.sh refs            # exact refs; add --development for local-first tags
+#   tools/images.sh pins            # <tag-only ref><TAB><pinned digest> per pullable row
 #   tools/pull-all-images.sh       # pull exact active refs with retries; --all-catalog expands scope
 #   tools/images.sh report          # pinned vs latest on Hub / upstream registries (online)
 #   tools/images.sh bump [--only KEY] [--channel review|moving]
@@ -43,7 +44,7 @@ MODE="${1:-}"
 [[ $# -gt 0 ]] && shift || true
 
 case "$MODE" in
-  sync|verify|report|bump|selftest|status|refs|local-refs|effective-image-set)
+  sync|verify|report|bump|selftest|status|refs|pins|local-refs|effective-image-set)
     # setup.sh, make doctor and pull-all-images.sh reach these subcommands, so
     # this is on the customer path: fail with the fix rather than "python3:
     # command not found". images.py carries the matching pyyaml guard.
@@ -59,7 +60,7 @@ case "$MODE" in
   baked)
     ;;
   *)
-    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest|refs|local-refs|effective-image-set> [args...]" >&2
+    echo "usage: $0 <status|sync|verify|report|bump|drift|baked|selftest|refs|pins|local-refs|effective-image-set> [args...]" >&2
     exit 2
     ;;
 esac
