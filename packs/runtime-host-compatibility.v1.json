@@ -146,6 +146,6 @@
   ],
   "base_release": {
     "version": "tevv-runtime-host-ue-5.8.2-base-v1",
-    "digest": "sha256:68479376e2849354fab2eb69d7e52078151eb7d4a18d3f5dcf3fe5891e8fced3"
+    "digest": "sha256:6e0587258be969d39aedc51b4bc3e8a227fd8f46b0ead2d298a78e765016cd4f"
   }
 }
