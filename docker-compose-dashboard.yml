@@ -64,9 +64,13 @@ services:
     pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
     container_name: ${DASHBOARD_CONTAINER_PREFIX:-}airsim-dashboard-api
     ports:
-      - "8001:8001"
+      # DASHBOARD_API_PORT / DASHBOARD_PORT move a second dashboard on the
+      # same host (tools/dashboard-instance.sh); the defaults are this one's.
+      - "${DASHBOARD_API_PORT:-8001}:8001"
     environment:
       - AIRSIM_HOST=host.docker.internal
+      # The frontend port CORS lets in (besides 3000 and 3001).
+      - DASHBOARD_PORT=${DASHBOARD_PORT:-3001}
       # postgres-telemetry is a service in THIS compose file (db profile), so
       # reach it by service name on the default network. It publishes no host
       # port, so the host.docker.internal form this used to carry — from when
@@ -91,6 +95,12 @@ services:
       # whatever the database is doing.
       - INIT_DB_SCHEMA=false
       - SIM2REAL_RUNS_DIR=/data/runs
+      # The Sim tab: runs the dashboard starts stream their simulator viewport
+      # to dashboard-pixel-streaming (mns-stacks run --view). CLI and CI runs
+      # never stream. DASHBOARD_PIXEL_STREAMING_URL= (empty) turns it off, for
+      # a network that does not allow WebRTC.
+      - TEVV_PIXEL_STREAMING_URL=${DASHBOARD_PIXEL_STREAMING_URL-ws://host.docker.internal:8888}
+      - TEVV_PIXEL_STREAMING_PLAYER_PORT=${DASHBOARD_PIXEL_STREAMING_PORT:-8080}
       # The HOST path of that same runs directory -- the identical expression
       # as the /data/runs mount source below, so the two cannot diverge. The
       # backend hands it to its mns-stacks siblings (--runs-dir, mounted at
@@ -211,7 +221,8 @@ services:
       # be exactly the drift images/catalog.yaml exists to prevent. It ships in
       # the channel env file -- pass it with --env-file (see the header).
       - AIRSIM_BRIDGE_IMAGE=${MNS_ROS2_BRIDGE_IMAGE:?add --env-file images/v1.0.0.generated.env, or use make dashboard}
-      - ROS2_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}ros2-tools
+      # A second dashboard (tools/dashboard-instance.sh) shares the main one's.
+      - ROS2_CONTAINER_NAME=${DASHBOARD_ROS2_CONTAINER:-${DASHBOARD_CONTAINER_PREFIX:-}ros2-tools}
       - MNS_AUTHORING_CONTAINER_NAME=${DASHBOARD_CONTAINER_PREFIX:-}mns-scenariolab-editor
       - MNS_AUTHORING_DOCKER_ARGS=-v "${MSRS_ROOT:-${PWD}}/config/scenariolab/airsim-settings.json:/tmp/Documents/AirSim/settings.json:ro" ${MNS_AUTHORING_DOCKER_ARGS:-}
       - MNS_HOST_UID=${HOST_UID:-1000}
@@ -338,7 +349,7 @@ services:
       # container, not the standalone default of 3000. Mapping 3001:3000 hit a
       # dead port; the browser reported an empty response / connection reset
       # while `docker ps` showed the container happily Up.
-      - "3001:3001"
+      - "${DASHBOARD_PORT:-3001}:3001"
     environment:
       # Pinned so the port mapping above cannot drift from an image default.
       - PORT=3001
@@ -355,6 +366,18 @@ services:
       # BUILD time (localhost:8082 appears ~15x under /app/.next) and cannot be
       # moved from here.
       - "${DASHBOARD_LICHTBLICK_PORT:-8082}:8080"
+    restart: unless-stopped
+
+  dashboard-pixel-streaming:
+    # The Sim tab's signalling server (tevv-web-dashboard pixel-streaming/):
+    # the player for the browser, and the port runtime hosts stream to. Part
+    # of the dashboard only; a stack never starts it.
+    image: ${DASHBOARD_PIXEL_STREAMING_IMAGE:-dhdevspace/auto_mns:tevv-pixel-streaming-signalling-5.8-dev}
+    pull_policy: ${DASHBOARD_PULL_POLICY:-missing}
+    container_name: ${DASHBOARD_CONTAINER_PREFIX:-}dashboard-pixel-streaming
+    ports:
+      - "${DASHBOARD_PIXEL_STREAMING_PORT:-8080}:80"   # the player (the browser)
+      - "8888:8888"                                    # streamers (runtime hosts)
     restart: unless-stopped
 
   # Telemetry DB — opt-in: docker compose --profile db (or make dashboard DB=true).

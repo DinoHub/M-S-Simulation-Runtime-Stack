@@ -1,0 +1,7 @@
+schema: tevv.stack.v1
+id: vio-openvins
+name: OpenVINS on TEVV's flight
+description: >-
+  TEVV's default stack flies the drone through its mission's points; OpenVINS
+  estimates the pose from the stereo cameras and IMU. For estimator tests.
+packages: [tevv-default, openvins-vio]

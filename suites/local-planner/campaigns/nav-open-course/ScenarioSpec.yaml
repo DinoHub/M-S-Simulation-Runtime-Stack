@@ -1,12 +1,19 @@
 schema: mns.scenario.v1
-id: planner-xfs-ardupilot
-name: Local planner course over XFS, ArduPilot
-stack_name: planner-xfs-ardupilot
+id: nav-open-course
+name: "Planner: an open three-goal course (component flies)"
+stack_name: nav-open-course
+
+# Purpose: goal following in open space. Three goals in the open west of the
+# yard, nothing in the way: a planner should reach each one promptly and
+# without touching anything. Judged on goals reached and collisions; time to
+# goal and path efficiency are reported.
+#
+# Based on super-yard-square:
 
 # An ArduCopter over the XFS container yard with a 3D GPU lidar: the world a
 # local planner is tested in. Like stereo-xfs for estimators, it names no
-# planner. A planner attaches as a component (components/mighty,
-# components/super) and flies the course's goals (CampaignSpec.yaml).
+# planner. A planner attaches as a component (components/super-planner,
+# for example) and flies the test's goal course (test, below).
 #
 # Sim truth is the planner's odometry (/ground_truth/odom); the bridge's
 # registered cloud is accumulated in the map frame (LOCAL_OBS_TARGET_FRAME
@@ -58,3 +65,28 @@ vehicles:
     barometer: true
     magnetometer: true
     gpu_lidar: true
+
+# The test: TEVV takes off and hands the vehicle to the component under test,
+# which flies the goal course; TEVV publishes the next goal when the vehicle is
+# within the advance radius of the current one.
+
+# The test: TEVV takes off and hands over; the planner flies the course.
+missions:
+- id: test
+  drone: Drone1
+  type: waypoints
+  points:
+  - [-8, 0, 3]
+  - [-8, 8, 3]
+  - [0, 8, 3]
+  timeout_s: 180
+  reach_radius_m: 1.0
+  observers:
+  - id: no-crash
+    type: collisions
+    check: {max: 0}
+  - id: goals
+    type: goals_reached
+    check: {min: 1.0}
+  - {id: to-goal, type: time_to_goal}
+  - {id: efficiency, type: path_efficiency}

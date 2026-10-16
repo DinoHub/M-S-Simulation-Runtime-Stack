@@ -1,0 +1,7 @@
+schema: tevv.stack.v1
+id: super-planner
+name: SUPER local planner
+description: >-
+  The SUPER planner flies the drone to each published point on ground-truth
+  odometry and the lidar's point cloud. For planner tests.
+packages: [super-planner]

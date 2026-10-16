@@ -207,6 +207,8 @@ dashboard: stage-authoring-packs  ## TEVV Web Dashboard (browser entry point) on
 	check_ports 3001:$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-frontend:frontend \
 	            8001:$(DASHBOARD_CONTAINER_PREFIX)airsim-dashboard-api:backend \
 	            $(or $(DASHBOARD_LICHTBLICK_PORT),8082):$(DASHBOARD_CONTAINER_PREFIX)dashboard-lichtblick:Lichtblick \
+	            $(or $(DASHBOARD_PIXEL_STREAMING_PORT),8080):$(DASHBOARD_CONTAINER_PREFIX)dashboard-pixel-streaming:"Sim view player" \
+	            8888:$(DASHBOARD_CONTAINER_PREFIX)dashboard-pixel-streaming:"Sim view streamers" \
 	            $(or $(FOXGLOVE_BRIDGE_PORT),8764):$(DASHBOARD_CONTAINER_PREFIX)ros2-tools:"Foxglove websocket" || exit 1
 	@. ./tools/compose_retry.sh; . ./tools/load-images-env.sh; \
 	$(LOAD_DASHBOARD_IMAGES); \
@@ -365,6 +367,11 @@ campaign: ensure-images  ## Fly a campaign (CAMPAIGN=<name>, or ARGS="<subcomman
 	@# floor (packs/level-spawn-hints.json), before hours of runs fail to arm.
 	@python3 tools/check_spawn.py campaign $(or $(ARGS),run $(CAMPAIGN)) || true
 	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh campaign $(or $(ARGS),run $(CAMPAIGN))
+
+suite: ensure-images  ## A test suite: make suite ARGS="run suites/<id> --component components/<pkg>"
+	@test -n "$(ARGS)" || { echo 'usage: make suite ARGS="run suites/<id> --component components/<pkg>"' >&2; exit 2; }
+	@mkdir -p generated suites
+	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh suite $(ARGS)
 
 campaign-status:  ## One row per flight of a campaign (CAMPAIGN=<name>)
 	@$(MNS_STACKS_ENV); ./tools/mns-stacks.sh campaign status $(CAMPAIGN)

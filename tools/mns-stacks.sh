@@ -67,7 +67,7 @@ IMAGE_SET_FILE="${MNS_IMAGE_SET_FILE:-$ROOT/images/image-set.generated.yaml}"
 # for the commands that generate stacks. Without overrides the file is used
 # as it is.
 case "$1" in
-  generate|campaign)
+  generate|campaign|suite)
     if effective="$("${PYTHON:-python3}" "$ROOT/tools/images.py" effective-image-set \
           --in "$IMAGE_SET_FILE" --out "$ROOT/.mns/image-set.effective.yaml" --dotenv "$ROOT/.env")"; then
       IMAGE_SET_FILE="$effective"
@@ -94,10 +94,22 @@ case "$1" in
   campaign)
     case "${2:-}" in run|preflight|status|watch|cancel) needs_socket=true ;; esac ;;
   # init reads the container image (docker image inspect) to prefill the
-  # command; check only reads files.
+  # command, validate reports whether each image is present, build builds
+  # them; check only reads files.
   component)
-    case "${2:-}" in init) needs_socket=true ;; esac ;;
+    case "${2:-}" in init|validate|build) needs_socket=true ;; esac ;;
+  # A suite run flies its campaigns; the others read a run's lock, which asks
+  # Docker whether the run's container is still alive.
+  suite)
+    case "${2:-}" in run|stop|results|runs|list) needs_socket=true ;; esac ;;
 esac
+
+# load-images-env.sh leaves keys that ./.env sets for compose to read; this
+# container is not compose, so read the metrics image from ./.env too.
+METRICS_IMAGE="${METRICS_SERVICE_IMAGE:-}"
+if [[ -z "$METRICS_IMAGE" && -f "$ROOT/.env" ]]; then
+  METRICS_IMAGE="$(sed -n 's/^METRICS_SERVICE_IMAGE=//p' "$ROOT/.env" | tail -1)"
+fi
 
 args=(--rm --pull "${MNS_IMAGE_PULL_POLICY:-missing}"
       --user "$HOST_UID:$HOST_GID" -e HOME=/tmp)
@@ -109,6 +121,8 @@ args+=(
   -e "MNS_IMAGE_SET=${MNS_IMAGE_SET:-v1}"
   -e "MNS_IMAGE_SET_FILE=$IMAGE_SET_FILE"
   -e "MNS_PACK_STORE_ROOT=$PACK_STORE"
+  # The metrics service image, to judge a headless run once (scoring.judge_once).
+  -e "METRICS_SERVICE_IMAGE=$METRICS_IMAGE"
   -e "MNS_HOST_UID=$HOST_UID" -e "MNS_HOST_GID=$HOST_GID"
 )
 [[ -n "${MNS_SIM_STOP_TIMEOUT:-}" ]] && args+=(-e "MNS_SIM_STOP_TIMEOUT=$MNS_SIM_STOP_TIMEOUT")

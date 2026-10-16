@@ -1,0 +1,18 @@
+# A TEVV test suite (tevv.suite.v1), an example to copy. Each campaign is a folder
+# under campaigns/ holding its run request (CampaignSpec.yaml: its scenario, how
+# many runs) and its scenario (ScenarioSpec.yaml: the test and its observers).
+schema: tevv.suite.v1
+id: vio-estimator
+name: VIO estimator suite
+description: >-
+  How well a stereo-inertial estimator tracks the vehicle: accuracy on an easy
+  path, robustness to fast motion, and drift over distance. TEVV flies every
+  path; the component under test rides along and publishes its estimate.
+intended_for: [estimator]
+campaigns:
+  - id: vio-baseline-box
+    purpose: Baseline accuracy on an easy box at 1.5 m/s
+  - id: vio-aggressive-zigzag
+    purpose: Robustness to fast motion and sharp turns at 3 m/s
+  - id: vio-long-loop
+    purpose: Drift, heading and scale over three climbing laps (about 140 m)

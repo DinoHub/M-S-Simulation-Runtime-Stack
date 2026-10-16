@@ -1,0 +1,21 @@
+# SUPER (local planner) started by its own script: the same SUPER and adaptor
+# as components/super-planner, brought up with docker compose on the network
+# TEVV hands the script. A worked example of a package that starts itself.
+schema: tevv.component.v1
+id: super-planner-compose
+name: SUPER local planner (started by its own compose file)
+version: 0.1.0
+kind: planner
+
+# TEVV runs start.sh once the stack is up (and stop.sh at teardown) with
+# TEVV_NETWORK, ROS_DOMAIN_ID, TEVV_CONFIG, TEVV_INTERFACE, TEVV_OUT and
+# TEVV_RUN_ID set; compose.yml attaches both containers to $TEVV_NETWORK.
+start:
+  script: start.sh
+  stop: stop.sh
+
+consumes: [ground_truth, point_cloud]
+produces: [command]
+ready:
+  after_takeoff: [/planner_state]
+  timeout_s: 180

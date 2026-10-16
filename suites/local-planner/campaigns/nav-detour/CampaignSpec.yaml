@@ -1,0 +1,10 @@
+# This campaign's run request: its scenario (beside this file: the test and its
+# observers) and how many times to fly it by default (`suite run --repeats`
+# overrides it). The component is attached when the suite is run.
+schema: mns.campaign.v1
+id: nav-detour
+name: nav-detour
+scenario: ScenarioSpec.yaml
+repeats: 2
+recording:
+  keep: first

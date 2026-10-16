@@ -1,0 +1,35 @@
+# SUPER (local planner) under test in TEVV: a worked example of the TEVV
+# component interface. SUPER runs unmodified, with its own config
+# (files/config/click.yaml, which names SUPER's native topics). The adaptor
+# container (adaptor/, written for SUPER, not part of TEVV) converts TEVV's
+# fixed topics to SUPER's and SUPER's command back. Nothing in TEVV knows SUPER.
+schema: tevv.component.v1
+id: super-planner
+name: SUPER local planner
+version: 0.4.0
+kind: planner
+
+component:
+  image: dhdevspace/auto_mns:super_runtime-ms.1-cyclone
+  command:
+  - bash
+  - -lc
+  - >-
+    set +u && source /opt/ros/humble/setup.bash
+    && source /workspace/generated/super_planner/.planner_ws/ros_ws/install/setup.sh
+    && exec ros2 run super_planner fsm_node --ros-args
+    -p config_name:=/cfg/component/files/config/click.yaml
+
+adaptor:
+  image: dhdevspace/auto_mns:super-planner-adaptor-0.3.0
+
+# What TEVV should provide: /tevv/<drone>/gt/odom and /tevv/<drone>/sensors/point_cloud
+# (odom frame). The mission (/tevv/<drone>/mission/waypoints and .../next) is always there.
+consumes: [ground_truth, point_cloud]
+# What SUPER gives back: /tevv/<drone>/command (mavros_msgs/PositionTarget).
+produces: [command]
+
+# TEVV hands over once SUPER's state machine is up.
+ready:
+  after_takeoff: [/planner_state]
+  timeout_s: 180
